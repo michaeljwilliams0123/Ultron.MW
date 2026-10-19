@@ -16,7 +16,7 @@ function event(number=51, objective='Add better cloud routing') {
 }
 function mockGitHub(evt=event(), main=BASE) {
   let currentMain=main, branchSha=null, fileText=null, pr=null, note=null;
-  const calls=[], info=evt.issue;
+  const calls=[], info={...evt.issue,user:{...evt.issue.user}};
   const fail=()=>{throw Error('Unexpected API call')};
   const get=async path=>{
     calls.push('GET '+path);
