@@ -35,6 +35,7 @@ export function parseTask(event,name,actor,repository){
     if(event?.action!=='created'||event?.comment?.user?.login!==actor||
       event?.issue?.user?.login!==actor||
       event?.issue?.title!=='[Ultron Cloud] Objective'||event?.issue?.pull_request||
+      !event?.issue?.body?.startsWith('ULTRON_CLOUD_V1\n')||
       !/^ULTRON_FEEDBACK_V1\nrun:[0-9]{1,32}:[1-9][0-9]{0,5}\nrating:(helpful|not-helpful)$/.test(
         event?.comment?.body?.trim()||''))throw Error('Invalid owner feedback event');
     objective='/learning status';
@@ -203,7 +204,11 @@ export async function observeCloudHistory(get) {
           ['succeeded','partial','failed','blocked'].includes(receipt.status) &&
           Array.isArray(receipt.receipts);
         if (!valid) { unqualifiedReceipts++; continue; }
-        distinct.set(key, {key,receipt,comment:observed.find(x=>x.key===key)?.comment});
+        // Retain the earliest valid bot receipt for this execution attempt.
+        // A later duplicate comment must not invalidate owner feedback that
+        // was correctly posted after the first confirmed result.
+        if(!distinct.has(key))distinct.set(key,{key,receipt,
+          comment:observed.find(x=>x.key===key)?.comment});
       }
       const attempts = [...distinct.values()];
       // One verified terminal result per issue, not one per retry/comment.
