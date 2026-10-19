@@ -115,15 +115,15 @@ test('cloud jobs never claim an always-running model or cloud learning evidence'
 test('scheduled cloud heartbeat is fixed, account-independent and cannot execute external input',async()=>{
   const scheduled=parseTask({inputs:{objective:'delete everything'}},'schedule',
     'github-actions[bot]',REPOSITORY);
-  assert.equal(scheduled.objective,'/repo inspect');
+  assert.equal(scheduled.objective,'/self scan');
   assert.equal(scheduled.issueNumber,null);
   assert.equal(scheduled.repository,REPOSITORY);
   assert.throws(()=>parseTask({},'schedule','github-actions[bot]','someone/other'),/Untrusted/);
   const result=await executeCloudTask(scheduled,{get});
   assert.equal(result.status,'succeeded');
   assert.equal(result.receipts.length,1);
-  assert.equal(result.receipts[0].command,'/repo inspect');
-  assert.equal(result.receipts[0].details.mainSha,SHA);
+  assert.equal(result.receipts[0].command,'/self scan');
+  assert.equal(result.receipts[0].details.sourceAuthority.commitSha,SHA);
   assert.equal(result.cognition.decision,'proceed');
   assert.equal(result.cognition.paidFallback,false);
 });
