@@ -106,6 +106,20 @@ mechanism is implemented, so no policy or model is promoted from mere GitHub
 success receipts. This uses the existing cloud command and GitHub API access,
 with no new provider, database, UI, or computer dependency.
 
+## Cloud-native Create PR to main
+
+Ultron's single GitHub Pages interface now offers **Create PR to main**, separate from read-only cloud commands. Enter a *public, one-line* objective and select that action (or submit an explicit "Create a PR ..." chat instruction). The page opens a prefilled GitHub Issue; **the signed-in repository owner must confirm the issue**. A dedicated GitHub-hosted Actions job then:
+
+1. Verifies the Issue's owner, unchanged request, repository identity, and exact current `main` SHA.
+2. Creates a uniquely named `ultron/issue-N` branch from current `main`.
+3. Writes and independently rereads `docs/proposals/issue-N.md` containing the requested feature proposal.
+4. Opens a **non-draft PR targeting `main`**, rereads the PR's source branch and target, and explicitly dispatches the existing exact-head Verify job.
+5. Posts the new PR link and verification request back to the owner Issue with independent comment read-back.
+
+**What this proves:** Ultron has a real cloud write action capable of creating a branch, committing a file and opening a PR against `main` without a specific PC or API token in Pages. **What it does not prove:** It cannot implement arbitrary application source from a natural-language request, deploy or auto-merge the PR, or circumvent the required CI check. This first write action creates reviewable documentation proposals only. Code implementation remains a separately reviewed task.
+
+The default GitHub Actions token stays read-only. Only `.github/workflows/cloud-pr.yml`, running for owner-created marked PR Issues, requests `contents: write`, `pull-requests: write`, `issues: write`, and `actions: write`. GitHub's repository setting allowing Actions-created PRs must be enabled; the combined setting also technically allows workflow PR approvals, but no Ultron workflow requests or submits one. Public Issues and proposals must not contain private data. No Cloudflare, hosted LLM subscription, local Ollama, SD009WC7, or ports 4782/4792 are required.
+
 ## Cloud owner feedback and measured recommendation learning
 
 GitHub Issues are the durable cloud record. An owner can rate a successfully executed **single-command** v2 task by replying to the bot's receipt comment with the exact three-line format:
