@@ -29,6 +29,7 @@ jobs:
           node --check src/learning.mjs
           node --check src/operations.mjs
           node --check src/server.mjs
+          node --check src/action-gateway.mjs
           node --check src/brain.mjs
           node --check src/providers/ollama.mjs
           node --check docs/app.js

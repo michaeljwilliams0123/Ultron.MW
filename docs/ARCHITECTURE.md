@@ -96,3 +96,8 @@ The local runtime now persists at most 24 prior conversation exchanges alongside
 
 ### Decision 007 — Dynamic CPU reasoning effort without new providers
 The existing Ollama adapter sends the documented think flag with structured JSON requests. It defaults to false for short execution-policy decisions to reduce unnecessary token computation on the CPU-based owner computer; ULTRON_OLLAMA_THINK=1 opts into a deeper reasoning path. The routing/tool authority policy and persistent verified receipts remain unchanged. Compare end-to-end times and accuracy on the owner device before claiming a performance win.
+
+## Decision 006 — One owner-paired action gateway
+The existing Systems pane pairs to the local Node service for isolated owner notes. A single-repository documentation draft PR adapter is present but **disabled by default**, pending real-world verification; explicitly enabling it requires `ULTRON_ENABLE_GITHUB_DRAFT=1` on the local runtime. No LLM content can directly invoke privileged endpoints. Requests require the locally generated session key and same-origin writes; all identifiers and content lengths are validated. The target repository and document subdirectory are fixed; no shell interpreter, arbitrary filesystem path or deployment authority is exposed.
+
+The durable lifecycle is `prepared → running → verified | reconcile-required`. Durable preparation and execution-lease records are committed before external side effects; the adapter independently re-reads written output before issuing a successful receipt. Replayed or uncertain IDs are not automatically retried. Feedback is attached only to verified action records. End-user device acceptance and long-term cross-device operation require separate verification.

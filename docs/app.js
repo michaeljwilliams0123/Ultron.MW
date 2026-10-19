@@ -405,6 +405,150 @@
       $('status').classList.remove('live');
     }
   });
+
+  // Owner action pairing exists only in this tab and only on localhost.
+  let ownerKey = '';
+  let preparedOperation = null;
+  let lastVerifiedOperation = null;
+  const actionStatus = $('action-status');
+  const actionResult = $('action-result');
+
+  async function ownerRequest(method, path, body) {
+    if (!local || !ownerKey) throw new Error('Local owner pairing required');
+    const reply = await fetch(path, {
+      method, cache: 'no-store',
+      headers: {
+        'content-type': 'application/json',
+        'x-ultron-owner': ownerKey,
+      },
+      ...(method === 'GET' ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await reply.json();
+    if (!reply.ok) throw new Error(data.error || 'Owner action rejected');
+    return data;
+  }
+
+  if (!local) {
+    $('action-pair').disabled = true;
+    actionStatus.textContent = 'GitHub Pages cannot connect to the private local runtime. Open the same interface at 127.0.0.1 on your PC.';
+  }
+
+  async function refreshOwnerOutcomes() {
+    if (!ownerKey) return;
+    try {
+      const data = await ownerRequest('GET', '/api/owner/jobs');
+      const x = data.outcomes;
+      if (!x) return;
+      $('action-outcomes').textContent = x.verified + ' verified actions · ' +
+        x.helpful + ' helpful · ' + x.notHelpful + ' not helpful · ' +
+        x.unrated + ' unrated · ' + x.reconcileRequired +
+        ' require reconciliation' +
+        (x.meanVerifiedLatencyMs === null ? '' :
+          ' · mean verified latency ' + x.meanVerifiedLatencyMs + ' ms') + '.';
+    } catch {
+      $('action-outcomes').textContent = 'Outcome history unavailable.';
+    }
+  }
+
+  $('action-pair').addEventListener('click', async () => {
+    if (!local) return;
+    ownerKey = $('action-key').value.trim();
+    $('action-key').value = '';
+    preparedOperation = null;
+    $('action-execute').disabled = true;
+    if (!ownerKey) {
+      actionStatus.textContent = 'Enter the current session key printed by your local Ultron runtime.';
+      return;
+    }
+    try {
+      const status = await ownerRequest('GET', '/api/owner/status');
+      if (status.paired !== true) throw new Error('Not paired');
+      $('action-controls').classList.remove('hidden');
+      await refreshOwnerOutcomes();
+      const githubOption = $('action-kind').querySelector('option[value="github-draft"]');
+      githubOption.disabled = !status.actions?.includes('github-draft');
+      if (githubOption.disabled) $('action-kind').value = 'local-note';
+      actionStatus.textContent = githubOption.disabled
+        ? 'Owner paired · isolated local notes ready · GitHub draft writes disabled pending acceptance.'
+        : status.github.connected
+          ? 'Owner paired · GitHub identity: ' + status.github.account + ' · draft-only adapter enabled.'
+          : 'Owner paired · local notes ready · GitHub CLI authentication unavailable.';
+    } catch {
+      ownerKey = '';
+      $('action-controls').classList.add('hidden');
+      actionStatus.textContent = 'Pairing was denied. Confirm the local runtime session key.';
+    }
+  });
+
+  $('action-prepare').addEventListener('click', async () => {
+    if (!local) return;
+    const job = {
+      id: crypto.randomUUID(),
+      kind: $('action-kind').value,
+      title: $('action-title').value.trim(),
+      text: $('action-text').value.trim(),
+    };
+    $('action-prepare').disabled = true;
+    $('action-execute').disabled = true;
+    try {
+      const result = await ownerRequest('POST', '/api/owner/prepare', job);
+      preparedOperation = result.job;
+      $('action-kind').disabled = true;
+      $('action-title').disabled = true;
+      $('action-text').disabled = true;
+      $('action-execute').disabled = false;
+      actionResult.textContent = 'Prepared but NOT executed: ' + job.kind + ' (' +
+        result.job.id + '). Review the displayed title and note body, then choose Execute.';
+    } catch (error) {
+      actionResult.textContent = 'Nothing prepared: ' + error.message;
+    } finally {
+      $('action-prepare').disabled = false;
+    }
+  });
+
+  $('action-execute').addEventListener('click', async () => {
+    if (!preparedOperation) return;
+    $('action-execute').disabled = true;
+    const jobId = preparedOperation.id;
+    actionResult.textContent = 'Running this specific approved operation; checking actual outcome.';
+    try {
+      const result = await ownerRequest('POST', '/api/owner/execute', { id: jobId });
+      lastVerifiedOperation = jobId;
+      $('action-good').disabled = false;
+      $('action-bad').disabled = false;
+      actionResult.textContent = 'VERIFIED: ' + result.receipt.summary +
+        ' · receipt ' + result.receipt.id +
+        (result.receipt.details.url ? ' · ' + result.receipt.details.url : '');
+      await refreshOwnerOutcomes();
+      line('Ultron · verified owner operation', result.receipt.summary +
+        '\n' + JSON.stringify(result.receipt.details));
+    } catch (error) {
+      actionResult.textContent = 'Outcome NOT verified: ' + error.message +
+        '. Inspect the operation before preparing a new attempt.';
+    } finally {
+      preparedOperation = null;
+      $('action-kind').disabled = false;
+      $('action-title').disabled = false;
+      $('action-text').disabled = false;
+    }
+  });
+
+  for (const [id, rating] of [['action-good','helpful'],['action-bad','not-helpful']]) {
+    $(id).addEventListener('click', async () => {
+      if (!lastVerifiedOperation) return;
+      try {
+        const result = await ownerRequest('POST', '/api/owner/feedback', {
+          id: lastVerifiedOperation, rating,
+        });
+        await refreshOwnerOutcomes();
+        actionResult.textContent = 'Owner feedback recorded as ' + result.rating +
+          ' for independently verified receipt ' + result.receiptId + '.';
+      } catch (error) {
+        actionResult.textContent = error.message;
+      }
+    });
+  }
+
   async function sync() {
     if (!local) {
       connected = false;
