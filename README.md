@@ -89,3 +89,51 @@ Verification syntax-checks every JavaScript module in `src`, `docs`, `scripts` a
 **Repository settings remain separate:** the reviewed `main` was unprotected. Workflow files cannot enforce branch protection. Required-check configuration, blocked force-push/deletion, and owner review policy need an administrative settings change and read-back before they can be claimed active. See [`docs/verification/BASELINE-2026-10-19.md`](docs/verification/BASELINE-2026-10-19.md) for the reviewed baseline, acceptance gaps, and next implementation order.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for current architecture and [`SECURITY.md`](SECURITY.md) for data boundaries and reporting. No license grant is declared pending the owner's license decision.
+
+### Verified cloud evidence (read-only)
+The GitHub-hosted `/learning status` command now reads existing public cloud-task
+Issues and their bot-authored structured execution receipts directly from GitHub.
+It deduplicates retries and counts at most one validated terminal outcome per
+canonical task. To qualify as an observed cloud outcome, the receipt must match
+the owner-created objective digest, issue number and exact-main admission and
+pre-publication SHAs. Incomplete API pagination fails closed rather than silently
+under-counting. It does **not** count generated council text, unauthenticated
+comments, unverified historical receipts, or synthetic tests as learning.
+
+Metrics deliberately separate **attested execution outcomes** from **owner-rated
+learning evidence**: the latter remains zero until an authenticated feedback
+mechanism is implemented, so no policy or model is promoted from mere GitHub
+success receipts. This uses the existing cloud command and GitHub API access,
+with no new provider, database, UI, or computer dependency.
+
+## Cloud-native Create PR to main
+
+Ultron's single GitHub Pages interface now offers **Create PR to main**, separate from read-only cloud commands. Enter a *public, one-line* objective and select that action (or submit an explicit "Create a PR ..." chat instruction). The page opens a prefilled GitHub Issue; **the signed-in repository owner must confirm the issue**. A dedicated GitHub-hosted Actions job then:
+
+1. Verifies the Issue's owner, unchanged request, repository identity, and exact current `main` SHA.
+2. Creates a uniquely named `ultron/issue-N` branch from current `main`.
+3. Writes and independently rereads `docs/proposals/issue-N.md` containing the requested feature proposal.
+4. Opens a **non-draft PR targeting `main`**, rereads the PR's source branch and target, and explicitly dispatches the existing exact-head Verify job.
+5. Posts the new PR link and verification request back to the owner Issue with independent comment read-back.
+
+**What this proves:** Ultron has a real cloud write action capable of creating a branch, committing a file and opening a PR against `main` without a specific PC or API token in Pages. **What it does not prove:** It cannot implement arbitrary application source from a natural-language request, deploy or auto-merge the PR, or circumvent the required CI check. This first write action creates reviewable documentation proposals only. Code implementation remains a separately reviewed task.
+
+The default GitHub Actions token stays read-only. Only `.github/workflows/cloud-pr.yml`, running for owner-created marked PR Issues, requests `contents: write`, `pull-requests: write`, `issues: write`, and `actions: write`. GitHub's repository setting allowing Actions-created PRs must be enabled; the combined setting also technically allows workflow PR approvals, but no Ultron workflow requests or submits one. Public Issues and proposals must not contain private data. No Cloudflare, hosted LLM subscription, local Ollama, SD009WC7, or ports 4782/4792 are required.
+
+## Cloud owner feedback and measured recommendation learning
+
+GitHub Issues are the durable cloud record. An owner can rate a successfully executed **single-command** v2 task by replying to the bot's receipt comment with the exact three-line format:
+
+```text
+ULTRON_FEEDBACK_V1
+run:<numeric-actions-run-id>:<run-attempt-number>
+rating:helpful
+```
+
+Change `rating:helpful` to `rating:not-helpful` if the result was not useful. The Actions receipt supplies the exact run ID and attempt. Only a comment from the configured repository owner, on that owner-created task Issue, later than a matching bot-authored receipt, can qualify. Any other comment, forged digest, mismatched exact-main evidence, unverified attempt, unsupported or multi-step outcome does **not** become a training label. Public Issues/comments should contain no private or client data.
+
+An owner feedback comment starts the **existing** GitHub Actions workflow, which evaluates the existing ledger and writes results to that run's summary; the workflow does **not** create a code change, merge anything, dispatch shell commands from comments, or grant new action authority. The optional `/learning status` command uses that same evidence. Workflows remain ephemeral and quota-limited.
+
+The evaluator compares a cautious command-recommendation policy against baseline using the latest chronological quarter as holdout. A candidate needs at least **16 distinct owner-rated tasks**, six positive and four negative older training labels, positive/negative later labels, at least five percentage points measured improvement, **zero new wrong cautions**, and no broadened permission. Insufficient, unchanged, invalid or regressing evidence causes no validated suggestion. An accepted *suggestion* is recomputed from GitHub history, not trained model weights or a self-editing model; it never blocks or runs a tool. The cloud ledger is public and mutable, so this is owner-reported usefulness, not independently adjudicated outcome quality.
+
+**One system, no extra infrastructure:** the old local-only experience evaluator remains for explicitly paired local tests. Cloud feedback uses existing Issues, one cloud evaluator and the same Pages interface. It does not create another agent, SaaS plan, database, browser login, paid AI provider, or SD009WC7 dependency.

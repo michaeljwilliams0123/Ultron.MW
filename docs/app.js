@@ -1,5 +1,6 @@
 (async () => {
   const { createCloudTaskUrl } = await import('./core/cloud-submit.mjs');
+  const { createCloudPrUrl } = await import('./core/cloud-pr-submit.mjs');
   const $ = id => document.getElementById(id);
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
   if (local) document.getElementById('optional-local-actions')?.classList.remove('hidden');
@@ -312,14 +313,28 @@
     }
   }
 
+  function routePrToGitHub(objective) {
+    try {
+      const url = createCloudPrUrl(objective);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      line('Ultron · Create PR to main',
+        'Confirm the prefilled PR proposal Issue in GitHub. An owner-only hosted runner creates a documentation proposal branch and PR targeting main. The GitHub Issue receives the verified PR link. No code implementation, auto-merge, PC or local port is required.');
+    } catch (error) {
+      line('Ultron · PR request rejected', error.message);
+    }
+  }
+  $('cloud-pr').addEventListener('click', () => {
+    routePrToGitHub($('message').value.trim());
+  });
   $('cloud-run').addEventListener('click', () => {
     const objective = $('message').value.trim();
     try {
       const url = createCloudTaskUrl(objective);
       window.open(url, '_blank', 'noopener,noreferrer');
-      line('Ultron · public GitHub handoff', 'Review and submit the canonical commands in GitHub. The issue and receipt are public. Do not add private information. A hosted runner will post the result; no personal PC is required.');
+      line('Ultron · public GitHub handoff', 'Review and submit the canonical read-only commands in GitHub. For pull requests, use Create PR to main instead. No personal PC is required.');
     } catch (error) {
-      line('Ultron · cloud request rejected', error.message);
+      line('Ultron · cloud request rejected', error.message +
+        ' To request a PR, use Create PR to main.');
     }
   });
 
@@ -699,6 +714,12 @@
     const input = $('message');
     const text = input.value.trim();
     if (!text) return;
+    // Owner-intended PR requests route to GitHub Actions rather than a
+    // browser LLM that cannot execute repository tools.
+    if (/^(?:please\s+)?(?:create|open|launch|draft|make)\b.*\b(?:pr|pull request)\b/i.test(text)) {
+      routePrToGitHub(text);
+      return;
+    }
     if (!connected) {
       if (text.startsWith('/plan ')) {
         await showPlan(text.slice(6).trim());

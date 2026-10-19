@@ -2,6 +2,8 @@ name: Ultron hosted objective
 on:
   issues:
     types: [opened]
+  issue_comment:
+    types: [created]
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -24,8 +26,13 @@ jobs:
       (github.actor == 'michaeljwilliams0123' &&
        (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'issues' &&
-       github.event.issue.user.login == 'michaeljwilliams0123' &&
-       github.event.issue.title == '[Ultron Cloud] Objective'))))
+        github.event.issue.user.login == 'michaeljwilliams0123' &&
+        github.event.issue.title == '[Ultron Cloud] Objective') ||
+       (github.event_name == 'issue_comment' &&
+        github.event.issue.user.login == 'michaeljwilliams0123' &&
+        github.event.comment.user.login == 'michaeljwilliams0123' &&
+        startsWith(github.event.comment.body, 'ULTRON_FEEDBACK_V1') &&
+        startsWith(github.event.issue.body, 'ULTRON_CLOUD_V1')))))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -38,6 +45,7 @@ jobs:
       - name: Validate hosted executor
         run: |
           node --check src/cloud-cycle.mjs
+          node --check src/cloud-feedback.mjs
           node --check src/cloud-entry.mjs
       - name: Execute and persist GitHub receipt
         env:

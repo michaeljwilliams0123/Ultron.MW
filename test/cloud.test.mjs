@@ -10,6 +10,7 @@ const issue=(objective='/repo inspect')=>({
     user:{login:'michaeljwilliams0123'},body:'ULTRON_CLOUD_V1\n'+objective},
 });
 const get=async path=>{
+  if(path.includes('/issues?state=all&per_page=100&page='))return [];
   if(path.endsWith('/git/ref/heads/main'))return {object:{sha:SHA}};
   if(path.endsWith('/git/commits/'+SHA))return {tree:{sha:TREE}};
   if(path.endsWith('/git/trees/'+TREE+'?recursive=1'))
@@ -106,6 +107,8 @@ test('cloud jobs never claim an always-running model or cloud learning evidence'
   assert.equal(r.receipts.length,2);
   assert.equal(r.receipts[0].details.ephemeral,true);
   assert.equal(r.receipts[1].details.qualifiedExperiences,0);
+  assert.equal(r.receipts[1].details.verifiedTasks,0);
+  assert.equal(r.receipts[1].details.learningStatus,'insufficient-evidence');
 });
 
 
