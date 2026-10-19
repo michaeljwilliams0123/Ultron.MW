@@ -20,6 +20,17 @@ const FINDINGS=Object.freeze({
 });
 function sha256(value){return createHash('sha256').update(JSON.stringify(value)).digest('hex');}
 function short(s,max=300){return String(s||'').replace(/[\r\n<>]/g,' ').slice(0,max);}
+function directPhrase(body){
+  return String(body||'').match(/^\s*(?:@ultron(?:\.mw)?\b|\/ultron\b|ultron:)\s*([\s\S]*)$/i)?.[1];
+}
+/** Workflow preflight for the optional CPU runtime. */
+export function needsPrModelRuntime(body){
+  const direct=directPhrase(body);
+  const phrase=(direct===undefined?String(body||''):direct).trim();
+  // A bare command can be a short follow-up. The full handler still verifies
+  // that conversation history admits it before invoking the model.
+  return /^implement\s+[\s\S]{5,500}$/i.test(phrase);
+}
 export function admitPrTurn(event,eventName,actor,repository){
   const inline=eventName==='pull_request_review_comment';
   if(!inline&&eventName!=='issue_comment')throw Error('Unsupported conversation event');
@@ -34,7 +45,7 @@ export function admitPrTurn(event,eventName,actor,repository){
   return {number,commentId:c.id,body:c.body.trim(),raw:c.body,inline};
 }
 export function routePrTurn(body,history=[]){
-  let phrase=body.match(/^\s*(?:@ultron(?:\.mw)?\b|\/ultron\b|ultron:)\s*([\s\S]*)$/i)?.[1];
+  let phrase=directPhrase(body);
   if(phrase===undefined){
     const last=history.at(-1);
     if(last?.user?.login==='github-actions[bot]'&&last.body?.startsWith(MARK)&&

@@ -39,11 +39,20 @@ jobs:
           node --check src/pr-brain.mjs
           node --check src/pr-brain-patch.mjs
           node --check src/pr-brain-model.mjs
-      - name: Install pinned CPU inference runtime for explicit owner implementation requests
+      - name: Detect optional CPU model request
+        id: model-request
+        env:
+          ULTRON_COMMENT_BODY: ${{ github.event.comment.body }}
+        run: >-
+          node --input-type=module -e
+          "import {needsPrModelRuntime} from './src/pr-brain.mjs';
+          process.stdout.write('needed='+needsPrModelRuntime(process.env.ULTRON_COMMENT_BODY));"
+          >> "$GITHUB_OUTPUT"
+      - name: Install locked CPU inference runtime for explicit owner implementation requests
         if: >-
           github.event.repository.private == false &&
-          startsWith(github.event.comment.body, '@ultron implement ')
-        run: npm install --no-save --package-lock=false @huggingface/transformers@3.8.1
+          steps.model-request.outputs.needed == 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Route PR comment through Ultron brain
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

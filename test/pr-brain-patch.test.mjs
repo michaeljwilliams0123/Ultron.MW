@@ -7,12 +7,17 @@ const HEAD='a'.repeat(40),NEXT='b'.repeat(40),TREE='c'.repeat(40),NEW_TREE='d'.r
 const REPO='michaeljwilliams0123/Ultron.MW', BRANCH='ultron/self-scan-abc';
 const pr={number:24,state:'open',
   head:{ref:BRANCH,sha:HEAD,repo:{full_name:REPO}},
-  base:{ref:'main',repo:{full_name:REPO}}};
+  base:{ref:'main',sha:'9'.repeat(40),repo:{full_name:REPO}}};
 const source='first old line final\n';
-function fixture(){
-  const state={sha:HEAD,calls:[],blobs:[],files:{'src/example.mjs':source},updated:null};
+function fixture({behind=false}={}){
+  const state={sha:HEAD,main:pr.base.sha,calls:[],blobs:[],
+    files:{'src/example.mjs':source},updated:null};
   const get=async path=>{
     state.calls.push(['GET',path]);
+    if(path===ROOT+'/git/ref/heads/main')return {object:{sha:state.main}};
+    if(path===ROOT+'/compare/'+state.main+'...'+HEAD)return {
+      status:behind?'diverged':'ahead',behind_by:behind?1:0,
+      merge_base_commit:{sha:behind?'8'.repeat(40):state.main}};
     if(path===ROOT+'/git/ref/heads/'+BRANCH)return {object:{sha:state.sha}};
     if(path===ROOT+'/git/commits/'+HEAD)return {tree:{sha:TREE}};
     const match=path.match(/^\/repos\/michaeljwilliams0123\/Ultron\.MW\/contents\/([^?]+)\?ref=([a-f0-9]{40})$/);
@@ -70,4 +75,8 @@ test('head drift, ambiguous context and workflow mutations fail before source co
   await assert.rejects(()=>applyPrPatch(dup.args([
     {path:'src/example.mjs',before:'old',after:'one'},
     {path:'src/example.mjs',before:'old',after:'two'}])),/rejected/);
+  const stale=fixture({behind:true});
+  await assert.rejects(()=>applyPrPatch(stale.args([
+    {path:'src/example.mjs',before:'old',after:'new'}])),/behind current main/);
+  assert.equal(stale.state.calls.some(x=>x[0]==='POST'),false);
 });
