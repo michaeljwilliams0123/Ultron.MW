@@ -4,8 +4,6 @@ on:
     types: [opened]
   issue_comment:
     types: [created]
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       objective:
@@ -22,9 +20,8 @@ jobs:
   cloud:
     if: >-
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
-      (github.event_name == 'schedule' ||
-      (github.actor == 'michaeljwilliams0123' &&
-       (github.event_name == 'workflow_dispatch' ||
+      github.actor == 'michaeljwilliams0123' &&
+      (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'issues' &&
         github.event.issue.user.login == 'michaeljwilliams0123' &&
         github.event.issue.title == '[Ultron Cloud] Objective') ||
@@ -32,7 +29,7 @@ jobs:
         github.event.issue.user.login == 'michaeljwilliams0123' &&
         github.event.comment.user.login == 'michaeljwilliams0123' &&
         startsWith(github.event.comment.body, 'ULTRON_FEEDBACK_V1') &&
-        startsWith(github.event.issue.body, 'ULTRON_CLOUD_V1')))))
+        startsWith(github.event.issue.body, 'ULTRON_CLOUD_V1')))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
