@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {chooseSourceForObjective,extractModelPatch,generateAndApply} from '../src/pr-brain-model.mjs';
+import {chooseSourceForObjective,selectTargetLine,extractModelPatch,generateAndApply} from '../src/pr-brain-model.mjs';
 import {routePrTurn} from '../src/pr-brain.mjs';
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const SHA='a'.repeat(40),TREE='b'.repeat(40),COMMIT='c'.repeat(40);
@@ -35,7 +35,7 @@ test('repo-bound source selection and source patch derivation',async()=>{
   assert.equal(patch.baseSha,SHA);
   assert.equal(patch.changes[0].after,'new');
   assert.throws(()=>extractModelPatch('{"changes":[{"path":"src/other.mjs","before":"old","after":"new"}]}',
-    {path:PATH,head:SHA,objective:'Fix marker'}),/unscoped/);
+    {path:PATH,head:SHA,objective:'Fix marker'}),/unscoped|valid exact-context/);
 });
 test('injected CPU model can propose a real patch for exact PR head without paid inference',async()=>{
   const r=repository();let called=false;
@@ -65,4 +65,36 @@ test('public CPU inference on owner request only, with no paid API credentials',
   assert.match(flow,/npm install --no-save/);
   assert.match(flow,/ULTRON_PUBLIC_CPU_INFERENCE/);
   assert.doesNotMatch(flow,/HF_TOKEN|OPENAI_API_KEY|models: read/);
+});
+
+test('source-selected single-line output works without model JSON formatting',()=>{
+  const line="  {id:'self-scan',description:'Inspect source evidence',";
+  const source=line+"\n  {id:'other',description:'unrelated',";
+  const target=selectTargetLine(source,'clarify self-scan source evidence');
+  assert.equal(target,line);
+  const manifest=JSON.parse(extractModelPatch(
+    "  {id:'self-scan',description:'Inspect evidence; runtime not independently proven',",
+    {path:'src/utility.mjs',head:SHA,objective:'clarify self-scan',targetLine:line}));
+  assert.equal(manifest.changes[0].before,line);
+  assert.match(manifest.changes[0].after,/not independently proven/);
+});
+test('bounded corrective retry can turn non-JSON model output into a scoped verified patch',async()=>{
+  const r=repository();let count=0;
+  const applied=await generateAndApply({
+    pr:structuredClone(PR),objective:'Fix src/utility.mjs marker',
+    get:r.get,post:async()=>{throw Error('no writes in model fixture');},
+    model:async()=>{
+      count++;
+      return count===1?'I cannot provide the requested JSON':
+        'export const marker="new";';
+    },
+    apply:async({manifest})=>{
+      const parsed=JSON.parse(manifest);
+      assert.equal(parsed.changes[0].before,'export const marker="old";');
+      assert.equal(parsed.changes[0].after,'export const marker="new";');
+      return {commitSha:COMMIT,paths:[PATH]};
+    },
+  });
+  assert.equal(count,2);
+  assert.equal(applied.verifiedCommit,true);
 });
