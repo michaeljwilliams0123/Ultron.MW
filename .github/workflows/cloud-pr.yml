@@ -15,8 +15,10 @@ jobs:
       github.event_name == 'issues' &&
       github.event.action == 'opened' &&
       github.event.issue.user.login == 'michaeljwilliams0123' &&
-      github.event.issue.title == '[Ultron PR] Create proposal' &&
-      startsWith(github.event.issue.body, 'ULTRON_PR_V1')
+      ((github.event.issue.title == '[Ultron PR] Create proposal' &&
+        startsWith(github.event.issue.body, 'ULTRON_PR_V1')) ||
+       (github.event.issue.title == '[Ultron PR] Implement code' &&
+        startsWith(github.event.issue.body, 'ULTRON_CODE_PR_V1')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -32,7 +34,9 @@ jobs:
         with:
           node-version: '22'
       - name: Verify trusted PR adapter
-        run: node --check src/cloud-pr.mjs
+        run: |
+          node --check src/cloud-pr.mjs
+          node --check src/code-pr.mjs
       - name: Create and verify PR targeting main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
