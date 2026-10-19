@@ -108,7 +108,7 @@ test('cloud jobs never claim an always-running model or cloud learning evidence'
   assert.equal(r.receipts[0].details.ephemeral,true);
   assert.equal(r.receipts[1].details.qualifiedExperiences,0);
   assert.equal(r.receipts[1].details.verifiedTasks,0);
-  assert.equal(r.receipts[1].details.learningStatus,'no-owner-rated-cloud-outcomes');
+  assert.equal(r.receipts[1].details.learningStatus,'insufficient-evidence');
 });
 
 
