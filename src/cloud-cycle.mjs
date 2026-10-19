@@ -5,7 +5,10 @@ export const MARKER='<!-- ULTRON_CLOUD_RECEIPT_V1 -->';
 const allowed=new Set(['/help','/system status','/repo inspect','/learning status']);
 const sha=/^[0-9a-f]{40}$/;
 export function parseTask(event,name,actor,repository){
-  if(actor!=='michaeljwilliams0123'||repository!==REPOSITORY)throw Error('Untrusted owner or repository');
+  // Cron has no user-controlled task text; repository-scoped default-branch
+  // workflow is the authority. User-submitted tasks still require owner identity.
+  if(repository!==REPOSITORY||(name!=='schedule'&&actor!=='michaeljwilliams0123'))
+    throw Error('Untrusted owner or repository');
   let objective,issueNumber=null;
   if(name==='issues'){
     const issue=event?.issue;
@@ -18,6 +21,9 @@ export function parseTask(event,name,actor,repository){
   }else if(name==='workflow_dispatch'){
     if(event?.sender?.login&&event.sender.login!==actor)throw Error('Untrusted dispatch');
     objective=event?.inputs?.objective;
+  }else if(name==='schedule'){
+    // Deterministic owner-repository health observation, never arbitrary input.
+    objective='/repo inspect';
   }else throw Error('Unsupported event');
   if(typeof objective!=='string'||!objective.trim()||objective.length>1000||
     /[\r\n\u0000-\u001f]/.test(objective))throw Error('Invalid single-line objective');

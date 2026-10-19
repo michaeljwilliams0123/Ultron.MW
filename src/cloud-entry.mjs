@@ -38,7 +38,12 @@ if(import.meta.url==='file://'+process.argv[1]){
       actor:process.env.GITHUB_ACTOR,repository:process.env.GITHUB_REPOSITORY,
       runId:process.env.GITHUB_RUN_ID});
     if(process.env.GITHUB_STEP_SUMMARY)
-      await appendFile(process.env.GITHUB_STEP_SUMMARY,'Ultron cloud job: '+r.status+'\n');
+      await appendFile(process.env.GITHUB_STEP_SUMMARY,
+        '## Ultron cloud observation\n**Status:** '+r.status+
+        '\n**Backend:** GitHub Actions (no owner PC)\n\n'+
+        (r.receipts||[]).map(x=>'- '+x.command+': '+x.status+
+          ' — '+x.summary+
+          (x.details?.mainSha?' (main '+x.details.mainSha+')':'')).join('\n')+'\n');
     console.log(JSON.stringify({status:r.status,issueNumber:r.issueNumber??null}));
   }catch(error){console.error('Ultron cloud job failed: '+error.message);process.exitCode=1;}
 }
