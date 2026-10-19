@@ -9,6 +9,7 @@
 .browser-setup{display:flex;gap:14px;align-items:center;justify-content:space-between;background:#142b3c88;border:1px solid #326380;border-radius:13px;padding:13px 14px;margin-bottom:18px}.browser-copy{min-width:0}.browser-copy strong{font-size:13px;color:#d2efff}.browser-copy p{font-size:12px;line-height:1.4;color:#9bb8c9;margin:5px 0 0}.browser-setup button{border-radius:9px;border:1px solid #7ac4de;background:#12374d;color:#d6f4ff;padding:11px 13px;font-size:12px;font-weight:700;white-space:nowrap}.browser-setup button:disabled{opacity:.6;cursor:not-allowed}@media(max-width:730px){.browser-setup{align-items:stretch;flex-direction:column}.browser-setup button{white-space:normal}}
 .vault-section{border-top:1px solid #2b3d50;margin-top:18px;padding-top:16px}.vault-section strong{font-size:14px;color:#d5edfc}.vault-inputs{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.vault-inputs input{flex:1;min-width:190px;background:#0a121d;color:#e9f6fd;border:1px solid #37506a;border-radius:9px;padding:11px}.vault-section button,.feedback button{border-radius:9px;border:1px solid #486c83;background:#112c3c;color:#cee8f7;font-size:12px;padding:9px 12px;cursor:pointer}.vault-section button:disabled,.feedback button:disabled{opacity:.4;cursor:not-allowed}.vault-secondary{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.feedback{display:flex;gap:8px;margin:7px 0 0 12px}.feedback button[aria-pressed="true"]{border-color:#92dcee;background:#20516b}.vault-section .muted{font-size:12px}@media(max-width:730px){.vault-inputs input{min-width:100%}.vault-inputs button{flex:1}}
 .evolution-controls{border:1px solid #284357;border-radius:13px;background:#0e233166;padding:14px;margin-top:12px}.evolution-controls strong{font-size:13px;color:#cdeafa}.evolution-controls button,.secondary-action,.plan-run{border:1px solid #4b809d;background:#133b50;color:#d5f1ff;border-radius:9px;padding:10px 12px;cursor:pointer;font-size:12px;font-weight:600}.evolution-controls button:disabled,.secondary-action:disabled,.plan-run:disabled{opacity:.5;cursor:not-allowed}.plan-list{white-space:pre-wrap;font-size:12px;line-height:1.65;color:#b5d4e5;padding:9px 0}.plan-run{margin-top:8px}@media(max-width:730px){.secondary-action{width:100%}}
+.owner-actions{border-top:1px solid #335064;padding-top:14px;margin-top:15px;display:grid;gap:9px}.owner-actions label{font-size:12px;color:#bad9e9}.owner-actions input,.owner-actions textarea,.owner-actions select{background:#0b1926;color:#e8f5ff;border:1px solid #355976;border-radius:9px;padding:11px;max-width:100%;width:100%;resize:vertical}.owner-row{display:flex;flex-wrap:wrap;gap:9px}.owner-row input{flex:1;min-width:170px}.owner-row button{background:#174360;border:1px solid #5590b0;color:#e6f8ff;border-radius:9px;padding:10px 13px;cursor:pointer;font-size:12px}.owner-row button:disabled{opacity:.5;cursor:not-allowed}.owner-actions .hidden{display:none}.owner-actions p{overflow-wrap:anywhere} @media(max-width:700px){.owner-row input{min-width:100%}}
 </style>
 </head>
 <body>
@@ -47,7 +48,39 @@
     </div>
   </div>
 </section>
-  <section class="panel hidden" id="pane-systems"><h2>Execution topology</h2><p class="muted" id="system-state">GitHub Pages (optional static interface) · Local loopback runtime (preferred) · GitHub repository (source of truth). Cloudflare is not part of the default Ultron system.</p><p class="muted">Local Ollama and browser WebGPU reasoning are optional. Remote execution access is not configured; browser-only answers are not tool receipts.</p></section>
+  <section class="panel hidden" id="pane-systems">
+  <h2>Execution & owner actions</h2>
+  <p class="muted" id="system-state">The local Ultron runtime supports one interface. GitHub Pages remains a static browser AI shell; private PC actions require local owner pairing.</p>
+  <div class="owner-actions">
+    <label for="action-key">Local owner pairing key</label>
+    <div class="owner-row">
+      <input id="action-key" type="password" autocomplete="off" placeholder="Key shown in local Ultron terminal">
+      <button type="button" id="action-pair">Pair owner</button>
+    </div>
+    <p id="action-status" class="muted" aria-live="polite">No private PC actions are connected.</p>
+    <div id="action-controls" class="hidden">
+      <label for="action-kind">Action type</label>
+      <select id="action-kind">
+        <option value="local-note">Create a new isolated PC note</option>
+        <option value="github-draft">Create a documentation-only GitHub draft PR</option>
+      </select>
+      <label for="action-title">Title</label>
+      <input id="action-title" maxlength="100" placeholder="Purpose of this action">
+      <label for="action-text">Note content</label>
+      <textarea id="action-text" maxlength="1200" rows="4" placeholder="Text only. Do not include secrets."></textarea>
+      <div class="owner-row">
+        <button type="button" id="action-prepare">Prepare action</button>
+        <button type="button" id="action-execute" disabled>Execute prepared action</button>
+      </div>
+      <p id="action-result" class="muted" aria-live="polite">No prepared action.</p>
+      <div class="owner-row">
+        <button type="button" id="action-good" disabled>Helpful outcome</button>
+        <button type="button" id="action-bad" disabled>Not helpful</button>
+      </div>
+    </div>
+  </div>
+  <p class="muted">Actions are narrowly scoped, owner-confirmed, and recorded with independently checked receipts. No arbitrary shell commands, merging, deployment, or changes to Mahoraga.</p>
+</section>
   <footer class="foot">Ultron.MW · Public Pages interface, private repository. Memory is optional, encrypted at rest, and local to this browser. Third-party model code still runs on this page; avoid secrets.</footer>
  </main>
 </div>
