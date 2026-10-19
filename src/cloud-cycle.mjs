@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { observeCloudSelf } from './self-observer.mjs';
 import { planObjective } from '../docs/core/cycle.mjs';
 import { commandsFor, capabilityManifest } from '../docs/core/capabilities.mjs';
 import { deliberatePlan } from './grokbot-governor.mjs';
@@ -88,6 +89,11 @@ export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(
           summary='Cloud command allowlist';details={commands:[...allowed],capabilities:capabilityManifest('cloud')};break;
         case '/system status':
           summary='GitHub-hosted runner executed';details={ephemeral:true,desktopRequired:false};break;
+        case '/self scan':
+          details=await observeCloudSelf({get,now});
+          summary='Source-bound Ultron self-scan: '+details.weaknesses.length+
+            ' evidence gaps; runtime readiness not probed';
+          break;
         case '/learning status':
           details = await observeCloudHistory(get);
           summary = 'Cloud task evidence: ' + details.verifiedTasks +
