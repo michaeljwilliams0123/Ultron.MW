@@ -152,15 +152,18 @@ export function evaluateExperience(jobs, receipts, incumbent = null) {
       heldout: heldout.length, positives: positive, negatives: negative };
   }
   const candidate = derivePolicy(training);
-  let beforeCorrect = 0, afterCorrect = 0, regressions = 0;
+  let beforeCorrect = 0, afterCorrect = 0, regressions = 0, incumbentRegressions = 0;
   for (const item of heldout) {
     const objective = wordsFor(item);
     const expected = item.rating === 'helpful' ? item.kind : null;
     const before = suggestFromExperience(objective, incumbent);
     const after = suggestFromExperience(objective, candidate);
+    const original = baselineSuggestion(objective);
     if (before === expected) beforeCorrect++;
     if (after === expected) afterCorrect++;
     if (before === expected && after !== expected) regressions++;
+    if (incumbent && original === expected && before !== expected)
+      incumbentRegressions++;
   }
   const unsafe = DANGEROUS_FIXTURES.filter(text =>
     suggestFromExperience(text, candidate) !== null).length;
@@ -173,7 +176,7 @@ export function evaluateExperience(jobs, receipts, incumbent = null) {
     candidate: adopted ? candidate : null,
     version: candidate.version, training: training.length, heldout: heldout.length,
     baselineAccuracy: baseScore, candidateAccuracy: nextScore, delta,
-    regressions, unsafeSuggestions: unsafe,
+    regressions, incumbentRegressions, unsafeSuggestions: unsafe,
     note: 'Owner-rated held-out task-type recommendations only; no model-weight update or tool authorization.',
   };
 }
@@ -203,9 +206,23 @@ export function advanceExperience(previous, jobs, receipts, { rollback = false }
     baselineAccuracy: report.baselineAccuracy ?? null,
     candidateAccuracy: report.candidateAccuracy ?? null,
     regressions: report.regressions ?? null,
+    incumbentRegressions: report.incumbentRegressions ?? 0,
     version: report.version || null,
   });
   current.assessments = current.assessments.slice(-30);
+  // A once-adopted policy is also continuously evaluated against newly
+  // reported outcomes. Revert first if the baseline now outperforms it on
+  // any previously correct held-out case; do not silently switch again.
+  if (current.active && report.incumbentRegressions > 0) {
+    const from = current.active.version;
+    current.active = null;
+    current.history.push({ action: 'auto-rollback', from, to: 'baseline',
+      reason: 'new-heldout-regression', evidenceHash: report.fingerprint,
+      at: new Date().toISOString() });
+    current.history = current.history.slice(-30);
+    return { state: current, result: { ...report, candidate: undefined,
+      status: 'rolled-back-on-regression', adopted: false } };
+  }
   if (report.adopted && report.candidate) {
     const previousVersion = current.active?.version || 'baseline';
     current.active = report.candidate;
