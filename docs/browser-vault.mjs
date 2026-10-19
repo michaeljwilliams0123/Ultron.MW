@@ -4,6 +4,7 @@
  * Caveat: runtime third-party scripts and same-origin Pages can still access
  * plaintext while unlocked. This is encryption at rest, not code isolation.
  */
+import { ACCEPTED_SEED, CANDIDATE, STRATEGIES, evaluateRouting } from './core/cycle.mjs';
 export const VAULT_KEY = 'ultron.mw.browser.vault.v1';
 const VERSION = 1;
 const ITERATIONS = 210000;
@@ -47,6 +48,18 @@ function validateContents(value) {
       value.exchanges.length > MAX_EXCHANGES || !value.exchanges.every(validateRecord) ||
       new Set(value.exchanges.map(entry => entry.id)).size !== value.exchanges.length) {
     throw new Error('Encrypted memory contains invalid records');
+  }
+  if (value.evolution !== undefined) {
+    const evolution = value.evolution;
+    if (!evolution || !STRATEGIES.includes(evolution.accepted) ||
+        !Array.isArray(evolution.evaluations) || evolution.evaluations.length > 12 ||
+        evolution.evaluations.some(e => !e || typeof e.benchmarkId !== 'string' ||
+          !STRATEGIES.includes(e.baselineVersion) ||
+          !STRATEGIES.includes(e.candidateVersion) ||
+          typeof e.delta !== 'number' || !Number.isFinite(e.delta) ||
+          typeof e.passed !== 'boolean')) {
+      throw new Error('Encrypted memory contains invalid learning history');
+    }
   }
   return value;
 }
@@ -107,12 +120,12 @@ export function createBrowserVault({
       }
       salt = envelope.salt;
       key = derived;
-      state = next;
+      state = { ...next, evolution: next.evolution || { accepted: ACCEPTED_SEED, evaluations: [] } };
       return snapshot();
     }
     const nextSalt = cryptoApi.getRandomValues(new Uint8Array(16));
     const derived = await derive(password, nextSalt);
-    const fresh = { version: VERSION, exchanges: [] };
+    const fresh = { version: VERSION, exchanges: [], evolution: { accepted: ACCEPTED_SEED, evaluations: [] } };
     storage.setItem(keyName, await encrypt(fresh, derived, nextSalt));
     key = derived;
     salt = nextSalt;
@@ -120,11 +133,12 @@ export function createBrowserVault({
     return snapshot();
   }
   function snapshot() {
-    if (!unlocked()) return { unlocked: false, saved: saved(), exchanges: [], statistics: statistics() };
+    if (!unlocked()) return { unlocked: false, saved: saved(), exchanges: [], statistics: statistics(), evolution: { accepted: ACCEPTED_SEED, evaluations: [] } };
     return {
       unlocked: true, saved: true,
       exchanges: state.exchanges.map(entry => ({ ...entry })),
       statistics: statistics(),
+      evolution: structuredClone(state.evolution || { accepted: ACCEPTED_SEED, evaluations: [] }),
     };
   }
   function statistics() {
@@ -211,9 +225,48 @@ export function createBrowserVault({
     state = next;
     return snapshot();
   }
+  function evolution() {
+    if (!unlocked()) return { accepted: ACCEPTED_SEED, evaluations: [] };
+    return structuredClone(state.evolution || { accepted: ACCEPTED_SEED, evaluations: [] });
+  }
+  async function evaluateAndAdopt() {
+    return commit(next => {
+      next.evolution ||= { accepted: ACCEPTED_SEED, evaluations: [] };
+      if (next.evolution.accepted === CANDIDATE) {
+        return { status: 'already-adopted', accepted: CANDIDATE };
+      }
+      const report = evaluateRouting({ accepted: next.evolution.accepted });
+      next.evolution.evaluations.push({
+        benchmarkId: report.benchmarkId,
+        baselineVersion: report.baselineVersion, candidateVersion: report.candidateVersion,
+        delta: report.delta, passed: report.passed, regressions: report.regressions,
+        criticalRegressions: report.criticalRegressions, total: report.total,
+        baselineAccuracy: report.baselineAccuracy, candidateAccuracy: report.candidateAccuracy,
+        evaluatedAt: report.evaluatedAt,
+      });
+      next.evolution.evaluations = next.evolution.evaluations.slice(-12);
+      if (report.passed) next.evolution.accepted = report.candidateVersion;
+      return { ...report, status: report.passed ? 'adopted' : 'rejected' };
+    });
+  }
+  async function rollbackRouting(reason) {
+    if (typeof reason !== 'string' || !reason.trim()) throw new Error('Reason required for rollback');
+    return commit(next => {
+      next.evolution ||= { accepted: ACCEPTED_SEED, evaluations: [] };
+      if (next.evolution.accepted === ACCEPTED_SEED) throw new Error('No routing change to roll back');
+      const before = next.evolution.accepted;
+      next.evolution.accepted = ACCEPTED_SEED;
+      next.evolution.evaluations.push({
+        benchmarkId: 'owner-rollback', baselineVersion: before, candidateVersion: ACCEPTED_SEED,
+        delta: 0, passed: false, evaluatedAt: now(),
+      });
+      next.evolution.evaluations = next.evolution.evaluations.slice(-12);
+      return { status: 'rolled-back', accepted: ACCEPTED_SEED };
+    });
+  }
   function clear() {
     storage.removeItem(keyName);
     lock();
   }
-  return { saved, unlocked, open, lock, snapshot, statistics, record, rate, context, encryptedBackup, importBackup, clear };
+  return { saved, unlocked, open, lock, snapshot, statistics, record, rate, context, encryptedBackup, importBackup, evolution, evaluateAndAdopt, rollbackRouting, clear };
 }
