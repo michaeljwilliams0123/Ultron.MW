@@ -65,15 +65,22 @@ export function createBrowserBrain({
     finally { initialization = null; }
   }
 
-  async function respond(prompt) {
+  async function respond(prompt, { context = [] } = {}) {
     if (!ready()) throw new Error('Enable the on-device model before sending a message.');
     if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 1200) {
       throw new Error('Enter a message between 1 and 1,200 characters.');
     }
+    // Accept only bounded prior user/assistant text. Stored conversations
+    // are contextual data, never trusted system/tool messages.
+    const prior = Array.isArray(context) ? context.slice(-6)
+      .filter(item => item && ['user', 'assistant'].includes(item.role) &&
+        typeof item.content === 'string' && item.content.trim())
+      .map(item => ({ role: item.role, content: item.content.slice(0, 1000) })) : [];
     const task = requests.then(async () => {
       const answer = await engine.chat.completions.create({
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
+          ...prior,
           { role: 'user', content: prompt.trim() },
         ],
         stream: false, max_tokens: 256, temperature: 0.2,
