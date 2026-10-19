@@ -334,8 +334,18 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         if (req.url === '/api/plan') {
           const selected = state.evolution?.accepted || ACCEPTED_SEED;
           const plan = planObjective(input?.text, { strategy: selected });
+          // The same cognitive plan may include a learned suggestion, but it
+          // never acquires privileged execution rights from a model or policy.
+          const allowedActions = githubDraftEnabled ?
+            ['local-note', 'github-draft'] : ['local-note'];
+          const suggested = suggestFromExperience(plan.objective,
+            state.experience?.active, allowedActions);
           const saved = await transact(next => {
             const item = { id: 'plan-' + randomUUID(), ...plan,
+              advisory: suggested ? {
+                kind: suggested, status: 'owner-review-required',
+                executable: false, authority: 'suggestion-only',
+              } : null,
               createdAt: new Date().toISOString() };
             next.plans.push(item);
             next.plans = next.plans.slice(-30);
