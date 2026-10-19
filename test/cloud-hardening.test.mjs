@@ -7,7 +7,8 @@ import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runCloudEntry } from '../src/cloud-entry.mjs';
-import { REPOSITORY, MARKER, executeCloudTask } from '../src/cloud-cycle.mjs';
+import { REPOSITORY, MARKER, executeCloudTask, formatReceipt,
+  MAX_TASK_ATTEMPTS } from '../src/cloud-cycle.mjs';
 import { createCloudTaskUrl } from '../docs/core/cloud-submit.mjs';
 
 const objective='/system status';
@@ -68,12 +69,11 @@ test('incomplete bounded comment audit fails closed without posting',async()=>{
 });
 
 test('failed attempts and successful receipts for another task do not block a safe retry',async()=>{
-  const { formatReceipt }=await import('../src/cloud-cycle.mjs');
-  for(const prior of [
+  for(const [prior,expectedOrdinal] of [
     await executeCloudTask({repository:REPOSITORY,issueNumber:17,objective:'/repo inspect'},
-      {get:async()=>{throw Error('Unavailable');}}),
+      {get:async()=>{throw Error('Unavailable');}}).then(value=>[value,2]),
     await executeCloudTask({repository:REPOSITORY,issueNumber:17,objective:'/help'},
-      {get:async()=>{}}),
+      {get:async()=>{}}).then(value=>[value,1]),
   ]){
     let postedBody;
     const outcome=await runCloudEntry({...request,
@@ -88,8 +88,45 @@ test('failed attempts and successful receipts for another task do not block a sa
       },
       post:async(_path,data)=>{postedBody=data.body;return {id:42};}});
     assert.equal(outcome.status,'succeeded');
+    assert.equal(outcome.attemptOrdinal,expectedOrdinal);
     assert.ok(postedBody);
   }
+});
+
+test('matching failed attempts have a bounded retry budget and duplicate comments do not consume it',async()=>{
+  const retryEvent={...event,issue:{...event.issue,body:'ULTRON_CLOUD_V1\n/repo inspect'}};
+  const retryRequest={...request,event:retryEvent};
+  const failed=await executeCloudTask({repository:REPOSITORY,issueNumber:17,objective:'/repo inspect'},
+    {get:async()=>{throw Error('Unavailable');},runId:'123',runAttempt:1});
+  const comments=[receiptComment(formatReceipt(failed),1),receiptComment(formatReceipt(failed),2)];
+  for(let ordinal=2;ordinal<=MAX_TASK_ATTEMPTS;ordinal++){
+    let postedBody;
+    const result=await runCloudEntry({...retryRequest,runId:String(123+ordinal),get:async path=>{
+      if(path.includes('/issues/comments/'))return receiptComment(postedBody,40+ordinal);
+      if(path.includes('/git/'))throw Error('Unavailable');
+      return comments;
+    },post:async(_path,data)=>{postedBody=data.body;return {id:40+ordinal};}});
+    assert.equal(result.attemptOrdinal,ordinal);
+    comments.push(receiptComment(postedBody,ordinal));
+  }
+  let writes=0;
+  const exhausted=await runCloudEntry({...retryRequest,get:async()=>comments,
+    post:async()=>{writes++;}});
+  assert.equal(exhausted.status,'retry-exhausted');
+  assert.equal(exhausted.retry.attemptsUsed,MAX_TASK_ATTEMPTS);
+  assert.equal(writes,0);
+});
+
+test('a prior terminal block cannot be replayed into an execution',async()=>{
+  const blocked=await executeCloudTask({repository:REPOSITORY,issueNumber:17,
+    objective:'do something unsupported'},{get:async()=>{}});
+  let writes=0;
+  const result=await runCloudEntry({...request,
+    event:{...event,issue:{...event.issue,body:'ULTRON_CLOUD_V1\ndo something unsupported'}},
+    get:async()=>[receiptComment(formatReceipt(blocked))],post:async()=>{writes++;}});
+  assert.equal(result.status,'blocked');
+  assert.equal(result.retry.disposition,'terminal');
+  assert.equal(writes,0);
 });
 
 test('all failed reads are failed; mixed reads are partial; receipt records executor provenance',async()=>{
@@ -99,6 +136,9 @@ test('all failed reads are failed; mixed reads are partial; receipt records exec
   assert.equal(failed.status,'failed');
   assert.equal(failed.executorSha,'c'.repeat(40));
   assert.equal(failed.runAttempt,2);
+  assert.equal(failed.attemptOrdinal,1);
+  assert.equal(failed.attemptLimit,MAX_TASK_ATTEMPTS);
+  assert.equal(failed.retry.disposition,'eligible');
   assert.equal(failed.runUrl,'https://github.com/'+REPOSITORY+'/actions/runs/123');
   const partial=await executeCloudTask({...task,objective:'/system status and /repo inspect'},{get});
   assert.equal(partial.status,'partial');

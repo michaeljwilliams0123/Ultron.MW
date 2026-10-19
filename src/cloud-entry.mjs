@@ -1,5 +1,6 @@
 import { readFile, appendFile } from 'node:fs/promises';
-import { parseTask,executeCloudTask,formatReceipt,REPOSITORY,taskDigest,parseReceiptComment } from './cloud-cycle.mjs';
+import { parseTask,executeCloudTask,formatReceipt,REPOSITORY,taskDigest,parseReceiptComment,
+  MAX_TASK_ATTEMPTS } from './cloud-cycle.mjs';
 async function github(path,{method='GET',data}={}){
   if(!process.env.GITHUB_TOKEN||!path.startsWith('/repos/'+REPOSITORY+'/'))
     throw Error('Unapproved GitHub API request');
@@ -16,21 +17,36 @@ export async function runCloudEntry({event,eventName,actor,repository,
   executorSha=null,runAttempt=1}={}){
   const task=parseTask(event,eventName,actor,repository);
   const comments=task.issueNumber===null?null:'/repos/'+REPOSITORY+'/issues/'+task.issueNumber+'/comments';
+  let attemptOrdinal=1;
   if(comments){
-    let complete=false;
+    let complete=false,commentOffset=0;
+    const attempts=new Map();
     for(let page=1;page<=10;page++){
       const existing=await get(comments+'?per_page=100&page='+page);
       if(!Array.isArray(existing))throw Error('Cannot audit issue comments');
-      const previous=existing.map(parseReceiptComment).find(receipt=>
-        receipt?.objectiveDigest===taskDigest(task)&&receipt.issueNumber===task.issueNumber&&
-        receipt.status==='succeeded');
-      if(previous)return {status:'already-processed',issueNumber:task.issueNumber,
-        previousRunId:previous.runId};
+      for(const [index,comment] of existing.entries()){
+        const receipt=parseReceiptComment(comment);
+        if(receipt?.objectiveDigest!==taskDigest(task)||receipt.issueNumber!==task.issueNumber)continue;
+        if(receipt.status==='succeeded')return {status:'already-processed',issueNumber:task.issueNumber,
+          previousRunId:receipt.runId};
+        const key=receipt.runId&&Number.isSafeInteger(receipt.runAttempt)?
+          receipt.runId+':'+receipt.runAttempt:'comment:'+(comment.id??commentOffset+index);
+        attempts.set(key,receipt);
+      }
+      commentOffset+=existing.length;
       if(existing.length<100){complete=true;break;}
     }
     if(!complete)throw Error('Comment audit limit reached; no execution occurred');
+    const prior=[...attempts.values()];
+    if(prior.some(receipt=>receipt.status==='blocked'))return {status:'blocked',
+      issueNumber:task.issueNumber,replay:true,retry:{disposition:'terminal',
+        attemptsUsed:prior.length,attemptLimit:MAX_TASK_ATTEMPTS}};
+    if(prior.length>=MAX_TASK_ATTEMPTS)return {status:'retry-exhausted',
+      issueNumber:task.issueNumber,retry:{disposition:'exhausted',
+        attemptsUsed:prior.length,attemptLimit:MAX_TASK_ATTEMPTS}};
+    attemptOrdinal=prior.length+1;
   }
-  const outcome=await executeCloudTask(task,{get,runId,now,executorSha,runAttempt});
+  const outcome=await executeCloudTask(task,{get,runId,now,executorSha,runAttempt,attemptOrdinal});
   if(comments){
     const body=formatReceipt(outcome);
     const posted=await post(comments,{body});

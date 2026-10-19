@@ -3,6 +3,8 @@ import { planObjective } from '../docs/core/cycle.mjs';
 import { commandsFor, capabilityManifest } from '../docs/core/capabilities.mjs';
 export const REPOSITORY='michaeljwilliams0123/Ultron.MW';
 export const MARKER='<!-- ULTRON_CLOUD_RECEIPT_V1 -->';
+export const RECEIPT_SCHEMA='ultron.cloud.receipt.v2';
+export const MAX_TASK_ATTEMPTS=3;
 const allowed=new Set(commandsFor('cloud'));
 const sha=/^[0-9a-f]{40}$/;
 export function taskDigest(task){
@@ -34,20 +36,27 @@ export function parseTask(event,name,actor,repository){
   return {objective:objective.trim(),issueNumber,repository};
 }
 export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(),runId='',
-  executorSha=null,runAttempt=1}={}){
+  executorSha=null,runAttempt=1,attemptOrdinal=1}={}){
   if(task?.repository!==REPOSITORY||typeof get!=='function')throw Error('Invalid cloud context');
-  if((executorSha!==null&&!sha.test(executorSha))||!Number.isSafeInteger(runAttempt)||runAttempt<1)
+  if((executorSha!==null&&!sha.test(executorSha))||!Number.isSafeInteger(runAttempt)||runAttempt<1||
+    !Number.isSafeInteger(attemptOrdinal)||attemptOrdinal<1||attemptOrdinal>MAX_TASK_ATTEMPTS)
     throw Error('Invalid executor provenance');
   const plan=planObjective(task.objective,{strategy:'routing-v2'});
-  const base={schema:'ultron.cloud.receipt.v1',source:'GitHub Actions',
-    issueNumber:task.issueNumber,checkedAt:now(),runId:String(runId).slice(0,32),
+  const startedAt=now();
+  const base={schema:RECEIPT_SCHEMA,source:'GitHub Actions',
+    issueNumber:task.issueNumber,checkedAt:startedAt,startedAt,runId:String(runId).slice(0,32),
     executorSha,runAttempt,runUrl:/^[0-9]{1,32}$/.test(String(runId))?
       'https://github.com/'+REPOSITORY+'/actions/runs/'+runId:null,
+    attemptOrdinal,attemptLimit:MAX_TASK_ATTEMPTS,
     objectiveDigest:taskDigest(task),
     localMachineRequired:false,autonomousWriteAccess:false};
+  const finish=(status,receipts)=>({...base,status,finishedAt:now(),receipts,
+    retry:{disposition:status==='succeeded'||status==='blocked'?'terminal':
+      attemptOrdinal<MAX_TASK_ATTEMPTS?'eligible':'exhausted',
+    attemptsUsed:attemptOrdinal,attemptLimit:MAX_TASK_ATTEMPTS}});
   if(!plan.steps.length||plan.steps.some(step=>!allowed.has(step.command)))
-    return {...base,status:'blocked',receipts:[{command:null,status:'blocked',
-      summary:'Unsupported step: no execution occurred'}]};
+    return finish('blocked',[{command:null,status:'blocked',
+      summary:'Unsupported step: no execution occurred'}]);
   const receipts=[];
   for(const step of plan.steps){
     try{
@@ -79,7 +88,7 @@ export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(
     }
   }
   const successes=receipts.filter(x=>x.status==='succeeded').length;
-  return {...base,status:successes===receipts.length?'succeeded':successes?'partial':'failed',receipts};
+  return finish(successes===receipts.length?'succeeded':successes?'partial':'failed',receipts);
 }
 export function parseReceiptComment(comment){
   if(comment?.user?.login!=='github-actions[bot]'||typeof comment.body!=='string'||
@@ -87,13 +96,15 @@ export function parseReceiptComment(comment){
   const structured=comment.body.split('\nStructured receipt:\n')[1]?.split('\n\nThis job')[0];
   try{
     const receipt=JSON.parse(structured);
-    return receipt?.schema==='ultron.cloud.receipt.v1'?receipt:null;
+    return ['ultron.cloud.receipt.v1',RECEIPT_SCHEMA].includes(receipt?.schema)?receipt:null;
   }catch{return null;}
 }
 export function formatReceipt(outcome){
-  if(outcome?.schema!=='ultron.cloud.receipt.v1')throw Error('Bad receipt');
+  if(outcome?.schema!==RECEIPT_SCHEMA)throw Error('Bad receipt');
   const rows=outcome.receipts.map((r,i)=>(i+1)+'. '+(r.command||'Blocked')+' — '+r.status+': '+r.summary);
   return [MARKER,'### Ultron cloud execution receipt','Status: '+outcome.status,
+    'Attempt: '+outcome.attemptOrdinal+' of '+outcome.attemptLimit+
+      '; retry: '+outcome.retry.disposition,
     'Backend: GitHub-hosted Actions; PC required: No','',...rows,'',
     'Structured receipt:',JSON.stringify(outcome,null,2),
     '','This job did not execute shell commands, private PC actions, or model inference.'].join('\n');
