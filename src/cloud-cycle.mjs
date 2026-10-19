@@ -105,6 +105,7 @@ export function formatReceipt(outcome){
   return [MARKER,'### Ultron cloud execution receipt','Status: '+outcome.status,
     'Attempt: '+outcome.attemptOrdinal+' of '+outcome.attemptLimit+
       '; retry: '+outcome.retry.disposition,
+    'Source authority: exact current main '+(outcome.sourceAuthority?.preReceiptMainSha||'not recorded'),
     'Backend: GitHub-hosted Actions; PC required: No','',...rows,'',
     'Structured receipt:',JSON.stringify(outcome,null,2),
     '','This job did not execute shell commands, private PC actions, or model inference.'].join('\n');

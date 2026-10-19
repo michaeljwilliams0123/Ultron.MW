@@ -68,7 +68,8 @@ test('all-or-nothing refusal of unsafe mixed objectives without Github API call'
 test('issue receipt is posted and independently reread exactly once',async()=>{
   const comments=[];
   const reader=async path=>path.includes('/issues/comments/')?comments.find(x=>x.id===42):
-    path.includes('/comments')?comments:get(path);
+    path.includes('/comments')?comments:
+    path==='/repos/'+REPOSITORY+'/issues/17'?{...issue().issue,state:'open'}:get(path);
   let writes=0;
   const poster=async(path,data)=>{
     assert.equal(path,'/repos/'+REPOSITORY+'/issues/17/comments');
@@ -78,9 +79,11 @@ test('issue receipt is posted and independently reread exactly once',async()=>{
     return comment;
   };
   const req={event:issue(),eventName:'issues',actor:'michaeljwilliams0123',
-    repository:REPOSITORY,get:reader,post:poster};
+    repository:REPOSITORY,get:reader,post:poster,executorSha:SHA};
   const first=await runCloudEntry(req);
   assert.equal(first.status,'succeeded');
+  assert.equal(first.sourceAuthority.admittedMainSha,SHA);
+  assert.equal(first.sourceAuthority.preReceiptMainSha,SHA);
   assert.equal(writes,1);
   assert.ok(comments[0].body.includes(MARKER));
   const replay=await runCloudEntry(req);
