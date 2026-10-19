@@ -324,7 +324,7 @@
     }
   }
   $('cloud-pr').addEventListener('click', () => {
-    routePrToGitHub($('message').value.trim());
+    routePrToGitHub($('code-manifest').value.trim() || $('message').value.trim());
   });
   $('cloud-run').addEventListener('click', () => {
     const objective = $('message').value.trim();
