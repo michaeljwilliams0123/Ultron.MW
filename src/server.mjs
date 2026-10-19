@@ -143,11 +143,27 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           });
         }
         if (req.method === 'GET' && req.url === '/api/owner/jobs') {
+          const all = state.ownerJobs;
+          const completed = all.filter(job => job.status === 'verified');
+          const measured = completed.filter(job => Number.isFinite(job.latencyMs));
           return response(res, 200, {
-            jobs: state.ownerJobs.slice(-30).map(job => {
+            jobs: all.slice(-30).map(job => {
               const { text: _excluded, ...publicJob } = job;
               return publicJob;
             }),
+            outcomes: {
+              prepared: all.filter(job => job.status === 'prepared').length,
+              running: all.filter(job => job.status === 'running').length,
+              verified: completed.length,
+              reconcileRequired: all.filter(job => job.status === 'reconcile-required').length,
+              helpful: completed.filter(job => job.rating === 'helpful').length,
+              notHelpful: completed.filter(job => job.rating === 'not-helpful').length,
+              unrated: completed.filter(job => !job.rating).length,
+              meanVerifiedLatencyMs: measured.length
+                ? Math.round(measured.reduce((sum, job) => sum + job.latencyMs, 0) / measured.length)
+                : null,
+              measurement: 'Observed verified action receipts and explicit owner ratings only',
+            },
           });
         }
         if (req.method === 'POST') {
