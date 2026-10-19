@@ -37,7 +37,7 @@ const PATHS=[
   'test/code-pr.test.mjs','test/cloud.test.mjs','test/self-observer.test.mjs'
 ];
 const shaFor = n=>Number(n+1).toString(16).padStart(40,'0');
-function reader({stale=false,truncated=false,tampered=false}={}){
+function reader({stale=false,truncated=false,tampered=false,ci=false}={}){
   const seen=[];
   let checks=0;
   const get=async path=>{
@@ -45,6 +45,12 @@ function reader({stale=false,truncated=false,tampered=false}={}){
     if(path.endsWith('/git/ref/heads/main'))
       return {object:{sha:stale&&++checks===2?'9'.repeat(40):MAIN}};
     if(path.endsWith('/git/commits/'+MAIN))return {tree:{sha:TREE}};
+    if(path.includes('/actions/runs?head_sha='))return ci?{
+      total_count:1,workflow_runs:[{id:1901,name:'Ultron core verification',
+        path:'.github/workflows/verify.yml',status:'completed',conclusion:'success',
+        event:'push',head_sha:MAIN,head_branch:'main',run_attempt:1,
+        head_repository:{full_name:REPOSITORY}}]
+    }:{total_count:0,workflow_runs:[]};
     if(path.endsWith('/git/trees/'+TREE+'?recursive=1'))return {
       truncated,tree:PATHS.map((p,i)=>({type:'blob',path:p,sha:shaFor(i)})),
     };
@@ -136,4 +142,14 @@ test('real local source scan is evidence-only with no invented GitHub SHA',async
   const tool=await executeReadOnly('/self scan',{root});
   assert.equal(tool.details.kind,'operational-self-observation');
   assert.equal(tool.details.sourceAuthority.kind,'local-filesystem');
+});
+
+test('real exact-main Verify completion changes the self-model from unknown to independently observed success',async()=>{
+  const result=await observeCloudSelf({get:reader({ci:true}).get});
+  assert.equal(result.uncertainty.ciHeadReadiness,'success');
+  assert.equal(result.sourceAuthority.ciObservation.runId,1901);
+  assert.ok(!result.weaknesses.some(x=>x.code==='ci-head-unobserved'));
+  const unknown=await observeCloudSelf({get:reader().get});
+  assert.equal(unknown.uncertainty.ciHeadReadiness,'not-probed');
+  assert.ok(unknown.weaknesses.some(x=>x.code==='ci-head-unobserved'));
 });
