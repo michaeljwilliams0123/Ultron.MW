@@ -154,7 +154,7 @@ test('explicit objective plan persists before executing any tools; repeating run
   assert.equal(state.receipts.length, 1);
   assert.equal(state.plans[0].status, 'completed');
   assert.equal(state.plans[0].steps[0].receiptId, state.receipts[0].id);
-});
+}));
 
 test('unsupported and destructive objective steps are never executed', async () => fixture(async ({ base, post }) => {
   const planResult = await post('/api/plan', 'delete every file');
@@ -171,7 +171,7 @@ test('unsupported and destructive objective steps are never executed', async () 
   assert.equal((await reply.json()).executed, false);
   const state = await (await fetch(base() + '/api/state')).json();
   assert.equal(state.receipts.length, 0);
-});
+}));
 
 test('local routing evaluation persists versioned strategy, and rollback restores original', async () => fixture(async ({ base, post, restart }) => {
   const before = await (await fetch(base() + '/api/state')).json();
@@ -199,7 +199,7 @@ test('local routing evaluation persists versioned strategy, and rollback restore
   });
   assert.equal(rollback.status, 200);
   assert.equal((await rollback.json()).accepted, 'routing-v1');
-});
+}));
 
 test('public shared core source is the only added served module surface', async () => fixture(async ({ base }) => {
   for (const filename of ['/core/cycle.mjs', '/core/providers.mjs']) {
@@ -209,4 +209,4 @@ test('public shared core source is the only added served module surface', async 
   }
   const blocked = await fetch(base() + '/.local/state.json');
   assert.equal(blocked.status, 404);
-});
+}));
