@@ -179,3 +179,9 @@ Comment `@ultron implement src/target.mjs: <description>` on an open Ultron PR t
 After `@ultron verify`, explicit patch or accepted model-generated change, the existing Verify workflow runs. The new `pr-brain-ci.yml` observer independently reads completed workflow evidence and writes the actual success/failure/blocked/stale result and run URL back into the matching PR conversation. GitHub PR comments hold the conversation and CI receipts; no new Issues, private external services, forced pushes, autonomous merges or production rollout.
 
 See [PR Conversation Brain](docs/PR-CONVERSATION-BRAIN.md) for commands and boundaries.
+
+## Exact-head CI closure and self-evidence
+
+Ultron does not rely solely on GitHub chaining a `workflow_run` event after its own GITHUB_TOKEN dispatch. During `@ultron verify`, a valid source patch, or an accepted CPU model edit, the PR brain correlates a newly started Verify run to its precise branch and commit. It polls for an independently read-back terminal result, then replies with the actual conclusion and Actions run URL, or explicitly reports pending. The independent CI feedback workflow ignores unrelated default-branch push checks instead of marking them failures.
+
+The hourly self-scan now also reads exact-current-main Verify metadata and distinguishes observed passing/failing CI from missing evidence. This can actually eliminate the `ci-head-unobserved` finding after an independently checked run; it does **not** imply production/runtime/learning readiness. See [PR Conversation Brain](docs/PR-CONVERSATION-BRAIN.md).
