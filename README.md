@@ -137,3 +137,21 @@ An owner feedback comment starts the **existing** GitHub Actions workflow, which
 The evaluator compares a cautious command-recommendation policy against baseline using the latest chronological quarter as holdout. A candidate needs at least **16 distinct owner-rated tasks**, six positive and four negative older training labels, positive/negative later labels, at least five percentage points measured improvement, **zero new wrong cautions**, and no broadened permission. Insufficient, unchanged, invalid or regressing evidence causes no validated suggestion. An accepted *suggestion* is recomputed from GitHub history, not trained model weights or a self-editing model; it never blocks or runs a tool. The cloud ledger is public and mutable, so this is owner-reported usefulness, not independently adjudicated outcome quality.
 
 **One system, no extra infrastructure:** the old local-only experience evaluator remains for explicitly paired local tests. Cloud feedback uses existing Issues, one cloud evaluator and the same Pages interface. It does not create another agent, SaaS plan, database, browser login, paid AI provider, or SD009WC7 dependency.
+
+## Native code-implementation PR routing
+
+The same **Create PR to main** action accepts a structured, owner-authored JSON manifest and opens a GitHub Issue headed `[Ultron PR] Implement code`. Unlike a plain-language objective, this route **commits real source files** and opens a normal PR against `main` using the existing GitHub Actions executor. No separate API service or PC is required.
+
+```json
+{
+  "objective": "Improve a routing heuristic",
+  "baseSha": "<current 40-character main commit SHA>",
+  "changes": [
+    {"path": "src/brain.mjs", "before": "<exact original substring>", "after": "<replacement substring>"}
+  ]
+}
+```
+
+Up to eight distinct source-file edits or creations (`{"path":"src/new.mjs","create":"<complete contents>"}`) are supported. The JSON must be submitted **as public text** through the authenticated owner Issue. The executor checks current `main` against `baseSha`, rereads source, applies each exact once-only context replacement, creates a single atomic tree/commit, independently verifies the resulting branch/PR/files, dispatches head verification, and posts a receipt. A changed `main` or ambiguous patch fails instead of silently applying an incorrect edit. Branch names are unique per Issue and are not force-updated.
+
+**Boundaries:** The route executes already-authored source changes; neither GitHub Pages nor GitHub Actions generates code from an arbitrary English objective. Optional browser/local inference or a connected coding agent can author the manifest, but must not be confused with authenticated GitHub publication. No permissions are self-granted, no security gate is bypassed, no automatic merge or deployment is performed, and verification remains observable. Reward and learning loops should score measured task completion and successful recovery, **not** the evasion of access controls or test failures. This is an implementation route, not a claim of AGI.
