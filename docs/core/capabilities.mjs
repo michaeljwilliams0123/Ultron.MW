@@ -8,11 +8,13 @@ export const CAPABILITIES=Object.freeze([
     localScope:'Current loopback Node runtime',cloudScope:'Current ephemeral Actions runner'},
   {id:'repo-inspect',command:'/repo inspect',description:'Inspect Ultron repository structure',
     localScope:'Fixed project entries in the local checkout',cloudScope:'Authoritative GitHub main tree'},
+  {id:'self-scan',command:'/self scan',description:'Inspect Ultron source, routes, gaps and uncertainty',
+    localScope:'Local file-system source audit',cloudScope:'Exact current GitHub main source and route audit'},
   {id:'learning-status',command:'/learning status',description:'Read learning evidence status',
     localScope:'Persisted local evidence ledger',cloudScope:'Bot-authored verified task receipts (not owner-rated learning)'},
 ].map(entry=>Object.freeze({...entry,authority:'read-only',readiness:'implemented',
   environments:Object.freeze(['local','cloud']),
-  proof:Object.freeze(['test/runtime.test.mjs','test/cloud.test.mjs','test/capabilities.test.mjs']),
+  proof:Object.freeze(['test/runtime.test.mjs','test/cloud.test.mjs','test/capabilities.test.mjs','test/self-observer.test.mjs']),
 })));
 
 export function commandsFor(environment){
