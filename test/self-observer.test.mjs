@@ -13,6 +13,8 @@ const CONTENT=Object.freeze({
   'docs/core/capabilities.mjs':'command: /self scan',
   'docs/core/cycle.mjs':'route /self scan',
   '.github/workflows/self-scan-pr.yml':'run: node src/self-scan-pr.mjs\npull-requests: write',
+  '.github/workflows/pr-brain.yml':'run: node src/pr-brain.mjs\nref: main',
+  'src/pr-brain.mjs':'handlePrConversation routePrTurn',
   'src/self-scan-pr.mjs':'publishSelfScanPr SELF_SCAN_PATH',
   'src/cloud-cycle.mjs':"case '/self scan':",
   'src/cloud-pr.mjs':'import {launchCodePr}',
@@ -22,7 +24,8 @@ const CONTENT=Object.freeze({
 });
 const PATHS=[
   ...Object.keys(CONTENT),
-  'src/code-pr.mjs','test/self-scan-pr.test.mjs','src/grokbot-governor.mjs','src/cognitive-world-model.mjs',
+  'src/code-pr.mjs','test/self-scan-pr.test.mjs','test/pr-brain.test.mjs',
+  'test/pr-brain-patch.test.mjs','src/pr-brain-patch.mjs','src/grokbot-governor.mjs','src/cognitive-world-model.mjs',
   'src/learning.mjs','src/self-observer.mjs','test/cloud-pr.test.mjs',
   'test/code-pr.test.mjs','test/cloud.test.mjs','test/self-observer.test.mjs'
 ];

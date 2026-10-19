@@ -12,9 +12,12 @@ const CHECK = Object.freeze([
   '.github/workflows/cloud-pr.yml',
   '.github/workflows/cloud-objective.yml',
   '.github/workflows/self-scan-pr.yml',
+  '.github/workflows/pr-brain.yml',
   'src/cloud-pr.mjs',
   'src/code-pr.mjs',
   'src/self-scan-pr.mjs',
+  'src/pr-brain.mjs',
+  'src/pr-brain-patch.mjs',
   'src/cloud-cycle.mjs',
   'docs/core/capabilities.mjs',
   'docs/core/cycle.mjs',
@@ -25,6 +28,8 @@ const CHECK = Object.freeze([
   'test/cloud-pr.test.mjs',
   'test/code-pr.test.mjs',
   'test/self-scan-pr.test.mjs',
+  'test/pr-brain.test.mjs',
+  'test/pr-brain-patch.test.mjs',
   'test/cloud.test.mjs',
   'test/self-observer.test.mjs',
 ]);
@@ -37,6 +42,8 @@ const SOURCE_CHECKS = Object.freeze({
   '.github/workflows/cloud-objective.yml':['node src/cloud-entry.mjs'],
   '.github/workflows/self-scan-pr.yml':['node src/self-scan-pr.mjs','pull-requests: write'],
   'src/self-scan-pr.mjs':['publishSelfScanPr','SELF_SCAN_PATH'],
+  '.github/workflows/pr-brain.yml':['node src/pr-brain.mjs','ref: main'],
+  'src/pr-brain.mjs':['handlePrConversation','routePrTurn'],
   '.github/workflows/verify.yml':['node scripts/verify.mjs'],
 });
 
