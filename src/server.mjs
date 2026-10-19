@@ -7,6 +7,8 @@ import { LearningLoop } from './learning.mjs';
 import { COMMANDS, executeReadOnly } from './operations.mjs';
 import { createLocalOllama } from './providers/ollama.mjs';
 import { createBrain } from './brain.mjs';
+import { ACCEPTED_SEED, CANDIDATE, planObjective, evaluateRouting } from '../docs/core/cycle.mjs';
+import { selectExecution } from '../docs/core/providers.mjs';
 
 const sourcePath = fileURLToPath(import.meta.url);
 const defaultRoot = resolve(dirname(sourcePath), '..');
@@ -37,7 +39,9 @@ async function readJson(req) {
 
 export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama() } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
-  let state = { objectives: [], receipts: [], learning: new LearningLoop().snapshot() };
+  let state = { objectives: [], receipts: [], plans: [], conversations: [],
+    evolution: { accepted: ACCEPTED_SEED, evaluations: [] },
+    learning: new LearningLoop().snapshot() };
   try {
     const loaded = JSON.parse(await readFile(statePath, 'utf8'));
     if (!Array.isArray(loaded.objectives) || !loaded.learning ||
@@ -45,8 +49,14 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
       throw new Error('Stored state has invalid structure');
     }
     // Migrate the original draft-only file without discarding existing objectives.
-    state = { objectives: loaded.objectives, receipts: loaded.receipts || [],
-      learning: new LearningLoop(loaded.learning).snapshot() };
+    state = {
+      objectives: loaded.objectives, receipts: loaded.receipts || [],
+      plans: Array.isArray(loaded.plans) ? loaded.plans : [],
+      conversations: Array.isArray(loaded.conversations) ? loaded.conversations : [],
+      evolution: loaded.evolution?.accepted === CANDIDATE ? loaded.evolution :
+        { accepted: ACCEPTED_SEED, evaluations: [] },
+      learning: new LearningLoop(loaded.learning).snapshot(),
+    };
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const brain = createBrain({ provider, root, snapshot: () => ({ learning: new LearningLoop(state.learning).snapshot() }) });
   let pending = Promise.resolve();
@@ -83,21 +93,116 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
       if (req.method === 'GET' && req.url === '/app.js') {
         return response(res, 200, await readFile(resolve(root, 'docs', 'app.js'), 'utf8'), 'text/javascript; charset=utf-8');
       }
+      if (req.method === 'GET' && ['/core/cycle.mjs', '/core/providers.mjs'].includes(req.url)) {
+        return response(res, 200,
+          await readFile(resolve(root, 'docs', req.url.slice(1)), 'utf8'),
+          'text/javascript; charset=utf-8');
+      }
       if (req.method === 'GET' && req.url === '/api/health') {
         const model = await brain.status();
         return response(res, 200, { name: 'Ultron', connected: true, mode: 'local-read-only', executionReady: true, autonomousReady: false, modelReady: model.ready, model: model.ready ? model.model : null });
       }
       if (req.method === 'GET' && req.url === '/api/capabilities') {
         const model = await brain.status();
-        return response(res, 200, { runtime: 'local', autonomy: false, commands: COMMANDS, providers: model.ready ? [model.model] : [] });
+        return response(res, 200, {
+          runtime: 'local', autonomy: false, commands: COMMANDS,
+          providers: model.ready ? [{ id: 'ollama', model: model.model, ready: true }] : [],
+          choices: {
+            reasoning: selectExecution({ host: 'local', localModelReady: model.ready }),
+            tools: selectExecution({ host: 'local', task: 'read-only', deterministicToolReady: true }),
+          },
+        });
       }
       if (req.method === 'GET' && req.url === '/api/state') {
         const learning = new LearningLoop(state.learning);
         return response(res, 200, {
           objectives: state.objectives.slice(-100), receipts: state.receipts.slice(-100),
+          plans: state.plans.slice(-30), evolution: state.evolution,
+          conversations: state.conversations.slice(-24),
           acceptedVersion: learning.accepted, observations: learning.observations.size,
           candidates: learning.candidates.size, executionReady: true, autonomousReady: false,
         });
+      }
+      if (req.method === 'POST' && [
+        '/api/plan', '/api/plan/run', '/api/learning/evaluate',
+        '/api/learning/rollback',
+      ].includes(req.url)) {
+        if (!allowedOrigins.has(req.headers.origin) || req.headers['x-ultron-client'] !== 'local-ui-v1') {
+          return response(res, 403, { error: 'Same-origin local UI request required' });
+        }
+        const input = await readJson(req);
+        if (req.url === '/api/plan') {
+          const selected = state.evolution?.accepted || ACCEPTED_SEED;
+          const plan = planObjective(input?.text, { strategy: selected });
+          const saved = await transact(next => {
+            const item = { id: 'plan-' + randomUUID(), ...plan,
+              createdAt: new Date().toISOString() };
+            next.plans.push(item);
+            next.plans = next.plans.slice(-30);
+            return item;
+          });
+          return response(res, 201, { plan: saved, executed: false });
+        }
+        if (req.url === '/api/plan/run') {
+          if (typeof input?.id !== 'string' || !/^plan-[0-9a-f-]{36}$/.test(input.id)) {
+            return response(res, 400, { error: 'Valid plan ID required' });
+          }
+          const result = await transact(async next => {
+            const plan = next.plans.find(x => x.id === input.id);
+            if (!plan) return null;
+            const receipts = [];
+            for (const step of plan.steps) {
+              if (step.status !== 'ready' || !step.command) continue;
+              try {
+                const outcome = await executeReadOnly(step.command, { root,
+                  learning: new LearningLoop(next.learning).snapshot() });
+                const receipt = { id: 'receipt-' + randomUUID(), planId: plan.id,
+                  kind: 'deterministic-read', command: outcome.command,
+                  status: 'succeeded', summary: outcome.summary,
+                  details: outcome.details, createdAt: new Date().toISOString() };
+                receipts.push(receipt);
+                next.receipts.push(receipt);
+                step.status = 'succeeded';
+                step.receiptId = receipt.id;
+              } catch {
+                step.status = 'failed';
+                step.reason = 'Read-only operation failed; no successful execution receipt was produced.';
+              }
+            }
+            plan.status = plan.steps.every(step => step.status === 'succeeded') ? 'completed'
+              : plan.steps.some(step => step.status === 'succeeded') ? 'partial' : 'blocked';
+            plan.updatedAt = new Date().toISOString();
+            next.receipts = next.receipts.slice(-100);
+            return { plan, receipts };
+          });
+          if (!result) return response(res, 404, { error: 'Plan not found' });
+          return response(res, 200, { ...result, executed: result.receipts.length > 0, autonomous: false });
+        }
+        if (req.url === '/api/learning/evaluate') {
+          const result = await transact(next => {
+            const accepted = next.evolution.accepted;
+            if (accepted === CANDIDATE) return { status: 'already-adopted', accepted };
+            const report = evaluateRouting({ accepted });
+            next.evolution.evaluations.push({
+              benchmarkId: report.benchmarkId, baselineVersion: report.baselineVersion,
+              candidateVersion: report.candidateVersion, baselineAccuracy: report.baselineAccuracy,
+              candidateAccuracy: report.candidateAccuracy, delta: report.delta, passed: report.passed,
+              criticalRegressions: report.criticalRegressions, regressions: report.regressions,
+              total: report.total, evaluatedAt: report.evaluatedAt,
+            });
+            next.evolution.evaluations = next.evolution.evaluations.slice(-12);
+            if (report.passed) next.evolution.accepted = report.candidateVersion;
+            return { ...report, status: report.passed ? 'adopted' : 'rejected' };
+          });
+          return response(res, 200, { evaluation: result });
+        }
+        if (input?.reason !== 'owner-request') return response(res, 400, { error: 'Explicit rollback reason required' });
+        const result = await transact(next => {
+          if (next.evolution.accepted === ACCEPTED_SEED) return { status: 'no-change' };
+          next.evolution.accepted = ACCEPTED_SEED;
+          return { status: 'rolled-back', accepted: ACCEPTED_SEED };
+        });
+        return response(res, 200, result);
       }
       if (req.method === 'POST' && (req.url === '/api/objectives' || req.url === '/api/execute' || req.url === '/api/think')) {
         if (!allowedOrigins.has(req.headers.origin) || req.headers['x-ultron-client'] !== 'local-ui-v1') {
@@ -113,7 +218,11 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           if (!modelStatus.ready) {
             return response(res, 503, { error: 'Local model unavailable: ' + modelStatus.reason });
           }
-          const outcome = await brain.think(text);
+          const context = state.conversations.slice(-3).flatMap(entry => [
+            { role: 'user', content: entry.prompt },
+            { role: 'assistant', content: entry.answer },
+          ]);
+          const outcome = await brain.think(text, { context });
           const saved = await transact(next => {
             let toolReceipt = null;
             if (outcome.toolResult) {
@@ -133,6 +242,11 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
             };
             next.receipts.push(receipt);
             next.receipts = next.receipts.slice(-100);
+            next.conversations.push({
+              id: receipt.id, prompt: text, answer: outcome.text,
+              model: outcome.model, createdAt: receipt.createdAt,
+            });
+            next.conversations = next.conversations.slice(-24);
             return { receipt, toolReceipt };
           });
           return response(res, 201, { ...saved, executed: !!saved.toolReceipt, autonomous: false });

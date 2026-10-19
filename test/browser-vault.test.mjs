@@ -183,3 +183,72 @@ test('storage failure during import retains existing encrypted memory', async ()
   assert.equal(target.encryptedBackup(), original);
   assert.equal(target.snapshot().exchanges[0].prompt, 'Question original');
 });
+
+
+test('routing evaluations adopt only measured improvements and stay encrypted across refresh', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  assert.equal(vault.evolution().accepted, 'routing-v1');
+  const result = await vault.evaluateAndAdopt();
+  assert.equal(result.status, 'adopted');
+  assert.ok(result.delta > 0);
+  assert.equal(result.criticalRegressions, 0);
+  assert.equal(vault.evolution().accepted, 'routing-v2');
+  assert.equal((await vault.evaluateAndAdopt()).status, 'already-adopted');
+  assert.doesNotMatch(storage.getItem(VAULT_KEY), /routing-v2|benchmark/);
+  vault.lock();
+  const opened = create(storage);
+  assert.equal(opened.evolution().accepted, 'routing-v1');
+  await opened.open(passphrase);
+  assert.equal(opened.evolution().accepted, 'routing-v2');
+  assert.equal(opened.evolution().evaluations.length, 1);
+  const restored = await opened.rollbackRouting('owner-request');
+  assert.equal(restored.accepted, 'routing-v1');
+});
+
+test('legacy version-one encrypted backups upgrade to a versioned learning ledger without losing chats', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  const recorded = await vault.record(record(9));
+  const original = vault.encryptedBackup();
+  vault.lock();
+  const newSession = create(storage);
+  await newSession.open(passphrase);
+  assert.equal(newSession.snapshot().exchanges[0].id, recorded.id);
+  assert.equal(newSession.evolution().accepted, 'routing-v1');
+  assert.ok(original.includes('ciphertext'));
+});
+
+test('failed persistence cannot silently adopt a routing candidate', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  storage.failWrites(true);
+  await assert.rejects(() => vault.evaluateAndAdopt(), /storage failure/);
+  assert.equal(vault.evolution().accepted, 'routing-v1');
+  storage.failWrites(false);
+  assert.equal((await vault.evaluateAndAdopt()).status, 'adopted');
+});
+
+
+test('browser plans are encrypted, restored and remain non-executable on reload', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  const plan = {
+    objective: 'inspect repository',
+    strategy: 'routing-v1', autonomous: false,
+    steps: [{ index: 0, description: 'inspect repository', command: null,
+      kind: 'needs-capability', status: 'blocked', reason: 'not available' }],
+  };
+  const saved = await vault.savePlan(plan);
+  assert.equal(saved.status, 'draft');
+  assert.doesNotMatch(storage.getItem(VAULT_KEY), /inspect repository/);
+  vault.lock();
+  const reloaded = create(storage);
+  await reloaded.open(passphrase);
+  assert.equal(reloaded.snapshot().plans[0].objective, 'inspect repository');
+  assert.equal(reloaded.snapshot().plans[0].autonomous, false);
+});

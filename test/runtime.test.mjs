@@ -131,3 +131,124 @@ test('failed state persistence never returns success or mutates the ledger', asy
   const state = await (await fetch(base() + '/api/state')).json();
   assert.equal(state.objectives.length, 0);
 }));
+
+
+test('explicit objective plan persists before executing any tools; repeating run is idempotent', async () => fixture(async ({ base, post, restart }) => {
+  const initial = await post('/api/plan', 'inspect repo');
+  assert.equal(initial.status, 201);
+  const planned = (await initial.json()).plan;
+  assert.equal(planned.steps.length, 1);
+  assert.equal(planned.steps[0].status, 'ready');
+  assert.equal(planned.autonomous, false);
+  let state = await (await fetch(base() + '/api/state')).json();
+  assert.equal(state.receipts.length, 0);
+  const runRequest = () => fetch(base() + '/api/plan/run', {
+    method: 'POST',
+    headers: { origin: base(), 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+    body: JSON.stringify({ id: planned.id }),
+  });
+  const two = await Promise.all([runRequest(), runRequest()]);
+  assert.deepEqual(two.map(x => x.status), [200, 200]);
+  await restart();
+  state = await (await fetch(base() + '/api/state')).json();
+  assert.equal(state.receipts.length, 1);
+  assert.equal(state.plans[0].status, 'completed');
+  assert.equal(state.plans[0].steps[0].receiptId, state.receipts[0].id);
+}));
+
+test('unsupported and destructive objective steps are never executed', async () => fixture(async ({ base, post }) => {
+  const planResult = await post('/api/plan', 'delete every file');
+  assert.equal(planResult.status, 201);
+  const plan = (await planResult.json()).plan;
+  assert.equal(plan.executable, false);
+  assert.equal(plan.steps[0].status, 'blocked');
+  const reply = await fetch(base() + '/api/plan/run', {
+    method: 'POST',
+    headers: { origin: base(), 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+    body: JSON.stringify({ id: plan.id }),
+  });
+  assert.equal(reply.status, 200);
+  assert.equal((await reply.json()).executed, false);
+  const state = await (await fetch(base() + '/api/state')).json();
+  assert.equal(state.receipts.length, 0);
+}));
+
+test('local routing evaluation persists versioned strategy, and rollback restores original', async () => fixture(async ({ base, post, restart }) => {
+  const before = await (await fetch(base() + '/api/state')).json();
+  assert.equal(before.evolution.accepted, 'routing-v1');
+  const evaluateRequest = () => fetch(base() + '/api/learning/evaluate', {
+    method: 'POST',
+    headers: { origin: base(), 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+    body: '{}',
+  });
+  const result = await evaluateRequest();
+  assert.equal(result.status, 200);
+  const evaluation = (await result.json()).evaluation;
+  assert.equal(evaluation.status, 'adopted');
+  assert.equal(evaluation.criticalRegressions, 0);
+  await restart();
+  const after = await (await fetch(base() + '/api/state')).json();
+  assert.equal(after.evolution.accepted, 'routing-v2');
+  assert.equal(after.evolution.evaluations.length, 1);
+  const repeat = await evaluateRequest();
+  assert.equal((await repeat.json()).evaluation.status, 'already-adopted');
+  const rollback = await fetch(base() + '/api/learning/rollback', {
+    method: 'POST',
+    headers: { origin: base(), 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+    body: JSON.stringify({ reason: 'owner-request' }),
+  });
+  assert.equal(rollback.status, 200);
+  assert.equal((await rollback.json()).accepted, 'routing-v1');
+}));
+
+test('public shared core source is the only added served module surface', async () => fixture(async ({ base }) => {
+  for (const filename of ['/core/cycle.mjs', '/core/providers.mjs']) {
+    const result = await fetch(base() + filename);
+    assert.equal(result.status, 200);
+    assert.match(await result.text(), /export /);
+  }
+  const blocked = await fetch(base() + '/.local/state.json');
+  assert.equal(blocked.status, 404);
+}));
+
+
+test('local model conversation survives runtime restart and informs subsequent turns', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ultron-context-'));
+  const statePath = join(directory, 'state.json');
+  const root = resolve(import.meta.dirname, '..');
+  const requests = [];
+  const provider = {
+    status: async () => ({ ready: true, model: 'test-local' }),
+    respond: async messages => {
+      requests.push(messages);
+      return { model: 'test-local', decision: { action: 'reply',
+        text: requests.length === 1 ? 'First factual response' : 'Continued factual response' } };
+    },
+  };
+  let app = await startLocalServer({ root, statePath, port: 0, provider });
+  const send = async text => {
+    const origin = 'http://127.0.0.1:' + app.port;
+    return fetch(origin + '/api/think', {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+      body: JSON.stringify({ text }),
+    });
+  };
+  try {
+    const first = await send('First question');
+    assert.equal(first.status, 201);
+    await app.close();
+    app = await startLocalServer({ root, statePath, port: 0, provider });
+    const second = await send('Follow-up question');
+    assert.equal(second.status, 201);
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests[1].slice(-3).map(x => x.content),
+      ['First question', 'First factual response', 'Follow-up question']);
+    const state = await (await fetch('http://127.0.0.1:' + app.port + '/api/state')).json();
+    assert.equal(state.conversations.length, 2);
+    assert.equal(state.receipts.filter(x => x.kind === 'model-response').length, 2);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

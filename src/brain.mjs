@@ -27,12 +27,18 @@ export function createBrain({ provider, root, snapshot }) {
   }
   return {
     status: () => provider.status(),
-    async think(text) {
+    async think(text, { context = [] } = {}) {
       if (typeof text !== 'string' || !text.trim() || text.length > 1200) {
         throw Object.assign(new Error('Objective must be 1–1200 characters'), { statusCode: 400 });
       }
+      // Prior exchanges are untrusted data, not system instructions or tools.
+      const prior = Array.isArray(context) ? context.slice(-6).filter(item =>
+        item && ['user', 'assistant'].includes(item.role) &&
+        typeof item.content === 'string' && item.content.trim()
+      ).map(item => ({ role: item.role, content: item.content.slice(0, 850) })) : [];
       const first = await provider.respond([
         { role: 'system', content: SYSTEM },
+        ...prior,
         { role: 'user', content: text.trim() },
       ]);
       const decision = validateDecision(first.decision);
@@ -42,6 +48,7 @@ export function createBrain({ provider, root, snapshot }) {
       const toolResult = await executeReadOnly(decision.command, { root, learning: snapshot().learning });
       const second = await provider.respond([
         { role: 'system', content: SYSTEM + '\nA read-only command already ran. Reply ONLY with action=reply and factual summary based on the provided tool result.' },
+        ...prior,
         { role: 'user', content: text.trim() },
         { role: 'user', content: 'Read-only tool output (verified by Ultron runtime): ' + JSON.stringify(toolResult) },
       ]);

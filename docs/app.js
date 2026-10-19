@@ -4,6 +4,7 @@
   let connected = false;
   let modelReady = false;
   let browserBrain = null;
+  let localEvolution = null;
   let vault = null;
   const ephemeralExchanges = [];
   const title = {
@@ -34,12 +35,17 @@
     $('feed').replaceChildren();
     const entries = [
       ...state.objectives.slice(-12).map(x => ({ label: 'You · saved draft', message: x.text, at: x.createdAt })),
+      ...(state.plans || []).slice(-8).map(x => ({ label: 'Ultron · objective ' + x.status,
+        message: x.objective, at: x.createdAt, plan: x })),
       ...state.receipts.slice(-12).map(x => ({
         label: x.kind === 'model-response' ? 'Ultron · local model (unverified narrative)' : 'Ultron · ' + x.status + ' · ' + x.command,
         message: x.summary + '\n' + JSON.stringify(x.details), at: x.createdAt,
       })),
     ].sort((a, b) => String(a.at || '').localeCompare(String(b.at || ''))).slice(-15);
-    for (const item of entries) line(item.label, item.message);
+    for (const item of entries) {
+      const card = line(item.label, item.message);
+      if (item.plan) addPlanControls(card, item.plan);
+    }
     if (!entries.length) line('Ultron · capabilities',
       'Use /help, /system status, /repo inspect, /learning status for verified read-only operations. Other text is saved as a draft.');
   }
@@ -65,6 +71,7 @@
       ? 'Unlocked on this device. Responses are encrypted before storing. Remember your passphrase.'
       : present ? 'Encrypted memory exists on this device. Enter your passphrase to unlock it.' :
         'Memory is off. Browser AI conversations disappear when you reload.');
+    $('active-routing').textContent = 'Accepted routing strategy: ' + (open ? vault.evolution().accepted : 'routing-v1 (locked)');
     $('learning-state').textContent = open
       ? info.total + ' saved responses · ' + info.helpful + ' helpful · ' +
         info.notHelpful + ' not helpful · ' + info.unrated +
@@ -113,7 +120,11 @@
       const card = line('Ultron · saved model answer (unverified)', item.answer);
       addFeedbackCard(card, item.id, item.feedback);
     }
-    if (!items.length) line('Ultron · memory ready',
+    for (const plan of vault.snapshot().plans.slice(-4)) {
+      const card = line('Ultron · encrypted saved plan (not executed)', plan.objective);
+      addPlanControls(card, plan);
+    }
+    if (!items.length && !vault.snapshot().plans.length) line('Ultron · memory ready',
       'Your next browser AI responses can be saved here. This memory stays on this device and cannot perform tools.');
   }
 
@@ -223,6 +234,143 @@
     }
   });
 
+
+  function acceptedRouting() {
+    return connected ? localEvolution?.accepted || 'routing-v1' :
+      vault?.unlocked() ? vault.evolution().accepted : 'routing-v1';
+  }
+  function addPlanControls(card, plan) {
+    const pre = document.createElement('pre');
+    pre.className = 'plan-list';
+    const rows = plan.steps.map(step =>
+      String(step.index + 1) + '. ' + (step.command || step.description) +
+      ' — ' + step.status + (step.receiptId ? ' · ' + step.receiptId : ''));
+    pre.textContent = rows.join('\n');
+    card.appendChild(pre);
+    if (!connected || !plan.id || !plan.steps.some(step => step.status === 'ready')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'plan-run';
+    button.textContent = 'Run approved read-only steps';
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        const r = await fetch('/api/plan/run', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+          body: JSON.stringify({ id: plan.id }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Plan execution rejected');
+        line('Ultron · execution receipt', data.receipts.length +
+          ' read-only steps completed; no privileged actions were run.');
+        await sync();
+      } catch (error) {
+        button.disabled = false;
+        line('Ultron · execution rejected',
+          error instanceof Error ? error.message : 'No verified execution occurred');
+      }
+    });
+    card.appendChild(button);
+  }
+
+  async function showPlan(text) {
+    if (typeof text !== 'string' || !text.trim()) {
+      line('Ultron · plan error', 'Enter an objective first.');
+      return;
+    }
+    try {
+      let plan;
+      if (connected) {
+        const response = await fetch('/api/plan', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+          body: JSON.stringify({ text }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Plan could not be persisted');
+        plan = data.plan;
+      } else {
+        const { planObjective } = await import('./core/cycle.mjs');
+        plan = planObjective(text, { strategy: acceptedRouting() });
+        if (vault?.unlocked()) plan = await vault.savePlan(plan);
+      }
+      const card = line('Ultron · ' + (connected ? 'saved local objective plan' :
+        vault?.unlocked() ? 'encrypted browser plan (not executed)' : 'session-only draft plan'), plan.objective);
+      addPlanControls(card, plan);
+      if (!connected) line('Ultron · execution boundary',
+        'This Pages interface can plan safe steps but cannot execute private PC or GitHub tools.');
+    } catch (error) {
+      line('Ultron · planning failed',
+        error instanceof Error ? error.message : 'Could not create plan');
+    }
+  }
+
+  $('plan-objective').addEventListener('click', async () => {
+    await showPlan($('message').value.trim());
+  });
+  $('run-routing-eval').addEventListener('click', async () => {
+    const button = $('run-routing-eval');
+    button.disabled = true;
+    try {
+      let evaluation;
+      if (connected) {
+        const response = await fetch('/api/learning/evaluate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+          body: '{}',
+        });
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Evaluation failed');
+        evaluation = data.evaluation;
+        await sync();
+      } else if (vault?.unlocked()) {
+        evaluation = await vault.evaluateAndAdopt();
+        updateVaultUI();
+      } else {
+        const { evaluateRouting } = await import('./core/cycle.mjs');
+        evaluation = evaluateRouting();
+        evaluation.status = 'preview-only';
+      }
+      if (evaluation.status === 'already-adopted') {
+        $('routing-report').textContent = 'Already using routing-v2. No new candidate has been evaluated.';
+      } else {
+        $('routing-report').textContent =
+          evaluation.status + ' · ' + evaluation.total + ' labeled cases · baseline ' +
+          Math.round(evaluation.baselineAccuracy * 100) + '% · candidate ' +
+          Math.round(evaluation.candidateAccuracy * 100) + '% · delta +' +
+          Math.round(evaluation.delta * 100) + ' percentage points · ' +
+          evaluation.regressions + ' regressions · ' +
+          evaluation.criticalRegressions + ' critical regressions. ' +
+          (evaluation.status === 'preview-only' ? 'Unlock memory to persist an adoption.' :
+          evaluation.passed ? 'Improved routing strategy adopted.' :
+            'Candidate rejected, accepted strategy unchanged.');
+      }
+    } catch (error) {
+      $('routing-report').textContent = 'Evaluation failed: ' +
+        (error instanceof Error ? error.message : 'unknown error');
+    } finally { button.disabled = false; }
+  });
+  $('rollback-routing').addEventListener('click', async () => {
+    try {
+      if (connected) {
+        const response = await fetch('/api/learning/rollback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+          body: JSON.stringify({ reason: 'owner-request' }),
+        });
+        if (!response.ok) throw Error('Rollback rejected');
+        await sync();
+      } else if (vault?.unlocked()) {
+        await vault.rollbackRouting('owner-request');
+        updateVaultUI();
+      } else throw Error('Unlock memory to roll back an adopted routing strategy');
+      $('routing-report').textContent = 'Routing strategy restored to routing-v1.';
+    } catch (error) {
+      $('routing-report').textContent = error instanceof Error ? error.message : 'Rollback failed';
+    }
+  });
+
   const browserButton = $('enable-browser-ai');
   const browserInfo = $('browser-ai-info');
   if (!local) {
@@ -274,6 +422,7 @@
       if (!hr.ok || !sr.ok) throw Error('Local runtime unavailable');
       const health = await hr.json();
       const state = await sr.json();
+      localEvolution = state.evolution || null;
       if (health.name !== 'Ultron' || health.connected !== true) throw Error('Wrong local runtime');
       connected = true;
       modelReady = health.modelReady === true;
@@ -281,7 +430,8 @@
       $('status').classList.add('live');
       $('runtime').textContent = 'Local';
       $('objectives').textContent = String(state.objectives.length);
-      $('release').textContent = state.acceptedVersion || 'seed-v1';
+      $('release').textContent = state.evolution?.accepted || state.acceptedVersion || 'routing-v1';
+      $('active-routing').textContent = 'Accepted routing strategy: ' + acceptedRouting();
       $('hero-sub').textContent = modelReady ? 'Local model '+ health.model +' ready · bounded tool access' : 'Deterministic tools online · AI provider not connected';
       $('learning-state').textContent = String(state.observations) + ' evidence observations · ' +
         String(state.candidates) + ' candidates · accepted release ' + state.acceptedVersion + '.';
@@ -301,6 +451,10 @@
     const text = input.value.trim();
     if (!text) return;
     if (!connected) {
+      if (text.startsWith('/plan ')) {
+        await showPlan(text.slice(6).trim());
+        return;
+      }
       if (browserBrain?.ready()) {
         if (text.startsWith('/')) {
           line('Ultron · unsupported', 'Browser-only AI cannot run PC, GitHub, or system commands. Connect the private local runtime for tools.');
@@ -345,6 +499,10 @@
         return;
       }
       line('Ultron · unsaved', 'No execution engine is active. Enable on-device AI or start the private local runtime. No message was saved.');
+      return;
+    }
+    if (text.startsWith('/plan ')) {
+      await showPlan(text.slice(6).trim());
       return;
     }
     const url = text.startsWith('/') ? '/api/execute' : modelReady ? '/api/think' : '/api/objectives';
