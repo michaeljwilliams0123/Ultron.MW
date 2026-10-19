@@ -465,9 +465,13 @@
       if (status.paired !== true) throw new Error('Not paired');
       $('action-controls').classList.remove('hidden');
       await refreshOwnerOutcomes();
+      const githubOption = $('action-kind').querySelector('option[value="github-draft"]');
+      githubOption.disabled = !status.actions?.includes('github-draft');
+      if (githubOption.disabled) $('action-kind').value = 'local-note';
       actionStatus.textContent = status.github.connected
-        ? 'Owner paired; local note writing ready; GitHub authenticated as ' + status.github.account
-        : 'Owner paired; local note writing ready; GitHub CLI not currently authenticated.';
+        ? 'Owner paired; local notes ready. GitHub identity: ' + status.github.account +
+          (githubOption.disabled ? ' · GitHub writes remain disabled pending acceptance.' : ' · GitHub draft adapter enabled.')
+        : 'Owner paired; local notes ready. GitHub CLI is not currently authenticated.';
     } catch {
       ownerKey = '';
       $('action-controls').classList.add('hidden');
