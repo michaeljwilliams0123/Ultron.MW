@@ -65,15 +65,29 @@ export function createBrowserBrain({
     finally { initialization = null; }
   }
 
-  async function respond(prompt) {
+  async function respond(prompt, { context = [] } = {}) {
     if (!ready()) throw new Error('Enable the on-device model before sending a message.');
     if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 1200) {
       throw new Error('Enter a message between 1 and 1,200 characters.');
+    }
+    // Cap context size to prevent untrusted saved text exhausting model memory.
+    const prior = [];
+    let characters = 0;
+    if (Array.isArray(context)) {
+      for (const item of context.slice(-12).reverse()) {
+        if (!item || !['user', 'assistant'].includes(item.role) ||
+            typeof item.content !== 'string' || !item.content.trim()) continue;
+        const content = item.content.slice(0, 900);
+        if (characters + content.length > 2200) break;
+        prior.unshift({ role: item.role, content });
+        characters += content.length;
+      }
     }
     const task = requests.then(async () => {
       const answer = await engine.chat.completions.create({
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
+          ...prior,
           { role: 'user', content: prompt.trim() },
         ],
         stream: false, max_tokens: 256, temperature: 0.2,

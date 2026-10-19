@@ -32,6 +32,7 @@ jobs:
           node --check src/providers/ollama.mjs
           node --check docs/app.js
           node --check docs/browser-brain.mjs
+          node --check docs/browser-vault.mjs
           for file in test/*.test.mjs; do node --check "$file"; done
       - name: Core regression suite
         run: node --test test/*.test.mjs
