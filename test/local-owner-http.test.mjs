@@ -38,6 +38,16 @@ test('owner confirmation creates a verified local note once and persists its rec
     origin='http://127.0.0.1:'+app.port;
     const state=await(await fetch(origin+'/api/state')).json();
     assert.equal(state.receipts.filter(r=>r.operationId===job.id).length,1);
+    const rated = await request('/api/owner/feedback',{id:job.id,rating:'helpful'});
+    assert.equal(rated.status,200);
+    const measured = await(await fetch(origin+'/api/owner/jobs',{
+      headers:{'x-ultron-owner':key},
+    })).json();
+    assert.equal(measured.outcomes.verified,1);
+    assert.equal(measured.outcomes.helpful,1);
+    assert.equal(measured.outcomes.notHelpful,0);
+    assert.equal(measured.outcomes.reconcileRequired,0);
+    assert.ok(measured.outcomes.meanVerifiedLatencyMs>=0);
   } finally {
     await app.close();
     await rm(dir,{recursive:true,force:true});
