@@ -53,7 +53,7 @@ test('cloud learning counts authenticated terminal tasks, not retries, forged co
   assert.equal(count.ownerTasks,2);
   assert.equal(count.verifiedTasks,2);
   assert.deepEqual(count.outcomes,{succeeded:1,partial:0,failed:1,blocked:0});
-  assert.equal(count.invalidReceipts,1);
+  assert.equal(count.unqualifiedReceipts,1);
   assert.equal(count.qualifiedExperiences,0);
   assert.equal(count.promotions,0);
   assert.equal(count.unratedTasks,2);
@@ -107,4 +107,15 @@ test('one shared receipt audit scans all pages and preserves replay dedup identi
   assert.equal(items.length,2);
   assert.equal(items[0].key,items[1].key);
   assert.equal(items[0].receipt.issueNumber,17);
+});
+
+
+test('legacy v1 receipt is history, not evidence of verified exact-main learning', async()=>{
+  const old = (await receipt(17)).replace(
+    '"schema": "ultron.cloud.receipt.v2"', '"schema": "ultron.cloud.receipt.v1"');
+  const ledger=await observeCloudHistory(reader([issue(17)],{17:[bot(old,1)]}));
+  assert.equal(ledger.ownerTasks,1);
+  assert.equal(ledger.verifiedTasks,0);
+  assert.equal(ledger.unqualifiedReceipts,1);
+  assert.equal(ledger.promotions,0);
 });

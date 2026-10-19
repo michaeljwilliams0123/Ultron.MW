@@ -146,7 +146,8 @@ export async function readIssueReceipts(get, issueNumber) {
  */
 export async function observeCloudHistory(get) {
   const outcomes = { succeeded: 0, partial: 0, failed: 0, blocked: 0 };
-  let ownerTasks = 0, invalidReceipts = 0;
+  let ownerTasks = 0, unqualifiedReceipts = 0;
+  // ponytail: 300-issue scan cap, graduate to filtered API search only if task volume demands it.
   for (let page = 1; page <= 3; page++) {
     const issues = await get('/repos/' + REPOSITORY +
       '/issues?state=all&per_page=100&page=' + page);
@@ -180,7 +181,7 @@ export async function observeCloudHistory(get) {
           source?.preReceiptMainSha === receipt.executorSha &&
           ['succeeded','partial','failed','blocked'].includes(receipt.status) &&
           Array.isArray(receipt.receipts);
-        if (!valid) { invalidReceipts++; continue; }
+        if (!valid) { unqualifiedReceipts++; continue; }
         distinct.set(key, receipt);
       }
       const attempts = [...distinct.values()];
@@ -194,7 +195,7 @@ export async function observeCloudHistory(get) {
       const verifiedTasks = Object.values(outcomes).reduce((a,b) => a+b,0);
       return {
         source: 'bot-authored exact-main GitHub receipt ledger',
-        ownerTasks, verifiedTasks, outcomes, invalidReceipts,
+        ownerTasks, verifiedTasks, outcomes, unqualifiedReceipts,
         unratedTasks: verifiedTasks, qualifiedExperiences: 0, promotions: 0,
         learningStatus: 'no-owner-rated-cloud-outcomes',
         limitation: 'GitHub receipt outcomes are not independently rated task quality or model training.',
