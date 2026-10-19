@@ -1,0 +1,39 @@
+name: Ultron Create PR to main
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+concurrency:
+  group: ultron-pr-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  create-pr:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event_name == 'issues' &&
+      github.event.action == 'opened' &&
+      github.event.issue.user.login == 'michaeljwilliams0123' &&
+      github.event.issue.title == '[Ultron PR] Create proposal' &&
+      startsWith(github.event.issue.body, 'ULTRON_PR_V1')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Verify trusted PR adapter
+        run: node --check src/cloud-pr.mjs
+      - name: Create and verify PR targeting main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node src/cloud-pr.mjs
