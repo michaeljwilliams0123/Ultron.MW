@@ -16,8 +16,8 @@ function fixture(n = 24, { negativeVariant = 'duplicate', allPositive = false } 
   for (let i = 0; i < n; i++) {
     const bad = !allPositive && i % 2 === 1;
     const word = WORDS[i % WORDS.length];
-    const label = bad && negativeVariant === 'duplicate' ? 'duplicate incorrect' :
-      bad ? 'unexpectedly disappointing' : 'operational journal';
+    const label = bad && (negativeVariant === 'duplicate' || i < 18) ?
+      'duplicate incorrect' : bad ? 'unexpectedly disappointing' : 'operational journal';
     const id = 'verified-operation-' + word;
     const sha256 = 'a'.repeat(64);
     const receiptId = 'receipt-' + word;
