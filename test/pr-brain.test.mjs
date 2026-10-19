@@ -154,3 +154,50 @@ test('owner-authored natural language implement delegates to source-grounded mod
   assert.match(m.state.comments.at(-1).body,/source change/);
   assert.ok(m.state.posts.some(p=>p.path===ROOT+'/actions/workflows/verify.yml/dispatches'));
 });
+
+test('failed model-generated code is independently observed, reverted once, and retested',async()=>{
+  const m=fixture();
+  const ev=event('@ultron implement fix docs/core/capabilities.mjs evidence',false,477);
+  m.add(ev);
+  let observations=0;
+  const outcome=await handlePrConversation({
+    event:ev,eventName:'issue_comment',actor:OWNER,repository:REPO,
+    get:m.get,post:m.post,
+    generate:async()=>({commitSha:OTHER,paths:['docs/core/capabilities.mjs'],
+      model:'test-local-cpu',rollbackChanges:[{
+        path:'docs/core/capabilities.mjs',before:'generated invalid code',
+        after:'original correct code'}]}),
+    patch:async ({pr,manifest})=>{
+      const parsed=JSON.parse(manifest);
+      assert.equal(parsed.baseSha,OTHER);
+      assert.equal(parsed.changes[0].before,'generated invalid code');
+      assert.equal(parsed.changes[0].after,'original correct code');
+      return {commitSha:'c'.repeat(40),paths:['docs/core/capabilities.mjs']};
+    },
+    observeVerify:async({headSha})=>{
+      observations++;
+      return {state:'completed',conclusion:observations===1?'failure':'success',
+        sha:headSha,url:'https://github.com/'+REPO+'/actions/runs/'+observations};
+    },
+  });
+  assert.equal(outcome.intent,'implement');
+  assert.equal(observations,2);
+  assert.equal(outcome.action.rollback.status,'committed');
+  assert.equal(outcome.action.rollback.verify.conclusion,'success');
+  assert.match(m.state.comments.at(-1).body,/automatically restored/);
+  assert.match(m.state.comments.at(-1).body,/Restored-head Verify: \*\*success\*\*/);
+});
+test('a verified passing generated patch is not rolled back',async()=>{
+  const m=fixture(),ev=event('@ultron implement fix docs/core/capabilities.mjs route',false,501);
+  m.add(ev);let attempts=0;
+  const outcome=await handlePrConversation({
+    event:ev,eventName:'issue_comment',actor:OWNER,repository:REPO,
+    get:m.get,post:m.post,
+    generate:async()=>({commitSha:OTHER,paths:['src/example.mjs'],
+      rollbackChanges:[{path:'src/example.mjs',before:'new',after:'old'}]}),
+    patch:async()=>{attempts++;throw Error('must not revert successful patch');},
+    observeVerify:async()=>({state:'completed',conclusion:'success',url:'https://github.com/x'}),
+  });
+  assert.equal(outcome.action.rollback,undefined);
+  assert.equal(attempts,0);
+});
