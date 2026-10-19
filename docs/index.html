@@ -23,10 +23,10 @@
   <section class="metrics"><div class="metric"><div class="k">Runtime</div><div class="v" id="runtime">GitHub</div></div><div class="metric"><div class="k">Objectives</div><div class="v" id="objectives">0</div></div><div class="metric"><div class="k">Learning release</div><div class="v version" id="release">seed-v1</div></div></section>
   <section class="panel" id="pane-brain"><h2>Objective console</h2>
   <div class="cloud-route">
-    <div><strong>Read-only execution — GitHub Actions</strong>
-      <p class="muted">Runs on GitHub-hosted computers. GitHub sign-in and confirmation are required. This repository, task issues, and receipts are public. Only supported command names are submitted; do not add private information.</p>
+    <div><strong>GitHub Actions — inspect or create a PR targeting main</strong>
+      <p class="muted">Runs in GitHub's cloud. Enter an objective below. Read-only commands use Run in GitHub cloud; Create PR to main opens an owner-confirmed GitHub request that produces a documentation proposal PR. No local PC or port is required. Repository, task Issues, and receipts are public.</p>
     </div>
-    <div class="cloud-actions"><button type="button" id="cloud-run">Run in GitHub cloud</button>
+    <div class="cloud-actions"><button type="button" id="cloud-pr">Create PR to main</button><button type="button" id="cloud-run">Run read-only task</button>
       <a href="https://github.com/michaeljwilliams0123/Ultron.MW/issues" target="_blank" rel="noopener noreferrer">Cloud task history</a></div>
   </div><div id="browser-mode" class="browser-setup hidden"><div class="browser-copy"><strong>Run AI on this device</strong><p id="browser-ai-info">Optional browser-only AI; requires WebGPU and a substantial model download. No tools or saved history.</p></div><button id="enable-browser-ai" type="button">Enable on-device AI</button></div><div class="feed" id="feed" aria-live="polite"><p class="muted">Enter a task and select Run in GitHub cloud. GitHub will confirm submission. Browser AI remains optional. No particular PC needs to be online.</p></div><form class="compose" id="composer"><input id="message" autocomplete="off" maxlength="1200" aria-label="New objective" placeholder="What should Ultron accomplish?" required><button id="plan-objective" type="button" class="secondary-action">Plan objective</button><button type="submit">Send to Ultron</button></form></section>
   <section class="panel hidden" id="pane-learning">
@@ -72,7 +72,7 @@
   <h2>Execution & owner actions</h2>
   <p class="muted" id="system-state">Default: GitHub Pages + GitHub-hosted Actions and durable GitHub Issue receipts. No fixed machine or localhost port.</p>
   <p class="muted"><strong>Cloud owner feedback:</strong> reply to a completed GitHub task Issue with the exact three-line rating shown on its receipt. That owner-authenticated comment triggers an evidence evaluation on GitHub-hosted Actions; it cannot execute extra tools or add permissions.</p>
-  <p class="muted"><strong>Cloud commands:</strong> /help, /system status, /repo inspect, /learning status. Unsupported steps are blocked. GitHub Actions is not an always-on LLM server. <a href="https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/cloud-objective.yml" target="_blank" rel="noopener noreferrer">Cloud workflow</a></p>
+  <p class="muted"><strong>Cloud actions:</strong> Create PR to main drafts a documentation proposal (no code implementation or auto-merge). Read-only commands: /help, /system status, /repo inspect, /learning status. Unsupported steps are blocked. GitHub Actions is not an always-on LLM server. <a href="https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/cloud-objective.yml" target="_blank" rel="noopener noreferrer">Cloud workflow</a></p>
   <p class="muted">Optional legacy local adapter — not required for cloud jobs:</p>
   <div class="owner-actions hidden" id="optional-local-actions">
     <label for="action-key">Local owner pairing key</label>
