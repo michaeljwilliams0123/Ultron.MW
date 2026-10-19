@@ -1,0 +1,199 @@
+/**
+ * Explicit, encrypted browser-only continuity.
+ * Password/key never leaves this module or enters localStorage.
+ * Caveat: runtime third-party scripts and same-origin Pages can still access
+ * plaintext while unlocked. This is encryption at rest, not code isolation.
+ */
+export const VAULT_KEY = 'ultron.mw.browser.vault.v1';
+const VERSION = 1;
+const ITERATIONS = 210000;
+const MAX_EXCHANGES = 32;
+const MAX_STORAGE_CHARS = 360000;
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function encodeBase64(bytes) {
+  let binary = '';
+  for (const value of bytes) binary += String.fromCharCode(value);
+  return btoa(binary);
+}
+function decodeBase64(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(value) || value.length > MAX_STORAGE_CHARS) {
+    throw new Error('Invalid encrypted vault encoding');
+  }
+  return Uint8Array.from(atob(value), char => char.charCodeAt(0));
+}
+function validateEnvelope(raw) {
+  if (typeof raw !== 'string' || raw.length > MAX_STORAGE_CHARS) throw new Error('Invalid encrypted vault size');
+  let value;
+  try { value = JSON.parse(raw); } catch { throw new Error('Saved memory is corrupted'); }
+  if (!value || value.version !== VERSION) throw new Error('Unsupported saved memory format');
+  const salt = decodeBase64(value.salt);
+  const iv = decodeBase64(value.iv);
+  const data = decodeBase64(value.ciphertext);
+  if (salt.length !== 16 || iv.length !== 12 || data.length < 17) throw new Error('Invalid encrypted vault structure');
+  return { salt, iv, data };
+}
+function validateRecord(item) {
+  return item && typeof item.id === 'string' && item.id.length <= 100 &&
+    typeof item.prompt === 'string' && item.prompt.length <= 1200 &&
+    typeof item.answer === 'string' && item.answer.length <= 6000 &&
+    typeof item.model === 'string' && item.model.length <= 160 &&
+    typeof item.createdAt === 'string' && item.createdAt.length <= 48 &&
+    (item.feedback === null || item.feedback === 'helpful' || item.feedback === 'not-helpful');
+}
+function validateContents(value) {
+  if (!value || value.version !== VERSION || !Array.isArray(value.exchanges) ||
+      value.exchanges.length > MAX_EXCHANGES || !value.exchanges.every(validateRecord) ||
+      new Set(value.exchanges.map(entry => entry.id)).size !== value.exchanges.length) {
+    throw new Error('Encrypted memory contains invalid records');
+  }
+  return value;
+}
+
+export function createBrowserVault({
+  storage = globalThis.localStorage,
+  cryptoApi = globalThis.crypto,
+  keyName = VAULT_KEY,
+  now = () => new Date().toISOString(),
+  uuid = () => cryptoApi.randomUUID(),
+} = {}) {
+  if (!storage?.getItem || !storage?.setItem || !storage?.removeItem ||
+      !cryptoApi?.subtle || !cryptoApi?.getRandomValues) {
+    throw new Error('Local encrypted storage is not available in this browser');
+  }
+  let key = null;
+  let salt = null;
+  let state = null;
+  let writes = Promise.resolve();
+
+  function saved() { return storage.getItem(keyName) !== null; }
+  function unlocked() { return !!key && !!state; }
+  function lock() { key = null; salt = null; state = null; }
+  async function derive(password, saltValue) {
+    if (typeof password !== 'string' || password.length < 10 || password.length > 200) {
+      throw new Error('A passphrase of at least 10 characters is required');
+    }
+    const imported = await cryptoApi.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']);
+    return cryptoApi.subtle.deriveKey({
+      name: 'PBKDF2', salt: saltValue, iterations: ITERATIONS, hash: 'SHA-256',
+    }, imported, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  async function encrypt(next, encryptionKey, saltValue) {
+    const iv = cryptoApi.getRandomValues(new Uint8Array(12));
+    const ciphertext = await cryptoApi.subtle.encrypt({
+      name: 'AES-GCM', iv,
+    }, encryptionKey, encoder.encode(JSON.stringify(next)));
+    const envelope = JSON.stringify({
+      version: VERSION, salt: encodeBase64(saltValue),
+      iv: encodeBase64(iv), ciphertext: encodeBase64(new Uint8Array(ciphertext)),
+    });
+    if (envelope.length > MAX_STORAGE_CHARS) throw new Error('Saved memory exceeds browser size limit');
+    return envelope;
+  }
+  async function open(password) {
+    if (unlocked()) return snapshot();
+    const existing = storage.getItem(keyName);
+    if (existing !== null) {
+      const envelope = validateEnvelope(existing);
+      const derived = await derive(password, envelope.salt);
+      let next;
+      try {
+        const decrypted = await cryptoApi.subtle.decrypt(
+          { name: 'AES-GCM', iv: envelope.iv }, derived, envelope.data);
+        next = validateContents(JSON.parse(decoder.decode(decrypted)));
+      } catch {
+        throw new Error('Could not unlock saved memory. Check the passphrase or saved data.');
+      }
+      salt = envelope.salt;
+      key = derived;
+      state = next;
+      return snapshot();
+    }
+    const nextSalt = cryptoApi.getRandomValues(new Uint8Array(16));
+    const derived = await derive(password, nextSalt);
+    const fresh = { version: VERSION, exchanges: [] };
+    storage.setItem(keyName, await encrypt(fresh, derived, nextSalt));
+    key = derived;
+    salt = nextSalt;
+    state = fresh;
+    return snapshot();
+  }
+  function snapshot() {
+    if (!unlocked()) return { unlocked: false, saved: saved(), exchanges: [], statistics: statistics() };
+    return {
+      unlocked: true, saved: true,
+      exchanges: state.exchanges.map(entry => ({ ...entry })),
+      statistics: statistics(),
+    };
+  }
+  function statistics() {
+    const exchanges = state?.exchanges || [];
+    const helpful = exchanges.filter(item => item.feedback === 'helpful').length;
+    const notHelpful = exchanges.filter(item => item.feedback === 'not-helpful').length;
+    return { total: exchanges.length, helpful, notHelpful, unrated: exchanges.length - helpful - notHelpful };
+  }
+  async function commit(modify) {
+    if (!unlocked()) throw new Error('Unlock memory first');
+    const operation = writes.then(async () => {
+      const next = structuredClone(state);
+      const result = modify(next);
+      validateContents(next);
+      const encrypted = await encrypt(next, key, salt);
+      storage.setItem(keyName, encrypted);
+      state = next;
+      return result;
+    });
+    writes = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+  async function record({ prompt, answer, model }) {
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 1200 ||
+        typeof answer !== 'string' || !answer.trim() || answer.length > 6000 ||
+        typeof model !== 'string' || !model || model.length > 160) {
+      throw new Error('Invalid browser conversation record');
+    }
+    const entry = Object.freeze({
+      id: uuid(), prompt: prompt.trim(), answer: answer.trim(), model,
+      feedback: null, createdAt: now(),
+    });
+    return commit(next => {
+      next.exchanges.push(entry);
+      next.exchanges = next.exchanges.slice(-MAX_EXCHANGES);
+      return { ...entry };
+    });
+  }
+  async function rate(id, feedback) {
+    if (!['helpful', 'not-helpful'].includes(feedback)) throw new Error('Invalid feedback');
+    return commit(next => {
+      const item = next.exchanges.find(entry => entry.id === id);
+      if (!item) throw new Error('Saved response not found');
+      item.feedback = feedback;
+      return { id: item.id, feedback };
+    });
+  }
+  function context(limit = 3) {
+    if (!unlocked()) return [];
+    const chosen = state.exchanges.slice(-Math.max(0, Math.min(limit, 3)));
+    const messages = [];
+    for (const item of chosen) {
+      messages.push({ role: 'user', content: item.prompt.slice(0, 750) });
+      messages.push({ role: 'assistant', content: item.answer.slice(0, 1100) });
+      if (item.feedback === 'not-helpful') {
+        messages.push({ role: 'user', content: 'Feedback: that previous response was not helpful. Avoid repeating its shortcomings.' });
+      }
+    }
+    return messages;
+  }
+  function encryptedBackup() {
+    const data = storage.getItem(keyName);
+    if (!data) throw new Error('No saved memory to export');
+    validateEnvelope(data);
+    return data;
+  }
+  function clear() {
+    storage.removeItem(keyName);
+    lock();
+  }
+  return { saved, unlocked, open, lock, snapshot, statistics, record, rate, context, encryptedBackup, clear };
+}

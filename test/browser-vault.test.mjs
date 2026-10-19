@@ -1,0 +1,135 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { webcrypto } from 'node:crypto';
+import { VAULT_KEY, createBrowserVault } from '../docs/browser-vault.mjs';
+
+function memoryStorage() {
+  const records = new Map();
+  let rejectWrites = false;
+  return {
+    getItem: key => records.has(key) ? records.get(key) : null,
+    setItem: (key, value) => {
+      if (rejectWrites) throw Error('Simulated browser storage failure');
+      records.set(key, String(value));
+    },
+    removeItem: key => { records.delete(key); },
+    failWrites: flag => { rejectWrites = flag; },
+  };
+}
+const create = storage => createBrowserVault({ storage, cryptoApi: webcrypto });
+const passphrase = 'a-long-owner-passphrase';
+const record = i => ({
+  prompt: 'Question ' + i,
+  answer: 'Answer ' + i,
+  model: 'mock-browser-model',
+});
+
+test('memory is disabled by default and does not write or expose plaintext', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  assert.equal(vault.saved(), false);
+  assert.equal(vault.unlocked(), false);
+  assert.equal(vault.snapshot().exchanges.length, 0);
+  assert.equal(storage.getItem(VAULT_KEY), null);
+  await assert.rejects(() => vault.record(record(1)), /Unlock memory first/);
+  await vault.open(passphrase);
+  assert.equal(vault.saved(), true);
+  assert.equal(vault.unlocked(), true);
+  assert.doesNotMatch(storage.getItem(VAULT_KEY), /Question 1|passphrase/);
+});
+
+test('encrypted exchanges survive refresh but require passphrase again', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  const entry = await vault.record(record(1));
+  assert.ok(entry.id);
+  const sealed = storage.getItem(VAULT_KEY);
+  assert.doesNotMatch(sealed, /Question 1|Answer 1|mock-browser-model/);
+  vault.lock();
+  assert.equal(vault.snapshot().exchanges.length, 0);
+  const nextSession = create(storage);
+  assert.equal(nextSession.saved(), true);
+  await assert.rejects(() => nextSession.open('incorrect-passphrase'), /Could not unlock/);
+  assert.equal(nextSession.unlocked(), false);
+  await nextSession.open(passphrase);
+  assert.equal(nextSession.snapshot().exchanges[0].id, entry.id);
+  assert.equal(nextSession.snapshot().exchanges[0].prompt, 'Question 1');
+});
+
+test('feedback is persisted without claiming independently verified learning', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  const first = await vault.record(record(1));
+  const second = await vault.record(record(2));
+  await vault.rate(first.id, 'helpful');
+  await vault.rate(second.id, 'not-helpful');
+  assert.deepEqual(vault.statistics(), { total: 2, helpful: 1, notHelpful: 1, unrated: 0 });
+  const context = vault.context();
+  assert.equal(context.filter(x => x.role === 'assistant').length, 2);
+  assert.equal(context.some(x => /not helpful/i.test(x.content)), true);
+  vault.lock();
+  const recovered = create(storage);
+  await recovered.open(passphrase);
+  assert.equal(recovered.statistics().notHelpful, 1);
+  await assert.rejects(() => recovered.rate(first.id, 'not-a-rating'), /Invalid feedback/);
+});
+
+test('memory retains only the latest 32 responses and bounds context', async () => {
+  const vault = create(memoryStorage());
+  await vault.open(passphrase);
+  for (let i = 0; i < 36; i++) await vault.record(record(i));
+  assert.equal(vault.statistics().total, 32);
+  const snapshot = vault.snapshot();
+  assert.equal(snapshot.exchanges.at(0).prompt, 'Question 4');
+  assert.equal(snapshot.exchanges.at(-1).prompt, 'Question 35');
+  assert.equal(vault.context().filter(x => x.role === 'assistant').length, 3);
+});
+
+test('concurrent feedback and writes serialize without losing records', async () => {
+  const vault = create(memoryStorage());
+  await vault.open(passphrase);
+  const additions = await Promise.all(Array.from({ length: 8 }, (_, i) => vault.record(record(i))));
+  assert.equal(additions.length, 8);
+  await Promise.all(additions.slice(0, 3).map(item => vault.rate(item.id, 'helpful')));
+  assert.equal(vault.statistics().total, 8);
+  assert.equal(vault.statistics().helpful, 3);
+});
+
+test('failed encryption persistence never commits an in-memory fake record', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  storage.failWrites(true);
+  await assert.rejects(() => vault.record(record(1)), /Simulated browser storage failure/);
+  assert.equal(vault.statistics().total, 0);
+  storage.failWrites(false);
+  await vault.record(record(2));
+  assert.equal(vault.statistics().total, 1);
+  assert.equal(vault.snapshot().exchanges[0].prompt, 'Question 2');
+});
+
+test('encrypted backups remain ciphertext and can be removed by explicit deletion', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  await vault.record(record(1));
+  const backup = JSON.parse(vault.encryptedBackup());
+  assert.equal(backup.version, 1);
+  assert.equal(typeof backup.ciphertext, 'string');
+  vault.clear();
+  assert.equal(vault.saved(), false);
+  assert.equal(vault.unlocked(), false);
+  assert.equal(storage.getItem(VAULT_KEY), null);
+});
+
+test('corrupted storage and weak passphrases reject before modification', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await assert.rejects(() => vault.open('short'), /at least 10 characters/);
+  assert.equal(storage.getItem(VAULT_KEY), null);
+  storage.setItem(VAULT_KEY, '{"version":1,"salt":"!!!"}');
+  await assert.rejects(() => vault.open(passphrase), /Invalid encrypted/);
+  assert.equal(vault.unlocked(), false);
+});
