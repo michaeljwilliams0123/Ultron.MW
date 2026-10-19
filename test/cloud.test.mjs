@@ -67,7 +67,8 @@ test('all-or-nothing refusal of unsafe mixed objectives without Github API call'
 
 test('issue receipt is posted and independently reread exactly once',async()=>{
   const comments=[];
-  const reader=async path=>path.includes('/comments')?comments:get(path);
+  const reader=async path=>path.includes('/issues/comments/')?comments.find(x=>x.id===42):
+    path.includes('/comments')?comments:get(path);
   let writes=0;
   const poster=async(path,data)=>{
     assert.equal(path,'/repos/'+REPOSITORY+'/issues/17/comments');

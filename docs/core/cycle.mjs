@@ -3,7 +3,8 @@
  * This is NOT LLM fine-tuning. It evaluates two versioned, immutable
  * orchestration strategies against fixed, independently authored test labels.
  */
-export const ROUTES = Object.freeze(['/help', '/system status', '/repo inspect', '/learning status']);
+import { commandsFor } from './capabilities.mjs';
+export const ROUTES = commandsFor('local');
 export const ACCEPTED_SEED = 'routing-v1';
 export const CANDIDATE = 'routing-v2';
 export const BENCHMARK_ID = 'routing-heldout-2026-10-18-v1';

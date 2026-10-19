@@ -2,18 +2,7 @@ name: Ultron core verification
 on:
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'test/**'
-      - 'docs/**'
-      - '.github/workflows/verify.yml'
-      - '.github/workflows/cloud-objective.yml'
   pull_request:
-    paths:
-      - 'src/**'
-      - 'test/**'
-      - 'docs/**'
-      - '.github/workflows/verify.yml'
 permissions:
   contents: read
 jobs:
@@ -21,27 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - name: Syntax check
-        run: |
-          node --check src/learning.mjs
-          node --check src/experience.mjs
-          node --check src/operations.mjs
-          node --check src/server.mjs
-          node --check src/cloud-cycle.mjs
-          node --check src/cloud-entry.mjs
-          node --check docs/core/cloud-submit.mjs
-          node --check src/action-gateway.mjs
-          node --check src/brain.mjs
-          node --check src/providers/ollama.mjs
-          node --check docs/app.js
-          node --check docs/browser-brain.mjs
-          node --check docs/browser-vault.mjs
-          node --check docs/core/cycle.mjs
-          node --check docs/core/providers.mjs
-          for file in test/*.test.mjs; do node --check "$file"; done
-      - name: Core regression suite
-        run: node --test test/*.test.mjs
+      - name: Lint all workflows
+        run: bash scripts/lint-workflows.sh
+      - name: Syntax and regression checks
+        run: node scripts/verify.mjs

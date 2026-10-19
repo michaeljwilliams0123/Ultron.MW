@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 import { planObjective } from '../docs/core/cycle.mjs';
+import { commandsFor, capabilityManifest } from '../docs/core/capabilities.mjs';
 export const REPOSITORY='michaeljwilliams0123/Ultron.MW';
 export const MARKER='<!-- ULTRON_CLOUD_RECEIPT_V1 -->';
-const allowed=new Set(['/help','/system status','/repo inspect','/learning status']);
+const allowed=new Set(commandsFor('cloud'));
 const sha=/^[0-9a-f]{40}$/;
+export function taskDigest(task){
+  return createHash('sha256').update(JSON.stringify([task.repository,task.issueNumber,task.objective])).digest('hex');
+}
 export function parseTask(event,name,actor,repository){
   // Cron has no user-controlled task text; repository-scoped default-branch
   // workflow is the authority. User-submitted tasks still require owner identity.
@@ -29,12 +33,17 @@ export function parseTask(event,name,actor,repository){
     /[\r\n\u0000-\u001f]/.test(objective))throw Error('Invalid single-line objective');
   return {objective:objective.trim(),issueNumber,repository};
 }
-export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(),runId=''}={}){
+export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(),runId='',
+  executorSha=null,runAttempt=1}={}){
   if(task?.repository!==REPOSITORY||typeof get!=='function')throw Error('Invalid cloud context');
+  if((executorSha!==null&&!sha.test(executorSha))||!Number.isSafeInteger(runAttempt)||runAttempt<1)
+    throw Error('Invalid executor provenance');
   const plan=planObjective(task.objective,{strategy:'routing-v2'});
   const base={schema:'ultron.cloud.receipt.v1',source:'GitHub Actions',
     issueNumber:task.issueNumber,checkedAt:now(),runId:String(runId).slice(0,32),
-    objectiveDigest:createHash('sha256').update(JSON.stringify([task.repository,task.issueNumber,task.objective])).digest('hex'),
+    executorSha,runAttempt,runUrl:/^[0-9]{1,32}$/.test(String(runId))?
+      'https://github.com/'+REPOSITORY+'/actions/runs/'+runId:null,
+    objectiveDigest:taskDigest(task),
     localMachineRequired:false,autonomousWriteAccess:false};
   if(!plan.steps.length||plan.steps.some(step=>!allowed.has(step.command)))
     return {...base,status:'blocked',receipts:[{command:null,status:'blocked',
@@ -45,7 +54,7 @@ export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(
       let summary='',details={};
       switch(step.command){
         case '/help':
-          summary='Cloud command allowlist';details={commands:[...allowed]};break;
+          summary='Cloud command allowlist';details={commands:[...allowed],capabilities:capabilityManifest('cloud')};break;
         case '/system status':
           summary='GitHub-hosted runner executed';details={ephemeral:true,desktopRequired:false};break;
         case '/learning status':
@@ -69,7 +78,17 @@ export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(
       receipts.push({command:step.command,status:'failed',summary:'GitHub read could not be verified'});
     }
   }
-  return {...base,status:receipts.every(x=>x.status==='succeeded')?'succeeded':'partial',receipts};
+  const successes=receipts.filter(x=>x.status==='succeeded').length;
+  return {...base,status:successes===receipts.length?'succeeded':successes?'partial':'failed',receipts};
+}
+export function parseReceiptComment(comment){
+  if(comment?.user?.login!=='github-actions[bot]'||typeof comment.body!=='string'||
+    !comment.body.startsWith(MARKER+'\n'))return null;
+  const structured=comment.body.split('\nStructured receipt:\n')[1]?.split('\n\nThis job')[0];
+  try{
+    const receipt=JSON.parse(structured);
+    return receipt?.schema==='ultron.cloud.receipt.v1'?receipt:null;
+  }catch{return null;}
 }
 export function formatReceipt(outcome){
   if(outcome?.schema!=='ultron.cloud.receipt.v1')throw Error('Bad receipt');
