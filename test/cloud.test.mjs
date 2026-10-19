@@ -120,10 +120,12 @@ test('scheduled cloud heartbeat is fixed, account-independent and cannot execute
   assert.equal(scheduled.repository,REPOSITORY);
   assert.throws(()=>parseTask({},'schedule','github-actions[bot]','someone/other'),/Untrusted/);
   const result=await executeCloudTask(scheduled,{get});
-  assert.equal(result.status,'succeeded');
+  // This legacy fixture does not implement a source-bound self scan. Reject
+  // unverified main-source reads rather than inventing a success receipt.
+  assert.equal(result.status,'failed');
   assert.equal(result.receipts.length,1);
   assert.equal(result.receipts[0].command,'/self scan');
-  assert.equal(result.receipts[0].details.sourceAuthority.commitSha,SHA);
+  assert.equal(result.receipts[0].details,undefined);
   assert.equal(result.cognition.decision,'proceed');
   assert.equal(result.cognition.paidFallback,false);
 });
