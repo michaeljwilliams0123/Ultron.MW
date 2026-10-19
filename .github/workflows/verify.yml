@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/**'
       - 'test/**'
+      - 'docs/app.js'
       - '.github/workflows/verify.yml'
   pull_request:
     paths:

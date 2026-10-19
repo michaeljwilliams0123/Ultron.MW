@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { startLocalServer } from '../src/server.mjs';
@@ -108,3 +108,26 @@ test('upgrading from draft-only local state preserves previously saved objective
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('the full read-only capability list has executable receipts', async () => fixture(async ({ base, post }) => {
+  const manifest = await (await fetch(base() + '/api/capabilities')).json();
+  assert.equal(manifest.autonomy, false);
+  assert.equal(manifest.commands.length, 4);
+  for (const item of manifest.commands) {
+    const result = await post('/api/execute', item.command);
+    assert.equal(result.status, 201, item.command);
+    const payload = await result.json();
+    assert.equal(payload.receipt.status, 'succeeded');
+    assert.equal(payload.receipt.command, item.command);
+  }
+  const state = await (await fetch(base() + '/api/state')).json();
+  assert.equal(state.receipts.length, 4);
+});
+
+test('failed state persistence never returns success or mutates the ledger', async () => fixture(async ({ base, post, statePath }) => {
+  await mkdir(statePath);
+  const result = await post('/api/objectives', 'must not appear as saved');
+  assert.equal(result.status, 500);
+  const state = await (await fetch(base() + '/api/state')).json();
+  assert.equal(state.objectives.length, 0);
+}));
