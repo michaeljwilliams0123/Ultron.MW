@@ -36,7 +36,7 @@ export function selectTargetLine(content,objective){
     .map((line,index)=>({line,index,score:tokens.reduce((n,t)=>
       n+(line.toLowerCase().includes(t)?1:0),0)}))
     .sort((a,b)=>b.score-a.score||a.index-b.index);
-  return ranked[0]?.score>=2?ranked[0].line:null;
+  return ranked[0]?.score>=(ranked.length===1?1:2)?ranked[0].line:null;
 }
 function makeManifest(entry,{path,head,objective}){
   if(typeof entry?.before!=='string'||!entry.before||
