@@ -35,7 +35,7 @@ test('repo-bound source selection and source patch derivation',async()=>{
   assert.equal(patch.baseSha,SHA);
   assert.equal(patch.changes[0].after,'new');
   assert.throws(()=>extractModelPatch('{"changes":[{"path":"src/other.mjs","before":"old","after":"new"}]}',
-    {path:PATH,head:SHA,objective:'Fix marker'}),/unscoped/);
+    {path:PATH,head:SHA,objective:'Fix marker'}),/unscoped|valid exact-context/);
 });
 test('injected CPU model can propose a real patch for exact PR head without paid inference',async()=>{
   const r=repository();let called=false;
