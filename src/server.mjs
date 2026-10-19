@@ -133,9 +133,10 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         }
         if (req.method === 'GET' && req.url === '/api/owner/status') {
           let github = { connected: false };
-          try {
-            github = { ...(await gateway.identity()), connected: true };
-          } catch { /* local notes remain available without GitHub authentication */ }
+          if (githubDraftEnabled) {
+            try { github = { ...(await gateway.identity()), connected: true }; }
+            catch { /* local notes remain available if GitHub authentication fails */ }
+          }
           return response(res, 200, {
             paired: true, computerReady: true, github,
             actions: githubDraftEnabled ? ['local-note', 'github-draft'] : ['local-note'],
