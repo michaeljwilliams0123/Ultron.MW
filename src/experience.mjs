@@ -77,7 +77,17 @@ export function suggestFromExperience(objective, policy, allowed = TYPES) {
     return permitted.has(baseline) ? baseline : null;
   }
   const words = tokens(objective);
-  const negatives = words.reduce((sum, w) => sum + (policy.negative[w] || 0), 0);
+  const positiveTotal = TYPES.reduce((sum, kind) => sum + (policy.totals[kind] || 0), 0);
+  const negativeTotal = Math.max(1, policy.negativeTotal || 0);
+  // Discriminative owner dissatisfaction cues must beat tokens that also
+  // occur in successful tasks. Generic words such as "local" are not negative.
+  const negatives = words.reduce((sum, word) => {
+    const negativeShare = (policy.negative[word] || 0) / negativeTotal;
+    const positiveCount = TYPES.reduce((count, kind) =>
+      count + (policy.positive[kind]?.[word] || 0), 0);
+    const positiveShare = positiveCount / Math.max(1, positiveTotal);
+    return sum + Math.max(0, negativeShare - positiveShare);
+  }, 0);
   const contenders = TYPES.map(kind => ({
     kind, score: words.reduce((sum, w) =>
       sum + (policy.positive[kind]?.[w] || 0) / Math.max(policy.totals[kind] || 0, 1), 0),
@@ -86,7 +96,7 @@ export function suggestFromExperience(objective, policy, allowed = TYPES) {
   if (!contenders.length) return null;
   const first = contenders[0], second = contenders[1];
   // Conservative opt-out informed by real negative owner ratings.
-  if (negatives >= 2 && negatives > first.score) return null;
+  if (negatives >= 1.5) return null;
   if (baseline && permitted.has(baseline)) return baseline;
   if (first.score >= 1 && (!second || first.score - second.score >= .35)) return first.kind;
   return null;
@@ -96,9 +106,11 @@ function derivePolicy(training) {
   const positive = Object.fromEntries(TYPES.map(type => [type, {}]));
   const negative = {};
   const totals = Object.fromEntries(TYPES.map(type => [type, 0]));
+  let negativeTotal = 0;
   for (const item of training) {
     const words = tokens(wordsFor(item));
     if (item.rating === 'not-helpful') {
+      negativeTotal++;
       for (const token of words) negative[token] = (negative[token] || 0) + 1;
       continue;
     }
@@ -108,7 +120,7 @@ function derivePolicy(training) {
   }
   const version = 'experience-' + createHash('sha256').update(JSON.stringify(
     training.map(x => [x.id, x.kind, x.rating, x.receiptId]))).digest('hex').slice(0, 12);
-  return { version, positive, negative, totals };
+  return { version, positive, negative, negativeTotal, totals };
 }
 
 const DANGEROUS_FIXTURES = Object.freeze([
