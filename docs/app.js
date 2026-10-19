@@ -428,6 +428,91 @@
     return data;
   }
 
+
+  async function refreshExperience() {
+    if (!local || !ownerKey) {
+      $('experience-summary').textContent =
+        'A paired local runtime is required for real execution evidence. Pages-only memory is separate.';
+      return;
+    }
+    try {
+      const data = await ownerRequest('GET', '/api/owner/learning');
+      $('experience-summary').textContent = data.eligible + '/' + data.minimum +
+        ' distinct verified, owner-rated actions · active suggestion policy: ' +
+        data.activeVersion + ' · ' + data.assessments.length +
+        ' stored assessments · ' + data.changes.length + ' audited changes.';
+      const report = data.assessments.at(-1);
+      if (report) {
+        $('experience-report').textContent = 'Latest measured evaluation: ' +
+          report.status + ' · ' + report.eligible + ' eligible · ' +
+          (report.heldout || 0) + ' later held-out cases' +
+          (report.baselineAccuracy === null ? '' :
+            ' · baseline ' + Math.round(report.baselineAccuracy * 100) + '%' +
+            ' · candidate ' + Math.round(report.candidateAccuracy * 100) + '%') +
+          '. User ratings are observational, not proof of general AI training.';
+      }
+    } catch {
+      $('experience-summary').textContent = 'Authenticated outcome history unavailable.';
+    }
+  }
+
+  $('experience-evaluate').addEventListener('click', async () => {
+    if (!local || !ownerKey) {
+      $('experience-report').textContent = 'Pair your owner runtime in Systems first.';
+      return;
+    }
+    const button = $('experience-evaluate');
+    button.disabled = true;
+    try {
+      const data = await ownerRequest('POST', '/api/owner/evaluate', {});
+      const report = data.report;
+      $('experience-report').textContent =
+        report.status + ' · ' + report.eligible + ' real eligible outcomes' +
+        (report.heldout ? ' · ' + report.heldout + ' chronological holdout cases' : '') +
+        (report.delta === undefined ? '' :
+          ' · measured change ' + (report.delta * 100).toFixed(1) + ' points' +
+          ' · regressions ' + report.regressions) +
+        ' · active policy ' + data.activeVersion +
+        '. This changes suggestions only, never action permissions.';
+      await refreshExperience();
+    } catch (error) {
+      $('experience-report').textContent = 'Evaluation failed: ' + error.message;
+    } finally { button.disabled = false; }
+  });
+
+  $('experience-rollback').addEventListener('click', async () => {
+    if (!local || !ownerKey) {
+      $('experience-report').textContent = 'Pair your owner runtime in Systems first.';
+      return;
+    }
+    try {
+      const data = await ownerRequest('POST', '/api/owner/rollback',
+        { reason: 'owner-request' });
+      $('experience-report').textContent = data.status +
+        ' · accepted suggestion policy: ' + data.active +
+        '. No execution rights were changed.';
+      await refreshExperience();
+    } catch (error) {
+      $('experience-report').textContent = 'Rollback failed: ' + error.message;
+    }
+  });
+
+  $('action-suggest').addEventListener('click', async () => {
+    const objective = ($('action-title').value + ' ' + $('action-text').value).trim();
+    if (!objective) {
+      actionResult.textContent = 'Enter a task description to receive a nonexecuting suggestion.';
+      return;
+    }
+    try {
+      const data = await ownerRequest('POST', '/api/owner/suggest', { objective });
+      actionResult.textContent = data.kind
+        ? 'Suggested action: ' + data.kind + ' (policy ' + data.activeVersion +
+          '). A suggestion does NOT prepare or execute a job.'
+        : 'Ultron abstained: no sufficiently supported and currently allowed action. ' +
+          'No action was prepared or executed.';
+    } catch (error) { actionResult.textContent = error.message; }
+  });
+
   if (!local) {
     $('action-pair').disabled = true;
     actionStatus.textContent = 'GitHub Pages cannot connect to the private local runtime. Open the same interface at 127.0.0.1 on your PC.';
@@ -465,6 +550,7 @@
       if (status.paired !== true) throw new Error('Not paired');
       $('action-controls').classList.remove('hidden');
       await refreshOwnerOutcomes();
+      await refreshExperience();
       const githubOption = $('action-kind').querySelector('option[value="github-draft"]');
       githubOption.disabled = !status.actions?.includes('github-draft');
       if (githubOption.disabled) $('action-kind').value = 'local-note';
@@ -541,6 +627,7 @@
           id: lastVerifiedOperation, rating,
         });
         await refreshOwnerOutcomes();
+        await refreshExperience();
         actionResult.textContent = 'Owner feedback recorded as ' + result.rating +
           ' for independently verified receipt ' + result.receiptId + '.';
       } catch (error) {
