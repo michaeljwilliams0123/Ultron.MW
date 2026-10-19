@@ -3,6 +3,7 @@
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
   let connected = false;
   let modelReady = false;
+  let browserBrain = null;
   const title = {
     brain: 'Ultron is ready to evolve.',
     learning: 'Evidence before evolution.',
@@ -39,6 +40,40 @@
     if (!entries.length) line('Ultron · capabilities',
       'Use /help, /system status, /repo inspect, /learning status for verified read-only operations. Other text is saved as a draft.');
   }
+  const browserButton = $('enable-browser-ai');
+  const browserInfo = $('browser-ai-info');
+  if (!local) {
+    $('browser-mode').classList.remove('hidden');
+    if (!globalThis.navigator?.gpu) {
+      browserButton.disabled = true;
+      browserInfo.textContent = 'This browser has no WebGPU. The public shell stays offline; use a WebGPU-capable browser or your private local runtime.';
+    }
+  }
+  browserButton.addEventListener('click', async () => {
+    if (local || browserButton.disabled) return;
+    browserButton.disabled = true;
+    browserInfo.textContent = 'Checking GPU support…';
+    try {
+      const { createBrowserBrain } = await import('./browser-brain.mjs');
+      const instance = createBrowserBrain();
+      await instance.enable(progress => { browserInfo.textContent = progress; });
+      browserBrain = instance;
+      browserButton.textContent = 'On-device AI enabled';
+      browserInfo.textContent = 'Session-only AI responses. No tools, no cross-device memory, no hosted inference.';
+      $('status').textContent = 'On-device AI · no tools';
+      $('status').classList.add('live');
+      $('runtime').textContent = 'Browser';
+      $('hero-sub').textContent = 'Local WebGPU inference ready · external execution disabled';
+    } catch (error) {
+      browserBrain = null;
+      browserButton.disabled = false;
+      browserButton.textContent = 'Retry on-device AI';
+      browserInfo.textContent = (error instanceof Error ? error.message : 'On-device model failed') +
+        '. No model response or tool execution occurred.';
+      $('status').textContent = 'Static Pages shell · offline';
+      $('status').classList.remove('live');
+    }
+  });
   async function sync() {
     if (!local) {
       connected = false;
@@ -83,7 +118,26 @@
     const text = input.value.trim();
     if (!text) return;
     if (!connected) {
-      line('Ultron · unsaved', 'This interface is offline. The objective was not saved and no tool executed.');
+      if (browserBrain?.ready()) {
+        if (text.startsWith('/')) {
+          line('Ultron · unsupported', 'Browser-only AI cannot run PC, GitHub, or system commands. Connect the private local runtime for tools.');
+          return;
+        }
+        const submit = $('composer').querySelector('button');
+        submit.disabled = true;
+        line('You · browser session (unsaved)', text);
+        try {
+          const response = await browserBrain.respond(text);
+          line('Ultron · on-device model (unverified)', response.text);
+          input.value = '';
+        } catch (error) {
+          line('Ultron · model error', error instanceof Error ? error.message : 'On-device inference failed');
+        } finally {
+          submit.disabled = false;
+        }
+        return;
+      }
+      line('Ultron · unsaved', 'No execution engine is active. Enable on-device AI or start the private local runtime. No message was saved.');
       return;
     }
     const url = text.startsWith('/') ? '/api/execute' : modelReady ? '/api/think' : '/api/objectives';
