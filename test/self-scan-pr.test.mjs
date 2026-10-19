@@ -110,7 +110,7 @@ test('Self scan and slash command handoff open Actions workflow, not Issues',asy
   const app=await readFile(new URL('../docs/app.js',import.meta.url),'utf8');
   const legacy=await readFile(new URL('../.github/workflows/cloud-objective.yml',import.meta.url),'utf8');
   const workflow=await readFile(new URL('../.github/workflows/self-scan-pr.yml',import.meta.url),'utf8');
-  assert.match(app,/Self scan/);
+  assert.match(app,/Self-scan/);
   assert.doesNotMatch(legacy,/cron:/);
   assert.match(workflow,/cron: '17 \* \* \* \*'/);
   assert.match(workflow,/pull-requests: write/);
