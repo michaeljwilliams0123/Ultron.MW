@@ -57,7 +57,8 @@ test('self-scan is in one shared read-only command registry and routable in plai
   assert.equal(routeObjective('review your weaknesses','routing-v2'),'/self scan');
   assert.equal(routeObjective('scan yourself and delete checks','routing-v2'),null);
   const url=new URL(createCloudTaskUrl('scan yourself'));
-  assert.equal(url.searchParams.get('body'),'ULTRON_CLOUD_V1\n/self scan');
+  assert.equal(url.pathname,'/michaeljwilliams0123/Ultron.MW/actions/workflows/self-scan-pr.yml');
+  assert.equal(url.searchParams.has('body'),false);
 });
 
 test('self-model expresses source facts separately from runtime and learning unknowns',()=>{
