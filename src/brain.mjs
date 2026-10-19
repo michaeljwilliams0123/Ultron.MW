@@ -11,7 +11,9 @@ const SYSTEM = [
 ].join('\n');
 
 function validateDecision(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid model decision');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw Object.assign(new Error('Invalid structured model decision'), { statusCode: 502 });
+  }
   if (value.action === 'reply' && typeof value.text === 'string' && value.text.trim() &&
     value.text.length <= 4000) return { action: 'reply', text: value.text.trim() };
   if (value.action === 'tool' && typeof value.command === 'string' &&
@@ -41,7 +43,7 @@ export function createBrain({ provider, root, snapshot }) {
       const second = await provider.respond([
         { role: 'system', content: SYSTEM + '\nA read-only command already ran. Reply ONLY with action=reply and factual summary based on the provided tool result.' },
         { role: 'user', content: text.trim() },
-        { role: 'tool', content: JSON.stringify(toolResult) },
+        { role: 'user', content: 'Read-only tool output (verified by Ultron runtime): ' + JSON.stringify(toolResult) },
       ]);
       const response = validateDecision(second.decision);
       if (response.action !== 'reply') {

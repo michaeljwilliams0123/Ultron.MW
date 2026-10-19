@@ -52,7 +52,13 @@ test('coordinator executes at most one allowlisted tool and then responds', asyn
   let count = 0;
   const provider = {
     status: async () => ({ ready: true, model: 'mock-local' }),
-    respond: async () => ({ model: 'mock-local', decision: decisions[count++] }),
+    respond: async messages => {
+      if (count === 1) {
+        assert.equal(messages.at(-1).role, 'user');
+        assert.match(messages.at(-1).content, /Read-only tool output/);
+      }
+      return { model: 'mock-local', decision: decisions[count++] };
+    },
   };
   const brain = createBrain({ provider, root, snapshot });
   const output = await brain.think('Inspect the source.');
