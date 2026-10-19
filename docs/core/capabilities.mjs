@@ -14,7 +14,7 @@ export const CAPABILITIES=Object.freeze([
     localScope:'Persisted local evidence ledger',cloudScope:'Bot-authored verified task receipts (not owner-rated learning)'},
 ].map(entry=>Object.freeze({...entry,authority:'read-only',readiness:'implemented',
   environments:Object.freeze(['local','cloud']),
-  proof:Object.freeze(['test/source.test.mjs','test/source.cloud.mjs','test/source.captain.mjs','test/source/self-observer.mjs']);
+  proof:Object.freeze(['test/runtime.test.mjs','test/cloud.test.mjs','test/capabilities.test.mjs','test/self-observer.test.mjs']),
 })));
 
 export function commandsFor(environment){
