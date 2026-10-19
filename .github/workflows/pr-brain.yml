@@ -20,7 +20,7 @@ jobs:
        (github.event_name == 'pull_request_review_comment' &&
         github.event.pull_request.number > 0))
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 18
     permissions:
       contents: write
       pull-requests: write
@@ -38,7 +38,14 @@ jobs:
         run: |
           node --check src/pr-brain.mjs
           node --check src/pr-brain-patch.mjs
+          node --check src/pr-brain-model.mjs
+      - name: Install pinned CPU inference runtime for explicit owner implementation requests
+        if: >-
+          github.event.repository.private == false &&
+          startsWith(github.event.comment.body, '@ultron implement ')
+        run: npm install --no-save --package-lock=false @huggingface/transformers@3.8.1
       - name: Route PR comment through Ultron brain
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ULTRON_PUBLIC_CPU_INFERENCE: ${{ github.event.repository.private == false && 'enabled' || 'disabled' }}
         run: node src/pr-brain.mjs
