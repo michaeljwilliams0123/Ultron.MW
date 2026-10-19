@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { githubRequest } from './cloud-pr.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
 import { generateAndApply } from './pr-brain-model.mjs';
+import { dispatchAndObserveVerify } from './pr-brain-verify.mjs';
 
 const OWNER='michaeljwilliams0123';
 const REPO=OWNER+'/Ultron.MW';
@@ -75,6 +76,11 @@ async function listComments(get,number,inline){
   }
   throw Error('PR conversation pagination incomplete');
 }
+function verifyLine(action){
+  const result=action?.verify;
+  if(result?.state==='completed')return 'Authenticated exact-head Verify: **'+result.conclusion+'** ('+result.url+').';
+  return 'Verify requested but its terminal conclusion was not yet independently observed.';
+}
 function answer({turn,pr,intent,findings,history,action}){
   const lines=[MARK+turn.commentId+' -->','### Ultron PR brain','',
     'PR #'+turn.number+' to main; head '+pr.head.sha.slice(0,12),
@@ -101,12 +107,12 @@ function answer({turn,pr,intent,findings,history,action}){
     else{
       lines.push('Finding: '+intent.code, row?'Observed: '+short(row.detail):'Known category, not present in current scan.',
         'Next action: '+(remedy||short(row.suggestion)));
-      if(action?.requested)lines.push('Exact-head Verify dispatched. Passing status has not been observed.');
+      if(action?.requested)lines.push(verifyLine(action));
       lines.push('To commit a source repair here, supply @ultron patch followed by a bounded JSON manifest.');
     }break;
   }
   case 'verify':lines.push('Verify workflow dispatched for branch '+pr.head.ref+'.',
-    'Outcome is not yet known. This is not a passing test receipt.');break;
+    verifyLine(action));break;
   case 'rescan':lines.push('Self-scan workflow dispatched on main.',
     'Material changes update the existing findings PR; no Issue is created.');break;
   case 'implement':
@@ -117,11 +123,12 @@ function answer({turn,pr,intent,findings,history,action}){
       'Model: '+action.model+' (pinned model files)',
       'New source SHA: '+action.commitSha,
       'Changed: '+action.paths.join(', '),
-      'Verify dispatched; the actual test conclusion will be reported separately.');
+      verifyLine(action));
     break;
   case 'patch':lines.push('Exact-context source patch committed to this PR branch.',
     'New commit: '+action.commitSha,'Files: '+action.paths.join(', '),
-    'Verify was dispatched. No automatic merge or production deployment occurred.');break;
+    verifyLine(action),
+    'No automatic merge or production deployment occurred.');break;
   default:lines.push('I cannot verify an open-ended answer or safely infer source changes from that message.',
     'Try @ultron findings or @ultron address ci-head-unobserved.',
     'Received: '+short(intent.text));break;
@@ -130,7 +137,7 @@ function answer({turn,pr,intent,findings,history,action}){
   return lines.join('\n');
 }
 export async function handlePrConversation({event,eventName,actor,repository,get,post,patch,
-  generate=generateAndApply}={}){
+  generate=generateAndApply,observeVerify=dispatchAndObserveVerify}={}){
   const turn=admitPrTurn(event,eventName,actor,repository);
   if(typeof get!=='function'||typeof post!=='function'||typeof patch!=='function')
     throw Error('PR conversation GitHub adapter incomplete');
@@ -166,8 +173,7 @@ export async function handlePrConversation({event,eventName,actor,repository,get
   let action={};
   if(intent.kind==='verify'||intent.kind==='address'&&
     intent.code==='ci-head-unobserved'){
-    await post(ROOT+'/actions/workflows/verify.yml/dispatches',{ref:pr.head.ref});
-    action={requested:true};
+    action={requested:true,verify:await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha})};
   }else if(intent.kind==='rescan'){
     await post(ROOT+'/actions/workflows/self-scan-pr.yml/dispatches',{ref:'main'});
     action={requested:true};
@@ -175,12 +181,12 @@ export async function handlePrConversation({event,eventName,actor,repository,get
     try{
       action=await generate({pr,objective:intent.objective,get,post});
       pr.head.sha=action.commitSha;
-      await post(ROOT+'/actions/workflows/verify.yml/dispatches',{ref:pr.head.ref});
+      action.verify=await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha});
     }catch(error){action={error:error instanceof Error?error.message:'Model inference failed'};}
   }else if(intent.kind==='patch'){
     action=await patch({pr,manifest:intent.manifest,get,post});
     pr.head.sha=action.commitSha;
-    await post(ROOT+'/actions/workflows/verify.yml/dispatches',{ref:pr.head.ref});
+    action.verify=await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha});
   }
   const body=answer({turn,pr,intent,findings,history:prior,action});
   const replyPath=turn.inline?ROOT+'/pulls/'+turn.number+'/comments/'+turn.commentId+
