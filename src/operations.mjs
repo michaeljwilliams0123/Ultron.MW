@@ -1,4 +1,5 @@
 import { readdir } from 'node:fs/promises';
+import { observeLocalSelf } from './self-observer.mjs';
 import { CAPABILITIES } from '../docs/core/capabilities.mjs';
 
 export const COMMANDS = Object.freeze(CAPABILITIES.filter(x=>x.environments.includes('local'))
@@ -25,6 +26,10 @@ export async function executeReadOnly(text, { root, learning }) {
         name: item.name, kind: item.isDirectory() ? 'directory' : 'file',
       }));
       return { command, summary: 'Local repository structure inspected', details: { inspectedRoot: 'Ultron project', present, inspectedCount: present.length } };
+    }
+    case '/self scan': {
+      const details = await observeLocalSelf({root});
+      return {command,summary:'Local Ultron operational self-scan completed; live runtime readiness remains unverified',details};
     }
     case '/learning status':
       return {
