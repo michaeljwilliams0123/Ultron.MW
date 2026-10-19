@@ -68,6 +68,8 @@ export function renderScanReport(report, signature = selfScanSignature(report)) 
     '- Test files: ' + report.inventory.tests,
     '- Workflow files: ' + report.inventory.workflows,
     '- Static evidence coverage: ' + report.uncertainty.sourceCoverage,
+    '- Observed current-main CI: ' + (report.uncertainty.ciHeadReadiness||'not-probed'),
+    '- GitHub CI evidence run: ' + (report.sourceAuthority.ciObservation?.runUrl||'unavailable'),
     '',
     '## Static wiring checks',
     '',

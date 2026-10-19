@@ -54,7 +54,10 @@ function fixture(inline=false){
     eventName:inline?'pull_request_review_comment':'issue_comment',
     actor:OWNER,repository:REPO,get,post,patch,
     generate:async ({objective})=>{state.models.push(objective);
-      return {commitSha:OTHER,paths:['src/example.mjs'],model:'test-free-cpu-model'};}});
+      return {commitSha:OTHER,paths:['src/example.mjs'],model:'test-free-cpu-model'};},
+    observeVerify:async ({post,branch})=>{
+      await post(ROOT+'/actions/workflows/verify.yml/dispatches',{ref:branch});
+      return {state:'pending',conclusion:null};}});
   const add=ev=>state.comments.push(ev.comment);
   return {state,pr,invoke,add,get,post};
 }
@@ -112,7 +115,7 @@ test('address evidence gap dispatches exact-head Verify without inventing pass',
   assert.equal(result.intent,'address');
   assert.ok(m.state.posts.some(x=>x.path===ROOT+'/actions/workflows/verify.yml/dispatches'&&
     x.body.ref==='ultron/self-scan-abc'));
-  assert.match(m.state.comments.at(-1).body,/not been observed/);
+  assert.match(m.state.comments.at(-1).body,/not yet independently observed/);
   assert.equal(m.state.patches.length,0);
 });
 
