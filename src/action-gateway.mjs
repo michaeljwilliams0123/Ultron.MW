@@ -1,5 +1,5 @@
 import { createHash, randomUUID, timingSafeEqual, randomBytes } from 'node:crypto';
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile, lstat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -106,7 +106,15 @@ export function createActionGateway({ root, api = ghApi } = {}) {
     if (job.kind !== 'local-note') throw invalid('Wrong action type');
     await mkdir(noteDirectory, { recursive: true, mode: 0o700 });
     const pathRoot = await realpath(noteDirectory);
-    if (pathRoot !== noteDirectory) throw invalid('Action directory was redirected.', 403);
+    const parentCanonical = await realpath(resolve(root, '.local'));
+    const expectedPath = join(parentCanonical, 'action-notes');
+    // Windows often resolves 8.3 or differently-cased temp directory aliases.
+    // Compare canonical parent paths, not raw user-provided root spellings.
+    const pathKey = path => process.platform === 'win32' ? path.toLowerCase() : path;
+    if ((await lstat(noteDirectory)).isSymbolicLink() ||
+        pathKey(pathRoot) !== pathKey(expectedPath)) {
+      throw invalid('Action directory was redirected.', 403);
+    }
     const destination = join(pathRoot, job.id + '.md');
     const content = '# ' + job.title + '\n\n' + job.text + '\n';
     await writeFile(destination, content, { flag: 'wx', mode: 0o600 });
