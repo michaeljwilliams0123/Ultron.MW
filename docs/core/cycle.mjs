@@ -26,6 +26,8 @@ export function routeObjective(text, strategy = ACCEPTED_SEED) {
   }
   // v2 broadens recognition, never broadens actual executable tool authority.
   if (/^(help|what (can|may) you do|list (available )?commands)$/.test(lower)) return '/help';
+  if (/^(?:self scan|scan (?:yourself|ultron)|(?:inspect|check|audit|review|show) (?:your|ultron(?:'s)?) (?:self|cognition|capabilities|weaknesses|intelligence))(?: status)?$/.test(lower))
+    return '/self scan';
   if (/^(inspect|check|show|list|review|look at|tell me about|what is) (the |my |our )?(repository|repo|project files|source tree|project structure)( structure| files)?$/.test(lower))
     return '/repo inspect';
   if (/^(inspect|check|show|review|give me|what is|what's|how is|report) (the |my |current )?(local |ultron )?(system|runtime|server|execution)( health| status| state)?$/.test(lower) ||

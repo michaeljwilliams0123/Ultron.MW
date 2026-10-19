@@ -326,6 +326,15 @@
   $('cloud-pr').addEventListener('click', () => {
     routePrToGitHub($('code-manifest').value.trim() || $('message').value.trim());
   });
+  $('self-scan').addEventListener('click', () => {
+    try {
+      const url=createCloudTaskUrl('/self scan');
+      window.open(url,'_blank','noopener,noreferrer');
+      line('Ultron · Self-scan', 'Confirm the prefilled GitHub Issue to inspect current main, routing links, known weaknesses and unknown live readiness. The verified findings return as a cloud receipt.');
+    } catch (error) {
+      line('Ultron · Self-scan rejected',error.message);
+    }
+  });
   $('cloud-run').addEventListener('click', () => {
     const objective = $('message').value.trim();
     try {

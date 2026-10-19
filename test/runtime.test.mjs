@@ -112,7 +112,7 @@ test('upgrading from draft-only local state preserves previously saved objective
 test('the full read-only capability list has executable receipts', async () => fixture(async ({ base, post }) => {
   const manifest = await (await fetch(base() + '/api/capabilities')).json();
   assert.equal(manifest.autonomy, false);
-  assert.equal(manifest.commands.length, 4);
+  assert.equal(manifest.commands.length, 5);
   for (const item of manifest.commands) {
     const result = await post('/api/execute', item.command);
     assert.equal(result.status, 201, item.command);
@@ -121,7 +121,7 @@ test('the full read-only capability list has executable receipts', async () => f
     assert.equal(payload.receipt.command, item.command);
   }
   const state = await (await fetch(base() + '/api/state')).json();
-  assert.equal(state.receipts.length, 4);
+  assert.equal(state.receipts.length, 5);
 }));
 
 test('failed state persistence never returns success or mutates the ledger', async () => fixture(async ({ base, post, statePath }) => {
