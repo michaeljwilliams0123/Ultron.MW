@@ -219,7 +219,8 @@ export async function githubRequest(path, { method = 'GET', body, optional = fal
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH,'utf8'));
-    const result = await (event?.issue?.title === CODE_PR_TITLE &&\n      event?.issue?.body?.startsWith(CODE_PR_MARKER + '\\n') ? launchCodePr : launchCloudPr)({
+    const result = await (event?.issue?.title === CODE_PR_TITLE &&
+      event?.issue?.body?.startsWith(CODE_PR_MARKER + '\n') ? launchCodePr : launchCloudPr)({
       event, actor: process.env.GITHUB_ACTOR,
       repository: process.env.GITHUB_REPOSITORY,
       executorSha: process.env.GITHUB_SHA,
