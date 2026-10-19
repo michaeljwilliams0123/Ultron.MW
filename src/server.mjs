@@ -38,7 +38,7 @@ async function readJson(req) {
   catch { throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 }); }
 }
 
-export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama(), gateway = createActionGateway({ root }), ownerKey = makeSessionKey() } = {}) {
+export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama(), gateway = createActionGateway({ root }), ownerKey = makeSessionKey(), githubDraftEnabled = process.env.ULTRON_ENABLE_GITHUB_DRAFT === '1' } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
   let state = { objectives: [], receipts: [], plans: [], conversations: [], ownerJobs: [],
     evolution: { accepted: ACCEPTED_SEED, evaluations: [] },
@@ -138,7 +138,8 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           } catch { /* local notes remain available without GitHub authentication */ }
           return response(res, 200, {
             paired: true, computerReady: true, github,
-            actions: ['local-note', 'github-draft'],
+            actions: githubDraftEnabled ? ['local-note', 'github-draft'] : ['local-note'],
+            githubDraftStatus: githubDraftEnabled ? 'enabled-by-owner' : 'disabled-unverified',
             restricted: 'No arbitrary filesystem paths, shell, merge, deploy, or secret management',
           });
         }
@@ -170,6 +171,9 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           const input = await readJson(req);
           if (req.url === '/api/owner/prepare') {
             const proposal = validateAction(input);
+            if (proposal.kind === 'github-draft' && !githubDraftEnabled) {
+              return response(res, 403, { error: 'GitHub write adapter is disabled pending live acceptance' });
+            }
             const job = await transact(next => {
               const old = next.ownerJobs.find(item => item.id === proposal.id);
               if (old) {
@@ -193,6 +197,9 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           if (req.url === '/api/owner/execute') {
             if (typeof input?.id !== 'string') {
               return response(res, 400, { error: 'Prepared operation ID required' });
+            }
+            if (!githubDraftEnabled && state.ownerJobs.some(j => j.id === input.id && j.kind === 'github-draft')) {
+              return response(res, 403, { error: 'GitHub write adapter is disabled pending live acceptance' });
             }
             const job = await transact(next => {
               const item = next.ownerJobs.find(j => j.id === input.id);
