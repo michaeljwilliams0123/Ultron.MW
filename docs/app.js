@@ -318,7 +318,7 @@
       const url = createCloudPrUrl(objective);
       window.open(url, '_blank', 'noopener,noreferrer');
       line('Ultron · Create PR to main',
-        'Confirm the prefilled PR proposal Issue in GitHub. An owner-only hosted runner creates a documentation proposal branch and PR targeting main. The GitHub Issue receives the verified PR link. No code implementation, auto-merge, PC or local port is required.');
+        'Confirm the prefilled Issue in GitHub. A plain objective creates a documentation proposal; a JSON code-change manifest with baseSha and exact source edits creates a real implementation commit and PR targeting main. Both use the same owner-only hosted routing and return a verified PR link. No auto-merge or local PC is required.');
     } catch (error) {
       line('Ultron · PR request rejected', error.message);
     }
