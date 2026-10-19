@@ -231,3 +231,24 @@ test('failed persistence cannot silently adopt a routing candidate', async () =>
   storage.failWrites(false);
   assert.equal((await vault.evaluateAndAdopt()).status, 'adopted');
 });
+
+
+test('browser plans are encrypted, restored and remain non-executable on reload', async () => {
+  const storage = memoryStorage();
+  const vault = create(storage);
+  await vault.open(passphrase);
+  const plan = {
+    objective: 'inspect repository',
+    strategy: 'routing-v1', autonomous: false,
+    steps: [{ index: 0, description: 'inspect repository', command: null,
+      kind: 'needs-capability', status: 'blocked', reason: 'not available' }],
+  };
+  const saved = await vault.savePlan(plan);
+  assert.equal(saved.status, 'draft');
+  assert.doesNotMatch(storage.getItem(VAULT_KEY), /inspect repository/);
+  vault.lock();
+  const reloaded = create(storage);
+  await reloaded.open(passphrase);
+  assert.equal(reloaded.snapshot().plans[0].objective, 'inspect repository');
+  assert.equal(reloaded.snapshot().plans[0].autonomous, false);
+});

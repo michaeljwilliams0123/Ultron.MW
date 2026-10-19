@@ -120,7 +120,11 @@
       const card = line('Ultron · saved model answer (unverified)', item.answer);
       addFeedbackCard(card, item.id, item.feedback);
     }
-    if (!items.length) line('Ultron · memory ready',
+    for (const plan of vault.snapshot().plans.slice(-4)) {
+      const card = line('Ultron · encrypted saved plan (not executed)', plan.objective);
+      addPlanControls(card, plan);
+    }
+    if (!items.length && !vault.snapshot().plans.length) line('Ultron · memory ready',
       'Your next browser AI responses can be saved here. This memory stays on this device and cannot perform tools.');
   }
 
@@ -289,9 +293,10 @@
       } else {
         const { planObjective } = await import('./core/cycle.mjs');
         plan = planObjective(text, { strategy: acceptedRouting() });
+        if (vault?.unlocked()) plan = await vault.savePlan(plan);
       }
       const card = line('Ultron · ' + (connected ? 'saved local objective plan' :
-        'browser-only draft plan'), plan.objective);
+        vault?.unlocked() ? 'encrypted browser plan (not executed)' : 'session-only draft plan'), plan.objective);
       addPlanControls(card, plan);
       if (!connected) line('Ultron · execution boundary',
         'This Pages interface can plan safe steps but cannot execute private PC or GitHub tools.');

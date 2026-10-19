@@ -82,3 +82,12 @@ Current local API: GET /api/health, /api/capabilities, /api/state and POST /api/
 
 ## Decision 003 — One browser UI, optional on-device WebGPU reasoning
 GitHub Pages cannot run the Node service. The single UI gains an **opt-in, browser-only WebGPU adapter** for ephemeral text responses; there is no backend, provider token or Cloudflare dependency on that route. Activation requires a direct user click and supported GPU/browser; model downloads are not silent. Browser inferences are unverified text only, not tool execution or continuous learning. The more powerful local Node/Ollama route remains preferred for durable receipts. A future private device connection can expose exactly the same local UI via authenticated Tailscale Serve, but is *not* implemented here. Experimental CDN dependency must be bundled, reviewed, and version-locked before trusted production usage.
+
+## Decision 005 — Unified bounded objectives and measurable strategy adoption
+The same docs/core/cycle.mjs module powers both environments. It defines immutable allowlisted commands, bounded three-step objective plans and a fixed, independently authored regression dataset. docs/core/providers.mjs selects based on real provider readiness rather than speculative availability. The local server serves the common modules directly, preserving one code path.
+
+A plan is a draft until the owner explicitly runs allowed steps. The local Node runtime records receipt IDs, atomic persisted state and idempotent reruns. GitHub Pages plans cannot execute remote actions. Browser plans can be encrypted alongside conversations when the local vault is unlocked.
+
+The first measurable learning mechanism is **routing-policy selection**. Candidate routing-v2 can replace routing-v1 only on 20+ unique labeled cases, 5+ percentage points measured accuracy increase, zero new wrong cases and zero critical regressions. Results and accepted routing version are persisted with an explicit rollback path. This is evidence for the fixed routing benchmark, not evidence of LLM fine-tuning or improved generalization. Owner Helpful/Not helpful ratings remain distinct feedback.
+
+**Unmet goals:** actual connected owner-device acceptance; broader safe tool adapters; novel strategy generation and independent unseen-task evaluation; canary health rollback automation; remote authenticated execution and genuine cross-device sync. Model-weight training remains out of scope.
