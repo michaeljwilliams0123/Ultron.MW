@@ -59,9 +59,9 @@ Model-weight training is a later, separately provisioned capability; harness opt
 | Datadog Experiments | candidate flags only if already onboarded and justified | creating services for zero existing flags |
 
 ## Acceptance requirements (not yet satisfied)
-1. Local UI reflects a real connected runtime and persisted objective receipt after refresh.
-2. Tool capability manifest and one harmless authorized end-to-end read-only execution.
-3. Learning case is recorded; bad candidate rejected; good candidate canary promoted, then rolled back with preserved evidence.
+1. Local UI reflects a real connected runtime and persisted objective receipt after refresh (automated Node integration coverage exists; actual owner-device/browser acceptance remains outstanding).
+2. Tool capability manifest and one harmless authorized end-to-end read-only execution (implemented and integration-tested with loopback HTTP; device acceptance outstanding).
+3. Learning case is recorded; bad candidate rejected; good candidate canary promoted, then rolled back with preserved evidence (synthetic deterministic benchmark tests only; trusted real-world evaluation not integrated).
 4. Same UI runs locally and on phone without exposing secrets. If phone requires remote runtime, demonstrate authenticated transport.
 5. GitHub Pages shell is optional, static, and non-secret. Cloudflare is absent until a specific unmet requirement demands it.
 
@@ -69,3 +69,6 @@ Model-weight training is a later, separately provisioned capability; harness opt
 - Historical: `mahoraga` and archived `mahoraga-baseline-20261018`.
 - New system: `Ultron.MW` (product name Ultron).
 - Do not rename or redirect the old production repository as part of bootstrapping.
+
+## Review remediation tranche
+Current local API: GET /api/health, /api/capabilities, /api/state and POST /api/objectives (draft only), POST /api/execute (four allowlisted read-only commands). The server binds exclusively to 127.0.0.1, validates Host and write Origin, uses no Cloudflare, and stores objective/receipt state with serialized atomic writes. GitHub Pages serves exactly the same UI source, but is disconnected from the local runtime until authenticated remote access is explicitly implemented. No arbitrary command or autonomous LLM execution is represented as available.

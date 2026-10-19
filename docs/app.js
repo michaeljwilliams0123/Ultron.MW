@@ -33,7 +33,7 @@
         label: 'Ultron · ' + x.status + ' · ' + x.command,
         message: x.summary + '\n' + JSON.stringify(x.details), at: x.createdAt,
       })),
-    ].sort((a, b) => a.at.localeCompare(b.at)).slice(-15);
+    ].sort((a, b) => String(a.at || '').localeCompare(String(b.at || ''))).slice(-15);
     for (const item of entries) line(item.label, item.message);
     if (!entries.length) line('Ultron · capabilities',
       'Use /help, /system status, /repo inspect, /learning status for verified read-only operations. Other text is saved as a draft.');

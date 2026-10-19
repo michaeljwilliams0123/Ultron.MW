@@ -16,7 +16,7 @@ Requires Node.js 20+; no npm install or API token.
 node src/server.mjs
 ```
 
-Open http://127.0.0.1:4782/ to see the single local UI. This initial server provides status and draft capture; **it does not run LLM calls, external tools or live actions yet**.
+Open http://127.0.0.1:4782/ to see the single local UI. Commands /help, /system status, /repo inspect and /learning status execute bounded read-only checks and persist signed-off outcome *records* (not cryptographic signatures) through restart. Other text is saved as a draft. No AI model, external action or general shell is available yet.
 
 ```bash
 node --test test/*.test.mjs
@@ -26,12 +26,12 @@ The same `docs/index.html` is deployable as a GitHub Pages **public static shell
 
 ## What exists
 - `src/learning.mjs`: deterministic, evidence-gated harness update selection, rollback and idempotent observation ledger.
-- `src/server.mjs`: loopback-only local status/draft server; serves the same UI as Pages.
-- `docs/index.html`: interactive single-pane responsive UI, with a truthful offline/connected indicator.
-- `test/learning.test.mjs`: regression tests.
+- `src/server.mjs`: loopback-only status/draft/read-only command server; serves the same UI as Pages, requires local origin for writes, and persists state atomically.
+- `docs/index.html` and `docs/app.js`: one responsive UI for GitHub Pages (offline static) or the local runtime (connected, read-only).
+- `test/*.test.mjs`: regression and local HTTP integration tests.
 - `docs/ARCHITECTURE.md`: boundaries, evaluation policy and rollout plan.
 
 ## Migration
 Mahoraga remains unchanged. The previously created private archived `mahoraga-baseline-20261018` is historical source evidence, not an Ultron runtime dependency. Port capabilities selectively behind conformance tests; do not transplant obsolete pipelines.
 
-**Status:** foundation/prototype only. No Pages deployment, production cutover, model training, external execution or Cloudflare work is implied by this commit.
+**Status:** local read-only execution prototype. GitHub Pages is a publicly visible static shell; the local runtime supplies actual receipts, but the Pages URL cannot execute locally without an authenticated remote bridge. No production cutover, model training, remote execution or Cloudflare work is implied.
