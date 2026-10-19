@@ -4,7 +4,7 @@
  * Caveat: runtime third-party scripts and same-origin Pages can still access
  * plaintext while unlocked. This is encryption at rest, not code isolation.
  */
-import { ACCEPTED_SEED, CANDIDATE, STRATEGIES, evaluateRouting } from './core/cycle.mjs';
+import { ACCEPTED_SEED, CANDIDATE, STRATEGIES, commitRoutingCandidate } from './core/cycle.mjs';
 export const VAULT_KEY = 'ultron.mw.browser.vault.v1';
 const VERSION = 1;
 const ITERATIONS = 210000;
@@ -265,18 +265,21 @@ export function createBrowserVault({
       if (next.evolution.accepted === CANDIDATE) {
         return { status: 'already-adopted', accepted: CANDIDATE };
       }
-      const report = evaluateRouting({ accepted: next.evolution.accepted });
+      const { report, receipt: promotion } = commitRoutingCandidate({
+        accepted: next.evolution.accepted,
+      });
       next.evolution.evaluations.push({
         benchmarkId: report.benchmarkId,
         baselineVersion: report.baselineVersion, candidateVersion: report.candidateVersion,
         delta: report.delta, passed: report.passed, regressions: report.regressions,
         criticalRegressions: report.criticalRegressions, total: report.total,
         baselineAccuracy: report.baselineAccuracy, candidateAccuracy: report.candidateAccuracy,
-        evaluatedAt: report.evaluatedAt,
+        evaluatedAt: report.evaluatedAt, promotion,
       });
       next.evolution.evaluations = next.evolution.evaluations.slice(-12);
       if (report.passed) next.evolution.accepted = report.candidateVersion;
-      return { ...report, status: report.passed ? 'adopted' : 'rejected' };
+      return { ...report, promotion,
+        status: report.passed ? 'adopted' : 'rejected' };
     });
   }
   async function rollbackRouting(reason) {

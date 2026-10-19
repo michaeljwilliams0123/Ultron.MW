@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { planObjective } from '../docs/core/cycle.mjs';
 import { commandsFor, capabilityManifest } from '../docs/core/capabilities.mjs';
+import { deliberatePlan } from './grokbot-governor.mjs';
 export const REPOSITORY='michaeljwilliams0123/Ultron.MW';
 export const MARKER='<!-- ULTRON_CLOUD_RECEIPT_V1 -->';
 export const RECEIPT_SCHEMA='ultron.cloud.receipt.v2';
@@ -43,12 +44,22 @@ export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(
     throw Error('Invalid executor provenance');
   const plan=planObjective(task.objective,{strategy:'routing-v2'});
   const startedAt=now();
+  const readySteps=plan.steps.filter(step=>step.status==='ready'&&allowed.has(step.command)).length;
+  const blockedSteps=plan.steps.length-readySteps;
+  const evidenceCoverage=readySteps/plan.steps.length;
+  const cognition=deliberatePlan(plan,{
+    evidenceCoverage,calibratedConfidence:evidenceCoverage,
+    knownUnknowns:plan.steps.filter(step=>step.status!=='ready'||!allowed.has(step.command))
+      .map(step=>'unsupported-step:'+step.index),
+    materialConflictCount:blockedSteps,
+    observedAt:new Date(startedAt).toISOString(),
+  });
   const base={schema:RECEIPT_SCHEMA,source:'GitHub Actions',
     issueNumber:task.issueNumber,checkedAt:startedAt,startedAt,runId:String(runId).slice(0,32),
     executorSha,runAttempt,runUrl:/^[0-9]{1,32}$/.test(String(runId))?
       'https://github.com/'+REPOSITORY+'/actions/runs/'+runId:null,
     attemptOrdinal,attemptLimit:MAX_TASK_ATTEMPTS,
-    objectiveDigest:taskDigest(task),
+    objectiveDigest:taskDigest(task),cognition,
     localMachineRequired:false,autonomousWriteAccess:false};
   const finish=(status,receipts)=>({...base,status,finishedAt:now(),receipts,
     retry:{disposition:status==='succeeded'||status==='blocked'?'terminal':
@@ -103,6 +114,7 @@ export function formatReceipt(outcome){
   if(outcome?.schema!==RECEIPT_SCHEMA)throw Error('Bad receipt');
   const rows=outcome.receipts.map((r,i)=>(i+1)+'. '+(r.command||'Blocked')+' — '+r.status+': '+r.summary);
   return [MARKER,'### Ultron cloud execution receipt','Status: '+outcome.status,
+    'Cognitive recommendation: '+outcome.cognition.decision+' (advisory only)',
     'Attempt: '+outcome.attemptOrdinal+' of '+outcome.attemptLimit+
       '; retry: '+outcome.retry.disposition,
     'Source authority: exact current main '+(outcome.sourceAuthority?.preReceiptMainSha||'not recorded'),

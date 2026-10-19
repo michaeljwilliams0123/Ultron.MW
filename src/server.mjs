@@ -9,7 +9,8 @@ import { createLocalOllama } from './providers/ollama.mjs';
 import { createBrain } from './brain.mjs';
 import { createActionGateway, validateAction, keyIsValid, makeSessionKey } from './action-gateway.mjs';
 import { advanceExperience, evaluateExperience, suggestFromExperience, verifiedExperiences } from './experience.mjs';
-import { ACCEPTED_SEED, CANDIDATE, planObjective, evaluateRouting } from '../docs/core/cycle.mjs';
+import { deliberatePlan } from './grokbot-governor.mjs';
+import { ACCEPTED_SEED, CANDIDATE, planObjective, commitRoutingCandidate } from '../docs/core/cycle.mjs';
 import { selectExecution } from '../docs/core/providers.mjs';
 import { capabilityManifest } from '../docs/core/capabilities.mjs';
 
@@ -336,6 +337,16 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         if (req.url === '/api/plan') {
           const selected = state.evolution?.accepted || ACCEPTED_SEED;
           const plan = planObjective(input?.text, { strategy: selected });
+          const blockedSteps = plan.steps.filter(step => step.status !== 'ready');
+          const observedAt = new Date().toISOString();
+          const cognition = deliberatePlan(plan, {
+            evidenceCoverage: blockedSteps.length === 0 ? 0.95 :
+              Number((1 - blockedSteps.length / plan.steps.length).toFixed(6)),
+            calibratedConfidence: blockedSteps.length === 0 ? 0.85 : 0.5,
+            knownUnknowns: blockedSteps.map(step => `unsupported-step-${step.index}`),
+            materialConflictCount: blockedSteps.length,
+            observedAt,
+          });
           // The same cognitive plan may include a learned suggestion, but it
           // never acquires privileged execution rights from a model or policy.
           const allowedActions = githubDraftEnabled ?
@@ -343,12 +354,12 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           const suggested = suggestFromExperience(plan.objective,
             state.experience?.active, allowedActions);
           const saved = await transact(next => {
-            const item = { id: 'plan-' + randomUUID(), ...plan,
+            const item = { id: 'plan-' + randomUUID(), ...plan, cognition,
               advisory: suggested ? {
                 kind: suggested, status: 'owner-review-required',
                 executable: false, authority: 'suggestion-only',
               } : null,
-              createdAt: new Date().toISOString() };
+              createdAt: observedAt };
             next.plans.push(item);
             next.plans = next.plans.slice(-30);
             return item;
@@ -394,17 +405,18 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           const result = await transact(next => {
             const accepted = next.evolution.accepted;
             if (accepted === CANDIDATE) return { status: 'already-adopted', accepted };
-            const report = evaluateRouting({ accepted });
+            const { report, receipt: promotion } = commitRoutingCandidate({ accepted });
             next.evolution.evaluations.push({
               benchmarkId: report.benchmarkId, baselineVersion: report.baselineVersion,
               candidateVersion: report.candidateVersion, baselineAccuracy: report.baselineAccuracy,
               candidateAccuracy: report.candidateAccuracy, delta: report.delta, passed: report.passed,
               criticalRegressions: report.criticalRegressions, regressions: report.regressions,
-              total: report.total, evaluatedAt: report.evaluatedAt,
+              total: report.total, evaluatedAt: report.evaluatedAt, promotion,
             });
             next.evolution.evaluations = next.evolution.evaluations.slice(-12);
             if (report.passed) next.evolution.accepted = report.candidateVersion;
-            return { ...report, status: report.passed ? 'adopted' : 'rejected' };
+            return { ...report, promotion,
+              status: report.passed ? 'adopted' : 'rejected' };
           });
           return response(res, 200, { evaluation: result });
         }

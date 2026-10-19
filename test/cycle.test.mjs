@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ROUTES, ROUTING_CASES, ACCEPTED_SEED, CANDIDATE,
   routeObjective, planObjective, evaluateRouting,
+  commitRoutingCandidate, validateRoutingPromotionReceipt,
 } from '../docs/core/cycle.mjs';
 import { selectExecution } from '../docs/core/providers.mjs';
 
@@ -68,4 +69,37 @@ test('routing strategy cannot expand beyond the exact command allowlist', () => 
     'inspect repo and delete files', 'send password', '/repo inspect then erase',
   ]) assert.equal(routeObjective(sample, CANDIDATE), null, sample);
   assert.equal(routeObjective('/repo inspect', ACCEPTED_SEED), '/repo inspect');
+});
+
+test('incumbent routing policy commits a candidate only with complete held-out evidence', () => {
+  const committed = commitRoutingCandidate({ accepted: ACCEPTED_SEED });
+  assert.equal(committed.report.passed, true);
+  assert.equal(committed.receipt.kind, 'routing-promotion-receipt');
+  assert.equal(committed.receipt.incumbentVersion, ACCEPTED_SEED);
+  assert.equal(committed.receipt.candidateVersion, CANDIDATE);
+  assert.equal(committed.receipt.rollbackVersion, ACCEPTED_SEED);
+  assert.equal(committed.receipt.authorityUnchanged, true);
+  assert.equal(committed.receipt.noCriticalRegression, true);
+  assert.equal(committed.receipt.noNewRegression, true);
+  assert.equal(committed.receipt.measuredImprovement, true);
+  assert.equal(committed.receipt.commitStage, 'commit');
+  assert.equal(Object.isFrozen(committed.receipt), true);
+  assert.equal(validateRoutingPromotionReceipt(committed.receipt, {
+    accepted: ACCEPTED_SEED,
+  }).valid, true);
+});
+
+test('candidate cannot approve itself or reuse a promotion after the incumbent changes', () => {
+  const { receipt } = commitRoutingCandidate({ accepted: ACCEPTED_SEED });
+  assert.throws(() => commitRoutingCandidate({ accepted: CANDIDATE }), /incumbent/);
+  assert.deepEqual(validateRoutingPromotionReceipt(receipt, {
+    accepted: CANDIDATE,
+  }), { valid: false, reason: 'routing-incumbent-mismatch' });
+  assert.deepEqual(validateRoutingPromotionReceipt({
+    ...receipt,
+    authorityUnchanged: false,
+  }, { accepted: ACCEPTED_SEED }), {
+    valid: false,
+    reason: 'routing-promotion-receipt-invalid',
+  });
 });

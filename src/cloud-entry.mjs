@@ -1,4 +1,5 @@
 import { readFile, appendFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import { parseTask,executeCloudTask,formatReceipt,REPOSITORY,taskDigest,parseReceiptComment,
   MAX_TASK_ATTEMPTS } from './cloud-cycle.mjs';
 const sha=/^[0-9a-f]{40}$/;
@@ -82,7 +83,7 @@ export async function runCloudEntry({event,eventName,actor,repository,
   }else outcome={...outcome,sourceAuthority:{executorSha,admittedMainSha,admittedAt}};
   return outcome;
 }
-if(import.meta.url==='file://'+process.argv[1]){
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try{
     const event=JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH,'utf8'));
     const r=await runCloudEntry({event,eventName:process.env.GITHUB_EVENT_NAME,

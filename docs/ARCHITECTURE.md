@@ -58,6 +58,26 @@ Ollama and browser model adapters accept bounded user/assistant history as untru
 
 Shared routing-policy evaluation uses versioned labeled fixtures and explicit rollback. Local experience learning requires 16 distinct verified, rated outcomes, diverse training labels, a chronological holdout, at least five percentage points improvement, zero new errors and unsafe-fixture rejection. Promotion changes suggestions, not action authority or model weights. Synthetic tests prove algorithm behavior, not general capability gains.
 
+The continual-improvement lifecycle is explicitly separated into four evidence domains:
+
+1. **Serve** — the existing deterministic planner, read-only executor and optional local/browser model surfaces handle requests without changing their authority.
+2. **Observe** — task receipts, independently verified owner-action results and explicit ratings become bounded evidence; drafts and generated prose do not.
+3. **Grow** — routing or suggestion candidates are evaluated against fixed or chronological held-out cases. Candidate output cannot supply its own scores.
+4. **Commit** — the incumbent routing policy emits a promotion receipt only after the current benchmark passes with the required improvement, no new regressions and a named rollback version. The receipt becomes stale when the accepted version changes.
+
+## Cognitive governance
+
+Local plan creation and the scheduled or owner-confirmed GitHub cloud lane invoke a fixed, deterministic GrokBot council. Builder, Skeptic and Steward are cognitive profiles, not operational subagents: they own no credentials, tools, deployment rights or independent task loop. The planner records public role projections while private episodic references remain non-exportable except through an explicit promotion policy. Cloud receipts bind the advisory decision to the exact plan fingerprint while retaining the existing read-only allowlist.
+
+The council combines four lifted and adapted Mahoraga contracts:
+
+- metacognition that blocks overconfident or under-evidenced work;
+- a counterfactual world model that propagates uncertainty without mutating observed state;
+- stable cognitive identities whose traits never widen capability authority;
+- collective synthesis that preserves high-confidence material dissent instead of majority-voting it away.
+
+Each `grokbot-deliberation-receipt` is immutable, fingerprinted, zero-credit and advisory-only. A `proceed` decision means the plan is consistent with the currently implemented read-only allowlist and supplied evidence. It does not execute the plan or prove live readiness. A `hold` decision records the missing capability, evidence gap or conflict. See [`MAHORAGA-LIFT-SHIFT.md`](MAHORAGA-LIFT-SHIFT.md) for source-to-target provenance and deferred surfaces.
+
 CI runs for all PRs and main pushes. It checks exact-head syntax and regression tests, validates all workflow syntax with checksum-pinned actionlint, and pins external actions to immutable SHAs. Verification has read-only repository permissions and no persisted Git credentials. Branch rules, merge enforcement and deployment activation are administrative/runtime states requiring separate read-back; configuration in source alone is not proof.
 
 Device/WebGPU/Ollama acceptance, sustained heartbeat reliability, an enforced failing-PR merge gate, real-task benchmark quality and deployment at the final merge SHA remain separate acceptance work. The dated baseline document tracks these boundaries.
