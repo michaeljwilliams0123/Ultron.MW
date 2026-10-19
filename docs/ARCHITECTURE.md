@@ -72,3 +72,10 @@ Model-weight training is a later, separately provisioned capability; harness opt
 
 ## Review remediation tranche
 Current local API: GET /api/health, /api/capabilities, /api/state and POST /api/objectives (draft only), POST /api/execute (four allowlisted read-only commands). The server binds exclusively to 127.0.0.1, validates Host and write Origin, uses no Cloudflare, and stores objective/receipt state with serialized atomic writes. GitHub Pages serves exactly the same UI source, but is disconnected from the local runtime until authenticated remote access is explicitly implemented. No arbitrary command or autonomous LLM execution is represented as available.
+
+## Decision 002 — Optional local model cognition
+- Single coordinator (`src/brain.mjs`) selects between response and a single allowlisted read-only tool.
+- Local provider (`src/providers/ollama.mjs`) is explicitly disabled unless `ULTRON_ENABLE_LOCAL_MODEL=1`. Ollama uses `127.0.0.1:11434`, JSON-mode chat, bounded generation, and timeouts; no tokens or external endpoints.
+- Freeform text routes to `POST /api/think` only when a genuine local model is visible. Otherwise it remains a draft. Slash commands always use deterministic `POST /api/execute`.
+- Model output is treated as untrusted. Unsupported tool names, a second tool attempt, and malformed JSON are rejected; no simulated success receipts.
+- This is **not** automatically self-training, internet-connected AI, background execution, or full autonomy. Provider operation requires a separately running local model.

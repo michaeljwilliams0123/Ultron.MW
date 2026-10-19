@@ -35,3 +35,8 @@ The same `docs/index.html` is deployable as a GitHub Pages **public static shell
 Mahoraga remains unchanged. The previously created private archived `mahoraga-baseline-20261018` is historical source evidence, not an Ultron runtime dependency. Port capabilities selectively behind conformance tests; do not transplant obsolete pipelines.
 
 **Status:** local read-only execution prototype. GitHub Pages is a publicly visible static shell; the local runtime supplies actual receipts, but the Pages URL cannot execute locally without an authenticated remote bridge. No production cutover, model training, remote execution or Cloudflare work is implied.
+
+## Optional local cognition
+Ultron now supports an optional `Ollama` adapter for model reasoning without a cloud API key or a second UI. This feature is **off by default**. Install and run Ollama separately, obtain a model that fits your machine, and start Ultron with `ULTRON_ENABLE_LOCAL_MODEL=1`; optionally set `ULTRON_OLLAMA_MODEL` to an installed model. Ultron contacts only `127.0.0.1:11434` and makes at most two model calls and one explicitly whitelisted read-only tool call per request. There is no unrestricted shell or file write capability, and the local server stays bound to `127.0.0.1`.
+
+The model's generated answer is labeled an **unverified model narrative** and is separate from an actual deterministic tool execution receipt. Until a model is installed and enabled, free-form input remains draft-only. The public GitHub Pages shell cannot invoke a private local runtime by itself.

@@ -28,6 +28,8 @@ jobs:
           node --check src/learning.mjs
           node --check src/operations.mjs
           node --check src/server.mjs
+          node --check src/brain.mjs
+          node --check src/providers/ollama.mjs
           node --check docs/app.js
           for file in test/*.test.mjs; do node --check "$file"; done
       - name: Core regression suite

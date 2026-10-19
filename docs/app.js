@@ -2,6 +2,7 @@
   const $ = id => document.getElementById(id);
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
   let connected = false;
+  let modelReady = false;
   const title = {
     brain: 'Ultron is ready to evolve.',
     learning: 'Evidence before evolution.',
@@ -30,7 +31,7 @@
     const entries = [
       ...state.objectives.slice(-12).map(x => ({ label: 'You · saved draft', message: x.text, at: x.createdAt })),
       ...state.receipts.slice(-12).map(x => ({
-        label: 'Ultron · ' + x.status + ' · ' + x.command,
+        label: x.kind === 'model-response' ? 'Ultron · local model (unverified narrative)' : 'Ultron · ' + x.status + ' · ' + x.command,
         message: x.summary + '\n' + JSON.stringify(x.details), at: x.createdAt,
       })),
     ].sort((a, b) => String(a.at || '').localeCompare(String(b.at || ''))).slice(-15);
@@ -41,6 +42,7 @@
   async function sync() {
     if (!local) {
       connected = false;
+      modelReady = false;
       $('status').textContent = 'Static Pages shell · offline';
       $('runtime').textContent = 'Offline';
       $('hero-sub').textContent = 'Start local runtime for live execution';
@@ -56,17 +58,19 @@
       const state = await sr.json();
       if (health.name !== 'Ultron' || health.connected !== true) throw Error('Wrong local runtime');
       connected = true;
-      $('status').textContent = 'Local runtime · read-only';
+      modelReady = health.modelReady === true;
+      $('status').textContent = modelReady ? 'Local model · read-only tools' : 'Local runtime · read-only';
       $('status').classList.add('live');
       $('runtime').textContent = 'Local';
       $('objectives').textContent = String(state.objectives.length);
       $('release').textContent = state.acceptedVersion || 'seed-v1';
-      $('hero-sub').textContent = 'Deterministic tools online · AI provider not connected';
+      $('hero-sub').textContent = modelReady ? 'Local model '+ health.model +' ready · bounded tool access' : 'Deterministic tools online · AI provider not connected';
       $('learning-state').textContent = String(state.observations) + ' evidence observations · ' +
         String(state.candidates) + ' candidates · accepted release ' + state.acceptedVersion + '.';
       history(state);
     } catch {
       connected = false;
+      modelReady = false;
       $('status').classList.remove('live');
       $('status').textContent = 'Local runtime unavailable';
       $('runtime').textContent = 'Offline';
@@ -82,7 +86,7 @@
       line('Ultron · unsaved', 'This interface is offline. The objective was not saved and no tool executed.');
       return;
     }
-    const url = text.startsWith('/') ? '/api/execute' : '/api/objectives';
+    const url = text.startsWith('/') ? '/api/execute' : modelReady ? '/api/think' : '/api/objectives';
     $('composer').querySelector('button').disabled = true;
     try {
       const res = await fetch(url, {
