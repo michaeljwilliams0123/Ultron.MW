@@ -15,6 +15,7 @@ Ultron is an independent, single-owner execution platform with a GitHub-hosted r
 | Browser memory | Opt-in encrypted vault | History, feedback, plans, encrypted import/export | Device-local; manual transfer rather than automatic synchronization |
 | Routing improvement | Shared core and local ledger | Fixed held-out routing evaluation and rollback | Policy selection, not model training or general intelligence |
 | Experience suggestions | Local owner-action ledger | Verified, rated outcomes inform suggestions | Minimum 16 distinct outcomes; chronological holdout; no new action authority |
+| Cognitive governance | Local planning | Fixed GrokBot council, metacognition, counterfactual simulation and dissent-preserving synthesis | Deterministic, zero-credit and advisory; no new action authority |
 | Owner actions | Paired local Node | Bounded notes; optional documentation draft adapter | Draft adapter disabled by default; no shell, merge, or deployment permission |
 
 The deterministic tool catalogue is defined once in [`docs/core/capabilities.mjs`](docs/core/capabilities.mjs). Router, local executor and cloud executor consume it. `/help` includes the cloud manifest; local `GET /api/capabilities` includes the local manifest. `implemented` describes source support; `liveReadiness: not-probed` explicitly avoids claiming a deployment or connected provider was verified.
@@ -69,6 +70,10 @@ Browser inference provides unverified text without tools. By default it is ephem
 ## Learning boundaries
 
 The shared router evaluates immutable `routing-v1` and `routing-v2` against labeled held-out fixtures. Adoption requires at least five percentage points of measured improvement, no newly incorrect cases, and no critical regression. Rollback preserves the audit trail.
+
+Promotion has a separate incumbent-governed commit receipt. The currently accepted routing policy runs the fixed evaluator, names the rollback version, proves the measured threshold and records that capability authority is unchanged. A candidate cannot approve itself or reuse the receipt after the accepted version changes. This is a policy-artifact commit boundary, not permission to promote code, deploy, merge, or train model weights.
+
+Every locally saved plan and every GitHub cloud outcome also carries a deterministic GrokBot deliberation receipt. Three fixed cognitive profiles—Builder, Skeptic and Steward—calibrate evidence, simulate uncertainty and preserve material dissent. The receipt records zero model invocations and zero credit cost and remains non-executable. These structures are an inspectable operational self-model; they are not evidence that Ultron is sentient, conscious or generally intelligent.
 
 Local experience suggestions require at least 16 distinct verified, owner-rated actions, positive/negative diversity and a chronological holdout. Candidates must improve by five percentage points without new held-out mistakes or unsafe recommendations. Suggestions cannot execute actions, enable an adapter, change permissions, or train model weights. With no qualified outcomes, Ultron reports insufficient evidence.
 

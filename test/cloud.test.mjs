@@ -49,7 +49,14 @@ test('hosted executor inspects authoritative main, not local hard disk',async()=
   assert.equal(receipt.autonomousWriteAccess,false);
   assert.equal(receipt.receipts[0].details.mainSha,SHA);
   assert.equal(receipt.receipts[0].details.fileCount,2);
+  assert.equal(receipt.cognition.kind,'grokbot-deliberation-receipt');
+  assert.equal(receipt.cognition.decision,'proceed');
+  assert.equal(receipt.cognition.authority.mode,'advisory-only');
+  assert.equal(receipt.cognition.authority.actionAuthority,'unchanged');
+  assert.equal(receipt.cognition.modelInvocations,0);
+  assert.equal(receipt.cognition.creditCost,0);
   assert.match(formatReceipt(receipt),/GitHub-hosted/);
+  assert.match(formatReceipt(receipt),/Cognitive recommendation: proceed/);
 });
 
 test('all-or-nothing refusal of unsafe mixed objectives without Github API call',async()=>{
@@ -62,6 +69,8 @@ test('all-or-nothing refusal of unsafe mixed objectives without Github API call'
     assert.equal(r.status,'blocked');
     assert.equal(calls,0);
     assert.equal(r.receipts[0].status,'blocked');
+    assert.equal(r.cognition.decision,'hold');
+    assert.equal(r.cognition.authority.executable,false);
   }
 });
 
@@ -112,4 +121,6 @@ test('scheduled cloud heartbeat is fixed, account-independent and cannot execute
   assert.equal(result.receipts.length,1);
   assert.equal(result.receipts[0].command,'/repo inspect');
   assert.equal(result.receipts[0].details.mainSha,SHA);
+  assert.equal(result.cognition.decision,'proceed');
+  assert.equal(result.cognition.paidFallback,false);
 });

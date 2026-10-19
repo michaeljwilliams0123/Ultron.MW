@@ -186,10 +186,15 @@ test('local routing evaluation persists versioned strategy, and rollback restore
   const evaluation = (await result.json()).evaluation;
   assert.equal(evaluation.status, 'adopted');
   assert.equal(evaluation.criticalRegressions, 0);
+  assert.equal(evaluation.promotion.kind, 'routing-promotion-receipt');
+  assert.equal(evaluation.promotion.incumbentVersion, 'routing-v1');
+  assert.equal(evaluation.promotion.candidateVersion, 'routing-v2');
+  assert.equal(evaluation.promotion.authorityUnchanged, true);
   await restart();
   const after = await (await fetch(base() + '/api/state')).json();
   assert.equal(after.evolution.accepted, 'routing-v2');
   assert.equal(after.evolution.evaluations.length, 1);
+  assert.equal(after.evolution.evaluations[0].promotion.commitStage, 'commit');
   const repeat = await evaluateRequest();
   assert.equal((await repeat.json()).evaluation.status, 'already-adopted');
   const rollback = await fetch(base() + '/api/learning/rollback', {

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 
 test('every PR including workflow-only changes runs verification at its exact head',async()=>{
-  const source=await readFile(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8');
+  const source=(await readFile(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8'))
+    .replace(/\r\n/g,'\n');
   assert.match(source,/\n  pull_request:/);
   assert.doesNotMatch(source,/\bpaths(?:-ignore)?:|pull_request_target/);
   assert.match(source,/ref: \$\{\{ github.event.pull_request.head.sha \|\| github.sha \}\}/);

@@ -114,3 +114,74 @@ export function evaluateRouting({
     limitation: 'Static labeled routing benchmark; not independent model evaluation or weight training.',
   };
 }
+
+const PROMOTION_KEYS = new Set([
+  'schemaVersion', 'kind', 'benchmarkId', 'incumbentVersion', 'candidateVersion',
+  'rollbackVersion', 'evaluationAt', 'sampleSize', 'delta',
+  'noCriticalRegression', 'noNewRegression', 'measuredImprovement',
+  'authorityUnchanged', 'actionAuthority', 'commitStage',
+]);
+
+/**
+ * Reef-style Commit boundary for routing artifacts.
+ *
+ * The incumbent strategy runs the fixed held-out evaluator. The challenger
+ * cannot supply its own scores, expand capabilities or reuse a receipt after
+ * the accepted strategy changes. This commits only a routing policy; it never
+ * grants action authority, promotes code or trains model weights.
+ */
+export function commitRoutingCandidate({ accepted = ACCEPTED_SEED } = {}) {
+  if (accepted !== ACCEPTED_SEED) {
+    throw new Error('Only the incumbent routing policy can commit this candidate');
+  }
+  const report = evaluateRouting({ accepted, candidate: CANDIDATE });
+  if (!report.passed) throw new Error('Candidate lacks complete held-out evidence');
+  const receipt = Object.freeze({
+    schemaVersion: 1,
+    kind: 'routing-promotion-receipt',
+    benchmarkId: report.benchmarkId,
+    incumbentVersion: report.baselineVersion,
+    candidateVersion: report.candidateVersion,
+    rollbackVersion: report.baselineVersion,
+    evaluationAt: report.evaluatedAt,
+    sampleSize: report.total,
+    delta: report.delta,
+    noCriticalRegression: report.criticalRegressions === 0,
+    noNewRegression: report.regressions === 0,
+    measuredImprovement: report.delta >= 0.05,
+    authorityUnchanged: true,
+    actionAuthority: 'read-only-allowlist',
+    commitStage: 'commit',
+  });
+  const validated = validateRoutingPromotionReceipt(receipt, { accepted });
+  if (!validated.valid) throw new Error(validated.reason);
+  return Object.freeze({ report, receipt });
+}
+
+export function validateRoutingPromotionReceipt(value, { accepted } = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).length !== PROMOTION_KEYS.size ||
+      Object.keys(value).some(key => !PROMOTION_KEYS.has(key)) ||
+      value.schemaVersion !== 1 || value.kind !== 'routing-promotion-receipt' ||
+      value.incumbentVersion !== ACCEPTED_SEED || value.candidateVersion !== CANDIDATE ||
+      value.rollbackVersion !== value.incumbentVersion ||
+      value.actionAuthority !== 'read-only-allowlist' || value.commitStage !== 'commit' ||
+      value.noCriticalRegression !== true || value.noNewRegression !== true ||
+      value.measuredImprovement !== true || value.authorityUnchanged !== true ||
+      typeof value.evaluationAt !== 'string' || !Number.isFinite(Date.parse(value.evaluationAt))) {
+    return Object.freeze({ valid: false, reason: 'routing-promotion-receipt-invalid' });
+  }
+  if (accepted !== value.incumbentVersion) {
+    return Object.freeze({ valid: false, reason: 'routing-incumbent-mismatch' });
+  }
+  const expected = evaluateRouting({
+    accepted: value.incumbentVersion,
+    candidate: value.candidateVersion,
+  });
+  if (value.benchmarkId !== expected.benchmarkId || value.sampleSize !== expected.total ||
+      value.delta !== expected.delta || expected.criticalRegressions !== 0 ||
+      expected.regressions !== 0 || expected.delta < 0.05 || !expected.passed) {
+    return Object.freeze({ valid: false, reason: 'routing-promotion-evidence-mismatch' });
+  }
+  return Object.freeze({ valid: true, reason: 'routing-promotion-valid' });
+}

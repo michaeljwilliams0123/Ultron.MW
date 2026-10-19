@@ -194,6 +194,8 @@ test('routing evaluations adopt only measured improvements and stay encrypted ac
   assert.equal(result.status, 'adopted');
   assert.ok(result.delta > 0);
   assert.equal(result.criticalRegressions, 0);
+  assert.equal(result.promotion.kind, 'routing-promotion-receipt');
+  assert.equal(result.promotion.authorityUnchanged, true);
   assert.equal(vault.evolution().accepted, 'routing-v2');
   assert.equal((await vault.evaluateAndAdopt()).status, 'already-adopted');
   assert.doesNotMatch(storage.getItem(VAULT_KEY), /routing-v2|benchmark/);
@@ -203,6 +205,7 @@ test('routing evaluations adopt only measured improvements and stay encrypted ac
   await opened.open(passphrase);
   assert.equal(opened.evolution().accepted, 'routing-v2');
   assert.equal(opened.evolution().evaluations.length, 1);
+  assert.equal(opened.evolution().evaluations[0].promotion.commitStage, 'commit');
   const restored = await opened.rollbackRouting('owner-request');
   assert.equal(restored.accepted, 'routing-v1');
 });
