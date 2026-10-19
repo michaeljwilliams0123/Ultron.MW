@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdir, lstat, readFile, realpath } from 'node:fs/promises';
 import { resolve, join, relative, sep } from 'node:path';
+import {readVerifiedMainCi} from './ci-evidence.mjs';
 
 const REPO = 'michaeljwilliams0123/Ultron.MW';
 const ROOT = '/repos/' + REPO;
@@ -20,6 +21,7 @@ const CHECK = Object.freeze([
   'src/pr-brain.mjs',
   'src/pr-brain-patch.mjs',
   'src/pr-brain-ci.mjs',
+  'src/ci-evidence.mjs',
   'src/pr-brain-model.mjs',
   'src/cloud-cycle.mjs',
   'docs/core/capabilities.mjs',
@@ -34,6 +36,7 @@ const CHECK = Object.freeze([
   'test/pr-brain.test.mjs',
   'test/pr-brain-patch.test.mjs',
   'test/pr-brain-ci.test.mjs',
+  'test/ci-evidence.test.mjs',
   'test/pr-brain-model.test.mjs',
   'test/cloud.test.mjs',
   'test/self-observer.test.mjs',
@@ -50,6 +53,7 @@ const SOURCE_CHECKS = Object.freeze({
   '.github/workflows/pr-brain.yml':['node src/pr-brain.mjs','ref: main'],
   'src/pr-brain.mjs':['handlePrConversation','routePrTurn'],
   'src/pr-brain-ci.mjs':['reportCiToPr','verifiedCiReceipt'],
+  'src/ci-evidence.mjs':['selectVerifiedMainCi','readVerifiedMainCi'],
   'src/pr-brain-model.mjs':['generateAndApply','localCpuInference'],
   '.github/workflows/pr-brain-ci.yml':['node src/pr-brain-ci.mjs','workflow_run:'],
   '.github/workflows/verify.yml':['node scripts/verify.mjs'],
@@ -68,7 +72,7 @@ const concern = (code, priority, detail, repair) =>
  * Neither a generated assertion nor a model's opinion can count as a scan.
  */
 export function evaluateSelfSnapshot({environment,observedAt,commitSha=null,treeSha=null,
-  paths,sourceTexts,sourceDigest=null}={}) {
+  paths,sourceTexts,sourceDigest=null,ciObservation=null}={}) {
   if (!['cloud','local'].includes(environment) ||
     !Array.isArray(paths) || paths.length > MAX_FILES ||
     paths.some(p => typeof p !== 'string' || !p || p.startsWith('/') || p.includes('..') || p.includes('\\')) ||
@@ -112,9 +116,18 @@ export function evaluateSelfSnapshot({environment,observedAt,commitSha=null,tree
   weaknesses.push(concern('live-execution-unobserved','high',
     'Source inspection cannot attest a production request or response',
     'Run an authenticated end-to-end task and validate its durable result'));
-  weaknesses.push(concern('ci-head-unobserved','medium',
-    'Current-main CI conclusion was not independently queried during this scan',
-    'Verify the exact source SHA in GitHub Actions before making a CI claim'));
+  const verifiedCi=environment==='cloud'&&ciObservation?.sha===commitSha&&
+    ciObservation?.schema==='ultron.ci-main.v1'&&
+    Number.isSafeInteger(ciObservation.runId)&&ciObservation.runId>0&&
+    ['success','failure','cancelled','timed_out','action_required','neutral','skipped']
+      .includes(ciObservation.conclusion)?ciObservation:null;
+  if(!verifiedCi)weaknesses.push(concern('ci-head-unobserved','medium',
+    'Current-main CI conclusion was not independently verified during this scan',
+    'Read exact-main GitHub Actions Verify outcome before making a CI claim'));
+  else if(verifiedCi.conclusion!=='success')
+    weaknesses.push(concern('ci-head-failing','high',
+      'Exact-main GitHub Verify completed: '+verifiedCi.conclusion,
+      'Repair the failed or blocked check and independently rerun Verify'));
   weaknesses.push(concern('learning-effect-unobserved','medium',
     'The scan has no independently scored future-task or held-out cognition outcome',
     'Compare actual realized outcomes against prior predictions before updating policy'));
@@ -127,7 +140,7 @@ export function evaluateSelfSnapshot({environment,observedAt,commitSha=null,tree
     identity:{name:'Ultron.MW',role:'single-owner agent runtime',consciousness:'not-established'},
     observedAt,environment,
     sourceAuthority:{kind:environment==='cloud'?'github-main-verified':'local-filesystem',
-      commitSha,treeSha,sourceDigest},
+      commitSha,treeSha,sourceDigest,ciObservation:verifiedCi},
     inventory:counts,
     evidence:sourceEvidence,
     uncertainty:{
@@ -136,6 +149,7 @@ export function evaluateSelfSnapshot({environment,observedAt,commitSha=null,tree
       providerReadiness:'not-probed',
       productionConvergence:'not-probed',
       independentLearningGain:'not-established',
+      ciHeadReadiness:verifiedCi?.conclusion??'not-probed',
     },
     weaknesses,
     nextActions:unique(weaknesses.map(x=>x.repair)).slice(0,12),
@@ -223,10 +237,11 @@ export async function observeCloudSelf({get,now=()=>new Date().toISOString()}={}
     if(!raw || raw.length>MAX_TEXT)throw Error('Self-scan route file unavailable');
     sourceTexts[path]=raw;
   }
+  const ciObservation=await readVerifiedMainCi({get,mainSha:commitSha});
   if((await get(ROOT+'/git/ref/heads/main'))?.object?.sha!==commitSha)
     throw Error('GitHub main changed during self-scan');
   return evaluateSelfSnapshot({
-    environment:'cloud',commitSha,treeSha,paths,sourceTexts,
+    environment:'cloud',commitSha,treeSha,paths,sourceTexts,ciObservation,
     observedAt:now(),
   });
 }
