@@ -22,6 +22,10 @@ test('owner confirmation creates a verified local note once and persists its rec
   try {
     const job={id:randomUUID(),kind:'local-note',title:'Confirmed note',
       text:'The system wrote a new note and independently verified the bytes.'};
+    const unverifiedGithub = await request('/api/owner/prepare',{
+      ...job, id:randomUUID(), kind:'github-draft',
+    });
+    assert.equal(unverifiedGithub.status,403);
     assert.equal((await request('/api/owner/prepare',job,'wrong')).status,403);
     const prepared=await request('/api/owner/prepare',job);
     assert.equal(prepared.status,201);
