@@ -46,6 +46,9 @@ export function parseTask(event,name,actor,repository){
   }else throw Error('Unsupported event');
   if(typeof objective!=='string'||!objective.trim()||objective.length>1000||
     /[\r\n\u0000-\u001f]/.test(objective))throw Error('Invalid single-line objective');
+  if (name !== 'schedule' && planObjective(objective,{strategy:'routing-v2'}).steps
+      .some(step=>step.command==='/self scan'))
+    throw Error('Self scans publish PRs through the dedicated Actions workflow; no Issue receipt');
   return {objective:objective.trim(),issueNumber,repository};
 }
 export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(),runId='',

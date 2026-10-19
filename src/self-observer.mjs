@@ -11,8 +11,10 @@ const CHECK = Object.freeze([
   '.github/workflows/verify.yml',
   '.github/workflows/cloud-pr.yml',
   '.github/workflows/cloud-objective.yml',
+  '.github/workflows/self-scan-pr.yml',
   'src/cloud-pr.mjs',
   'src/code-pr.mjs',
+  'src/self-scan-pr.mjs',
   'src/cloud-cycle.mjs',
   'docs/core/capabilities.mjs',
   'docs/core/cycle.mjs',
@@ -22,6 +24,7 @@ const CHECK = Object.freeze([
   'src/self-observer.mjs',
   'test/cloud-pr.test.mjs',
   'test/code-pr.test.mjs',
+  'test/self-scan-pr.test.mjs',
   'test/cloud.test.mjs',
   'test/self-observer.test.mjs',
 ]);
@@ -32,6 +35,8 @@ const SOURCE_CHECKS = Object.freeze({
   'src/cloud-pr.mjs':['launchCodePr'],
   '.github/workflows/cloud-pr.yml':['node src/cloud-pr.mjs','pull-requests: write'],
   '.github/workflows/cloud-objective.yml':['node src/cloud-entry.mjs'],
+  '.github/workflows/self-scan-pr.yml':['node src/self-scan-pr.mjs','pull-requests: write'],
+  'src/self-scan-pr.mjs':['publishSelfScanPr','SELF_SCAN_PATH'],
   '.github/workflows/verify.yml':['node scripts/verify.mjs'],
 });
 
@@ -58,7 +63,8 @@ export function evaluateSelfSnapshot({environment,observedAt,commitSha=null,tree
     (environment === 'cloud' && (!SHA.test(commitSha||'') || !SHA.test(treeSha||''))) ||
     (environment === 'local' && commitSha !== null))
     throw Error('Self-observation source evidence invalid');
-  const inventory = unique(paths);
+  // Generated self-scan report must not trigger an endless PR cycle after merge.
+  const inventory = unique(paths.filter(p => p !== 'reports/self-scan/current.md'));
   const pathSet = new Set(inventory);
   const sourceEvidence = [];
   const weaknesses = [];
