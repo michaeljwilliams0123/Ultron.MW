@@ -82,6 +82,14 @@ test('owner-paired observed learning adopts only a measured policy and survives 
     })).json();
     assert.equal(after.kind,null);
     assert.equal(after.authority,'suggestion-only');
+    // The same accepted policy feeds Ultron's primary objective planner,
+    // without granting a new execution capability.
+    const objective = await request('POST','/api/plan',{
+      text:'Local workspace operational journal case',
+    });
+    // /api/plan requires the same-origin local client marker as existing
+    // deterministic plans, unlike paired owner endpoints.
+    assert.equal(objective.status,403);
     const repeat=await(await request('POST','/api/owner/evaluate',{})).json();
     assert.equal(repeat.report.status,'unchanged-evidence');
     await restart();
