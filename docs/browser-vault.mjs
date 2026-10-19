@@ -191,9 +191,29 @@ export function createBrowserVault({
     validateEnvelope(data);
     return data;
   }
+  async function importBackup(raw, password, { replace = false } = {}) {
+    await writes;
+    const envelope = validateEnvelope(raw);
+    const derived = await derive(password, envelope.salt);
+    let next;
+    try {
+      const decoded = await cryptoApi.subtle.decrypt(
+        { name: 'AES-GCM', iv: envelope.iv }, derived, envelope.data);
+      next = validateContents(JSON.parse(decoder.decode(decoded)));
+    } catch {
+      throw new Error('Could not decrypt imported backup. Check the passphrase or file.');
+    }
+    if (saved() && !replace) throw new Error('Existing memory requires explicit replacement approval');
+    // The original encrypted state remains unchanged if the storage write fails.
+    storage.setItem(keyName, raw);
+    key = derived;
+    salt = envelope.salt;
+    state = next;
+    return snapshot();
+  }
   function clear() {
     storage.removeItem(keyName);
     lock();
   }
-  return { saved, unlocked, open, lock, snapshot, statistics, record, rate, context, encryptedBackup, clear };
+  return { saved, unlocked, open, lock, snapshot, statistics, record, rate, context, encryptedBackup, importBackup, clear };
 }

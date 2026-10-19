@@ -133,3 +133,53 @@ test('corrupted storage and weak passphrases reject before modification', async 
   await assert.rejects(() => vault.open(passphrase), /Invalid encrypted/);
   assert.equal(vault.unlocked(), false);
 });
+
+
+test('encrypted export can be imported to another device with the same passphrase', async () => {
+  const source = create(memoryStorage());
+  await source.open(passphrase);
+  const saved = await source.record(record(1));
+  await source.rate(saved.id, 'helpful');
+  const encrypted = source.encryptedBackup();
+  const destination = create(memoryStorage());
+  assert.equal(destination.saved(), false);
+  await destination.importBackup(encrypted, passphrase);
+  assert.equal(destination.unlocked(), true);
+  assert.equal(destination.snapshot().exchanges[0].id, saved.id);
+  assert.equal(destination.statistics().helpful, 1);
+  assert.equal(destination.encryptedBackup(), encrypted);
+});
+
+test('import rejects bad passphrase and refuses overwrite without owner confirmation', async () => {
+  const source = create(memoryStorage());
+  await source.open(passphrase);
+  await source.record(record(1));
+  const encrypted = source.encryptedBackup();
+  const target = create(memoryStorage());
+  await assert.rejects(() => target.importBackup(encrypted, 'wrong-passphrase'), /Could not decrypt/);
+  assert.equal(target.saved(), false);
+  await target.open(passphrase);
+  await target.record(record('original'));
+  const original = target.encryptedBackup();
+  await assert.rejects(() => target.importBackup(encrypted, passphrase), /explicit replacement approval/);
+  assert.equal(target.encryptedBackup(), original);
+  const imported = await target.importBackup(encrypted, passphrase, { replace: true });
+  assert.equal(imported.exchanges[0].prompt, 'Question 1');
+});
+
+test('storage failure during import retains existing encrypted memory', async () => {
+  const source = create(memoryStorage());
+  await source.open(passphrase);
+  await source.record(record(1));
+  const encrypted = source.encryptedBackup();
+  const storage = memoryStorage();
+  const target = create(storage);
+  await target.open(passphrase);
+  await target.record(record('original'));
+  const original = target.encryptedBackup();
+  storage.failWrites(true);
+  await assert.rejects(() => target.importBackup(encrypted, passphrase, { replace: true }), /storage failure/);
+  storage.failWrites(false);
+  assert.equal(target.encryptedBackup(), original);
+  assert.equal(target.snapshot().exchanges[0].prompt, 'Question original');
+});

@@ -48,6 +48,8 @@
   const vaultToggle = $('vault-toggle');
   const vaultClear = $('vault-clear');
   const vaultExport = $('vault-export');
+  const vaultImport = $('vault-import');
+  const vaultImportFile = $('vault-import-file');
 
   function updateVaultUI(message = '') {
     if (!vault) return;
@@ -55,7 +57,8 @@
     const present = vault.saved();
     const info = vault.statistics();
     vaultToggle.textContent = open ? 'Lock browser memory' : present ? 'Unlock memory' : 'Start local memory';
-    passphraseInput.disabled = open;
+    // Permit entering another backup passphrase while an existing vault is unlocked.
+    passphraseInput.disabled = false;
     vaultClear.disabled = !present;
     vaultExport.disabled = !present;
     vaultStatus.textContent = message || (open
@@ -163,6 +166,44 @@
       updateVaultUI('Unable to delete memory: ' + (error instanceof Error ? error.message : 'storage failure'));
     }
   });
+  vaultImport.addEventListener('click', () => {
+    if (!vault || local) return;
+    vaultImportFile.click();
+  });
+  vaultImportFile.addEventListener('change', async () => {
+    const file = vaultImportFile.files?.[0];
+    vaultImportFile.value = '';
+    if (!vault || !file) return;
+    if (file.size > 360000) {
+      updateVaultUI('Backup too large; expected an encrypted Ultron memory file.');
+      return;
+    }
+    const phrase = passphraseInput.value;
+    if (phrase.length < 10) {
+      updateVaultUI('Enter the backup passphrase (at least 10 characters) before importing.');
+      return;
+    }
+    const replacing = vault.saved();
+    if (replacing && !confirm('Replace the current encrypted browser memory with the selected backup? Existing saved history will be overwritten.')) {
+      updateVaultUI('Import canceled. Existing encrypted memory was preserved.');
+      return;
+    }
+    vaultImport.disabled = true;
+    try {
+      const encrypted = await file.text();
+      await vault.importBackup(encrypted, phrase, { replace: replacing });
+      ephemeralExchanges.length = 0;
+      restoreSavedHistory();
+      updateVaultUI('Encrypted backup imported and unlocked on this device. Import is manual, not automatic synchronization.');
+    } catch (error) {
+      updateVaultUI('Import failed, existing memory unchanged: ' +
+        (error instanceof Error ? error.message : 'unknown error'));
+    } finally {
+      vaultImport.disabled = false;
+      passphraseInput.value = '';
+    }
+  });
+
   vaultExport.addEventListener('click', () => {
     if (!vault || !vault.saved()) return;
     try {
@@ -175,8 +216,8 @@
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
-      updateVaultUI('Encrypted backup export requested; keep your passphrase safe. Import is not supported yet.');
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      updateVaultUI('Encrypted backup download requested. This file can be imported manually on another device using your passphrase.');
     } catch (error) {
       updateVaultUI('Export failed: ' + (error instanceof Error ? error.message : 'unknown error'));
     }
