@@ -2,43 +2,64 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LearningLoop } from '../src/learning.mjs';
 
-test('observations deduplicate by receipt ID', () => {
-  const l = new LearningLoop();
-  const entry = { id: 'r-1', taskId: 'task', evidence: 'verified receipt', score: 0.8 };
-  assert.equal(l.observe(entry).duplicate, false);
-  assert.equal(l.observe(entry).duplicate, true);
-  assert.equal(l.snapshot().observations.length, 1);
+const cases = Array.from({ length: 12 }, (_, i) => ({ id: 'case-' + i }));
+const run = async ({ version }) => ({
+  score: version === 'seed-v1' ? 0.50 : 0.65,
+  criticalRegression: false,
 });
-test('missing evidence and invalid scores are rejected', () => {
+
+test('observation receipts deduplicate and require valid evidence', () => {
   const l = new LearningLoop();
-  assert.throws(() => l.observe({ id: 'x', taskId: 'task', score: 2 }), /required/);
+  assert.equal(l.observe({ id: 'r1', taskId: 't1', score: 0.8, evidence: 'observed success' }).duplicate, false);
+  assert.equal(l.observe({ id: 'r1', taskId: 't1', score: 0.8, evidence: 'observed success' }).duplicate, true);
+  assert.equal(l.observations.size, 1);
+  assert.throws(() => l.observe({ id: 'r2', taskId: 't1', score: 2, evidence: 'x' }), /required/);
 });
-test('self-rating alone cannot promote', () => {
+
+test('candidate cannot self-promote or pass claimed scores without runnable cases', async () => {
   const l = new LearningLoop();
-  l.propose({ id: 'candidate-A', description: 'change search method', artifactHash: 'hash-A' });
-  assert.throws(() => l.promote('candidate-A'), /not passed/);
-  assert.throws(() => l.evaluate('candidate-A', { sampleSize: 1, baselineScore: 0.6, candidateScore: 1, criticalRegressions: 0, evaluatorId: 'self' }), /samples/);
+  l.propose({ id: 'a', description: 'candidate', artifactHash: 'hash' });
+  assert.throws(() => l.promote('a'), /not passed/);
+  await assert.rejects(() => l.evaluate('a', { sampleSize: 99, baselineScore: 0, candidateScore: 1 }), /runner/);
+  assert.throws(() => l.promote('a'), /not passed/);
 });
-test('critical regressions fail even with higher candidate score', () => {
+
+test('bad candidate is rejected when benchmark runner reports critical regressions', async () => {
   const l = new LearningLoop();
-  l.propose({ id: 'candidate-A', description: 'change search method', artifactHash: 'hash-A' });
-  assert.equal(l.evaluate('candidate-A', { sampleSize: 20, baselineScore: 0.6, candidateScore: 0.9, criticalRegressions: 1, evaluatorId: 'heldout-v1' }).passed, false);
-  assert.throws(() => l.promote('candidate-A'), /not passed/);
+  l.propose({ id: 'a', description: 'candidate', artifactHash: 'hash' });
+  const result = await l.evaluate('a', {
+    cases, run: async ({ version }) => ({
+      score: version === 'seed-v1' ? 0.3 : 0.8,
+      criticalRegression: version === 'a',
+    }),
+  });
+  assert.equal(result.passed, false);
+  assert.equal(result.criticalRegressions, cases.length);
+  assert.throws(() => l.promote('a'), /not passed/);
 });
-test('validated improvement promotes, then rollback preserves history', () => {
+
+test('accepted measurable improvement rolls back with history', async () => {
   const l = new LearningLoop();
-  l.propose({ id: 'candidate-A', description: 'change search method', artifactHash: 'hash-A' });
-  assert.equal(l.evaluate('candidate-A', { sampleSize: 20, baselineScore: 0.6, candidateScore: 0.8, criticalRegressions: 0, evaluatorId: 'heldout-v1' }).passed, true);
-  assert.equal(l.promote('candidate-A'), 'candidate-A');
-  assert.equal(l.rollback('regression after canary'), 'seed-v1');
-  assert.equal(l.snapshot().history.length, 2);
+  l.propose({ id: 'a', description: 'candidate', artifactHash: 'hash' });
+  assert.equal((await l.evaluate('a', { cases, run })).passed, true);
+  assert.equal(l.promote('a'), 'a');
+  assert.equal(l.rollback('canary regression'), 'seed-v1');
+  assert.equal(l.history.length, 2);
 });
-test('stale branch candidates cannot promote after another succeeds', () => {
+
+test('stale validated candidate cannot override a newer accepted release', async () => {
   const l = new LearningLoop();
-  for (const id of ['A', 'B']) {
-    l.propose({ id, description: 'test', artifactHash: id });
-    l.evaluate(id, { sampleSize: 10, baselineScore: 0.5, candidateScore: 0.6, criticalRegressions: 0, evaluatorId: 'heldout-v1' });
-  }
-  l.promote('A');
-  assert.throws(() => l.promote('B'), /current accepted base/);
+  l.propose({ id: 'a', description: 'candidate A', artifactHash: 'a' });
+  l.propose({ id: 'b', description: 'candidate B', artifactHash: 'b' });
+  await l.evaluate('a', { cases, run });
+  await l.evaluate('b', { cases, run });
+  l.promote('a');
+  assert.throws(() => l.promote('b'), /current accepted base/);
+});
+
+test('invalid benchmark output does not mark a candidate validated', async () => {
+  const l = new LearningLoop();
+  l.propose({ id: 'a', description: 'candidate', artifactHash: 'hash' });
+  await assert.rejects(() => l.evaluate('a', { cases, run: async () => ({ score: Infinity }) }), /invalid score/);
+  assert.equal(l.candidates.get('a').status, 'proposed');
 });

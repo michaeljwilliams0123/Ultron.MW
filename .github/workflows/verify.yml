@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/**'
       - 'test/**'
+      - 'docs/app.js'
       - '.github/workflows/verify.yml'
   pull_request:
     paths:
@@ -25,6 +26,9 @@ jobs:
       - name: Syntax check
         run: |
           node --check src/learning.mjs
+          node --check src/operations.mjs
           node --check src/server.mjs
-      - name: Learning regression suite
+          node --check docs/app.js
+          for file in test/*.test.mjs; do node --check "$file"; done
+      - name: Core regression suite
         run: node --test test/*.test.mjs
