@@ -43,6 +43,8 @@ export async function reportCiToPr({event,repository,get,post}={}){
       event?.action!=='completed'||!Number.isSafeInteger(event?.workflow_run?.id))
     throw Error('Unsupported verify observation event');
   const run=await get(ROOT+'/actions/runs/'+event.workflow_run.id);
+  if(run?.event==='push'&&run?.name===WORKFLOW_NAME)
+    return {status:'non-pr-verify',created:false,runId:run.id};
   checkRun(run);
   if(event.workflow_run.head_sha!==run.head_sha||
       event.workflow_run.conclusion!==run.conclusion)
