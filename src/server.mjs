@@ -8,6 +8,7 @@ import { COMMANDS, executeReadOnly } from './operations.mjs';
 import { createLocalOllama } from './providers/ollama.mjs';
 import { createBrain } from './brain.mjs';
 import { createActionGateway, validateAction, keyIsValid, makeSessionKey } from './action-gateway.mjs';
+import { advanceExperience, evaluateExperience, suggestFromExperience, verifiedExperiences } from './experience.mjs';
 import { ACCEPTED_SEED, CANDIDATE, planObjective, evaluateRouting } from '../docs/core/cycle.mjs';
 import { selectExecution } from '../docs/core/providers.mjs';
 
@@ -41,6 +42,7 @@ async function readJson(req) {
 export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama(), gateway = createActionGateway({ root }), ownerKey = makeSessionKey(), githubDraftEnabled = process.env.ULTRON_ENABLE_GITHUB_DRAFT === '1' } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
   let state = { objectives: [], receipts: [], plans: [], conversations: [], ownerJobs: [],
+    experience: { active: null, history: [], assessments: [], lastEvidence: null },
     evolution: { accepted: ACCEPTED_SEED, evaluations: [] },
     learning: new LearningLoop().snapshot() };
   try {
@@ -55,6 +57,8 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
       plans: Array.isArray(loaded.plans) ? loaded.plans : [],
       conversations: Array.isArray(loaded.conversations) ? loaded.conversations : [],
       ownerJobs: Array.isArray(loaded.ownerJobs) ? loaded.ownerJobs : [],
+      experience: loaded.experience && typeof loaded.experience === 'object' ? loaded.experience :
+        { active: null, history: [], assessments: [], lastEvidence: null },
       evolution: loaded.evolution?.accepted === CANDIDATE ? loaded.evolution :
         { accepted: ACCEPTED_SEED, evaluations: [] },
       learning: new LearningLoop(loaded.learning).snapshot(),
@@ -144,6 +148,16 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
             restricted: 'No arbitrary filesystem paths, shell, merge, deploy, or secret management',
           });
         }
+        if (req.method === 'GET' && req.url === '/api/owner/learning') {
+          return response(res, 200, {
+            activeVersion: state.experience?.active?.version || 'baseline',
+            eligible: verifiedExperiences(state.ownerJobs, state.receipts).length,
+            minimum: 16,
+            assessments: (state.experience?.assessments || []).slice(-10),
+            changes: (state.experience?.history || []).slice(-10),
+            limitation: 'Verified, rated task-type suggestions only. No model-weight training or autonomous action authority.',
+          });
+        }
         if (req.method === 'GET' && req.url === '/api/owner/jobs') {
           const all = state.ownerJobs;
           const completed = all.filter(job => job.status === 'verified');
@@ -153,6 +167,11 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
               const { text: _excluded, ...publicJob } = job;
               return publicJob;
             }),
+            learning: {
+              activeVersion: state.experience?.active?.version || 'baseline',
+              eligibleExperiences: verifiedExperiences(all, state.receipts).length,
+              lastAssessment: state.experience?.assessments?.at(-1) || null,
+            },
             outcomes: {
               prepared: all.filter(job => job.status === 'prepared').length,
               running: all.filter(job => job.status === 'running').length,
@@ -170,6 +189,38 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         }
         if (req.method === 'POST') {
           const input = await readJson(req);
+          if (req.url === '/api/owner/evaluate') {
+            const outcome = await transact(next => {
+              const cycle = advanceExperience(next.experience, next.ownerJobs, next.receipts);
+              next.experience = cycle.state;
+              return { report: cycle.result,
+                activeVersion: next.experience.active?.version || 'baseline' };
+            });
+            return response(res, 200, outcome);
+          }
+          if (req.url === '/api/owner/rollback') {
+            if (input?.reason !== 'owner-request')
+              return response(res, 400, { error: 'Explicit rollback request required' });
+            const outcome = await transact(next => {
+              const cycle = advanceExperience(next.experience, next.ownerJobs,
+                next.receipts, { rollback: true });
+              next.experience = cycle.state;
+              return cycle.result;
+            });
+            return response(res, 200, outcome);
+          }
+          if (req.url === '/api/owner/suggest') {
+            if (typeof input?.objective !== 'string' || !input.objective.trim() ||
+                input.objective.length > 1200)
+              return response(res, 400, { error: 'Objective must be 1–1200 characters' });
+            const permitted = githubDraftEnabled ? ['local-note', 'github-draft'] : ['local-note'];
+            return response(res, 200, {
+              kind: suggestFromExperience(input.objective, state.experience?.active, permitted),
+              activeVersion: state.experience?.active?.version || 'baseline',
+              executable: false, authority: 'suggestion-only',
+              note: 'Suggestions never prepare or execute a job',
+            });
+          }
           if (req.url === '/api/owner/prepare') {
             const proposal = validateAction(input);
             if (proposal.kind === 'github-draft' && !githubDraftEnabled) {
@@ -257,7 +308,13 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
               if (!job) return null;
               job.rating = input.rating;
               job.ratedAt = new Date().toISOString();
-              return { id: job.id, rating: job.rating, receiptId: job.receiptId };
+              const cycle = advanceExperience(next.experience, next.ownerJobs, next.receipts);
+              next.experience = cycle.state;
+              return { id: job.id, rating: job.rating, receiptId: job.receiptId,
+                learning: { status: cycle.result.status,
+                  eligible: cycle.result.eligible ?? 0,
+                  activeVersion: next.experience.active?.version || 'baseline',
+                  adopted: cycle.result.adopted === true } };
             });
             if (!rating) return response(res, 404, { error: 'Verified operation not found' });
             return response(res, 200, rating);
@@ -277,8 +334,18 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         if (req.url === '/api/plan') {
           const selected = state.evolution?.accepted || ACCEPTED_SEED;
           const plan = planObjective(input?.text, { strategy: selected });
+          // The same cognitive plan may include a learned suggestion, but it
+          // never acquires privileged execution rights from a model or policy.
+          const allowedActions = githubDraftEnabled ?
+            ['local-note', 'github-draft'] : ['local-note'];
+          const suggested = suggestFromExperience(plan.objective,
+            state.experience?.active, allowedActions);
           const saved = await transact(next => {
             const item = { id: 'plan-' + randomUUID(), ...plan,
+              advisory: suggested ? {
+                kind: suggested, status: 'owner-review-required',
+                executable: false, authority: 'suggestion-only',
+              } : null,
               createdAt: new Date().toISOString() };
             next.plans.push(item);
             next.plans = next.plans.slice(-30);
