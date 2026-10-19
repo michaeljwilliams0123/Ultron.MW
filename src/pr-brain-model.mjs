@@ -67,7 +67,8 @@ export function extractModelPatch(reply,{path,head,objective,targetLine=null}){
       .filter(x=>x&&x.length<=550);
     const replacement=lines.find(x=>x!==original&&x.startsWith(prefix)&&
       !x.startsWith('<<<'));
-    if(replacement)return makeManifest({path,before:targetLine,after:replacement},
+    if(replacement)return makeManifest({path,before:targetLine,
+      after:(targetLine.match(/^\s*/)?.[0]||'')+replacement},
       {path,head,objective});
   }
   throw Error('CPU model did not supply a valid exact-context source patch');
