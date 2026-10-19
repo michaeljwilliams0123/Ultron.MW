@@ -48,7 +48,7 @@ async function fixture(run, options) {
   let origin = () => 'http://127.0.0.1:' + app.port;
   const request = (method,path,data,key='only-owner') => fetch(origin()+path,{
     method, headers: { origin:origin(),'x-ultron-owner':key,
-      'content-type':'application/json' },
+      'x-ultron-client':'local-ui-v1','content-type':'application/json' },
     ...(method==='GET'?{}:{body:JSON.stringify(data||{})}),
   });
   try {
@@ -87,9 +87,16 @@ test('owner-paired observed learning adopts only a measured policy and survives 
     const objective = await request('POST','/api/plan',{
       text:'Local workspace operational journal case',
     });
-    // /api/plan requires the same-origin local client marker as existing
-    // deterministic plans, unlike paired owner endpoints.
-    assert.equal(objective.status,403);
+    assert.equal(objective.status,201);
+    const planned=await objective.json();
+    assert.equal(planned.executed,false);
+    assert.equal(planned.plan.advisory.kind,'local-note');
+    assert.equal(planned.plan.advisory.executable,false);
+    assert.equal(planned.plan.advisory.authority,'suggestion-only');
+    const blockedRepo=await(await request('POST','/api/plan',{
+      text:'GitHub repository draft documentation',
+    })).json();
+    assert.equal(blockedRepo.plan.advisory,null);
     const repeat=await(await request('POST','/api/owner/evaluate',{})).json();
     assert.equal(repeat.report.status,'unchanged-evidence');
     await restart();
