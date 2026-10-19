@@ -38,10 +38,13 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
   let state = { objectives: [], receipts: [], learning: new LearningLoop().snapshot() };
   try {
     const loaded = JSON.parse(await readFile(statePath, 'utf8'));
-    if (!Array.isArray(loaded.objectives) || !Array.isArray(loaded.receipts) || !loaded.learning) {
+    if (!Array.isArray(loaded.objectives) || !loaded.learning ||
+      (loaded.receipts !== undefined && !Array.isArray(loaded.receipts))) {
       throw new Error('Stored state has invalid structure');
     }
-    state = loaded;
+    // Migrate the original draft-only file without discarding existing objectives.
+    state = { objectives: loaded.objectives, receipts: loaded.receipts || [],
+      learning: new LearningLoop(loaded.learning).snapshot() };
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   let pending = Promise.resolve();
   async function transact(update) {

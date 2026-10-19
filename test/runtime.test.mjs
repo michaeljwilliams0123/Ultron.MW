@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { startLocalServer } from '../src/server.mjs';
@@ -79,4 +79,23 @@ test('runtime serves exactly the same UI and JS as static Pages source', async (
 test('inspection command restricts output to fixed project names', async () => {
   const result = await executeReadOnly('/repo inspect', { root: resolve(import.meta.dirname, '..'), learning: { accepted: 'seed-v1', observations: [], candidates: [], history: [] } });
   assert.equal(result.details.present.every(item => ['src','docs','test','README.md','.github'].includes(item.name)), true);
+});
+
+test('upgrading from draft-only local state preserves previously saved objectives', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ultron-legacy-'));
+  const statePath = join(directory, 'state.json');
+  await writeFile(statePath, JSON.stringify({
+    objectives: [{ id: 'draft-legacy', text: 'Keep my saved objective', status: 'draft' }],
+    learning: { accepted: 'seed-v1', history: [], observations: [], candidates: [] },
+  }));
+  const root = resolve(import.meta.dirname, '..');
+  const app = await startLocalServer({ root, statePath, port: 0 });
+  try {
+    const state = await (await fetch('http://127.0.0.1:' + app.port + '/api/state')).json();
+    assert.equal(state.objectives[0].id, 'draft-legacy');
+    assert.deepEqual(state.receipts, []);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
