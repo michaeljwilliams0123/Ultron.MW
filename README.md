@@ -9,7 +9,7 @@ Ultron is an independent, single-owner execution platform with a GitHub-hosted r
 | Capability | Environment | Implemented behavior | Evidence boundary |
 |---|---|---|---|
 | Read-only objectives | GitHub Actions | Four commands, at most three steps; hosted issue receipts | `/repo inspect` observed on issue #10 at the reviewed baseline; other paths have automated coverage |
-| Hourly observation | GitHub Actions | Fixed inspection of current `main` at minute 17 | Ephemeral jobs; schedules can be delayed or missed |
+| Hourly observation | GitHub Actions | Fixed source-bound self-scan of current `main` at minute 17 | Ephemeral jobs; schedules can be delayed or missed |
 | Local tools | Loopback Node | Same four commands, persisted objectives and receipts | Automated HTTP coverage; owner-device acceptance outstanding |
 | Model responses | Optional Ollama or browser WebGPU | Bounded, unverified generated text | Provider availability is checked at activation; no hosted cloud LLM |
 | Browser memory | Opt-in encrypted vault | History, feedback, plans, encrypted import/export | Device-local; manual transfer rather than automatic synchronization |
@@ -22,7 +22,7 @@ The deterministic tool catalogue is defined once in [`docs/core/capabilities.mjs
 
 ## Run a GitHub-hosted task
 
-1. Enter `/help`, `/system status`, `/repo inspect`, or `/learning status` in the console. Narrow recognized phrases and up to three commands joined by `and` are accepted.
+1. Enter `/help`, `/system status`, `/repo inspect`, `/learning status`, or `/self scan` in the console. Narrow recognized phrases and up to three commands joined by `and` are accepted.
 2. Select **Run in GitHub cloud**. Ultron validates the whole objective and prefills an issue using canonical command names only. Unsupported input is refused before a GitHub URL is opened.
 3. Review and submit the issue in GitHub using the configured owner's account. The hosted workflow checks repository and owner identity, executes the supported reads, and posts a structured receipt.
 4. Read the issue receipt and associated Actions run. `succeeded`, `partial`, `failed`, and `blocked` are distinct. Only complete success or a verified successful replay leaves the job green.
@@ -155,3 +155,7 @@ The same **Create PR to main** action accepts a structured, owner-authored JSON 
 Up to eight distinct source-file edits or creations (`{"path":"src/new.mjs","create":"<complete contents>"}`) are supported. The JSON must be submitted **as public text** through the authenticated owner Issue. The executor checks current `main` against `baseSha`, rereads source, applies each exact once-only context replacement, creates a single atomic tree/commit, independently verifies the resulting branch/PR/files, dispatches head verification, and posts a receipt. A changed `main` or ambiguous patch fails instead of silently applying an incorrect edit. Branch names are unique per Issue and are not force-updated.
 
 **Boundaries:** The route executes already-authored source changes; neither GitHub Pages nor GitHub Actions generates code from an arbitrary English objective. Optional browser/local inference or a connected coding agent can author the manifest, but must not be confused with authenticated GitHub publication. No permissions are self-granted, no security gate is bypassed, no automatic merge or deployment is performed, and verification remains observable. Reward and learning loops should score measured task completion and successful recovery, **not** the evasion of access controls or test failures. This is an implementation route, not a claim of AGI.
+
+## Operational self-awareness (self-observation, not consciousness)
+
+Use `/self scan` (or the **Self scan** button) to inspect Ultron's current code, shared command routes and known weaknesses using the existing GitHub-native cloud runner. The scheduled hourly job uses the same source-bound observation. Each report binds current `main`, source tree, observed route-source blobs and a fingerprint, then explicitly identifies **unknown** live runtime, provider and independent-learning readiness. On local Node the report uses a local content digest rather than pretending to know the canonical Git commit. A self-scan is not autonomous code generation, live inference, subjective awareness, or proof that AI intelligence improved. See [Mahoraga's source-grounded failure lessons](docs/MAHORAGA-SELF-OBSERVATION-LESSONS.md).
