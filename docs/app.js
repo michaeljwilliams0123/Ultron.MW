@@ -433,6 +433,23 @@
     actionStatus.textContent = 'GitHub Pages cannot connect to the private local runtime. Open the same interface at 127.0.0.1 on your PC.';
   }
 
+  async function refreshOwnerOutcomes() {
+    if (!ownerKey) return;
+    try {
+      const data = await ownerRequest('GET', '/api/owner/jobs');
+      const x = data.outcomes;
+      if (!x) return;
+      $('action-outcomes').textContent = x.verified + ' verified actions · ' +
+        x.helpful + ' helpful · ' + x.notHelpful + ' not helpful · ' +
+        x.unrated + ' unrated · ' + x.reconcileRequired +
+        ' require reconciliation' +
+        (x.meanVerifiedLatencyMs === null ? '' :
+          ' · mean verified latency ' + x.meanVerifiedLatencyMs + ' ms') + '.';
+    } catch {
+      $('action-outcomes').textContent = 'Outcome history unavailable.';
+    }
+  }
+
   $('action-pair').addEventListener('click', async () => {
     if (!local) return;
     ownerKey = $('action-key').value.trim();
@@ -447,6 +464,7 @@
       const status = await ownerRequest('GET', '/api/owner/status');
       if (status.paired !== true) throw new Error('Not paired');
       $('action-controls').classList.remove('hidden');
+      await refreshOwnerOutcomes();
       actionStatus.textContent = status.github.connected
         ? 'Owner paired; local note writing ready; GitHub authenticated as ' + status.github.account
         : 'Owner paired; local note writing ready; GitHub CLI not currently authenticated.';
@@ -496,6 +514,7 @@
       actionResult.textContent = 'VERIFIED: ' + result.receipt.summary +
         ' · receipt ' + result.receipt.id +
         (result.receipt.details.url ? ' · ' + result.receipt.details.url : '');
+      await refreshOwnerOutcomes();
       line('Ultron · verified owner operation', result.receipt.summary +
         '\n' + JSON.stringify(result.receipt.details));
     } catch (error) {
@@ -516,6 +535,7 @@
         const result = await ownerRequest('POST', '/api/owner/feedback', {
           id: lastVerifiedOperation, rating,
         });
+        await refreshOwnerOutcomes();
         actionResult.textContent = 'Owner feedback recorded as ' + result.rating +
           ' for independently verified receipt ' + result.receiptId + '.';
       } catch (error) {
