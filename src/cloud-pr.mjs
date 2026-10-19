@@ -1,3 +1,4 @@
+import { launchCodePr, CODE_PR_TITLE, CODE_PR_MARKER } from './code-pr.mjs';
 import { createHash } from 'node:crypto';
 import { readFile, appendFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -218,7 +219,7 @@ export async function githubRequest(path, { method = 'GET', body, optional = fal
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH,'utf8'));
-    const result = await launchCloudPr({
+    const result = await (event?.issue?.title === CODE_PR_TITLE &&\n      event?.issue?.body?.startsWith(CODE_PR_MARKER + '\\n') ? launchCodePr : launchCloudPr)({
       event, actor: process.env.GITHUB_ACTOR,
       repository: process.env.GITHUB_REPOSITORY,
       executorSha: process.env.GITHUB_SHA,
@@ -230,10 +231,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (process.env.GITHUB_STEP_SUMMARY)
       await appendFile(process.env.GITHUB_STEP_SUMMARY,
         '## Ultron Create PR to main\n\nResult: ' + result.status +
-        '\nPR: ' + result.prUrl +
-        '\nVerified main SHA: ' + result.executorSha +
+        '\nPR: ' + (result.prUrl || result.url) +
+        '\nVerified main SHA: ' + (result.executorSha || result.commitSha) +
         '\nPC required: No\n\n' +
-        'The PR is a documentation proposal, not implemented application code.\n');
+        'Code manifest issues commit real source changes; plain objectives remain documentation proposals.\n');
     console.log(JSON.stringify(result));
   } catch (error) {
     console.error('Ultron PR action failed: ' + error.message);
