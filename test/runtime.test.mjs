@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { request as httpRequest } from 'node:http';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -54,8 +55,16 @@ test('unknown commands rejected without a fake success receipt', async () => fix
 test('local-origin and host restrictions reject hostile browser requests', async () => fixture(async ({ base, post }) => {
   const origin = await post('/api/execute', '/help', { origin: 'https://other.example' });
   assert.equal(origin.status, 403);
-  const host = await fetch(base() + '/api/health', { headers: { host: 'hostile.example' } });
-  assert.equal(host.status, 403);
+  // Browser fetch deliberately manages Host; use native HTTP to test a spoofed host.
+  const hostStatus = await new Promise((resolve, reject) => {
+    const req = httpRequest(base() + '/api/health', { headers: { host: 'hostile.example' } }, res => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  assert.equal(hostStatus, 403);
 }));
 
 test('simultaneous draft writes persist without lost updates', async () => fixture(async ({ base, post, statePath }) => {
