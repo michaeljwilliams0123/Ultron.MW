@@ -18,6 +18,7 @@ const CONTENT=Object.freeze({
   'src/pr-brain-verify.mjs':'dispatchAndObserveVerify',
   'src/ci-evidence.mjs':'selectVerifiedMainCi readVerifiedMainCi',
   'src/pr-brain-model.mjs':'generateAndApply localCpuInference',
+  'src/pr-brain-safety.mjs':'assertModelSourceSafe',
   'src/self-scan-pr.mjs':'publishSelfScanPr SELF_SCAN_PATH',
   'src/cloud-cycle.mjs':"case '/self scan':",
   'src/cloud-pr.mjs':'import {launchCodePr}',
@@ -29,7 +30,8 @@ const PATHS=[
   ...Object.keys(CONTENT),
   'src/code-pr.mjs','test/self-scan-pr.test.mjs','test/pr-brain.test.mjs',
   'test/pr-brain-patch.test.mjs',
-  'test/pr-brain-model.test.mjs','test/ci-evidence.test.mjs',
+  'test/pr-brain-model.test.mjs','test/pr-brain-safety.test.mjs',
+  'test/ci-evidence.test.mjs',
   'test/pr-brain-verify.test.mjs','src/pr-brain-patch.mjs','src/grokbot-governor.mjs','src/cognitive-world-model.mjs',
   'src/learning.mjs','src/self-observer.mjs','test/cloud-pr.test.mjs',
   'test/code-pr.test.mjs','test/cloud.test.mjs','test/self-observer.test.mjs'

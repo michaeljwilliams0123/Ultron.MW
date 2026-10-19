@@ -22,6 +22,7 @@ const CHECK = Object.freeze([
   'src/ci-evidence.mjs',
   'src/pr-brain-verify.mjs',
   'src/pr-brain-model.mjs',
+  'src/pr-brain-safety.mjs',
   'src/cloud-cycle.mjs',
   'docs/core/capabilities.mjs',
   'docs/core/cycle.mjs',
@@ -37,6 +38,7 @@ const CHECK = Object.freeze([
   'test/ci-evidence.test.mjs',
   'test/pr-brain-verify.test.mjs',
   'test/pr-brain-model.test.mjs',
+  'test/pr-brain-safety.test.mjs',
   'test/cloud.test.mjs',
   'test/self-observer.test.mjs',
 ]);
@@ -54,6 +56,7 @@ const SOURCE_CHECKS = Object.freeze({
   'src/ci-evidence.mjs':['selectVerifiedMainCi','readVerifiedMainCi'],
   'src/pr-brain-verify.mjs':['dispatchAndObserveVerify'],
   'src/pr-brain-model.mjs':['generateAndApply','localCpuInference'],
+  'src/pr-brain-safety.mjs':['assertModelSourceSafe'],
   '.github/workflows/verify.yml':['node scripts/verify.mjs'],
 });
 

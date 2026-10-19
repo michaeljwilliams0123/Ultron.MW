@@ -1,4 +1,5 @@
 import {applyPrPatch} from './pr-brain-patch.mjs';
+import {assertModelSourceSafe} from './pr-brain-safety.mjs';
 
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
@@ -129,7 +130,11 @@ export async function generateAndApply({
         target+'\nObjective: '+objective+'\nReply with one replacement line only.'}]);
     manifest=extractModelPatch(response,common);
   }
+  const preflight=assertModelSourceSafe({path:source.path,original:source.content,manifest});
+  const parsed=JSON.parse(manifest);
+  const rollbackChanges=parsed.changes.map(x=>({path:x.path,before:x.after,after:x.before}));
   const result=await apply({pr,manifest,get,post});
-  return {...result,model:MODEL,modelRevision:REVISION,sourcePath:source.path,
+  return {...result,rollbackChanges,preflight:{validated:preflight.validated,bytes:preflight.bytes},
+    model:MODEL,modelRevision:REVISION,sourcePath:source.path,
     generatedBy:'public-CPU-ONNX-inference',verifiedCommit:true};
 }
