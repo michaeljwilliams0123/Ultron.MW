@@ -111,6 +111,8 @@ test('owner issue_comment events evaluate learning but cannot dispatch new write
     'issue_comment',owner,REPOSITORY),/Invalid owner feedback/);
   assert.throws(()=>parseTask({...event,issue:{...event.issue,pull_request:{}}},
     'issue_comment',owner,REPOSITORY),/Invalid owner feedback/);
+  assert.throws(()=>parseTask({...event,issue:{...event.issue,body:'not an Ultron task'}},
+    'issue_comment',owner,REPOSITORY),/Invalid owner feedback/);
   assert.throws(()=>parseTask({...event,comment:comment(55,owner,'deploy all')},
     'issue_comment',owner,REPOSITORY),/Invalid owner feedback/);
 });
