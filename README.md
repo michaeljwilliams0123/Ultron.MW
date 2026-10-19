@@ -8,9 +8,9 @@ Ultron is an independent, single-owner execution platform with a GitHub-hosted r
 
 | Capability | Environment | Implemented behavior | Evidence boundary |
 |---|---|---|---|
-| Read-only objectives | GitHub Actions | Four commands, at most three steps; hosted issue receipts | `/repo inspect` observed on issue #10 at the reviewed baseline; other paths have automated coverage |
-| Hourly observation | GitHub Actions | Fixed source-bound self-scan of current `main` at minute 17 | Ephemeral jobs; schedules can be delayed or missed |
-| Local tools | Loopback Node | Same four commands, persisted objectives and receipts | Automated HTTP coverage; owner-device acceptance outstanding |
+| Read-only objectives | GitHub Actions | Read-only commands, at most three steps; hosted issue receipts | `/repo inspect` observed on issue #10 at the reviewed baseline; other paths have automated coverage |
+| Hourly self-scan PR | GitHub Actions | At minute 17 scans current `main` and creates or refreshes one report PR only when findings change | No Issues; skipped cron runs are not evidence of health |
+| Local tools | Loopback Node | Same shared commands, persisted objectives and receipts | Automated HTTP coverage; owner-device acceptance outstanding |
 | Model responses | Optional Ollama or browser WebGPU | Bounded, unverified generated text | Provider availability is checked at activation; no hosted cloud LLM |
 | Browser memory | Opt-in encrypted vault | History, feedback, plans, encrypted import/export | Device-local; manual transfer rather than automatic synchronization |
 | Routing improvement | Shared core and local ledger | Fixed held-out routing evaluation and rollback | Policy selection, not model training or general intelligence |
@@ -22,10 +22,10 @@ The deterministic tool catalogue is defined once in [`docs/core/capabilities.mjs
 
 ## Run a GitHub-hosted task
 
-1. Enter `/help`, `/system status`, `/repo inspect`, `/learning status`, or `/self scan` in the console. Narrow recognized phrases and up to three commands joined by `and` are accepted.
-2. Select **Run in GitHub cloud**. Ultron validates the whole objective and prefills an issue using canonical command names only. Unsupported input is refused before a GitHub URL is opened.
-3. Review and submit the issue in GitHub using the configured owner's account. The hosted workflow checks repository and owner identity, executes the supported reads, and posts a structured receipt.
-4. Read the issue receipt and associated Actions run. `succeeded`, `partial`, `failed`, and `blocked` are distinct. Only complete success or a verified successful replay leaves the job green.
+1. For read-only tasks enter `/help`, `/system status`, `/repo inspect`, or `/learning status`. For an actionable source scan use the **Self scan → PR** action.
+2. **Run in GitHub cloud** opens an Issue for the other read-only commands. **Self scan → PR** instead opens the dedicated authenticated Actions workflow, without creating an Issue.
+3. For self-scans, select **Run workflow** on GitHub; the runner inspects canonical `main`, writes `reports/self-scan/current.md` on a separate branch, and opens or updates a PR targeting `main` when material evidence changes.
+4. Read the findings and suggested repairs in the PR plus the workflow receipt. Identical findings produce no new PR, and merged identical findings remain suppressed. Other read-only tasks retain their Issue receipts.
 
 **Public data:** this repository, task issues, issue comments and Pages source are public. Do not add credentials, client information, personal details, or confidential objectives. The canonical-command filter reduces accidental disclosure through the console; it is not a secret scanner and cannot prevent someone manually editing an issue on GitHub. Changing visibility later cannot retract copies of earlier public content. Pages never receives a GitHub API token.
 
@@ -158,4 +158,12 @@ Up to eight distinct source-file edits or creations (`{"path":"src/new.mjs","cre
 
 ## Operational self-awareness (self-observation, not consciousness)
 
-Use `/self scan` (or the **Self scan** button) to inspect Ultron's current code, shared command routes and known weaknesses using the existing GitHub-native cloud runner. The scheduled hourly job uses the same source-bound observation. Each report binds current `main`, source tree, observed route-source blobs and a fingerprint, then explicitly identifies **unknown** live runtime, provider and independent-learning readiness. On local Node the report uses a local content digest rather than pretending to know the canonical Git commit. A self-scan is not autonomous code generation, live inference, subjective awareness, or proof that AI intelligence improved. See [Mahoraga's source-grounded failure lessons](docs/MAHORAGA-SELF-OBSERVATION-LESSONS.md).
+Use **Self scan → PR** or enter `/self scan` in the console to open the native GitHub Actions self-scan workflow (owner presses **Run workflow**). Source observations create or update a single actionable report PR targeting `main` rather than an Issue. The hourly schedule runs the same publisher. Each report binds current `main`, source tree, observed route-source blobs and a fingerprint, then explicitly identifies **unknown** live runtime, provider and independent-learning readiness. On local Node the report uses a local content digest rather than pretending to know the canonical Git commit. A self-scan is not autonomous code generation, live inference, subjective awareness, or proof that AI intelligence improved. See [Mahoraga's source-grounded failure lessons](docs/MAHORAGA-SELF-OBSERVATION-LESSONS.md).
+
+## Self-scan findings PR lifecycle
+
+- Workflow: [Ultron self-scan to PR](https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/self-scan-pr.yml). This is the only scheduled self-scan publisher; the legacy issue-based hourly schedule is removed.
+- Verified source snapshot: scan compares exact GitHub `main` SHA, source-tree SHA, route-file blob SHAs, and rechecks `main`. Report includes the observed SHA, timestamp, check results, material gaps and proposed follow-ups.
+- Publication: creates `reports/self-scan/current.md` in a separate `ultron/self-scan-*` branch, creates a non-draft PR with base `main`, and dispatches the existing Verify workflow.
+- Noise control: identical material findings generate no new branch or PR, an open scan PR is refreshed with changed findings, and identical findings already merged on `main` are not republished. The generated report file is excluded from the scan inventory fingerprint so its own merge cannot trigger a recurring loop.
+- Credentials: GitHub Actions grants contents/pull-requests/actions write only to this workflow; GitHub Pages receives no API token. The scan never creates Issues, never auto-merges, and does not pretend the scan is a software repair or AGI proof.
