@@ -57,7 +57,7 @@ test('cloud learning counts authenticated terminal tasks, not retries, forged co
   assert.equal(count.qualifiedExperiences,0);
   assert.equal(count.promotions,0);
   assert.equal(count.unratedTasks,2);
-  assert.equal(count.learningStatus,'no-owner-rated-cloud-outcomes');
+  assert.equal(count.learningStatus,'insufficient-evidence');
 });
 
 test('cloud command uses actual GitHub receipt observations and no false promotion',async()=>{
