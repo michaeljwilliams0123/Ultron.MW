@@ -89,3 +89,19 @@ Verification syntax-checks every JavaScript module in `src`, `docs`, `scripts` a
 **Repository settings remain separate:** the reviewed `main` was unprotected. Workflow files cannot enforce branch protection. Required-check configuration, blocked force-push/deletion, and owner review policy need an administrative settings change and read-back before they can be claimed active. See [`docs/verification/BASELINE-2026-10-19.md`](docs/verification/BASELINE-2026-10-19.md) for the reviewed baseline, acceptance gaps, and next implementation order.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for current architecture and [`SECURITY.md`](SECURITY.md) for data boundaries and reporting. No license grant is declared pending the owner's license decision.
+
+### Verified cloud evidence (read-only)
+The GitHub-hosted `/learning status` command now reads existing public cloud-task
+Issues and their bot-authored structured execution receipts directly from GitHub.
+It deduplicates retries and counts at most one validated terminal outcome per
+canonical task. To qualify as an observed cloud outcome, the receipt must match
+the owner-created objective digest, issue number and exact-main admission and
+pre-publication SHAs. Incomplete API pagination fails closed rather than silently
+under-counting. It does **not** count generated council text, unauthenticated
+comments, unverified historical receipts, or synthetic tests as learning.
+
+Metrics deliberately separate **attested execution outcomes** from **owner-rated
+learning evidence**: the latter remains zero until an authenticated feedback
+mechanism is implemented, so no policy or model is promoted from mere GitHub
+success receipts. This uses the existing cloud command and GitHub API access,
+with no new provider, database, UI, or computer dependency.

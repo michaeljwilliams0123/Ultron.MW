@@ -78,7 +78,10 @@ export async function executeCloudTask(task,{get,now=()=>new Date().toISOString(
         case '/system status':
           summary='GitHub-hosted runner executed';details={ephemeral:true,desktopRequired:false};break;
         case '/learning status':
-          summary='Cloud learning evidence not yet connected';details={qualifiedExperiences:0,promotions:0};break;
+          details = await observeCloudHistory(get);
+          summary = 'Cloud task evidence: ' + details.verifiedTasks +
+            ' attested outcome(s); no rated training data';
+          break;
         case '/repo inspect':{
           const r=await get('/repos/'+REPOSITORY+'/git/ref/heads/main'), main=r?.object?.sha;
           if(!sha.test(main||''))throw Error('Invalid main');
@@ -110,6 +113,97 @@ export function parseReceiptComment(comment){
     return ['ultron.cloud.receipt.v1',RECEIPT_SCHEMA].includes(receipt?.schema)?receipt:null;
   }catch{return null;}
 }
+
+/**
+ * One bounded GitHub comment reader for replay protection AND cloud evidence.
+ * No receipt can be trusted merely because a comment contains a marker.
+ */
+export async function readIssueReceipts(get, issueNumber) {
+  const accepted = [];
+  let offset = 0;
+  for (let page = 1; page <= 10; page++) {
+    const comments = await get('/repos/' + REPOSITORY + '/issues/' +
+      issueNumber + '/comments?per_page=100&page=' + page);
+    if (!Array.isArray(comments)) throw Error('Cannot audit issue comments');
+    for (const [index, comment] of comments.entries()) {
+      const receipt = parseReceiptComment(comment);
+      if (!receipt) continue;
+      const key = receipt.runId && Number.isSafeInteger(receipt.runAttempt)
+        ? receipt.runId + ':' + receipt.runAttempt
+        : 'comment:' + (comment.id ?? offset + index);
+      accepted.push({ receipt, key });
+    }
+    offset += comments.length;
+    if (comments.length < 100) return accepted;
+  }
+  throw Error('Comment audit limit reached; no complete evidence');
+}
+
+/**
+ * Actual observed cloud outcomes, not model training or subjective success.
+ * Github bot-authored v2 receipts must join the original owner task and
+ * attest the same exact-main SHA at execution admission and publication.
+ */
+export async function observeCloudHistory(get) {
+  const outcomes = { succeeded: 0, partial: 0, failed: 0, blocked: 0 };
+  let ownerTasks = 0, invalidReceipts = 0;
+  for (let page = 1; page <= 3; page++) {
+    const issues = await get('/repos/' + REPOSITORY +
+      '/issues?state=all&per_page=100&page=' + page);
+    if (!Array.isArray(issues)) throw Error('Cloud issue history unavailable');
+    for (const issue of issues) {
+      if (issue?.pull_request || issue?.title !== '[Ultron Cloud] Objective' ||
+          issue?.user?.login !== 'michaeljwilliams0123' ||
+          !Number.isSafeInteger(issue?.number) || issue.number < 1 ||
+          !issue.body?.startsWith('ULTRON_CLOUD_V1\n')) continue;
+      // Reject malformed, edited or noncanonical objectives using the
+      // existing owner-task parser. Do not infer trust from an issue title.
+      let task;
+      try {
+        task = parseTask({ action: 'opened', issue }, 'issues',
+          'michaeljwilliams0123', REPOSITORY);
+        const plan = planObjective(task.objective, { strategy: 'routing-v2' });
+        if (!plan.steps.length || plan.steps.some(x => !allowed.has(x.command)))
+          continue;
+      } catch { continue; }
+      ownerTasks++;
+      const observed = await readIssueReceipts(get, issue.number);
+      const distinct = new Map();
+      for (const { receipt, key } of observed) {
+        const source = receipt.sourceAuthority;
+        const valid = receipt.schema === RECEIPT_SCHEMA &&
+          receipt.issueNumber === issue.number &&
+          receipt.objectiveDigest === taskDigest(task) &&
+          sha.test(receipt.executorSha || '') &&
+          source?.executorSha === receipt.executorSha &&
+          source?.admittedMainSha === receipt.executorSha &&
+          source?.preReceiptMainSha === receipt.executorSha &&
+          ['succeeded','partial','failed','blocked'].includes(receipt.status) &&
+          Array.isArray(receipt.receipts);
+        if (!valid) { invalidReceipts++; continue; }
+        distinct.set(key, receipt);
+      }
+      const attempts = [...distinct.values()];
+      // One terminal outcome per task: success dominates prior retries;
+      // otherwise use the latest verified attempt.
+      const terminal = attempts.findLast(x => x.status === 'succeeded') ??
+        attempts.sort((a,b) => a.attemptOrdinal - b.attemptOrdinal).at(-1);
+      if (terminal) outcomes[terminal.status]++;
+    }
+    if (issues.length < 100) {
+      const verifiedTasks = Object.values(outcomes).reduce((a,b) => a+b,0);
+      return {
+        source: 'bot-authored exact-main GitHub receipt ledger',
+        ownerTasks, verifiedTasks, outcomes, invalidReceipts,
+        unratedTasks: verifiedTasks, qualifiedExperiences: 0, promotions: 0,
+        learningStatus: 'no-owner-rated-cloud-outcomes',
+        limitation: 'GitHub receipt outcomes are not independently rated task quality or model training.',
+      };
+    }
+  }
+  throw Error('Cloud issue audit limit reached; incomplete evidence');
+}
+
 export function formatReceipt(outcome){
   if(outcome?.schema!==RECEIPT_SCHEMA)throw Error('Bad receipt');
   const rows=outcome.receipts.map((r,i)=>(i+1)+'. '+(r.command||'Blocked')+' — '+r.status+': '+r.summary);

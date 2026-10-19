@@ -9,7 +9,7 @@ export const CAPABILITIES=Object.freeze([
   {id:'repo-inspect',command:'/repo inspect',description:'Inspect Ultron repository structure',
     localScope:'Fixed project entries in the local checkout',cloudScope:'Authoritative GitHub main tree'},
   {id:'learning-status',command:'/learning status',description:'Read learning evidence status',
-    localScope:'Persisted local evidence ledger',cloudScope:'Reports cloud evidence is not connected'},
+    localScope:'Persisted local evidence ledger',cloudScope:'Bot-authored verified task receipts (not owner-rated learning)'},
 ].map(entry=>Object.freeze({...entry,authority:'read-only',readiness:'implemented',
   environments:Object.freeze(['local','cloud']),
   proof:Object.freeze(['test/runtime.test.mjs','test/cloud.test.mjs','test/capabilities.test.mjs']),

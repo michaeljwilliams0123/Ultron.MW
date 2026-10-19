@@ -1,6 +1,6 @@
 import { readFile, appendFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { parseTask,executeCloudTask,formatReceipt,REPOSITORY,taskDigest,parseReceiptComment,
+import { parseTask,executeCloudTask,formatReceipt,REPOSITORY,taskDigest,readIssueReceipts,
   MAX_TASK_ATTEMPTS } from './cloud-cycle.mjs';
 const sha=/^[0-9a-f]{40}$/;
 async function github(path,{method='GET',data}={}){
@@ -38,24 +38,13 @@ export async function runCloudEntry({event,eventName,actor,repository,
   const comments=task.issueNumber===null?null:'/repos/'+REPOSITORY+'/issues/'+task.issueNumber+'/comments';
   let attemptOrdinal=1;
   if(comments){
-    let complete=false,commentOffset=0;
     const attempts=new Map();
-    for(let page=1;page<=10;page++){
-      const existing=await get(comments+'?per_page=100&page='+page);
-      if(!Array.isArray(existing))throw Error('Cannot audit issue comments');
-      for(const [index,comment] of existing.entries()){
-        const receipt=parseReceiptComment(comment);
-        if(receipt?.objectiveDigest!==taskDigest(task)||receipt.issueNumber!==task.issueNumber)continue;
-        if(receipt.status==='succeeded')return {status:'already-processed',issueNumber:task.issueNumber,
-          previousRunId:receipt.runId};
-        const key=receipt.runId&&Number.isSafeInteger(receipt.runAttempt)?
-          receipt.runId+':'+receipt.runAttempt:'comment:'+(comment.id??commentOffset+index);
-        attempts.set(key,receipt);
-      }
-      commentOffset+=existing.length;
-      if(existing.length<100){complete=true;break;}
+    for(const {receipt,key} of await readIssueReceipts(get,task.issueNumber)){
+      if(receipt.objectiveDigest!==taskDigest(task)||receipt.issueNumber!==task.issueNumber)continue;
+      if(receipt.status==='succeeded')return {status:'already-processed',issueNumber:task.issueNumber,
+        previousRunId:receipt.runId};
+      attempts.set(key,receipt);
     }
-    if(!complete)throw Error('Comment audit limit reached; no execution occurred');
     const prior=[...attempts.values()];
     if(prior.some(receipt=>receipt.status==='blocked'))return {status:'blocked',
       issueNumber:task.issueNumber,replay:true,retry:{disposition:'terminal',
