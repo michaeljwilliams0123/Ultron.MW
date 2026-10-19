@@ -18,12 +18,12 @@ Mahoraga remains a historical research source, **not a live runtime dependency**
 
 ## Runtime contract
 
-- **On demand:** `/self scan` via GitHub-hosted issue or local deterministic executor.
-- **Scheduled:** the preexisting hourly GitHub Actions objective runs `/self scan` as a zero-model-call read-only job. Scheduled result goes into its Actions run summary; a scheduled run is not an always-on agent or durable state.
+- **On demand:** `/self scan` routes to authenticated GitHub Actions **Self scan → PR** (or a local deterministic read-only executor). No scan Issue is created.
+- **Scheduled:** the native self-scan PR workflow runs hourly, records only material source findings in a commit and opens or updates a single PR targeting `main`. Identical scans are no-ops. A scheduled run is not a continuously running reasoning agent.
 - **Cloud evidence:** independently fetch exact GitHub main, commit/tree metadata and seven bounded route files; bind each file blob SHA to tree; repeat main read after traversal. Fail if the data is missing, inconsistent or changes mid-scan.
 - **Local evidence:** bounded symlink-resistant traversal of explicit repository folders, with a source-content digest; never claim the local checkout is current GitHub main.
 - **Self-model:** file inventory, static route link observations, gaps/weaknesses, predictions, next actions, evidence completeness, and unresolved runtime/provider/readiness statuses. Immutable fingerprint identifies the specific report.
-- **No mutation:** self-observation does not modify source files, open PRs, grant permissions, deploy, or promote itself. Its diagnostic recommendations may be separately routed into an owner-authorized code PR.
+- **Controlled report publication:** self-observation reads source without changing runtime behavior; its publisher can create a report commit and GitHub PR. It cannot grant permissions, deploy, merge, or promote itself. The PR identifies follow-up implementation candidates and does not misrepresent reporting as repair.
 
 ## Acceptance boundaries
 
