@@ -330,7 +330,7 @@
     try {
       const url=createCloudTaskUrl('/self scan');
       window.open(url,'_blank','noopener,noreferrer');
-      line('Ultron · Self-scan', 'Confirm the prefilled GitHub Issue to inspect current main, routing links, known weaknesses and unknown live readiness. The verified findings return as a cloud receipt.');
+      line('Ultron · Self-scan', 'Open GitHub Actions and select Run workflow. Ultron scans current main and creates or updates one findings PR targeting main when results change. No Issue is created.');
     } catch (error) {
       line('Ultron · Self-scan rejected',error.message);
     }
@@ -340,7 +340,9 @@
     try {
       const url = createCloudTaskUrl(objective);
       window.open(url, '_blank', 'noopener,noreferrer');
-      line('Ultron · public GitHub handoff', 'Review and submit the canonical read-only commands in GitHub. For pull requests, use Create PR to main instead. No personal PC is required.');
+      line('Ultron · public GitHub handoff', url.includes('/actions/workflows/self-scan-pr.yml') ?
+      'Select Run workflow on GitHub to create or update the self-scan PR; no Issue is created.' :
+      'Review and submit the canonical read-only commands in GitHub. To publish source changes, use Create PR to main.');
     } catch (error) {
       line('Ultron · cloud request rejected', error.message +
         ' To request a PR, use Create PR to main.');
