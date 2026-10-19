@@ -39,7 +39,7 @@ async function readJson(req) {
 
 export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama() } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
-  let state = { objectives: [], receipts: [], plans: [],
+  let state = { objectives: [], receipts: [], plans: [], conversations: [],
     evolution: { accepted: ACCEPTED_SEED, evaluations: [] },
     learning: new LearningLoop().snapshot() };
   try {
@@ -52,6 +52,7 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
     state = {
       objectives: loaded.objectives, receipts: loaded.receipts || [],
       plans: Array.isArray(loaded.plans) ? loaded.plans : [],
+      conversations: Array.isArray(loaded.conversations) ? loaded.conversations : [],
       evolution: loaded.evolution?.accepted === CANDIDATE ? loaded.evolution :
         { accepted: ACCEPTED_SEED, evaluations: [] },
       learning: new LearningLoop(loaded.learning).snapshot(),
@@ -117,6 +118,7 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         return response(res, 200, {
           objectives: state.objectives.slice(-100), receipts: state.receipts.slice(-100),
           plans: state.plans.slice(-30), evolution: state.evolution,
+          conversations: state.conversations.slice(-24),
           acceptedVersion: learning.accepted, observations: learning.observations.size,
           candidates: learning.candidates.size, executionReady: true, autonomousReady: false,
         });
@@ -216,7 +218,11 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           if (!modelStatus.ready) {
             return response(res, 503, { error: 'Local model unavailable: ' + modelStatus.reason });
           }
-          const outcome = await brain.think(text);
+          const context = state.conversations.slice(-3).flatMap(entry => [
+            { role: 'user', content: entry.prompt },
+            { role: 'assistant', content: entry.answer },
+          ]);
+          const outcome = await brain.think(text, { context });
           const saved = await transact(next => {
             let toolReceipt = null;
             if (outcome.toolResult) {
@@ -236,6 +242,11 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
             };
             next.receipts.push(receipt);
             next.receipts = next.receipts.slice(-100);
+            next.conversations.push({
+              id: receipt.id, prompt: text, answer: outcome.text,
+              model: outcome.model, createdAt: receipt.createdAt,
+            });
+            next.conversations = next.conversations.slice(-24);
             return { receipt, toolReceipt };
           });
           return response(res, 201, { ...saved, executed: !!saved.toolReceipt, autonomous: false });
