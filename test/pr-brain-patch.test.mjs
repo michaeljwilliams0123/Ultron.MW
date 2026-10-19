@@ -32,7 +32,9 @@ function fixture(){
     throw Error('unexpected POST '+path);
   };
   const updateRef=async(path,body)=>{
-    state.calls.push(['PATCH',path,body]);assert.equal(body.force,false);
+    state.calls.push(['PATCH',path,body]);
+    assert.equal(path,ROOT+'/git/refs/heads/'+BRANCH);
+    assert.equal(body.force,false);
     assert.equal(body.sha,NEXT);
     state.sha=NEXT;state.updated=state.blobs[0];return {object:{sha:NEXT}};
   };

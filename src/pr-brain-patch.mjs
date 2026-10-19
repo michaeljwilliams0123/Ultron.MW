@@ -75,7 +75,9 @@ export async function applyPrPatch({pr,manifest,get,post,
   if(!SHA.test(next?.sha||''))throw Error('Patch commit unavailable');
   if((await get(ref))?.object?.sha!==head)
     throw Error('PR source advanced; leave patch commit unreferenced');
-  const updated=await updateRef(ref,{sha:next.sha,force:false});
+  // GitHub uses singular /git/ref for reads but plural /git/refs for updates.
+  const updatePath=ROOT+'/git/refs/heads/'+branch;
+  const updated=await updateRef(updatePath,{sha:next.sha,force:false});
   if(updated?.object?.sha!==next.sha||(await get(ref))?.object?.sha!==next.sha)
     throw Error('PR head commit readback failed');
   for(const item of changed){
