@@ -210,3 +210,45 @@ test('public shared core source is the only added served module surface', async 
   const blocked = await fetch(base() + '/.local/state.json');
   assert.equal(blocked.status, 404);
 }));
+
+
+test('local model conversation survives runtime restart and informs subsequent turns', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ultron-context-'));
+  const statePath = join(directory, 'state.json');
+  const root = resolve(import.meta.dirname, '..');
+  const requests = [];
+  const provider = {
+    status: async () => ({ ready: true, model: 'test-local' }),
+    respond: async messages => {
+      requests.push(messages);
+      return { model: 'test-local', decision: { action: 'reply',
+        text: requests.length === 1 ? 'First factual response' : 'Continued factual response' } };
+    },
+  };
+  let app = await startLocalServer({ root, statePath, port: 0, provider });
+  const send = async text => {
+    const origin = 'http://127.0.0.1:' + app.port;
+    return fetch(origin + '/api/think', {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json', 'x-ultron-client': 'local-ui-v1' },
+      body: JSON.stringify({ text }),
+    });
+  };
+  try {
+    const first = await send('First question');
+    assert.equal(first.status, 201);
+    await app.close();
+    app = await startLocalServer({ root, statePath, port: 0, provider });
+    const second = await send('Follow-up question');
+    assert.equal(second.status, 201);
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests[1].slice(-3).map(x => x.content),
+      ['First question', 'First factual response', 'Follow-up question']);
+    const state = await (await fetch('http://127.0.0.1:' + app.port + '/api/state')).json();
+    assert.equal(state.conversations.length, 2);
+    assert.equal(state.receipts.filter(x => x.kind === 'model-response').length, 2);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
