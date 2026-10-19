@@ -23,7 +23,7 @@ function repository(){
 test('broad natural language implement command reaches model lane',()=>{
   assert.deepEqual(routePrTurn('@ultron implement src/utility.mjs: improve marker handling'),
     {kind:'implement',objective:'src/utility.mjs: improve marker handling'});
-  assert.equal(routePrTurn('@ultron implement quick').kind,undefined);
+  assert.equal(routePrTurn('@ultron implement quick').kind,'implement');
 });
 test('repo-bound source selection and source patch derivation',async()=>{
   const r=repository();
