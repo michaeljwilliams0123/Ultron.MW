@@ -135,3 +135,26 @@ test('baseline guards dangerous objectives regardless of learned policy', () => 
   assert.equal(baselineSuggestion('write a local workspace note'),'local-note');
   assert.equal(baselineSuggestion('review github repository'),'github-draft');
 });
+
+
+test('an incumbent learned policy auto-rolls back when fresh held-out outcomes expose regression', () => {
+  const { jobs, receipts } = fixture();
+  const deliberatelyBadIncumbent = {
+    version: 'known-bad-incumbent',
+    positive: { 'local-note': {}, 'github-draft': {} },
+    totals: { 'local-note': 0, 'github-draft': 0 },
+    negative: { operational: 20, journal: 20 },
+    negativeTotal: 20,
+  };
+  const report = evaluateExperience(jobs, receipts, deliberatelyBadIncumbent);
+  assert.ok(report.incumbentRegressions > 0);
+  const previous = {
+    active: deliberatelyBadIncumbent, history: [], assessments: [],
+    lastEvidence: null,
+  };
+  const result = advanceExperience(previous, jobs, receipts);
+  assert.equal(result.result.status, 'rolled-back-on-regression');
+  assert.equal(result.state.active, null);
+  assert.equal(result.state.history.at(-1).action, 'auto-rollback');
+  assert.equal(result.state.history.at(-1).reason, 'new-heldout-regression');
+});
