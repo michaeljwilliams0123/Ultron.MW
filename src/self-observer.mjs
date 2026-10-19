@@ -63,7 +63,8 @@ export function evaluateSelfSnapshot({environment,observedAt,commitSha=null,tree
     (environment === 'cloud' && (!SHA.test(commitSha||'') || !SHA.test(treeSha||''))) ||
     (environment === 'local' && commitSha !== null))
     throw Error('Self-observation source evidence invalid');
-  const inventory = unique(paths);
+  // Generated self-scan report must not trigger an endless PR cycle after merge.
+  const inventory = unique(paths.filter(p => p !== 'reports/self-scan/current.md'));
   const pathSet = new Set(inventory);
   const sourceEvidence = [];
   const weaknesses = [];
