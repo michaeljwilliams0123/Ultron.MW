@@ -1,15 +1,30 @@
 # Ultron.MW
-**Ultron** — a single-owner, local-first adaptive AI brain. Clean-room successor to Mahoraga.
+**Ultron** — a single-owner, cloud-first adaptive execution platform. Clean-room successor to Mahoraga.
 
 ## Principles
-- **One interface**: the same responsive UI works from the local runtime or as a static GitHub Pages shell. No second admin UI.
+- **One interface**: GitHub Pages is the canonical task console. An owner-confirmation step within GitHub signs and submits an on-demand task; no second Ultron dashboard.
 - **One coordinating brain**: dynamic planning and provider/tool selection belong to one coordinator; deterministic tasks stay deterministic.
 - **Real learning, not self-congratulation**: Serve → Observe → Propose → Evaluate → Commit/Rollback. No candidate can promote itself from unverified subjective feedback.
 - **No inherited infrastructure**: no copied secrets, no Cloudflare by default, no GitLab mirror, no duplicated bot lanes, no hardcoded provider dependencies.
-- **One owner**: no tenancy, signup or role-management subsystem; authenticated operations are confined to a trusted local runtime.
+- **One owner**: GitHub-authenticated task submission and scoped Actions permissions. The previous local pairing is optional, not part of the default cloud path.
 - **Visible truth**: the UI never reports live execution when only the Pages shell or a draft is available.
 
-## Quick start
+
+## Default: GitHub-hosted, independent of any PC
+
+**Official Ultron UI:** https://michaeljwilliams0123.github.io/Ultron.MW/
+
+The Pages UI includes **Run in GitHub cloud**. Enter a one-line objective and select the button. It opens a **prefilled GitHub Issue** for your authenticated confirmation. Submitting the Issue triggers `.github/workflows/cloud-objective.yml` on an ephemeral GitHub-hosted Ubuntu runner; this is the cloud runtime. GitHub stores the task as an Issue and its verified structured result as an Issue comment. The operator checks the author and repository before running anything, never injects raw issue text into a shell, and rejects mixed unsupported objectives in full. Workflow runs can also be dispatched manually under GitHub Actions.
+
+Supported cloud commands: `/help`, `/system status`, `/repo inspect`, `/learning status`, plus narrowly recognized variants. The GitHub repository read runs against current `main`, independent of any SD009WC7 checkout. It persists outcomes in **private GitHub Issues**; the public Pages shell never holds a GitHub API token.
+
+**No desktop, localhost, port 4782/4792, Ollama instance, Tailscale, Cloudflare, Railway, or deployed server is required to open Pages or run a supported GitHub cloud task.** The local Node/Ollama/Windows features remain optional extensions and are not involved in the default cloud task path.
+
+**Technical limits:** Pages is static; authenticated task confirmation currently requires opening GitHub's new-issue form (one main Ultron UI with a GitHub authorization step, not an entirely seamless in-page write). Hosted Actions are asynchronous, ephemeral, quota-limited, and can be delayed; this is not a 24/7 always-on server or hosted LLM. GitHub Models was retired in July 2026, so the workflow does not pretend it offers free hosted LLM inference. On-device WebGPU chat is optional and device/browser-dependent. Browser encrypted memory still needs manual import/export across devices; **task and receipt history** is the durable cloud record, not cross-device chat synchronization. GitHub Actions on a private repository consume plan minutes and may incur charges beyond the included allowance; no paid hosted provider is enabled by this change.
+
+The GitHub Issue contains the objective. Avoid confidential content or passwords; the source repository is private but the Pages UI is publicly accessible. Only the configured GitHub owner may trigger this workflow.
+
+## Optional legacy local startup
 Requires Node.js 20+; no npm install or API token.
 
 ```bash

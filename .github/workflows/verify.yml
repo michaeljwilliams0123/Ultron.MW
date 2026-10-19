@@ -7,6 +7,7 @@ on:
       - 'test/**'
       - 'docs/**'
       - '.github/workflows/verify.yml'
+      - '.github/workflows/cloud-objective.yml'
   pull_request:
     paths:
       - 'src/**'
@@ -30,6 +31,9 @@ jobs:
           node --check src/experience.mjs
           node --check src/operations.mjs
           node --check src/server.mjs
+          node --check src/cloud-cycle.mjs
+          node --check src/cloud-entry.mjs
+          node --check docs/core/cloud-submit.mjs
           node --check src/action-gateway.mjs
           node --check src/brain.mjs
           node --check src/providers/ollama.mjs

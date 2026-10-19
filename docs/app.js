@@ -1,6 +1,7 @@
 (async () => {
   const $ = id => document.getElementById(id);
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+  if (local) document.getElementById('optional-local-actions')?.classList.remove('hidden');
   let connected = false;
   let modelReady = false;
   let browserBrain = null;
@@ -303,12 +304,28 @@
         vault?.unlocked() ? 'encrypted browser plan (not executed)' : 'session-only draft plan'), plan.objective);
       addPlanControls(card, plan);
       if (!connected) line('Ultron · execution boundary',
-        'This Pages interface can plan safe steps but cannot execute private PC or GitHub tools.');
+        'Pages can plan tasks; select Run in GitHub cloud for hosted read-only execution. It cannot directly execute private PC actions.');
     } catch (error) {
       line('Ultron · planning failed',
         error instanceof Error ? error.message : 'Could not create plan');
     }
   }
+
+  $('cloud-run').addEventListener('click', () => {
+    const objective = $('message').value.trim();
+    if (!objective || objective.length > 1000 || /[\r\n\u0000-\u001f]/.test(objective)) {
+      line('Ultron · cloud request rejected', 'Enter one objective line (1000 characters maximum) without secrets.');
+      return;
+    }
+    // Owner confirms within GitHub, without exposing credentials to Pages.
+    const query = new URLSearchParams({
+      title: '[Ultron Cloud] Objective',
+      body: 'ULTRON_CLOUD_V1\n' + objective,
+    });
+    window.open('https://github.com/michaeljwilliams0123/Ultron.MW/issues/new?' +
+      query.toString(), '_blank', 'noopener,noreferrer');
+    line('Ultron · GitHub cloud handoff', 'Confirm the prefilled issue in GitHub. When submitted, a hosted runner will execute supported read-only commands and post a receipt on the issue. No personal PC is required.');
+  });
 
   $('plan-objective').addEventListener('click', async () => {
     await showPlan($('message').value.trim());
@@ -381,7 +398,7 @@
     $('browser-mode').classList.remove('hidden');
     if (!globalThis.navigator?.gpu) {
       browserButton.disabled = true;
-      browserInfo.textContent = 'This browser has no WebGPU. The public shell stays offline; use a WebGPU-capable browser or your private local runtime.';
+      browserInfo.textContent = 'WebGPU is not available on this device. GitHub cloud execution remains accessible without your PC.';
     }
   }
   browserButton.addEventListener('click', async () => {
@@ -405,8 +422,8 @@
       browserButton.textContent = 'Retry on-device AI';
       browserInfo.textContent = (error instanceof Error ? error.message : 'On-device model failed') +
         '. No model response or tool execution occurred.';
-      $('status').textContent = 'Static Pages shell · offline';
-      $('status').classList.remove('live');
+      $('status').textContent = 'GitHub cloud · browser AI unavailable';
+      $('status').classList.add('live');
     }
   });
 
@@ -436,7 +453,7 @@
   async function refreshExperience() {
     if (!local || !ownerKey) {
       $('experience-summary').textContent =
-        'A paired local runtime is required for real execution evidence. Pages-only memory is separate.';
+        'Cloud receipts persist in GitHub Issues. Optional legacy PC learning is separate and not cloud-synchronized.';
       return;
     }
     try {
@@ -644,9 +661,10 @@
     if (!local) {
       connected = false;
       modelReady = false;
-      $('status').textContent = 'Static Pages shell · offline';
-      $('runtime').textContent = 'Offline';
-      $('hero-sub').textContent = 'Start local runtime for live execution';
+      $('status').textContent = 'GitHub cloud · owner confirmation';
+      $('status').classList.add('live');
+      $('runtime').textContent = 'GitHub';
+      $('hero-sub').textContent = 'On-demand GitHub-hosted execution · optional browser AI';
       return;
     }
     try {
@@ -675,9 +693,9 @@
       connected = false;
       modelReady = false;
       $('status').classList.remove('live');
-      $('status').textContent = 'Local runtime unavailable';
-      $('runtime').textContent = 'Offline';
-      $('hero-sub').textContent = 'Start local runtime; no tool execution is available';
+      $('status').textContent = 'GitHub cloud on demand · local extension offline';
+      $('runtime').textContent = 'GitHub';
+      $('hero-sub').textContent = 'Hosted read-only tasks do not need localhost';
     }
   }
   $('composer').addEventListener('submit', async event => {
@@ -692,7 +710,7 @@
       }
       if (browserBrain?.ready()) {
         if (text.startsWith('/')) {
-          line('Ultron · unsupported', 'Browser-only AI cannot run PC, GitHub, or system commands. Connect the private local runtime for tools.');
+          line('Ultron · browser-only inference', 'Use Run in GitHub cloud for hosted read-only tools. The browser model cannot issue tool receipts.');
           return;
         }
         const submit = $('composer').querySelector('button');
@@ -733,7 +751,7 @@
         }
         return;
       }
-      line('Ultron · unsaved', 'No execution engine is active. Enable on-device AI or start the private local runtime. No message was saved.');
+      line('Ultron · cloud execution', 'Use Run in GitHub cloud for supported tasks or optionally enable browser AI for chat. No specific computer needs to be online.');
       return;
     }
     if (text.startsWith('/plan ')) {
