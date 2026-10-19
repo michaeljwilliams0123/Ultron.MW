@@ -66,7 +66,6 @@ test('malformed or spoofed Verify runs fail before any PR comment',async()=>{
     {head_repository:{full_name:'outsider/project'}},
     {path:'.github/workflows/other.yml'},
     {status:'in_progress'},
-    {event:'push'},
     {run_attempt:0},
     {head_sha:'invalid'},
   ]){
@@ -76,6 +75,12 @@ test('malformed or spoofed Verify runs fail before any PR comment',async()=>{
   }
   const f=fixture();
   assert.throws(()=>verifiedCiReceipt({run:{...run,conclusion:'pending'},pr,status:'current'}),/trusted terminal/);
+});
+test('main push Verify is correctly ignored without a false failed workflow',async()=>{
+  const f=fixture({run:{event:'push'}});
+  const r=await f.invoke();
+  assert.equal(r.status,'non-pr-verify');
+  assert.equal(f.state.posts.length,0);
 });
 test('trusted main workflow observes verification completion, without checkout from PR',async()=>{
   const text=await readFile(new URL('../.github/workflows/pr-brain-ci.yml',import.meta.url),'utf8');
