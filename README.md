@@ -167,3 +167,7 @@ Use **Self scan → PR** or enter `/self scan` in the console to open the native
 - Publication: creates `reports/self-scan/current.md` in a separate `ultron/self-scan-*` branch, creates a non-draft PR with base `main`, and dispatches the existing Verify workflow.
 - Noise control: identical material findings generate no new branch or PR, an open scan PR is refreshed with changed findings, and identical findings already merged on `main` are not republished. The generated report file is excluded from the scan inventory fingerprint so its own merge cannot trigger a recurring loop.
 - Credentials: GitHub Actions grants contents/pull-requests/actions write only to this workflow; GitHub Pages receives no API token. The scan never creates Issues, never auto-merges, and does not pretend the scan is a software repair or AGI proof.
+
+## Ultron PR conversation brain
+
+Ultron PRs now support owner-authored `@ultron` conversation comments on ordinary PR threads and inline review comments, powered by the existing GitHub Actions runtime. Commands include `@ultron status`, `@ultron findings`, `@ultron next`, `@ultron address <finding-code>`, `@ultron verify`, `@ultron rescan`, and an explicitly supplied exact-head `@ultron patch` manifest to commit source fixes on the current PR branch and run Verify. Replies are posted on that PR; no Issues, new services, hosted model charges, or automatic merges are needed. It stores context in GitHub comments and will not describe unverified model activity as intelligence. See [PR Conversation Brain](docs/PR-CONVERSATION-BRAIN.md).
