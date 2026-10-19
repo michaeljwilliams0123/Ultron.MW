@@ -122,7 +122,7 @@ test('the full read-only capability list has executable receipts', async () => f
   }
   const state = await (await fetch(base() + '/api/state')).json();
   assert.equal(state.receipts.length, 4);
-});
+}));
 
 test('failed state persistence never returns success or mutates the ledger', async () => fixture(async ({ base, post, statePath }) => {
   await mkdir(statePath);
