@@ -1,6 +1,7 @@
 import { readFile, appendFile } from 'node:fs/promises';
 import { parseTask,executeCloudTask,formatReceipt,REPOSITORY,taskDigest,parseReceiptComment,
   MAX_TASK_ATTEMPTS } from './cloud-cycle.mjs';
+const sha=/^[0-9a-f]{40}$/;
 async function github(path,{method='GET',data}={}){
   if(!process.env.GITHUB_TOKEN||!path.startsWith('/repos/'+REPOSITORY+'/'))
     throw Error('Unapproved GitHub API request');
@@ -12,10 +13,27 @@ async function github(path,{method='GET',data}={}){
   if(!res.ok)throw Error('GitHub API returned '+res.status);
   return res.json();
 }
+async function currentMain(get){
+  const ref=await get('/repos/'+REPOSITORY+'/git/ref/heads/main');
+  const value=ref?.object?.sha;
+  if(!sha.test(value||''))throw Error('Current main could not be verified');
+  return value;
+}
+async function assertIssueSnapshot(get,task,eventIssue,actor){
+  const current=await get('/repos/'+REPOSITORY+'/issues/'+task.issueNumber);
+  if(current?.number!==task.issueNumber||current?.state!=='open'||
+    current?.user?.login!==actor||current?.title!==eventIssue?.title||
+    current?.body!==eventIssue?.body)throw Error('Task issue changed or closed; no mutation occurred');
+}
 export async function runCloudEntry({event,eventName,actor,repository,
   get=path=>github(path),post=(path,data)=>github(path,{method:'POST',data}),runId='',now,
   executorSha=null,runAttempt=1}={}){
   const task=parseTask(event,eventName,actor,repository);
+  if(!sha.test(executorSha||''))throw Error('Executor SHA is required');
+  const clock=now??(()=>new Date().toISOString());
+  const admittedAt=clock();
+  const admittedMainSha=await currentMain(get);
+  if(admittedMainSha!==executorSha)throw Error('Executor is not current main; no execution occurred');
   const comments=task.issueNumber===null?null:'/repos/'+REPOSITORY+'/issues/'+task.issueNumber+'/comments';
   let attemptOrdinal=1;
   if(comments){
@@ -45,16 +63,23 @@ export async function runCloudEntry({event,eventName,actor,repository,
       issueNumber:task.issueNumber,retry:{disposition:'exhausted',
         attemptsUsed:prior.length,attemptLimit:MAX_TASK_ATTEMPTS}};
     attemptOrdinal=prior.length+1;
+    await assertIssueSnapshot(get,task,event.issue,actor);
   }
-  const outcome=await executeCloudTask(task,{get,runId,now,executorSha,runAttempt,attemptOrdinal});
+  let outcome=await executeCloudTask(task,{get,runId,now:clock,executorSha,runAttempt,attemptOrdinal});
   if(comments){
+    const preReceiptAt=clock();
+    const preReceiptMainSha=await currentMain(get);
+    if(preReceiptMainSha!==executorSha)throw Error('Executor lost current-main lease; no receipt was posted');
+    await assertIssueSnapshot(get,task,event.issue,actor);
+    outcome={...outcome,sourceAuthority:{executorSha,admittedMainSha,admittedAt,
+      preReceiptMainSha,preReceiptAt}};
     const body=formatReceipt(outcome);
     const posted=await post(comments,{body});
     if(!Number.isSafeInteger(posted?.id)||posted.id<=0)throw Error('Receipt not confirmed');
     const audit=await get('/repos/'+REPOSITORY+'/issues/comments/'+posted.id);
     if(audit?.id!==posted.id||audit?.user?.login!=='github-actions[bot]'||audit.body!==body)
       throw Error('Receipt read-back failed');
-  }
+  }else outcome={...outcome,sourceAuthority:{executorSha,admittedMainSha,admittedAt}};
   return outcome;
 }
 if(import.meta.url==='file://'+process.argv[1]){
@@ -69,6 +94,8 @@ if(import.meta.url==='file://'+process.argv[1]){
         '## Ultron cloud observation\n**Status:** '+r.status+
         '\n**Backend:** GitHub Actions (no owner PC)\n'+
         '**Executor SHA:** '+(r.executorSha||'not recorded')+'\n'+
+        '**Admitted main SHA:** '+(r.sourceAuthority?.admittedMainSha||'not recorded')+'\n'+
+        '**Pre-receipt main SHA:** '+(r.sourceAuthority?.preReceiptMainSha||'not applicable')+'\n'+
         '**Run attempt:** '+(r.runAttempt||'not recorded')+'\n\n'+
         (r.receipts||[]).map(x=>'- '+x.command+': '+x.status+
           ' — '+x.summary+
