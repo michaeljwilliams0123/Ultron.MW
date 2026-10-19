@@ -27,6 +27,13 @@ test('owner confirmation creates a verified local note once and persists its rec
     });
     assert.equal(unverifiedGithub.status,403);
     assert.equal((await request('/api/owner/prepare',job,'wrong')).status,403);
+    const pairing = await fetch(origin + '/api/owner/status', {
+      headers: { 'x-ultron-owner': key },
+    });
+    assert.equal(pairing.status,200);
+    const capabilities = await pairing.json();
+    assert.deepEqual(capabilities.actions,['local-note']);
+    assert.equal(capabilities.githubDraftStatus,'disabled-unverified');
     const prepared=await request('/api/owner/prepare',job);
     assert.equal(prepared.status,201);
     assert.equal((await prepared.json()).executed,false);
