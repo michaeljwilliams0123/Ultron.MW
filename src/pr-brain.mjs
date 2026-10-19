@@ -123,7 +123,15 @@ function answer({turn,pr,intent,findings,history,action}){
       'Model: '+action.model+' (pinned model files)',
       'New source SHA: '+action.commitSha,
       'Changed: '+action.paths.join(', '),
-      verifyLine(action));
+      verifyLine(action),
+      action.rollback?.status==='committed'?
+        'Failed model patch automatically restored by a new auditable commit: '+action.rollback.sha+
+        '. '+(action.rollback.verify?.state==='completed'?
+          'Restored-head Verify: **'+action.rollback.verify.conclusion+'**.':
+          'Restored-head Verify is pending.') :
+        action.rollback?.status==='failed'?
+          'Automatic rollback was attempted but could not be verified: '+short(action.rollback.reason):
+          'No rollback was necessary or no terminal failure was observed.');
     break;
   case 'patch':lines.push('Exact-context source patch committed to this PR branch.',
     'New commit: '+action.commitSha,'Files: '+action.paths.join(', '),
@@ -180,9 +188,31 @@ export async function handlePrConversation({event,eventName,actor,repository,get
   }else if(intent.kind==='implement'){
     try{
       action=await generate({pr,objective:intent.objective,get,post});
-      pr.head.sha=action.commitSha;
-      action.verify=await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha});
     }catch(error){action={error:error instanceof Error?error.message:'Model inference failed'};}
+    if(!action.error&&SHA.test(action.commitSha||'')){
+      pr.head.sha=action.commitSha;
+      try{
+        action.verify=await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha});
+      }catch(error){action.verify={state:'pending',conclusion:null};
+        action.verifyError=error instanceof Error?error.message:'Verify could not be observed';}
+      // One bounded, exact-context undo on independent Verify failure.
+      // Never force-update main; this writes a new auditable revert commit
+      // and independently verifies the restored PR head.
+      if(action.verify?.state==='completed'&&action.verify.conclusion!=='success'&&
+        Array.isArray(action.rollbackChanges)&&action.rollbackChanges.length){
+        try{
+          const manifest=JSON.stringify({objective:'Restore source after failed model Verify',
+            baseSha:pr.head.sha,changes:action.rollbackChanges});
+          const restored=await patch({pr,manifest,get,post});
+          pr.head.sha=restored.commitSha;
+          action.rollback={status:'committed',sha:restored.commitSha};
+          try{action.rollback.verify=await observeVerify({get,post,
+            branch:pr.head.ref,headSha:pr.head.sha});}
+          catch(error){action.rollback.verify={state:'pending',conclusion:null};}
+        }catch(error){action.rollback={status:'failed',
+          reason:error instanceof Error?error.message:'Rollback failed'};}
+      }
+    }
   }else if(intent.kind==='patch'){
     action=await patch({pr,manifest:intent.manifest,get,post});
     pr.head.sha=action.commitSha;
