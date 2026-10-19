@@ -202,7 +202,7 @@ test('local routing evaluation persists versioned strategy, and rollback restore
 }));
 
 test('public shared core source is the only added served module surface', async () => fixture(async ({ base }) => {
-  for (const filename of ['/core/cycle.mjs', '/core/providers.mjs']) {
+  for (const filename of ['/core/cycle.mjs', '/core/providers.mjs', '/core/capabilities.mjs', '/core/cloud-submit.mjs']) {
     const result = await fetch(base() + filename);
     assert.equal(result.status, 200);
     assert.match(await result.text(), /export /);

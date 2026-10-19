@@ -1,4 +1,5 @@
 (async () => {
+  const { createCloudTaskUrl } = await import('./core/cloud-submit.mjs');
   const $ = id => document.getElementById(id);
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
   if (local) document.getElementById('optional-local-actions')?.classList.remove('hidden');
@@ -313,18 +314,13 @@
 
   $('cloud-run').addEventListener('click', () => {
     const objective = $('message').value.trim();
-    if (!objective || objective.length > 1000 || /[\r\n\u0000-\u001f]/.test(objective)) {
-      line('Ultron · cloud request rejected', 'Enter one objective line (1000 characters maximum) without secrets.');
-      return;
+    try {
+      const url = createCloudTaskUrl(objective);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      line('Ultron · public GitHub handoff', 'Review and submit the canonical commands in GitHub. The issue and receipt are public. Do not add private information. A hosted runner will post the result; no personal PC is required.');
+    } catch (error) {
+      line('Ultron · cloud request rejected', error.message);
     }
-    // Owner confirms within GitHub, without exposing credentials to Pages.
-    const query = new URLSearchParams({
-      title: '[Ultron Cloud] Objective',
-      body: 'ULTRON_CLOUD_V1\n' + objective,
-    });
-    window.open('https://github.com/michaeljwilliams0123/Ultron.MW/issues/new?' +
-      query.toString(), '_blank', 'noopener,noreferrer');
-    line('Ultron · GitHub cloud handoff', 'Confirm the prefilled issue in GitHub. When submitted, a hosted runner will execute supported read-only commands and post a receipt on the issue. No personal PC is required.');
   });
 
   $('plan-objective').addEventListener('click', async () => {

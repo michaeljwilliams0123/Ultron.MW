@@ -1,11 +1,8 @@
 import { readdir } from 'node:fs/promises';
+import { CAPABILITIES } from '../docs/core/capabilities.mjs';
 
-export const COMMANDS = Object.freeze([
-  { command: '/help', description: 'List available local read-only commands' },
-  { command: '/system status', description: 'Inspect the current local runtime' },
-  { command: '/repo inspect', description: 'Inspect the local Ultron project structure' },
-  { command: '/learning status', description: 'Read the accepted learning release and evidence counts' },
-]);
+export const COMMANDS = Object.freeze(CAPABILITIES.filter(x=>x.environments.includes('local'))
+  .map(({command,description})=>Object.freeze({command,description})));
 
 export async function executeReadOnly(text, { root, learning }) {
   if (typeof text !== 'string') throw new TypeError('Command must be a string');

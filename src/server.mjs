@@ -11,6 +11,7 @@ import { createActionGateway, validateAction, keyIsValid, makeSessionKey } from 
 import { advanceExperience, evaluateExperience, suggestFromExperience, verifiedExperiences } from './experience.mjs';
 import { ACCEPTED_SEED, CANDIDATE, planObjective, evaluateRouting } from '../docs/core/cycle.mjs';
 import { selectExecution } from '../docs/core/providers.mjs';
+import { capabilityManifest } from '../docs/core/capabilities.mjs';
 
 const sourcePath = fileURLToPath(import.meta.url);
 const defaultRoot = resolve(dirname(sourcePath), '..');
@@ -99,7 +100,7 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
       if (req.method === 'GET' && req.url === '/app.js') {
         return response(res, 200, await readFile(resolve(root, 'docs', 'app.js'), 'utf8'), 'text/javascript; charset=utf-8');
       }
-      if (req.method === 'GET' && ['/core/cycle.mjs', '/core/providers.mjs'].includes(req.url)) {
+      if (req.method === 'GET' && ['/core/cycle.mjs', '/core/providers.mjs', '/core/capabilities.mjs', '/core/cloud-submit.mjs'].includes(req.url)) {
         return response(res, 200,
           await readFile(resolve(root, 'docs', req.url.slice(1)), 'utf8'),
           'text/javascript; charset=utf-8');
@@ -112,6 +113,7 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         const model = await brain.status();
         return response(res, 200, {
           runtime: 'local', autonomy: false, commands: COMMANDS,
+          manifest: capabilityManifest('local'),
           providers: model.ready ? [{ id: 'ollama', model: model.model, ready: true }] : [],
           choices: {
             reasoning: selectExecution({ host: 'local', localModelReady: model.ready }),

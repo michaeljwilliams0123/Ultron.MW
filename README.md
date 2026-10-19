@@ -1,103 +1,86 @@
 # Ultron.MW
-**Ultron** — a single-owner, cloud-first adaptive execution platform. Clean-room successor to Mahoraga.
 
-## Principles
-- **One interface**: GitHub Pages is the canonical task console. An owner-confirmation step within GitHub signs and submits an on-demand task; no second Ultron dashboard.
-- **One coordinating brain**: dynamic planning and provider/tool selection belong to one coordinator; deterministic tasks stay deterministic.
-- **Real learning, not self-congratulation**: Serve → Observe → Propose → Evaluate → Commit/Rollback. No candidate can promote itself from unverified subjective feedback.
-- **No inherited infrastructure**: no copied secrets, no Cloudflare by default, no GitLab mirror, no duplicated bot lanes, no hardcoded provider dependencies.
-- **One owner**: GitHub-authenticated task submission and scoped Actions permissions. The previous local pairing is optional, not part of the default cloud path.
-- **Visible truth**: the UI never reports live execution when only the Pages shell or a draft is available.
+Ultron is an independent, single-owner execution platform with a GitHub-hosted read-only runtime, one shared interface, optional device inference, and evidence-gated routing improvements. Its capability and release decisions are defined by this repository. Mahoraga is historical reference material only; Ultron has no runtime dependency on it.
 
+**Console:** https://michaeljwilliams0123.github.io/Ultron.MW/
 
-## Default: GitHub-hosted, independent of any PC
+## Current capabilities
 
-**Official Ultron UI:** https://michaeljwilliams0123.github.io/Ultron.MW/
+| Capability | Environment | Implemented behavior | Evidence boundary |
+|---|---|---|---|
+| Read-only objectives | GitHub Actions | Four commands, at most three steps; hosted issue receipts | `/repo inspect` observed on issue #10 at the reviewed baseline; other paths have automated coverage |
+| Hourly observation | GitHub Actions | Fixed inspection of current `main` at minute 17 | Ephemeral jobs; schedules can be delayed or missed |
+| Local tools | Loopback Node | Same four commands, persisted objectives and receipts | Automated HTTP coverage; owner-device acceptance outstanding |
+| Model responses | Optional Ollama or browser WebGPU | Bounded, unverified generated text | Provider availability is checked at activation; no hosted cloud LLM |
+| Browser memory | Opt-in encrypted vault | History, feedback, plans, encrypted import/export | Device-local; manual transfer rather than automatic synchronization |
+| Routing improvement | Shared core and local ledger | Fixed held-out routing evaluation and rollback | Policy selection, not model training or general intelligence |
+| Experience suggestions | Local owner-action ledger | Verified, rated outcomes inform suggestions | Minimum 16 distinct outcomes; chronological holdout; no new action authority |
+| Owner actions | Paired local Node | Bounded notes; optional documentation draft adapter | Draft adapter disabled by default; no shell, merge, or deployment permission |
 
-The Pages UI includes **Run in GitHub cloud**. Enter a one-line objective and select the button. It opens a **prefilled GitHub Issue** for your authenticated confirmation. Submitting the Issue triggers `.github/workflows/cloud-objective.yml` on an ephemeral GitHub-hosted Ubuntu runner; this is the cloud runtime. GitHub stores the task as an Issue and its verified structured result as an Issue comment. The operator checks the author and repository before running anything, never injects raw issue text into a shell, and rejects mixed unsupported objectives in full. Workflow runs can also be dispatched manually under GitHub Actions.
+The deterministic tool catalogue is defined once in [`docs/core/capabilities.mjs`](docs/core/capabilities.mjs). Router, local executor and cloud executor consume it. `/help` includes the cloud manifest; local `GET /api/capabilities` includes the local manifest. `implemented` describes source support; `liveReadiness: not-probed` explicitly avoids claiming a deployment or connected provider was verified.
 
-Supported cloud commands: `/help`, `/system status`, `/repo inspect`, `/learning status`, plus narrowly recognized variants. The GitHub repository read runs against current `main`, independent of any SD009WC7 checkout. It persists outcomes in **private GitHub Issues**; the public Pages shell never holds a GitHub API token.
+## Run a GitHub-hosted task
 
-**No desktop, localhost, port 4782/4792, Ollama instance, Tailscale, Cloudflare, Railway, or deployed server is required to open Pages or run a supported GitHub cloud task.** The local Node/Ollama/Windows features remain optional extensions and are not involved in the default cloud task path.
+1. Enter `/help`, `/system status`, `/repo inspect`, or `/learning status` in the console. Narrow recognized phrases and up to three commands joined by `and` are accepted.
+2. Select **Run in GitHub cloud**. Ultron validates the whole objective and prefills an issue using canonical command names only. Unsupported input is refused before a GitHub URL is opened.
+3. Review and submit the issue in GitHub using the configured owner's account. The hosted workflow checks repository and owner identity, executes the supported reads, and posts a structured receipt.
+4. Read the issue receipt and associated Actions run. `succeeded`, `partial`, `failed`, and `blocked` are distinct. Only complete success or a verified successful replay leaves the job green.
 
-**Technical limits:** Pages is static; authenticated task confirmation currently requires opening GitHub's new-issue form (one main Ultron UI with a GitHub authorization step, not an entirely seamless in-page write). Hosted Actions are asynchronous, ephemeral, quota-limited, and can be delayed; this is not a 24/7 always-on server or hosted LLM. GitHub Models was retired in July 2026, so the workflow does not pretend it offers free hosted LLM inference. On-device WebGPU chat is optional and device/browser-dependent. Browser encrypted memory still needs manual import/export across devices; **task and receipt history** is the durable cloud record, not cross-device chat synchronization. GitHub Actions on a private repository consume plan minutes and may incur charges beyond the included allowance; no paid hosted provider is enabled by this change.
+**Public data:** this repository, task issues, issue comments and Pages source are public. Do not add credentials, client information, personal details, or confidential objectives. The canonical-command filter reduces accidental disclosure through the console; it is not a secret scanner and cannot prevent someone manually editing an issue on GitHub. Changing visibility later cannot retract copies of earlier public content. Pages never receives a GitHub API token.
 
-The GitHub Issue contains the objective. Avoid confidential content or passwords; the source repository is private but the Pages UI is publicly accessible. Only the configured GitHub owner may trigger this workflow.
+The cloud lane needs no personal PC, localhost service, Ollama, Cloudflare, or paid model provider. `/repo inspect` reads authoritative GitHub `main`, not the runner's checkout. `/system status` describes the current runner; `/learning status` explicitly reports that cloud learning evidence is not connected.
 
-## Optional legacy local startup
-Requires Node.js 20+; no npm install or API token.
+## Receipts and recovery
+
+A receipt records its schema, task digest, issue number, timestamp, run ID/link, run attempt, executor commit SHA, command statuses, and independently observed repository SHA where applicable. The executor SHA identifies the code running; the inspected `main` SHA identifies the repository observed. These may differ.
+
+Issue replay scans up to 1,000 comments and suppresses execution only for a bot-authored, parsed successful receipt for the same task digest. Incomplete audits fail closed. Failed and partial read-only attempts may be manually rerun; Ultron never schedules automatic retries. Each posted receipt is reread directly by comment ID and checked for exact content and bot author. If a post may have succeeded but read-back fails, inspect the issue before retrying.
+
+Actions are asynchronous, quota-limited and ephemeral. An hourly heartbeat is not a durable queue or an always-running reasoning agent. Issue closure does not cancel a running workflow; use GitHub Actions cancellation and inspect whether a receipt was already posted. A missing scheduled run is unknown, not a success. No cloud code-editing worker or autonomous merge pipeline is implemented.
+
+## Optional local runtime
+
+Requires Node.js 20+; no npm install is needed. CI uses Node.js 22.
 
 ```bash
 node src/server.mjs
 ```
 
-Open http://127.0.0.1:4782/ to see the single local UI. Commands /help, /system status, /repo inspect and /learning status execute bounded read-only checks and persist signed-off outcome *records* (not cryptographic signatures) through restart. Other text is saved as a draft. No AI model, external action or general shell is available yet.
+Open http://127.0.0.1:4782/. The server binds only to loopback, validates Host and write Origin, and serves the same UI source as Pages. Slash commands create deterministic receipts; ordinary text is saved as a draft unless an optional model is ready. State writes are serialized and atomic. Local state and note files are plaintext.
+
+Local endpoints include `GET /api/health`, `/api/capabilities`, `/api/state`; `POST /api/objectives`, `/api/execute`, `/api/think`; objective-plan and learning endpoints; and owner-key-protected `/api/owner/*` endpoints. The startup pairing key changes on restart. The action gateway persists preparation and execution leases before side effects, independently rereads results, and marks uncertain work `reconcile-required` instead of automatically replaying it.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `ULTRON_PORT` | `4782` | Loopback UI port |
+| `ULTRON_ENABLE_LOCAL_MODEL` | Disabled | Set to `1` to enable local Ollama |
+| `ULTRON_OLLAMA_MODEL` | Select an installed model | Optional explicit local model selection |
+| `ULTRON_OLLAMA_THINK` | Disabled | Set to `1` to request deeper optional reasoning |
+| `ULTRON_ENABLE_GITHUB_DRAFT` | Disabled | Set to `1` to enable the restricted local documentation draft adapter |
+
+Ollama is contacted only at `127.0.0.1:11434`. A response uses at most two model calls and one allowlisted read-only tool call. Generated narrative remains separate from deterministic execution evidence. The local runtime retains up to 24 conversation exchanges as bounded, untrusted context, never as system instructions.
+
+## Optional on-device AI and memory
+
+**Enable on-device AI** explicitly loads WebLLM from `https://esm.run/@mlc-ai/web-llm@0.2.86` and model artifacts from its model ecosystem. Nothing loads automatically on page visit. The default SmolLM2 360M quantized model needs WebGPU, substantial download/cache capacity, and compatible device memory. This experimental CDN dependency is version-pinned but is not a reviewed, bundled production supply chain. Do not enter secrets.
+
+Browser inference provides unverified text without tools. By default it is ephemeral. Unlocking the opt-in encrypted vault enables saved history and bounded conversational context; encrypted export/import allows manual device transfer. There is no passphrase recovery, automatic cross-device chat sync, or background inference after the browser closes.
+
+## Learning boundaries
+
+The shared router evaluates immutable `routing-v1` and `routing-v2` against labeled held-out fixtures. Adoption requires at least five percentage points of measured improvement, no newly incorrect cases, and no critical regression. Rollback preserves the audit trail.
+
+Local experience suggestions require at least 16 distinct verified, owner-rated actions, positive/negative diversity and a chronological holdout. Candidates must improve by five percentage points without new held-out mistakes or unsafe recommendations. Suggestions cannot execute actions, enable an adapter, change permissions, or train model weights. With no qualified outcomes, Ultron reports insufficient evidence.
+
+## Development and verification
 
 ```bash
-node --test test/*.test.mjs
+node scripts/verify.mjs
+bash scripts/lint-workflows.sh
 ```
 
-The same `docs/index.html` is deployable as a GitHub Pages **public static shell** after an explicit Pages activation. A private source repository does **not** make the published Pages site private. Do not put secrets, internal data, or privileged logic in `docs/`.
+Verification syntax-checks every JavaScript module in `src`, `docs`, `scripts` and `test`, then runs the regression suite. Workflow lint uses an official actionlint release with a committed SHA-256 digest. Every PR and every push to `main` runs verification without path filters; checkout uses the exact PR head, pinned action SHAs and no persisted Git credentials. PR checks validate the head, not a simulated merge result, so reverify after base-branch changes.
 
-## What exists
-- `src/learning.mjs`: deterministic, evidence-gated harness update selection, rollback and idempotent observation ledger.
-- `src/server.mjs`: loopback-only status/draft/read-only command server; serves the same UI as Pages, requires local origin for writes, and persists state atomically.
-- `docs/index.html` and `docs/app.js`: one responsive UI for GitHub Pages (offline static) or the local runtime (connected, read-only).
-- `test/*.test.mjs`: regression and local HTTP integration tests.
-- `docs/ARCHITECTURE.md`: boundaries, evaluation policy and rollout plan.
+**Repository settings remain separate:** the reviewed `main` was unprotected. Workflow files cannot enforce branch protection. Required-check configuration, blocked force-push/deletion, and owner review policy need an administrative settings change and read-back before they can be claimed active. See [`docs/verification/BASELINE-2026-10-19.md`](docs/verification/BASELINE-2026-10-19.md) for the reviewed baseline, acceptance gaps, and next implementation order.
 
-## Migration
-Mahoraga remains unchanged. The previously created private archived `mahoraga-baseline-20261018` is historical source evidence, not an Ultron runtime dependency. Port capabilities selectively behind conformance tests; do not transplant obsolete pipelines.
-
-**Status:** local read-only execution prototype. GitHub Pages is a publicly visible static shell; the local runtime supplies actual receipts, but the Pages URL cannot execute locally without an authenticated remote bridge. No production cutover, model training, remote execution or Cloudflare work is implied.
-
-## Optional local cognition
-Ultron now supports an optional `Ollama` adapter for model reasoning without a cloud API key or a second UI. This feature is **off by default**. Install and run Ollama separately, obtain a model that fits your machine, and start Ultron with `ULTRON_ENABLE_LOCAL_MODEL=1`; optionally set `ULTRON_OLLAMA_MODEL` to an installed model. Ultron contacts only `127.0.0.1:11434` and makes at most two model calls and one explicitly whitelisted read-only tool call per request. There is no unrestricted shell or file write capability, and the local server stays bound to `127.0.0.1`.
-
-The model's generated answer is labeled an **unverified model narrative** and is separate from an actual deterministic tool execution receipt. Until a model is installed and enabled, free-form input remains draft-only. The public GitHub Pages shell cannot invoke a private local runtime by itself.
-
-## On-device browser intelligence (opt-in)
-The existing GitHub Pages screen can optionally run a small open model in the user's WebGPU-capable browser. Press **Enable on-device AI** to begin loading it: Ultron does **not** download models or load WebLLM on page visit. The default is SmolLM2 360M 4-bit q4f32 (WebLLM-compatible; approximately 580 MB reported device memory requirement, plus download/caching overhead). This model is substantially weaker than large cloud models; some mobile devices and browsers cannot initialize it.
-
-The WebLLM JavaScript package is loaded from a version-pinned external ESM CDN (https://esm.run/@mlc-ai/web-llm@0.2.86), and model artifacts download from the WebLLM/Hugging Face ecosystem. **Do not enter secrets while using this experimental CDN-loaded mode.** After the download, inference happens in the browser, and Ultron does not send prompt text to a hosted inference service. Responses are *ephemeral and unverified*: no external actions, saved chats, persistent task receipts, or continuity across devices. Reloading clears the conversation.
-
-For more secure production use, bundle and review a locally pinned dependency instead of a live CDN module and verify actual Safari/WebGPU behavior on the owner device. This feature is an experimental zero-credit option, not production acceptance.
-
-### Private desktop bridge alternative
-If stronger tools are needed from a phone without Cloudflare, investigate [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve). It presents the **same local UI** through private HTTPS within the owner's tailnet, instead of exposing the Node server publicly. It requires an online PC, owner-controlled tailnet devices, and an application-level authentication/host check appropriate for the proxy. The current loopback-only server **does not accept tailnet hostnames**: do not configure Serve or relax its Host/Origin checks without implementing and testing that mode separately.
-
-## Objective cycle and measured improvement
-Ultron uses **one shared objective planner** in the Pages and Node interfaces. Enter a goal and select **Plan objective** (or type /plan followed by the goal). A plan has at most three steps and distinguishes read-only commands from blocked or unavailable capabilities. Planning does not execute commands. Only on the local Node runtime can the owner select **Run approved read-only steps**, which persists per-step execution receipts and avoids duplicate reruns. Browser plans are non-executable; if browser memory is unlocked they can be stored in the encrypted vault.
-
-In the **Learning** tab, **Evaluate and improve routing** compares the existing routing-v1 and candidate routing-v2 strategies on a fixed labeled suite of 28 routing cases. Candidate promotion requires at least 20 cases, at least five percentage points of improvement, zero new wrong predictions and zero failures of critical negative cases. Otherwise the candidate is rejected. The owner can roll back. Browser adoption is saved only when the encrypted vault is unlocked; local Node stores its strategy alongside the persistent receipts.
-
-**Limitations:** This is real test-measured deterministic **routing-policy selection**, not model-weight training or independently proven improved LLM intelligence. User helpfulness ratings are observational signals, not automatic correctness labels. The public Pages UI does not run privileged tools, while the local runtime remains read-only. One selector chooses verified deterministic tools, optional local Ollama, opt-in browser WebGPU or a truthful draft fallback. Cloudflare, paid APIs and unattended background execution are not added.
-
-### Local runtime memory security
-The local Node runtime also retains the most recent 24 model exchanges to provide continuity after a process restart. This is written to the machine-local .local/state.json file **as plaintext JSON**, not into the encrypted browser vault. It is not synchronized to Pages. Protect the computer, disk and backup copies; on filesystems supporting Unix permissions the runtime requests owner-only file access. Never expose the loopback server directly to the public internet.
-
-### Structured local inference performance
-For Ollama models that support configurable reasoning, Ultron now defaults to non-thinking JSON mode for bounded agent decision messages. Set ULTRON_OLLAMA_THINK=1 when explicitly wanting extended model reasoning; this may require more CPU time and tokens, but remains entirely local. This does **not** disable deterministic execution verification.
-
-On SD009WC7, a direct Qwen3:8b non-thinking Ollama JSON request returned in approximately 6.1 seconds, while a separate end-to-end Ultron model call with thinking enabled took about 52 seconds. These used different prompts/output constraints and should not be treated as controlled performance benchmarks. The actual fast-path Ultron end-to-end latency still needs acceptance testing.
-
-## Verified owner actions (local runtime only)
-Ultron's **Systems** tab pairs with the local runtime to create a new Markdown note inside `.local/action-notes/`. A second adapter can create a documentation-only **draft** pull request in `michaeljwilliams0123/Ultron.MW`, but this GitHub write adapter is **DISABLED by default** pending actual end-to-end GitHub acceptance. It requires `ULTRON_ENABLE_GITHUB_DRAFT=1` as an explicit local opt-in. The source code does not provide arbitrary shell access, configurable repository targets, merge or deployment commands, or filesystem path parameters. GitHub authentication is reused from the PC's existing `gh` login, not collected from the UI.
-
-The owner pairing key is printed to the local runtime terminal at startup and is renewed on restart. An action must be explicitly **prepared** and then **executed** in the same local UI; both endpoints require the current pairing key and same-origin request. An idempotent operation ID prevents duplicate dispatch. The adapter verifies local file bytes, or re-reads the resulting GitHub draft PR and its file before issuing a success receipt. An uncertain operation is marked `reconcile-required` and cannot auto-retry. Only a verified operation can be rated Helpful or Not helpful. Ratings are factual owner observations, not independent proof of AI quality.
-
-**Scope:** GitHub Pages remains public/static and cannot execute private PC actions. This feature operates only at `127.0.0.1`. Local state and note files are plaintext; do not enter secrets. There is no Cloudflare dependency or added paid service.
-
-## Evidence-driven, outcome-evaluated suggestion learning
-The existing **Learning** panel now supports a second learning cycle beyond the fixed routing-v1/v2 harness. A completed owner-paired computer/GitHub operation enters the training pool **only after** its verified action receipt matches its operation ID, action type, exact content hash, completion status, and an explicit Helpful/Not helpful owner rating. Unverified, pending, failed and reconcile-required work cannot train Ultron. Repeated objectives are deduplicated so relabeling numbered copies does not inflate the sample count.
-
-After every new owner rating, Ultron automatically evaluates its accumulated observations. A minimum of 16 distinct verified/rated outcomes is required, including at least six positive and three negative older training examples plus positive and negative outcomes in the most recent chronological holdout quarter. The candidate is a small auditable token-weight suggestion policy, never a model-weight update or action actuator. It is promoted only if later held-out owner ratings show at least five percentage points of improvement versus the current policy, with zero new wrong suggestions and zero unsafe action suggestions. Insufficient, duplicated, unchanged or regressing evidence is rejected. Every assessment, promotion and rollback is persisted to the same local state history.
-
-In **Systems**, **Suggest action from verified experience** uses the accepted policy only to recommend (or abstain from recommending) an already-enabled owner action type. The owner must separately prepare and execute the job. The GitHub documentation draft adapter remains **disabled by default** and cannot be activated through suggestions. The owner can inspect evidence, manually reassess it, or roll back the learned suggestion policy from the same UI. Neither model weights nor cloud integrations change. This is measured performance on owner-rated held-out **task-type suggestions**, not proven improvements in general LLM reasoning.
-
-**Acceptance boundary:** synthetic fixtures validate the learning algorithm and safety rules but are not real-world evidence. On a fresh installation with zero verified, rated owner actions, the learner correctly reports insufficient evidence and does not promote anything. The connected Windows PC must be online and its local runtime started to accumulate real outcomes. Browser Pages-only conversations do not impersonate local operator receipts.
-
-### Cloud continuity without a Windows PC
-An hourly GitHub Actions schedule (minute 17) now performs a fixed, read-only inspection of authoritative GitHub `main`, records the actual result in that run's summary, and needs no computer, Cloudflare tunnel, or localhost port. GitHub schedules may be delayed or skipped and GitHub-hosted runners are ephemeral; **this is periodic autonomy, not an always-on inference process**. GitHub Actions quotas apply, including to private-repository scheduled runs.
-
-The opt-in browser model now receives up to six bounded prior user/assistant messages from its existing encrypted memory. It still runs on the current browser, has no background processing when closed, and does not yet synchronize encrypted chat across devices. Adding Hugging Face Jobs or a second Web UI is not required for either improvement.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for current architecture and [`SECURITY.md`](SECURITY.md) for data boundaries and reporting. No license grant is declared pending the owner's license decision.

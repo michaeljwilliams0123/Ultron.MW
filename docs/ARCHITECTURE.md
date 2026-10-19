@@ -1,116 +1,63 @@
-# Ultron architecture — decision 001
+# Ultron architecture
 
-## Identity and authority
-One operator, one cognitive coordinator, one responsive interface. Multiple model providers or workers are *adapters*, not personalities, separate control panels, or independent governing agents. The owner's explicit intent is the starting objective; the runtime distinguishes drafts, read-only inspection, reversible edits, and irreversible or costly actions.
+## Identity and execution authority
 
-## Host choice
-1. **Default**: local Node runtime bound to loopback; UI served by the same process. Local persistent store and provider plugins are future modules.
-2. **Portable display**: GitHub Pages hosts the same static UI, with no keys or privileged endpoints. It shows **disconnected** until an authenticated execution transport exists. GitHub Pages cannot run the brain.
-3. **Remote execution**: only if cross-device, always-on execution is truly required, add a narrowly scoped authenticated HTTPS transport. This could be an existing provider, private overlay, or Cloudflare *only when needed*.
-No GitLab mirror, second dashboard, public execution API, or duplicated routing stack by default.
+Ultron.MW is the authoritative repository and release boundary. Ultron has one owner, one interface and one coordinator. Historical predecessor repositories confer no runtime permissions and supply no required infrastructure. New adapters must justify their scope with executable acceptance evidence.
 
-## Universal learning (bounded, measurable and reversible)
-```
-Owner objective → Coordinator → Deterministic tools / selected model
-      ↓                     ↓
- Interaction receipt ← Result + observed outcome
-      ↓
-  Feedback with evidence and objective-specific score
-      ↓
-  Candidate harness / prompt / policy / strategy (immutable identifier)
-      ↓
-  Replay on held-out regression cases, provider availability tests, time/cost checks
-      ↓
-  Compare baseline vs candidate under identical tasks and constraints
-      ↓
-  Commit versioned candidate only when evaluation passes hard constraints and score improves
-      ↓
-  Canary → observe → rollback on regression
-```
-Model-weight training is a later, separately provisioned capability; harness optimization is useful without GPUs. A claim of 'learning' requires a material, measured version change.
+The owner's objective is input data. Models, prior conversation, issue text and learned suggestions cannot grant authority. Deterministic code owns identity checks, command admission, bounded planning, state transitions, receipt validation and rollback.
 
-## Learning contract
-- Receipts carry unique IDs, task IDs, a provenance label, score (0–1), timestamp, and evidence.
-- Duplicate observation IDs are ignored. A failed or stale observation cannot masquerade as another successful run.
-- Candidate evaluation must be independent of the candidate's own opinion: at least a fixed sample, explicit baseline/candidate scores, and a count of critical regressions.
-- A candidate **does not auto-promote** merely because it has more positive votes. No update if baseline is missing, evaluator data invalid, sample insufficient, critical regression nonzero, or improvement below threshold.
-- Promotion retains its parent, timestamp and evaluation receipt; rollback restores the previous accepted version.
-- Store sensitive observations locally; redact before any optional remote telemetry.
+## Current execution lanes
 
-## Simplest reliable control pattern
-- Deterministic layer: identity, deduplication, authorization, state transitions, retries, timeouts, release evaluation and receipts.
-- Single AI coordinator: decomposition, uncertain semantic interpretation, adaptive model/tool choice.
-- Tool adapters: filesystem, repository, browser, and optional remote providers. Every adapter publishes actual capabilities and permission scope.
-- No claims of autonomous tool execution until end-to-end receipts are validated.
-- Reuse one execution ledger and one learning ledger; avoid orchestration-on-orchestration.
+| Lane | Entry | Authority | Persistence |
+|---|---|---|---|
+| GitHub cloud | Owner-authenticated marked issue, manual dispatch, or fixed schedule | Four read-only commands; receipt comment write | Public issue/comment; Actions run and summary |
+| Local Node | Loopback UI and same-origin requests | Four read-only commands; separately paired owner actions | Atomic plaintext local state and bounded notes |
+| Browser model | Explicit WebGPU activation | Unverified text only | Ephemeral by default; opt-in encrypted vault |
+| Local model | Explicit Ollama setting and observed readiness | At most one allowlisted read-only tool per response | Plaintext local conversation and separate tool receipt |
 
-## Plugin contributions
-| Source | Adopt in Ultron | Avoid |
-|---|---|---|
-| Agent Router | single-agent admission test and deterministic-workflow-first | speculative multi-agent swarms |
-| Reef / CRIADOR | Serve, Observe, Grow, Commit with versioned artifacts and evaluation | pretending harness optimization equals weight training |
-| Brancha | keep alternative UI/architecture directions in separate comparison nodes | running Brancha as a second required UI |
-| Adaptive Task Routing | phase-aware context/model decisions at task boundaries | repeated unnecessary handoff loops |
-| AI Psychiatry | observable evidence, finite completion criteria, bounded retries | recursive governance growth |
-| Develoop | issue/PR traceability and regression evidence when changes are substantive | approval theatre for trivial edits |
-| Context7 | verify API and build assumptions against library docs | fossilized snippets |
-| GitLab | optional upstream comparison when a project actually exists | mandatory mirroring |
-| Datadog | optional diagnostic traces only when installed and useful | mandatory third-party telemetry |
-| Datadog Experiments | candidate flags only if already onboarded and justified | creating services for zero existing flags |
+Pages is the primary console. It hosts no server, API token, background worker or privileged transport. A cloud task leaves Pages for GitHub confirmation. Optional local Node serves the same files; neither cloud tasks nor Pages need the owner's PC online. No authenticated remote bridge to the local runtime is implemented.
 
-## Acceptance requirements (not yet satisfied)
-1. Local UI reflects a real connected runtime and persisted objective receipt after refresh (automated Node integration coverage exists; actual owner-device/browser acceptance remains outstanding).
-2. Tool capability manifest and one harmless authorized end-to-end read-only execution (implemented and integration-tested with loopback HTTP; device acceptance outstanding).
-3. Learning case is recorded; bad candidate rejected; good candidate canary promoted, then rolled back with preserved evidence (synthetic deterministic benchmark tests only; trusted real-world evaluation not integrated).
-4. Same UI runs locally and on phone without exposing secrets. If phone requires remote runtime, demonstrate authenticated transport.
-5. GitHub Pages shell is optional, static, and non-secret. Cloudflare is absent until a specific unmet requirement demands it.
+## Shared capability contract
 
-## Naming boundaries
-- Historical: `mahoraga` and archived `mahoraga-baseline-20261018`.
-- New system: `Ultron.MW` (product name Ultron).
-- Do not rename or redirect the old production repository as part of bootstrapping.
+`docs/core/capabilities.mjs` owns the versioned deterministic command catalogue. Its entries identify command, description, environment, read-only authority, implementation readiness, environment-specific scope and regression evidence. `docs/core/cycle.mjs` routes and plans; `src/operations.mjs` and `src/cloud-cycle.mjs` execute their own environment's semantics using that catalogue. Local `/api/capabilities` and cloud `/help` publish its machine-readable view.
 
-## Review remediation tranche
-Current local API: GET /api/health, /api/capabilities, /api/state and POST /api/objectives (draft only), POST /api/execute (four allowlisted read-only commands). The server binds exclusively to 127.0.0.1, validates Host and write Origin, uses no Cloudflare, and stores objective/receipt state with serialized atomic writes. GitHub Pages serves exactly the same UI source, but is disconnected from the local runtime until authenticated remote access is explicitly implemented. No arbitrary command or autonomous LLM execution is represented as available.
+A manifest is implementation metadata, not proof of a running deployment. `liveReadiness: not-probed` remains explicit. Optional model and owner-action readiness are checked by their existing adapters rather than inferred from a catalogue entry.
 
-## Decision 002 — Optional local model cognition
-- Single coordinator (`src/brain.mjs`) selects between response and a single allowlisted read-only tool.
-- Local provider (`src/providers/ollama.mjs`) is explicitly disabled unless `ULTRON_ENABLE_LOCAL_MODEL=1`. Ollama uses `127.0.0.1:11434`, JSON-mode chat, bounded generation, and timeouts; no tokens or external endpoints.
-- Freeform text routes to `POST /api/think` only when a genuine local model is visible. Otherwise it remains a draft. Slash commands always use deterministic `POST /api/execute`.
-- Model output is treated as untrusted. Unsupported tool names, a second tool attempt, and malformed JSON are rejected; no simulated success receipts.
-- This is **not** automatically self-training, internet-connected AI, background execution, or full autonomy. Provider operation requires a separately running local model.
+## Cloud task lifecycle
 
-## Decision 003 — One browser UI, optional on-device WebGPU reasoning
-GitHub Pages cannot run the Node service. The single UI gains an **opt-in, browser-only WebGPU adapter** for ephemeral text responses; there is no backend, provider token or Cloudflare dependency on that route. Activation requires a direct user click and supported GPU/browser; model downloads are not silent. Browser inferences are unverified text only, not tool execution or continuous learning. The more powerful local Node/Ollama route remains preferred for durable receipts. A future private device connection can expose exactly the same local UI via authenticated Tailscale Serve, but is *not* implemented here. Experimental CDN dependency must be bundled, reviewed, and version-locked before trusted production usage.
+The console validates a single line of at most 1,000 characters, preflights every step with the shared router, and submits only canonical command names. Unknown or mixed unsupported objectives never open a submission URL. Manually created issues still require the fixed marker, owner identity, exact title and supported plan before any command executes. Raw issue text is never evaluated as shell code.
 
-## Decision 005 — Unified bounded objectives and measurable strategy adoption
-The same docs/core/cycle.mjs module powers both environments. It defines immutable allowlisted commands, bounded three-step objective plans and a fixed, independently authored regression dataset. docs/core/providers.mjs selects based on real provider readiness rather than speculative availability. The local server serves the common modules directly, preserving one code path.
+The hosted workflow is limited to Ultron's repository. Owner identity is required for issue and dispatch events; scheduled input is a hardcoded repository inspection. Per-issue concurrency serializes issue runs; jobs have a three-minute timeout. There is no automatic retry scheduler or general task queue.
 
-A plan is a draft until the owner explicitly runs allowed steps. The local Node runtime records receipt IDs, atomic persisted state and idempotent reruns. GitHub Pages plans cannot execute remote actions. Browser plans can be encrypted alongside conversations when the local vault is unlocked.
+Before execution, replay audit scans no more than ten pages of 100 comments. Only parsed bot-authored successful receipts matching issue identity and task digest suppress execution. An incomplete audit fails closed. A new receipt is posted and reread by its exact comment ID; the author and full body must match before success returns. Post-write uncertainty requires operator reconciliation. All current commands are read-only, so manual retry does not repeat repository mutations.
 
-The first measurable learning mechanism is **routing-policy selection**. Candidate routing-v2 can replace routing-v1 only on 20+ unique labeled cases, 5+ percentage points measured accuracy increase, zero new wrong cases and zero critical regressions. Results and accepted routing version are persisted with an explicit rollback path. This is evidence for the fixed routing benchmark, not evidence of LLM fine-tuning or improved generalization. Owner Helpful/Not helpful ratings remain distinct feedback.
+Receipts distinguish executor SHA, run attempt and run link from the inspected main SHA. Outcomes are `succeeded`, `partial`, `failed`, or `blocked`; only succeeded/already-processed return a zero CLI exit code. Replay reports reference the previous run. Actions summaries are operational evidence, not a continuous availability guarantee. Missing runs remain unknown.
 
-**Unmet goals:** actual connected owner-device acceptance; broader safe tool adapters; novel strategy generation and independent unseen-task evaluation; canary health rollback automation; remote authenticated execution and genuine cross-device sync. Model-weight training remains out of scope.
+## Storage and trust boundaries
 
-The local runtime now persists at most 24 prior conversation exchanges alongside objective/receipt history. It treats past dialogue as untrusted, bounded user/assistant context, never as system messages or tool execution evidence. This local file is plaintext, distinct from AES-GCM encrypted browser storage; no claim of cross-device synchronization or hardened secure-storage encryption is made.
+| Data | Location | Audience/protection | Retention/deletion |
+|---|---|---|---|
+| Canonical cloud task and receipt | GitHub Issues | Public repository audience; no confidentiality | GitHub issue/comment lifecycle; deletion cannot retract prior copies |
+| Hosted status and logs | GitHub Actions | Repository visibility and GitHub access rules | Repository-configured Actions retention |
+| Local objectives, receipts and chats | `.local/state.json` | Plaintext; local file permissions | Bounded ledgers; owner can stop runtime and remove local state |
+| Local owner notes | Fixed local notes directory | Plaintext; owner filesystem access | Owner-managed files |
+| Browser history, ratings and plans | Opt-in browser vault | Passphrase-derived authenticated encryption | Bounded history; explicit vault deletion and encrypted import/export |
+| Browser model cache | Browser storage/model ecosystem | Device/browser controls; external CDN code | Browser cache controls; separate from deleting the vault |
 
-### Decision 007 — Dynamic CPU reasoning effort without new providers
-The existing Ollama adapter sends the documented think flag with structured JSON requests. It defaults to false for short execution-policy decisions to reduce unnecessary token computation on the CPU-based owner computer; ULTRON_OLLAMA_THINK=1 opts into a deeper reasoning path. The routing/tool authority policy and persistent verified receipts remain unchanged. Compare end-to-end times and accuracy on the owner device before claiming a performance win.
+The console filter is not DLP. Do not place credentials or confidential data in public issues, local plaintext, or experimental CDN-loaded model context. Encryption does not prevent a compromised live browser from reading unlocked data. Losing a vault passphrase has no recovery path.
 
-## Decision 006 — One owner-paired action gateway
-The existing Systems pane pairs to the local Node service for isolated owner notes. A single-repository documentation draft PR adapter is present but **disabled by default**, pending real-world verification; explicitly enabling it requires `ULTRON_ENABLE_GITHUB_DRAFT=1` on the local runtime. No LLM content can directly invoke privileged endpoints. Requests require the locally generated session key and same-origin writes; all identifiers and content lengths are validated. The target repository and document subdirectory are fixed; no shell interpreter, arbitrary filesystem path or deployment authority is exposed.
+## Local actions and model boundaries
 
-The durable lifecycle is `prepared → running → verified | reconcile-required`. Durable preparation and execution-lease records are committed before external side effects; the adapter independently re-reads written output before issuing a successful receipt. Replayed or uncertain IDs are not automatically retried. Feedback is attached only to verified action records. End-user device acceptance and long-term cross-device operation require separate verification.
+The Node server binds to `127.0.0.1`, validates Host and request Origin, and exposes only fixed public modules and API routes. Owner endpoints additionally require a session key generated at startup. Local notes use fixed paths. The optional single-repository documentation draft adapter is disabled unless explicitly enabled. No arbitrary shell, merge, deployment, or secret-management endpoint exists.
 
-## Decision 008 — One evidence-grounded experience cycle
-The owner-action ledger remains the authoritative source. The shared local runtime joins an operation's verified result and owner rating to its unique persisted execution receipt, hashes and deduplicates normalized task content, trains a candidate on the older chronological segment, and evaluates on the newest quarter never used for training. The evaluator blocks promotion without 16 distinct real outcomes, sufficient positive/negative diversity, at least a five-point measured gain, zero newly incorrect held-out recommendations and zero forbidden requests. Training data is never the static synthetic unit-test dataset. Candidate tokens and version plus audit history are stored alongside existing execution state; no new database, service, dashboard or outside model is added.
+The owner-action lifecycle is `prepared → running → verified | reconcile-required`. Durable leases precede side effects; independent read-back precedes successful receipts. Uncertain operations do not auto-replay. Learning joins only verified receipts and matching owner ratings.
 
-Suggestion recommendations are separate from authority. They cannot run a job, change the list of allowed actions, enable GitHub writes, or influence action pairing. Owner feedback triggers a bounded reevaluation and, when evidence supports it, automatic policy promotion; explicit rollback restores the baseline. Existing routing-v1/v2 benchmarks stay independent. This does not perform LLM fine-tuning, prove general intelligence or solve cross-device private execution.
+Ollama and browser model adapters accept bounded user/assistant history as untrusted context. Model-generated answers are never successful tool evidence. Browser activation is opt-in; Ollama is off by default and loopback-only. General cloud model inference, encrypted cloud chat sync, code-writing workers and a sub-agent workforce remain unimplemented.
 
-## Decision 009 — Cloud authority on GitHub, no PC activation boundary
+## Learning and release evidence
 
-The GitHub Pages UI is primary. It creates a prefilled owner-authenticated GitHub Issue as task envelope and owner confirmation step; GitHub Actions executes the exact shared allowlisted objective planner on an ephemeral hosted Ubuntu runner. Receipts are persisted as comments in private GitHub Issues and confirmed via a post-write read-back. Actions' repository-scoped `GITHUB_TOKEN` replaces local GitHub CLI login for this lane. The workflow is intentionally read-only except for its receipt comment. Issue/task identity, owner authentication, command allowlist, and whole-objective preflight prevent arbitrary issue content from becoming a shell command. Replay checks suppress duplicate receipts.
+Shared routing-policy evaluation uses versioned labeled fixtures and explicit rollback. Local experience learning requires 16 distinct verified, rated outcomes, diverse training labels, a chronological holdout, at least five percentage points improvement, zero new errors and unsafe-fixture rejection. Promotion changes suggestions, not action authority or model weights. Synthetic tests prove algorithm behavior, not general capability gains.
 
-Local Node, legacy paired write actions, Windows filesystem, Ollama, and localhost ports are optional adapters and never prerequisites for the cloud lane. The new cloud flow has no Cloudflare dependency, no new URL beyond existing GitHub Pages/GitHub, no deployment of a perpetual server, and no paid model integration. Hosted Actions consume private-repository minutes and cannot guarantee instant/continuous processing.
+CI runs for all PRs and main pushes. It checks exact-head syntax and regression tests, validates all workflow syntax with checksum-pinned actionlint, and pins external actions to immutable SHAs. Verification has read-only repository permissions and no persisted Git credentials. Branch rules, merge enforcement and deployment activation are administrative/runtime states requiring separate read-back; configuration in source alone is not proof.
 
-Unresolved: a seamless Pages-native OAuth session without leaving the interface; hosted general-purpose LLM inference; durable encrypted cross-device *chat* history; a cloud-native real-outcome learning dataset; always-on cloud execution. None of these are provided simply by moving code to an Actions runner.
+Device/WebGPU/Ollama acceptance, sustained heartbeat reliability, an enforced failing-PR merge gate, real-task benchmark quality and deployment at the final merge SHA remain separate acceptance work. The dated baseline document tracks these boundaries.
