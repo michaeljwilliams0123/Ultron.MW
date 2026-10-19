@@ -27,6 +27,7 @@ jobs:
       - name: Syntax check
         run: |
           node --check src/learning.mjs
+          node --check src/experience.mjs
           node --check src/operations.mjs
           node --check src/server.mjs
           node --check src/action-gateway.mjs
