@@ -7,6 +7,8 @@ import { LearningLoop } from './learning.mjs';
 import { COMMANDS, executeReadOnly } from './operations.mjs';
 import { createLocalOllama } from './providers/ollama.mjs';
 import { createBrain } from './brain.mjs';
+import { createOwnerOperator, validateNote } from './owner-operator.mjs';
+import { trainCandidate, suggestAction } from './observed-learning.mjs';
 import { ACCEPTED_SEED, CANDIDATE, planObjective, evaluateRouting } from '../docs/core/cycle.mjs';
 import { selectExecution } from '../docs/core/providers.mjs';
 
@@ -37,9 +39,9 @@ async function readJson(req) {
   catch { throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 }); }
 }
 
-export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama() } = {}) {
+export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama(), operator = createOwnerOperator({ root }) } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
-  let state = { objectives: [], receipts: [], plans: [], conversations: [],
+  let state = { objectives: [], receipts: [], plans: [], conversations: [], operatorJobs: [], operatorPolicy: null,
     evolution: { accepted: ACCEPTED_SEED, evaluations: [] },
     learning: new LearningLoop().snapshot() };
   try {
@@ -53,6 +55,8 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
       objectives: loaded.objectives, receipts: loaded.receipts || [],
       plans: Array.isArray(loaded.plans) ? loaded.plans : [],
       conversations: Array.isArray(loaded.conversations) ? loaded.conversations : [],
+      operatorJobs: Array.isArray(loaded.operatorJobs) ? loaded.operatorJobs : [],
+      operatorPolicy: loaded.operatorPolicy || null,
       evolution: loaded.evolution?.accepted === CANDIDATE ? loaded.evolution :
         { accepted: ACCEPTED_SEED, evaluations: [] },
       learning: new LearningLoop(loaded.learning).snapshot(),
@@ -123,6 +127,144 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           candidates: learning.candidates.size, executionReady: true, autonomousReady: false,
         });
       }
+
+      // Dedicated, loopback-only owner actions. The pairing key is generated
+      // per runtime session and is never delivered by a unauthenticated GET.
+      if (req.url?.startsWith('/api/operator/')) {
+        if (!allowedOrigins.has(req.headers.origin) ||
+            !operator.authorize(req.headers['x-ultron-owner'])) {
+          return response(res, 403, { error: 'Owner pairing required for local actions' });
+        }
+        if (req.method === 'GET' && req.url === '/api/operator/status') {
+          let github = { connected: false, reason: 'Authenticated GitHub CLI unavailable' };
+          try { github = await operator.identity(); } catch { /* do not expose credentials */ }
+          return response(res, 200, {
+            ownerPaired: true, workspace: { ready: true, scope: '.local/owner-notes' },
+            github, repo: operator.repo,
+            capabilities: ['create-isolated-workspace-note','create-draft-documentation-pr'],
+          });
+        }
+        if (req.method === 'GET' && req.url === '/api/operator/jobs') {
+          return response(res, 200, {
+            jobs: state.operatorJobs.slice(-30).map(j=>({ ...j, text: undefined })),
+            policy: state.operatorPolicy ? { version: state.operatorPolicy.version } : null,
+          });
+        }
+        if (req.method === 'POST') {
+          const input = await readJson(req);
+          if (req.url === '/api/operator/prepare') {
+            const kind = input?.kind;
+            if (!['workspace-note','github-draft'].includes(kind))
+              return response(res, 400, { error: 'Only bounded note operations are available' });
+            const { title, text } = validateNote(input);
+            if (typeof input?.idempotencyKey !== 'string' ||
+                !/^[0-9a-f-]{36}$/.test(input.idempotencyKey))
+              return response(res, 400, { error: 'Client operation identifier required' });
+            const job = await transact(next => {
+              const existing = next.operatorJobs.find(x=>x.idempotencyKey===input.idempotencyKey);
+              if (existing) return existing;
+              const item = {
+                id: randomUUID(), idempotencyKey: input.idempotencyKey,
+                kind, title, text, objective: title + ' ' + text,
+                status: 'prepared', createdAt: new Date().toISOString(),
+              };
+              next.operatorJobs.push(item);
+              next.operatorJobs = next.operatorJobs.slice(-50);
+              return item;
+            });
+            return response(res, 201, {
+              job: { ...job, text: undefined }, executed: false,
+            });
+          }
+          if (req.url === '/api/operator/execute') {
+            if (typeof input?.jobId !== 'string' || !/^[0-9a-f-]{36}$/.test(input.jobId))
+              return response(res, 400, { error: 'Valid prepared job required' });
+            const job = await transact(next => {
+              const item = next.operatorJobs.find(x=>x.id===input.jobId);
+              if (!item || item.status !== 'prepared') return null;
+              item.status = 'running';
+              item.startedAt = new Date().toISOString();
+              return structuredClone(item);
+            });
+            if (!job) return response(res, 409, {
+              error: 'Job absent, already executed or requires reconciliation; no duplicate action launched',
+            });
+            const started = Date.now();
+            try {
+              const result = job.kind === 'github-draft'
+                ? await operator.createGithubDraft(job) : await operator.createLocalNote(job);
+              const receipt = await transact(next => {
+                const item = next.operatorJobs.find(x=>x.id===job.id);
+                item.status = 'verified';
+                item.outcome = result;
+                item.latencyMs = Date.now() - started;
+                item.verifiedAt = new Date().toISOString();
+                const rec = {
+                  id: 'receipt-' + randomUUID(), kind: 'verified-owner-action',
+                  jobId: job.id, command: job.kind, status: 'succeeded',
+                  summary: result.postcondition, details: result,
+                  createdAt: item.verifiedAt,
+                };
+                next.receipts.push(rec);
+                next.receipts = next.receipts.slice(-100);
+                item.receiptId = rec.id;
+                return rec;
+              });
+              return response(res, 201, { executed: true, verified: true,
+                receipt, jobId: job.id, autonomous: false });
+            } catch (error) {
+              await transact(next => {
+                const item = next.operatorJobs.find(x=>x.id===job.id);
+                item.status = 'needs-reconciliation';
+                item.failureAt = new Date().toISOString();
+                item.reason = 'Operation not fully verified; inspect remote or local state before retrying';
+              });
+              return response(res, error.statusCode || 502, {
+                executed: false, verified: false,
+                error: 'Action not confirmed. Manual reconciliation required; no automatic retry.',
+                jobId: job.id,
+              });
+            }
+          }
+          if (req.url === '/api/operator/feedback') {
+            if (typeof input?.jobId !== 'string' ||
+                !['helpful','not-helpful'].includes(input?.feedback))
+              return response(res, 400, { error: 'Verified job and feedback required' });
+            const result = await transact(next => {
+              const item = next.operatorJobs.find(x=>x.id===input.jobId && x.status==='verified');
+              if (!item) return null;
+              item.feedback = input.feedback;
+              return { jobId:item.id, feedback:item.feedback, receiptId:item.receiptId };
+            });
+            if (!result) return response(res, 404, { error: 'Verified job not found' });
+            return response(res, 200, result);
+          }
+          if (req.url === '/api/operator/evaluate') {
+            const result = await transact(next => {
+              const evalResult = trainCandidate(next.operatorJobs.map(j=>({
+                jobId:j.id, kind:j.kind, objective:j.objective,
+                verified:j.status==='verified', feedback:j.feedback,
+              })));
+              if (evalResult.passed && evalResult.proposal)
+                next.operatorPolicy = evalResult.proposal;
+              return { ...evalResult, proposal: undefined };
+            });
+            return response(res, 200, { evaluation: result,
+              activeVersion: state.operatorPolicy?.version || 'baseline' });
+          }
+          if (req.url === '/api/operator/suggest') {
+            if (typeof input?.text !== 'string' || !input.text.trim() || input.text.length > 1200)
+              return response(res, 400, { error: 'Objective required' });
+            return response(res, 200, {
+              suggestion: suggestAction(input.text, state.operatorPolicy),
+              policy: state.operatorPolicy?.version || 'baseline',
+              executionAuthority: 'none; suggestion does not run actions',
+            });
+          }
+        }
+        return response(res, 404, { error: 'Owner action unavailable' });
+      }
+
       if (req.method === 'POST' && [
         '/api/plan', '/api/plan/run', '/api/learning/evaluate',
         '/api/learning/rollback',
@@ -283,11 +425,14 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
     }
   });
   await new Promise((ok, fail) => { server.once('error', fail); server.listen(port, '127.0.0.1', ok); });
-  return { server, port: server.address().port,
+  return { server, port: server.address().port, ownerKey: operator.ownerKey,
     close: () => new Promise((ok, fail) => server.close(error => error ? fail(error) : ok())) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === sourcePath) {
-  startLocalServer().then(app => console.log('Ultron local UI: http://127.0.0.1:' + app.port))
+  startLocalServer().then(app => {
+    console.log('Ultron local UI: http://127.0.0.1:' + app.port);
+    console.log('ULTRON OWNER PAIRING KEY (local session only): ' + app.ownerKey);
+  })
     .catch(error => { console.error(error.message); process.exitCode = 1; });
 }
