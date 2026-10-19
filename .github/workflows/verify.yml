@@ -25,6 +25,8 @@ jobs:
       - name: Syntax check
         run: |
           node --check src/learning.mjs
+          node --check src/operations.mjs
           node --check src/server.mjs
-      - name: Learning regression suite
+          node --check docs/app.js
+      - name: Core regression suite
         run: node --test test/*.test.mjs
