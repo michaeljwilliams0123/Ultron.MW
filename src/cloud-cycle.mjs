@@ -42,7 +42,7 @@ export function parseTask(event,name,actor,repository){
     objective='/learning status';
   }else if(name==='schedule'){
     // Deterministic owner-repository health observation, never arbitrary input.
-    objective='/repo inspect';
+    objective='/self scan';
   }else throw Error('Unsupported event');
   if(typeof objective!=='string'||!objective.trim()||objective.length>1000||
     /[\r\n\u0000-\u001f]/.test(objective))throw Error('Invalid single-line objective');
