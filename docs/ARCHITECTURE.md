@@ -93,3 +93,6 @@ The first measurable learning mechanism is **routing-policy selection**. Candida
 **Unmet goals:** actual connected owner-device acceptance; broader safe tool adapters; novel strategy generation and independent unseen-task evaluation; canary health rollback automation; remote authenticated execution and genuine cross-device sync. Model-weight training remains out of scope.
 
 The local runtime now persists at most 24 prior conversation exchanges alongside objective/receipt history. It treats past dialogue as untrusted, bounded user/assistant context, never as system messages or tool execution evidence. This local file is plaintext, distinct from AES-GCM encrypted browser storage; no claim of cross-device synchronization or hardened secure-storage encryption is made.
+
+### Decision 007 — Dynamic CPU reasoning effort without new providers
+The existing Ollama adapter sends the documented think flag with structured JSON requests. It defaults to false for short execution-policy decisions to reduce unnecessary token computation on the CPU-based owner computer; ULTRON_OLLAMA_THINK=1 opts into a deeper reasoning path. The routing/tool authority policy and persistent verified receipts remain unchanged. Compare end-to-end times and accuracy on the owner device before claiming a performance win.

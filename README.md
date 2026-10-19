@@ -60,3 +60,8 @@ In the **Learning** tab, **Evaluate and improve routing** compares the existing 
 
 ### Local runtime memory security
 The local Node runtime also retains the most recent 24 model exchanges to provide continuity after a process restart. This is written to the machine-local .local/state.json file **as plaintext JSON**, not into the encrypted browser vault. It is not synchronized to Pages. Protect the computer, disk and backup copies; on filesystems supporting Unix permissions the runtime requests owner-only file access. Never expose the loopback server directly to the public internet.
+
+### Structured local inference performance
+For Ollama models that support configurable reasoning, Ultron now defaults to non-thinking JSON mode for bounded agent decision messages. Set ULTRON_OLLAMA_THINK=1 when explicitly wanting extended model reasoning; this may require more CPU time and tokens, but remains entirely local. This does **not** disable deterministic execution verification.
+
+On SD009WC7, a direct Qwen3:8b non-thinking Ollama JSON request returned in approximately 6.1 seconds, while a separate end-to-end Ultron model call with thinking enabled took about 52 seconds. These used different prompts/output constraints and should not be treated as controlled performance benchmarks. The actual fast-path Ultron end-to-end latency still needs acceptance testing.

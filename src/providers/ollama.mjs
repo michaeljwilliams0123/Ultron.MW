@@ -5,6 +5,7 @@ const MODEL_NAME = /^[a-zA-Z0-9._:/-]{1,120}$/;
 export function createLocalOllama({
   enabled = process.env.ULTRON_ENABLE_LOCAL_MODEL === '1',
   requestedModel = process.env.ULTRON_OLLAMA_MODEL || '',
+  think = process.env.ULTRON_OLLAMA_THINK === '1',
   fetchImpl = fetch,
   maxWaitMs = 90000,
 } = {}) {
@@ -44,7 +45,7 @@ export function createLocalOllama({
         signal: controller.signal,
         headers: { 'content-type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({
-          model: live.model, stream: false, format: 'json',
+          model: live.model, stream: false, format: 'json', think,
           messages, options: { temperature: 0, num_predict: 400 },
         }),
       });
