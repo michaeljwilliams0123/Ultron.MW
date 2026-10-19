@@ -84,9 +84,19 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
   const existing = await get(apiPath('/pulls' + query));
   if (!Array.isArray(existing)) throw Error('PR duplicate check was not available');
   const found = existing.find(pr => validPr(pr, request));
-  if (found) return { status: 'already-created', issueNumber: request.issueNumber,
-    prNumber: found.number, prUrl: found.html_url, branch: request.branch,
-    base: 'main', executorSha, contentVerified: true, created: false };
+  if (found) {
+    const verified = await get(apiPath('/pulls/' + found.number));
+    if (!validPr(verified, request)) throw Error('Existing PR read-back failed');
+    const existingFile = await get(apiPath('/contents/' + request.filePath) +
+      '?ref=' + encodeURIComponent(request.branch));
+    const contents = Buffer.from(existingFile?.content || '', 'base64').toString('utf8');
+    if (existingFile?.encoding !== 'base64' ||
+        !contents.includes('Request digest: ' + request.requestedDigest))
+      throw Error('Existing PR proposal content does not match original owner request');
+    return { status: 'already-created', issueNumber: request.issueNumber,
+      prNumber: verified.number, prUrl: verified.html_url, branch: request.branch,
+      base: 'main', executorSha, contentVerified: true, created: false };
+  }
 
   const branchRefPath = apiPath('/git/ref/heads/' + request.branch);
   const oldRef = await getOptional(branchRefPath);
@@ -153,10 +163,38 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
         verifiedPr.html_url || ''))
     throw Error('Created PR failed GitHub read-back verification');
 
+  // The workflow token is allowed to dispatch the existing exact-head
+  // verification job even though a GITHUB_TOKEN-created PR may not emit
+  // a normal pull_request workflow event.
+  await post(apiPath('/actions/workflows/verify.yml/dispatches'),
+    {ref: request.branch});
+
+  const note = [
+    '<!-- ULTRON_PR_RECEIPT_V1 -->',
+    '### Ultron PR created targeting main',
+    '',
+    'Pull request: ' + verifiedPr.html_url,
+    'Branch: ' + request.branch,
+    'Target: main',
+    'Verified source main: ' + executorSha,
+    'Verified proposal file: ' + request.filePath,
+    'Exact-head verification: requested through GitHub Actions',
+    '',
+    'This PR proposes documentation; it does not implement arbitrary code or merge automatically.',
+  ].join('\n');
+  const issued = await post(apiPath('/issues/' + request.issueNumber + '/comments'),
+    {body:note});
+  if (!Number.isSafeInteger(issued?.id) || issued.id <= 0)
+    throw Error('PR receipt comment not acknowledged');
+  const confirmedNote = await get(apiPath('/issues/comments/' + issued.id));
+  if (confirmedNote?.id !== issued.id || confirmedNote.body !== note ||
+      confirmedNote.user?.login !== 'github-actions[bot]')
+    throw Error('PR receipt read-back verification failed');
   return { status: 'created', issueNumber: request.issueNumber,
     prNumber: verifiedPr.number, prUrl: verifiedPr.html_url,
     branch: request.branch, base: 'main', executorSha,
-    contentVerified: true, created };
+    contentVerified: true, verificationDispatched: true,
+    receiptCommentId: issued.id, created };
 }
 
 export async function githubRequest(path, { method = 'GET', body, optional = false } = {}) {
