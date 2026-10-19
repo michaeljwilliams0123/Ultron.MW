@@ -5,6 +5,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LearningLoop } from './learning.mjs';
 import { COMMANDS, executeReadOnly } from './operations.mjs';
+import { createLocalOllama } from './providers/ollama.mjs';
+import { createBrain } from './brain.mjs';
 
 const sourcePath = fileURLToPath(import.meta.url);
 const defaultRoot = resolve(dirname(sourcePath), '..');
@@ -33,7 +35,7 @@ async function readJson(req) {
   catch { throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 }); }
 }
 
-export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782) } = {}) {
+export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama() } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
   let state = { objectives: [], receipts: [], learning: new LearningLoop().snapshot() };
   try {
@@ -46,6 +48,7 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
     state = { objectives: loaded.objectives, receipts: loaded.receipts || [],
       learning: new LearningLoop(loaded.learning).snapshot() };
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const brain = createBrain({ provider, root, snapshot: () => ({ learning: new LearningLoop(state.learning).snapshot() }) });
   let pending = Promise.resolve();
   async function transact(update) {
     const task = pending.then(async () => {
@@ -81,10 +84,12 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         return response(res, 200, await readFile(resolve(root, 'docs', 'app.js'), 'utf8'), 'text/javascript; charset=utf-8');
       }
       if (req.method === 'GET' && req.url === '/api/health') {
-        return response(res, 200, { name: 'Ultron', connected: true, mode: 'local-read-only', executionReady: true, autonomousReady: false });
+        const model = await brain.status();
+        return response(res, 200, { name: 'Ultron', connected: true, mode: 'local-read-only', executionReady: true, autonomousReady: false, modelReady: model.ready, model: model.ready ? model.model : null });
       }
       if (req.method === 'GET' && req.url === '/api/capabilities') {
-        return response(res, 200, { runtime: 'local', autonomy: false, commands: COMMANDS, providers: [] });
+        const model = await brain.status();
+        return response(res, 200, { runtime: 'local', autonomy: false, commands: COMMANDS, providers: model.ready ? [model.model] : [] });
       }
       if (req.method === 'GET' && req.url === '/api/state') {
         const learning = new LearningLoop(state.learning);
@@ -94,7 +99,7 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           candidates: learning.candidates.size, executionReady: true, autonomousReady: false,
         });
       }
-      if (req.method === 'POST' && (req.url === '/api/objectives' || req.url === '/api/execute')) {
+      if (req.method === 'POST' && (req.url === '/api/objectives' || req.url === '/api/execute' || req.url === '/api/think')) {
         if (!allowedOrigins.has(req.headers.origin) || req.headers['x-ultron-client'] !== 'local-ui-v1') {
           return response(res, 403, { error: 'Same-origin local UI request required' });
         }
@@ -103,6 +108,35 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           return response(res, 400, { error: 'Objective must be 1–1200 characters' });
         }
         const text = input.text.trim();
+        if (req.url === '/api/think') {
+          const modelStatus = await brain.status();
+          if (!modelStatus.ready) {
+            return response(res, 503, { error: 'Local model unavailable: ' + modelStatus.reason });
+          }
+          const outcome = await brain.think(text);
+          const saved = await transact(next => {
+            let toolReceipt = null;
+            if (outcome.toolResult) {
+              toolReceipt = {
+                id: 'receipt-' + randomUUID(), kind: 'deterministic-read',
+                command: outcome.toolResult.command,
+                status: 'succeeded', summary: outcome.toolResult.summary,
+                details: outcome.toolResult.details, createdAt: new Date().toISOString(),
+              };
+              next.receipts.push(toolReceipt);
+            }
+            const receipt = {
+              id: 'receipt-' + randomUUID(), kind: 'model-response',
+              status: 'succeeded', command: 'local-cognition',
+              summary: outcome.text, details: { model: outcome.model, usedTool: !!toolReceipt },
+              createdAt: new Date().toISOString(),
+            };
+            next.receipts.push(receipt);
+            next.receipts = next.receipts.slice(-100);
+            return { receipt, toolReceipt };
+          });
+          return response(res, 201, { ...saved, executed: !!saved.toolReceipt, autonomous: false });
+        }
         if (req.url === '/api/execute') {
           let outcome;
           try { outcome = await executeReadOnly(text, { root, learning: new LearningLoop(state.learning).snapshot() }); }
