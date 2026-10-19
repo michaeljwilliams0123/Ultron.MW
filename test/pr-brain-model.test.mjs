@@ -61,8 +61,9 @@ test('injected CPU model can propose a real patch for exact PR head without paid
 test('public CPU inference on owner request only, with no paid API credentials',async()=>{
   const flow=await readFile(new URL('../.github/workflows/pr-brain.yml',import.meta.url),'utf8');
   assert.match(flow,/github.event.repository.private == false/);
-  assert.match(flow,/startsWith\(github.event.comment.body, '@ultron implement '\)/);
-  assert.match(flow,/npm install --no-save/);
+  assert.match(flow,/needsPrModelRuntime/);
+  assert.match(flow,/npm ci --ignore-scripts --no-audit --no-fund/);
+  assert.doesNotMatch(flow,/npm install|package-lock=false/);
   assert.match(flow,/ULTRON_PUBLIC_CPU_INFERENCE/);
   assert.doesNotMatch(flow,/HF_TOKEN|OPENAI_API_KEY|models: read/);
 });

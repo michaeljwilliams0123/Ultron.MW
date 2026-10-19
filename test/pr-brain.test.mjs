@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { admitPrTurn,routePrTurn,handlePrConversation } from '../src/pr-brain.mjs';
+import { admitPrTurn,routePrTurn,handlePrConversation,
+  needsPrModelRuntime } from '../src/pr-brain.mjs';
 
 const OWNER='michaeljwilliams0123',REPO=OWNER+'/Ultron.MW',ROOT='/repos/'+REPO;
 const SHA='a'.repeat(40),OTHER='b'.repeat(40);
@@ -72,6 +73,12 @@ test('owner-only PR admission rejects issue, external user and bot feedback',()=
   assert.equal(routePrTurn('@ultron status').kind,'status');
   assert.equal(routePrTurn('@ultron address ci-head-unobserved').kind,'address');
   assert.equal(routePrTurn('@ultron patch\n{"objective":"fix"}').kind,'patch');
+  for(const body of ['@Ultron implement fix src/example.mjs route',
+    '/ultron implement fix src/example.mjs route',
+    'Ultron: implement fix src/example.mjs route',
+    'implement fix src/example.mjs route'])
+    assert.equal(needsPrModelRuntime(body),true);
+  assert.equal(needsPrModelRuntime('@ultron status'),false);
 });
 
 test('replies in same PR, reads source findings and provides owner conversation memory',async()=>{

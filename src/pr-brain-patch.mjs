@@ -30,6 +30,13 @@ export async function applyPrPatch({pr,manifest,get,post,
     throw Error('PR patch requires exact head, objective and 1-6 source edits');
   const branch=pr.head.ref,head=pr.head.sha;
   const ref=ROOT+'/git/ref/heads/'+branch;
+  const mainRef=ROOT+'/git/ref/heads/main';
+  const mainSha=(await get(mainRef))?.object?.sha;
+  if(!SHA.test(mainSha||''))throw Error('Current main cannot be verified');
+  const comparison=await get(ROOT+'/compare/'+mainSha+'...'+head);
+  if(comparison?.merge_base_commit?.sha!==mainSha||comparison?.behind_by!==0||
+    !['ahead','identical'].includes(comparison?.status))
+    throw Error('PR branch is behind current main; update it before applying source changes');
   if((await get(ref))?.object?.sha!==head)
     throw Error('PR head changed before patch admission');
   const commit=await get(ROOT+'/git/commits/'+head);
@@ -58,8 +65,9 @@ export async function applyPrPatch({pr,manifest,get,post,
       throw Error('Patch produced unchanged or oversized source');
     changed.push({path,content});
   }
-  if((await get(ref))?.object?.sha!==head)
-    throw Error('PR source changed during patch preparation');
+  if((await get(ref))?.object?.sha!==head||
+    (await get(mainRef))?.object?.sha!==mainSha)
+    throw Error('PR source or main changed during patch preparation');
   const blobs=[];
   for(const item of changed){
     const blob=await post(ROOT+'/git/blobs',{content:item.content,encoding:'utf-8'});
@@ -73,8 +81,9 @@ export async function applyPrPatch({pr,manifest,get,post,
     message:'fix: Ultron PR conversation patch - '+patch.objective.slice(0,60),
     tree:tree.sha,parents:[head]});
   if(!SHA.test(next?.sha||''))throw Error('Patch commit unavailable');
-  if((await get(ref))?.object?.sha!==head)
-    throw Error('PR source advanced; leave patch commit unreferenced');
+  if((await get(ref))?.object?.sha!==head||
+    (await get(mainRef))?.object?.sha!==mainSha)
+    throw Error('PR source or main advanced; leave patch commit unreferenced');
   // GitHub uses singular /git/ref for reads but plural /git/refs for updates.
   const updatePath=ROOT+'/git/refs/heads/'+branch;
   const updated=await updateRef(updatePath,{sha:next.sha,force:false});
