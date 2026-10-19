@@ -15,6 +15,9 @@ const CONTENT=Object.freeze({
   '.github/workflows/self-scan-pr.yml':'run: node src/self-scan-pr.mjs\npull-requests: write',
   '.github/workflows/pr-brain.yml':'run: node src/pr-brain.mjs\nref: main',
   'src/pr-brain.mjs':'handlePrConversation routePrTurn',
+  'src/pr-brain-ci.mjs':'reportCiToPr verifiedCiReceipt',
+  'src/pr-brain-model.mjs':'generateAndApply localCpuInference',
+  '.github/workflows/pr-brain-ci.yml':'run: node src/pr-brain-ci.mjs\nworkflow_run:',
   'src/self-scan-pr.mjs':'publishSelfScanPr SELF_SCAN_PATH',
   'src/cloud-cycle.mjs':"case '/self scan':",
   'src/cloud-pr.mjs':'import {launchCodePr}',
@@ -25,7 +28,8 @@ const CONTENT=Object.freeze({
 const PATHS=[
   ...Object.keys(CONTENT),
   'src/code-pr.mjs','test/self-scan-pr.test.mjs','test/pr-brain.test.mjs',
-  'test/pr-brain-patch.test.mjs','src/pr-brain-patch.mjs','src/grokbot-governor.mjs','src/cognitive-world-model.mjs',
+  'test/pr-brain-patch.test.mjs','test/pr-brain-ci.test.mjs',
+  'test/pr-brain-model.test.mjs','src/pr-brain-patch.mjs','src/grokbot-governor.mjs','src/cognitive-world-model.mjs',
   'src/learning.mjs','src/self-observer.mjs','test/cloud-pr.test.mjs',
   'test/code-pr.test.mjs','test/cloud.test.mjs','test/self-observer.test.mjs'
 ];
