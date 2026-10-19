@@ -13,11 +13,14 @@ const CHECK = Object.freeze([
   '.github/workflows/cloud-objective.yml',
   '.github/workflows/self-scan-pr.yml',
   '.github/workflows/pr-brain.yml',
+  '.github/workflows/pr-brain-ci.yml',
   'src/cloud-pr.mjs',
   'src/code-pr.mjs',
   'src/self-scan-pr.mjs',
   'src/pr-brain.mjs',
   'src/pr-brain-patch.mjs',
+  'src/pr-brain-ci.mjs',
+  'src/pr-brain-model.mjs',
   'src/cloud-cycle.mjs',
   'docs/core/capabilities.mjs',
   'docs/core/cycle.mjs',
@@ -30,6 +33,8 @@ const CHECK = Object.freeze([
   'test/self-scan-pr.test.mjs',
   'test/pr-brain.test.mjs',
   'test/pr-brain-patch.test.mjs',
+  'test/pr-brain-ci.test.mjs',
+  'test/pr-brain-model.test.mjs',
   'test/cloud.test.mjs',
   'test/self-observer.test.mjs',
 ]);
@@ -44,6 +49,9 @@ const SOURCE_CHECKS = Object.freeze({
   'src/self-scan-pr.mjs':['publishSelfScanPr','SELF_SCAN_PATH'],
   '.github/workflows/pr-brain.yml':['node src/pr-brain.mjs','ref: main'],
   'src/pr-brain.mjs':['handlePrConversation','routePrTurn'],
+  'src/pr-brain-ci.mjs':['reportCiToPr','verifiedCiReceipt'],
+  'src/pr-brain-model.mjs':['generateAndApply','localCpuInference'],
+  '.github/workflows/pr-brain-ci.yml':['node src/pr-brain-ci.mjs','workflow_run:'],
   '.github/workflows/verify.yml':['node scripts/verify.mjs'],
 });
 
