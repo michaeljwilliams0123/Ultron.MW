@@ -316,10 +316,9 @@
   function routePrToGitHub(objective) {
     try {
       const url = createCloudPrUrl(objective);
-      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(url, '_blank', 'noopener,noreferrer');
       line('Ultron · Create PR to main',
-        'Confirm the prefilled PR proposal Issue in GitHub. An owner-only hosted runner then creates a documentation proposal branch and a PR targeting main. No source-code implementation or auto-merge is promised. ' +
-        (opened === null ? 'If the browser blocked the new tab, use the Create PR to main button.' : 'No PC or local port is needed.'));
+        'Confirm the prefilled PR proposal Issue in GitHub. An owner-only hosted runner creates a documentation proposal branch and PR targeting main. The GitHub Issue receives the verified PR link. No code implementation, auto-merge, PC or local port is required.');
     } catch (error) {
       line('Ultron · PR request rejected', error.message);
     }
