@@ -245,6 +245,10 @@
     const rows = plan.steps.map(step =>
       String(step.index + 1) + '. ' + (step.command || step.description) +
       ' — ' + step.status + (step.receiptId ? ' · ' + step.receiptId : ''));
+    if (plan.advisory?.kind) {
+      rows.push('Suggested next owner-approved action: ' + plan.advisory.kind +
+        ' · requires manual review, pairing and separate preparation · NOT executed');
+    }
     pre.textContent = rows.join('\n');
     card.appendChild(pre);
     if (!connected || !plan.id || !plan.steps.some(step => step.status === 'ready')) return;
