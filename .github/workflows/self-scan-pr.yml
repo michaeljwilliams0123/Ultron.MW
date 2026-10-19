@@ -1,0 +1,38 @@
+name: Ultron self-scan to PR
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ultron-self-scan-publication
+  cancel-in-progress: false
+jobs:
+  self-scan-pr:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' &&
+        github.actor == 'michaeljwilliams0123'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Validate source-bound PR launcher
+        run: |
+          node --check src/self-observer.mjs
+          node --check src/self-scan-pr.mjs
+      - name: Observe current main and publish findings PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node src/self-scan-pr.mjs
