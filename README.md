@@ -105,3 +105,21 @@ learning evidence**: the latter remains zero until an authenticated feedback
 mechanism is implemented, so no policy or model is promoted from mere GitHub
 success receipts. This uses the existing cloud command and GitHub API access,
 with no new provider, database, UI, or computer dependency.
+
+## Cloud owner feedback and measured recommendation learning
+
+GitHub Issues are the durable cloud record. An owner can rate a successfully executed **single-command** v2 task by replying to the bot's receipt comment with the exact three-line format:
+
+```text
+ULTRON_FEEDBACK_V1
+run:<numeric-actions-run-id>:<run-attempt-number>
+rating:helpful
+```
+
+Change `rating:helpful` to `rating:not-helpful` if the result was not useful. The Actions receipt supplies the exact run ID and attempt. Only a comment from the configured repository owner, on that owner-created task Issue, later than a matching bot-authored receipt, can qualify. Any other comment, forged digest, mismatched exact-main evidence, unverified attempt, unsupported or multi-step outcome does **not** become a training label. Public Issues/comments should contain no private or client data.
+
+An owner feedback comment starts the **existing** GitHub Actions workflow, which evaluates the existing ledger and writes results to that run's summary; the workflow does **not** create a code change, merge anything, dispatch shell commands from comments, or grant new action authority. The optional `/learning status` command uses that same evidence. Workflows remain ephemeral and quota-limited.
+
+The evaluator compares a cautious command-recommendation policy against baseline using the latest chronological quarter as holdout. A candidate needs at least **16 distinct owner-rated tasks**, six positive and four negative older training labels, positive/negative later labels, at least five percentage points measured improvement, **zero new wrong cautions**, and no broadened permission. Insufficient, unchanged, invalid or regressing evidence causes no validated suggestion. An accepted *suggestion* is recomputed from GitHub history, not trained model weights or a self-editing model; it never blocks or runs a tool. The cloud ledger is public and mutable, so this is owner-reported usefulness, not independently adjudicated outcome quality.
+
+**One system, no extra infrastructure:** the old local-only experience evaluator remains for explicitly paired local tests. Cloud feedback uses existing Issues, one cloud evaluator and the same Pages interface. It does not create another agent, SaaS plan, database, browser login, paid AI provider, or SD009WC7 dependency.
