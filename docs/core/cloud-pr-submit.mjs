@@ -3,7 +3,7 @@
 export const CLOUD_PR_ISSUES = 'https://github.com/michaeljwilliams0123/Ultron.MW/issues/new';
 export function createCloudPrUrl(objective) {
   if (typeof objective !== 'string' || !objective.trim())
-    throw Error('Enter an objective or a code-change manifest.');
+    throw Error('Enter one public PR objective line or a code-change manifest.');
   let title = '[Ultron PR] Create proposal';
   let body = 'ULTRON_PR_V1\n' + objective;
   if (objective.trim().startsWith('{')) {
