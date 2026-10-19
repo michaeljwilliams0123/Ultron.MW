@@ -41,6 +41,8 @@ test('only owner-originated, explicitly marked issues can execute',()=>{
   assert.throws(()=>parseTask(issue(),'issues','michaeljwilliams0123','wrong/repo'),/Untrusted/);
   assert.throws(()=>parseTask(issue('/repo inspect\ndeploy now'),'issues',
     'michaeljwilliams0123',REPOSITORY),/Invalid single-line/);
+  assert.throws(()=>parseTask(issue('/self scan'),'issues',
+    'michaeljwilliams0123',REPOSITORY),/Self scans publish PRs/);
 });
 
 test('hosted executor inspects authoritative main, not local hard disk',async()=>{
