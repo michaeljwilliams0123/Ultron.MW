@@ -21,6 +21,7 @@ Write one of these on an Ultron PR:
 | `@ultron verify` | Dispatch GitHub Verify for the PR branch |
 | `@ultron rescan` | Trigger the existing self-scan-to-PR workflow on `main` |
 | `@ultron patch` plus JSON | Apply an explicit atomic, exact-head source patch to that same PR branch and request Verify |
+| `@ultron implement <objective>` | Run an on-runner public CPU language model to propose a scoped code patch, validate it against the actual PR head, commit it and dispatch Verify; invalid output fails without a commit |
 
 For short, sequential follow-up comments after Ultron's bot reply (e.g. "and now?"), the previous PR discussion is used as context. Unsupported natural language is acknowledged with supported routes, rather than simulated open-ended intelligence.
 
@@ -41,10 +42,16 @@ The patch format is:
 }
 ```
 
-Patches require 1–6 distinct and allowed source paths under `src/`, `docs/`, `test/`, or `scripts/`, preserve exact context, build one Git tree/commit, update the PR head using a non-force ref update and re-read the resulting source. GitHub Actions then requests Verify for that PR branch. Workflow edits, `main` direct mutations, automatic merges, privileged credentials, and deployments are not part of this capability. The user/connected code author must supply actual edits; a narrative alone does not generate code.
+Patches require 1–6 distinct and allowed source paths under `src/`, `docs/`, `test/`, or `scripts/`, preserve exact context, build one Git tree/commit, update the PR head using a non-force ref update and re-read the resulting source. GitHub Actions then requests Verify for that PR branch. Workflow edits, `main` direct mutations, automatic merges, privileged credentials, and deployments are not part of this capability. Owner-authored JSON remains the fully deterministic option. A new `@ultron implement` route can generate a proposed patch from natural language, using a pinned public CPU ONNX model on a GitHub-hosted runner if the repository remains public. The generated result is untrusted until the same exact-context source patch checks and independent CI have run. Model output is not a verified fix.
 
 ## Operational truth
 
-This system is **deterministic conversational orchestration**, not evidence of sentience or a connected general LLM. Its state is repo source plus GitHub PR comments; self-observation can become more accurate when real outcomes are independently added. Successful dispatch means a tool was requested, not that the check, fix, or production acceptance succeeded.
+This system is **deterministic conversational orchestration**, not evidence of sentience or a connected general LLM. Its state is repo source plus GitHub PR comments; self-observation can become more accurate when real outcomes are independently added. Completed Verify runs are now independently fetched by a native `workflow_run` observer and reported on the matching PR, with run ID, source SHA and actual conclusion. An outdated run is `stale`, never a current pass; bot-generated comments cannot initiate a feedback loop. Production and actual learning gains still require separate evidence.
 
 The handler checks owner identity, branch origin, exact changed comment and PR state before mutations. It deduplicates retries by source comment ID. For inline reviews it responds through GitHub's inline reply endpoint; for general PR comments it responds through the pull request's issue-comment API (which does **not** create a GitHub Issue). The Actions code is checked out from trusted `main`, not a potentially untrusted PR head.
+
+## Free CPU inference and scope
+
+The public repository's standard GitHub-hosted Ubuntu runner can load a pinned ONNX copy of Qwen2.5-0.5B-Instruct through `@huggingface/transformers@3.8.1` for an explicitly owner-authored `@ultron implement ...` comment. It downloads public model files rather than calling a paid inference provider. No new API key, Copilot credit or cloud account is needed. This path is disabled when the repository becomes private, to avoid silently consuming billable runner minutes. It supports one source file per request with a bounded input context; ambiguous targets require an explicit path in the comment. CPU memory, model quality, download availability and latency are operational limitations, and failures produce a non-implementation reply rather than fabricated success. It is *not* equivalent to a high-tier general-purpose software engineering model.
+
+Each model-generated patch uses the same `applyPrPatch` source verification: exact PR head, no workflow edits, unique source-context, a new immutable commit, non-force Git ref update and byte-for-byte readback. Verify is then dispatched and a separate observer confirms the actual run conclusion on the PR. No automatic merge, deployment, provider billing, or external app lane is introduced.

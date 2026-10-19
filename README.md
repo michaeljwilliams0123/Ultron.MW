@@ -171,3 +171,11 @@ Use **Self scan → PR** or enter `/self scan` in the console to open the native
 ## Ultron PR conversation brain
 
 Ultron PRs now support owner-authored `@ultron` conversation comments on ordinary PR threads and inline review comments, powered by the existing GitHub Actions runtime. Commands include `@ultron status`, `@ultron findings`, `@ultron next`, `@ultron address <finding-code>`, `@ultron verify`, `@ultron rescan`, and an explicitly supplied exact-head `@ultron patch` manifest to commit source fixes on the current PR branch and run Verify. Replies are posted on that PR; no Issues, new services, hosted model charges, or automatic merges are needed. It stores context in GitHub comments and will not describe unverified model activity as intelligence. See [PR Conversation Brain](docs/PR-CONVERSATION-BRAIN.md).
+
+## Closed-loop PR cognition (GitHub native)
+
+Comment `@ultron implement src/target.mjs: <description>` on an open Ultron PR to request a source-grounded code patch from a pinned public Qwen2.5-0.5B-Instruct ONNX model running on the hosted Actions CPU. The model does **not** use a paid inference API; it runs only for explicit implementation requests on public repositories, and its output must pass the same exact-head source-patch validation before a commit is created. Ambiguous context, oversized files or invalid code suggestions are rejected rather than committed. The small CPU model is experimental, not an assurance of autonomous coding competence.
+
+After `@ultron verify`, explicit patch or accepted model-generated change, the existing Verify workflow runs. The new `pr-brain-ci.yml` observer independently reads completed workflow evidence and writes the actual success/failure/blocked/stale result and run URL back into the matching PR conversation. GitHub PR comments hold the conversation and CI receipts; no new Issues, private external services, forced pushes, autonomous merges or production rollout.
+
+See [PR Conversation Brain](docs/PR-CONVERSATION-BRAIN.md) for commands and boundaries.

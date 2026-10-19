@@ -20,7 +20,7 @@ function event(body='@ultron findings',inline=false,id=77){
   return {...base,issue:{number:24,pull_request:{url:'https://api.github.com/pr/24'}}};
 }
 function fixture(inline=false){
-  const state={comments:[],posts:[],history:[],id:800,head:SHA,patches:[]};
+  const state={comments:[],posts:[],history:[],id:800,head:SHA,patches:[],models:[]};
   const pr={number:24,state:'open',body:'<!-- ULTRON_SELF_SCAN_PR_V1 -->',
     head:{ref:'ultron/self-scan-abc',sha:SHA,repo:{full_name:REPO}},
     base:{ref:'main',repo:{full_name:REPO}}};
@@ -52,7 +52,9 @@ function fixture(inline=false){
   };
   const invoke=async(ev)=>handlePrConversation({event:ev,
     eventName:inline?'pull_request_review_comment':'issue_comment',
-    actor:OWNER,repository:REPO,get,post,patch});
+    actor:OWNER,repository:REPO,get,post,patch,
+    generate:async ({objective})=>{state.models.push(objective);
+      return {commitSha:OTHER,paths:['src/example.mjs'],model:'test-free-cpu-model'};}});
   const add=ev=>state.comments.push(ev.comment);
   return {state,pr,invoke,add,get,post};
 }
@@ -136,4 +138,16 @@ test('workflow executes only from trusted main and keeps bot reactions out',asyn
   assert.match(text,/ref: main/);
   assert.match(text,/run: node src\/pr-brain\.mjs/);
   assert.match(text,/persist-credentials: false/);
+});
+
+test('owner-authored natural language implement delegates to source-grounded model, then dispatches Verify',async()=>{
+  const m=fixture();
+  const ev=event('@ultron implement fix src/example.mjs to reject stale routes',false,155);
+  m.add(ev);
+  const result=await m.invoke(ev);
+  assert.equal(result.intent,'implement');
+  assert.equal(m.state.models.length,1);
+  assert.match(m.state.models[0],/reject stale routes/);
+  assert.match(m.state.comments.at(-1).body,/source change/);
+  assert.ok(m.state.posts.some(p=>p.path===ROOT+'/actions/workflows/verify.yml/dispatches'));
 });

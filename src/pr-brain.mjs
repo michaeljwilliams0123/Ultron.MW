@@ -3,6 +3,7 @@ import { readFile, appendFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { githubRequest } from './cloud-pr.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
+import { generateAndApply } from './pr-brain-model.mjs';
 
 const OWNER='michaeljwilliams0123';
 const REPO=OWNER+'/Ultron.MW';
@@ -48,6 +49,8 @@ export function routePrTurn(body,history=[]){
   if(/^(rescan|scan again|scan yourself)\??$/i.test(value))return {kind:'rescan'};
   const specific=value.match(/^(?:address|fix|explain|why|plan)\s+([a-z0-9][a-z0-9-]{0,80})\??$/i);
   if(specific)return {kind:'address',code:specific[1].toLowerCase()};
+  const implement=value.match(/^implement\s+([\s\S]{5,500})$/i);
+  if(implement)return {kind:'implement',objective:implement[1].trim()};
   const patch=value.match(/^(?:patch|apply)\s*\n([\s\S]+)$/i);
   if(patch)return {kind:'patch',manifest:patch[1]};
   return {kind:'unknown',text:value.slice(0,160)};
@@ -79,7 +82,7 @@ function answer({turn,pr,intent,findings,history,action}){
     ''];
   switch(intent.kind){
   case 'help':lines.push(
-    'Available: @ultron status, findings, next, address <finding-code>, verify, rescan, or patch followed by a JSON manifest.',
+    'Available: @ultron status, findings, next, address <finding-code>, verify, rescan, implement <objective>, or patch followed by a JSON manifest.',
     'Owner-authored replies in the same conversation can use short follow-ups. Source mutations require an explicit exact-head manifest.');break;
   case 'status':lines.push('Open PR branch: '+pr.head.ref,
     'Exact PR head: '+pr.head.sha,'Source-scan findings: '+findings.length,
@@ -106,6 +109,16 @@ function answer({turn,pr,intent,findings,history,action}){
     'Outcome is not yet known. This is not a passing test receipt.');break;
   case 'rescan':lines.push('Self-scan workflow dispatched on main.',
     'Material changes update the existing findings PR; no Issue is created.');break;
+  case 'implement':
+    if(action.error)lines.push('CPU model implementation did not produce an accepted source change.',
+      'Reason: '+short(action.error,240),
+      'No code commit, test pass or deployment is claimed. Try a smaller objective naming one file.');
+    else lines.push('Public CPU model proposed a source change, validated and committed on this PR branch.',
+      'Model: '+action.model+' (pinned model files)',
+      'New source SHA: '+action.commitSha,
+      'Changed: '+action.paths.join(', '),
+      'Verify dispatched; the actual test conclusion will be reported separately.');
+    break;
   case 'patch':lines.push('Exact-context source patch committed to this PR branch.',
     'New commit: '+action.commitSha,'Files: '+action.paths.join(', '),
     'Verify was dispatched. No automatic merge or production deployment occurred.');break;
@@ -116,7 +129,8 @@ function answer({turn,pr,intent,findings,history,action}){
   lines.push('','This reply uses GitHub source and conversation evidence. No unverified model inference or claimed consciousness.');
   return lines.join('\n');
 }
-export async function handlePrConversation({event,eventName,actor,repository,get,post,patch}={}){
+export async function handlePrConversation({event,eventName,actor,repository,get,post,patch,
+  generate=generateAndApply}={}){
   const turn=admitPrTurn(event,eventName,actor,repository);
   if(typeof get!=='function'||typeof post!=='function'||typeof patch!=='function')
     throw Error('PR conversation GitHub adapter incomplete');
@@ -157,6 +171,12 @@ export async function handlePrConversation({event,eventName,actor,repository,get
   }else if(intent.kind==='rescan'){
     await post(ROOT+'/actions/workflows/self-scan-pr.yml/dispatches',{ref:'main'});
     action={requested:true};
+  }else if(intent.kind==='implement'){
+    try{
+      action=await generate({pr,objective:intent.objective,get,post});
+      pr.head.sha=action.commitSha;
+      await post(ROOT+'/actions/workflows/verify.yml/dispatches',{ref:pr.head.ref});
+    }catch(error){action={error:error instanceof Error?error.message:'Model inference failed'};}
   }else if(intent.kind==='patch'){
     action=await patch({pr,manifest:intent.manifest,get,post});
     pr.head.sha=action.commitSha;

@@ -1,0 +1,37 @@
+name: Ultron PR verification feedback
+on:
+  workflow_run:
+    workflows: ['Ultron core verification']
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: ultron-ci-feedback-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  feedback:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.event.workflow_run.name == 'Ultron core verification' &&
+      github.event.workflow_run.status == 'completed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Validate CI observer
+        run: node --check src/pr-brain-ci.mjs
+      - name: Report independently observed outcome to source PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node src/pr-brain-ci.mjs
