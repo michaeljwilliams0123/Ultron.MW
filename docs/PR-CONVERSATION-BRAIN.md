@@ -21,7 +21,8 @@ Write one of these on an Ultron PR:
 | `@ultron verify` | Dispatch GitHub Verify for the PR branch |
 | `@ultron rescan` | Trigger the existing self-scan-to-PR workflow on `main` |
 | `@ultron patch` plus JSON | Apply an explicit atomic, exact-head source patch to that same PR branch and request Verify |
-| `@ultron implement <objective>` | Run an on-runner public CPU language model to propose a scoped code patch, validate it against the actual PR head, commit it and dispatch Verify; invalid output fails without a commit |
+| `@ultron implement <objective>` | Run an on-runner public CPU language model to propose a scoped single-file patch, validate it against the actual PR head, commit it and dispatch Verify; invalid output fails without a commit |
+| `@ultron implement files <path-a>, <path-b>: <objective>` | Propose coordinated edits to 2–4 explicitly named existing files, preflight all candidates, publish one atomic commit, and dispatch Verify |
 
 For short, sequential follow-up comments after Ultron's bot reply (e.g. "and now?"), the previous PR discussion is used as context. Unsupported natural language is acknowledged with supported routes, rather than simulated open-ended intelligence.
 
@@ -42,7 +43,7 @@ The patch format is:
 }
 ```
 
-Patches require 1–6 distinct and allowed source paths under `src/`, `docs/`, `test/`, or `scripts/`, preserve exact context, build one Git tree/commit, update the PR head using a non-force ref update and re-read the resulting source. GitHub Actions then requests Verify for that PR branch. Workflow edits, `main` direct mutations, automatic merges, privileged credentials, and deployments are not part of this capability. Owner-authored JSON remains the fully deterministic option. A new `@ultron implement` route can generate a proposed patch from natural language, using a pinned public CPU ONNX model on a GitHub-hosted runner if the repository remains public. The generated result is untrusted until the same exact-context source patch checks and independent CI have run. Model output is not a verified fix.
+Patches require 1–6 distinct and allowed source paths under `src/`, `docs/`, `test/`, or `scripts/`, preserve exact context, require current `main` to be the branch merge base with zero commits behind, build one Git tree/commit, update the PR head using a non-force ref update and re-read the resulting source. GitHub Actions then requests Verify for that PR branch. Workflow edits, `main` direct mutations, automatic merges, privileged credentials, and deployments are not part of this capability. Owner-authored JSON remains the fully deterministic option. A new `@ultron implement` route can generate a proposed patch from natural language, using a pinned public CPU ONNX model on a GitHub-hosted runner if the repository remains public. The generated result is untrusted until the same exact-context source patch checks and independent CI have run. Model output is not a verified fix.
 
 ## Operational truth
 
@@ -52,9 +53,9 @@ The handler checks owner identity, branch origin, exact changed comment and PR s
 
 ## Free CPU inference and scope
 
-The public repository's standard GitHub-hosted Ubuntu runner can load a pinned ONNX copy of Qwen2.5-0.5B-Instruct through `@huggingface/transformers@3.8.1` for an explicitly owner-authored `@ultron implement ...` comment. It downloads public model files rather than calling a paid inference provider. No new API key, Copilot credit or cloud account is needed. This path is disabled when the repository becomes private, to avoid silently consuming billable runner minutes. It supports one source file per request with a bounded input context; ambiguous targets require an explicit path in the comment. CPU memory, model quality, download availability and latency are operational limitations, and failures produce a non-implementation reply rather than fabricated success. It is *not* equivalent to a high-tier general-purpose software engineering model.
+The public repository's standard GitHub-hosted Ubuntu runner can load revision `516c8d04add8a80c5228f32102b57953b8d421a9` of Qwen2.5-0.5B-Instruct through the lockfile-resolved `@huggingface/transformers@4.3.1` runtime for an explicitly owner-authored `@ultron implement ...` comment. CI installs that graph with lifecycle scripts disabled, audits production dependencies, and smoke-tests the import. The worker downloads public model files rather than calling a paid inference provider. No new API key, Copilot credit or cloud account is needed. This path is disabled when the repository becomes private. It supports one inferred source file or 2–4 explicitly named existing files with bounded per-file and combined context; ambiguous targets require explicit paths. CPU memory, model quality, download availability and latency are operational limitations, and failures produce a non-implementation reply rather than fabricated success. It is *not* equivalent to a high-tier general-purpose software engineering model.
 
-Each model-generated patch uses the same `applyPrPatch` source verification: exact PR head, no workflow edits, unique source-context, a new immutable commit, non-force Git ref update and byte-for-byte readback. Verify is then dispatched and a separate observer confirms the actual run conclusion on the PR. No automatic merge, deployment, provider billing, or external app lane is introduced.
+Each model-generated patch uses the same `applyPrPatch` source verification: exact PR head, current-main ancestry with zero commits behind, no workflow edits, unique source-context, a new immutable commit, non-force Git ref update and byte-for-byte readback. Verify is then dispatched and a separate observer confirms the actual run conclusion on the PR. No automatic merge, deployment, provider billing, or external app lane is introduced.
 
 ## Verified results without webhook dependence
 
