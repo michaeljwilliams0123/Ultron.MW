@@ -8,6 +8,8 @@ import { parseMultiFileRequest, generateAndApplyMulti } from './pr-brain-multifi
 import { dispatchAndObserveVerify } from './pr-brain-verify.mjs';
 import { buildFrameworkOnPr } from './framework-builder.mjs';
 import { CREDENTIAL_POLICY } from './capability-credentials.mjs';
+import { providerAuthorizationPlan } from './provider-authority.mjs';
+import { publishTelemetry } from './observability.mjs';
 
 const OWNER='michaeljwilliams0123';
 const REPO=OWNER+'/Ultron.MW';
@@ -67,6 +69,8 @@ export function routePrTurn(body,history=[]){
   if(create)return {kind:'build',type:create[1].toLowerCase(),slug:create[2].toLowerCase()};
   if(/^(credentials|secrets|tokens|credential status)\??$/i.test(value))
     return {kind:'credentials'};
+  const credentials=value.match(/^credentials\s+(github|datadog|huggingface)\??$/i);
+  if(credentials)return {kind:'credentials',provider:credentials[1].toLowerCase()};
   if(/^(rescan|scan again|scan yourself)\??$/i.test(value))return {kind:'rescan'};
   const specific=value.match(/^(?:address|fix|explain|why|plan)\s+([a-z0-9][a-z0-9-]{0,80})\??$/i);
   if(specific)return {kind:'address',code:specific[1].toLowerCase()};
@@ -140,6 +144,16 @@ function answer({turn,pr,intent,findings,history,action}){
       lines.push('No green regression claim until exact-head CI independently finishes.');
     break;
   case 'credentials':
+    if(intent.provider){
+      const grant=providerAuthorizationPlan(intent.provider,{env:process.env});
+      lines.push('Provider: '+grant.provider,
+        'Credential readiness: '+grant.status,
+        'Grant mode: '+grant.mode,
+        'Scope requirements: '+grant.requestedScopes.join(', '),
+        'Next: '+grant.next,
+        'No third-party credential has been minted by this comment.');
+      break;
+    }
     lines.push('Owner-controlled credentials framework:',
       '- '+CREDENTIAL_POLICY.owner,
       '- '+CREDENTIAL_POLICY.externalProviders,
@@ -306,6 +320,17 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
       await appendFile(process.env.GITHUB_STEP_SUMMARY,
         '### Ultron PR brain\n\nStatus: '+result.status+
         '\nPR: #'+(result.prNumber||'n/a')+'\nIntent: '+(result.intent||'none')+'\n');
+    try{
+      const delivered=await publishTelemetry({
+        kind:'pr-execution',state:result.status==='replied'?'succeeded':
+          result.status==='ignored'?'skipped':'unknown',
+        intent:result.intent||'unknown',sha:result.action?.commitSha||process.env.GITHUB_SHA,
+        prNumber:result.prNumber,runId:Number(process.env.GITHUB_RUN_ID),
+        checksSucceeded:result.action?.verify?.conclusion==='success'?1:0,
+        checksFailed:result.action?.verify?.conclusion==='failure'?1:0,
+      });
+      console.log('Ultron telemetry: '+delivered.state);
+    }catch{console.log('Ultron telemetry: unavailable');}
     console.log(JSON.stringify(result));
   }catch(e){console.error('Ultron PR brain rejected: '+e.message);process.exitCode=1;}
 }

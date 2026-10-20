@@ -36,3 +36,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node src/self-scan-pr.mjs
+      - name: Report hourly CI status (GitHub-native; optional Datadog)
+        if: ${{ always() && github.repository == 'michaeljwilliams0123/Ultron.MW' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ULTRON_ENABLE_DATADOG: ${{ vars.ULTRON_ENABLE_DATADOG || '0' }}
+          ULTRON_DATADOG_SITE: ${{ vars.ULTRON_DATADOG_SITE || 'datadoghq.com' }}
+          ULTRON_DATADOG_API_KEY: ${{ secrets.ULTRON_DATADOG_API_KEY }}
+        run: node scripts/ci-observability-snapshot.mjs
