@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { githubRequest } from './cloud-pr.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
 import { generateAndApply } from './pr-brain-model.mjs';
+import { parseMultiFileRequest, generateAndApplyMulti } from './pr-brain-multifile.mjs';
 import { dispatchAndObserveVerify } from './pr-brain-verify.mjs';
 import { buildFrameworkOnPr } from './framework-builder.mjs';
 import { CREDENTIAL_POLICY } from './capability-credentials.mjs';
@@ -69,6 +70,8 @@ export function routePrTurn(body,history=[]){
   if(/^(rescan|scan again|scan yourself)\??$/i.test(value))return {kind:'rescan'};
   const specific=value.match(/^(?:address|fix|explain|why|plan)\s+([a-z0-9][a-z0-9-]{0,80})\??$/i);
   if(specific)return {kind:'address',code:specific[1].toLowerCase()};
+  const multi=parseMultiFileRequest(value);
+  if(multi)return multi;
   const implement=value.match(/^implement\s+([\s\S]{5,500})$/i);
   if(implement)return {kind:'implement',objective:implement[1].trim()};
   const patch=value.match(/^(?:patch|apply)\s*\n([\s\S]+)$/i);
@@ -157,11 +160,11 @@ function answer({turn,pr,intent,findings,history,action}){
     break;
   case 'rescan':lines.push('Self-scan workflow dispatched on main.',
     'Material changes update the existing findings PR; no Issue is created.');break;
-  case 'implement':
+  case 'implement':case 'implement-multi':
     if(action.error)lines.push('CPU model implementation did not produce an accepted source change.',
       'Reason: '+short(action.error,240),
       'No code commit, test pass or deployment is claimed. Try a smaller objective naming one file.');
-    else lines.push('Public CPU model proposed a source change, validated and committed on this PR branch.',
+    else lines.push('Public CPU model proposed '+(intent.kind==='implement-multi'?'coordinated source changes':'a source change')+', validated and committed on this PR branch.',
       'Model: '+action.model+' (pinned model files)',
       'New source SHA: '+action.commitSha,
       'Changed: '+action.paths.join(', '),
@@ -187,7 +190,8 @@ function answer({turn,pr,intent,findings,history,action}){
   return lines.join('\n');
 }
 export async function handlePrConversation({event,eventName,actor,repository,get,post,patch,
-  generate=generateAndApply,observeVerify=dispatchAndObserveVerify,
+  generate=generateAndApply,generateMulti=generateAndApplyMulti,
+  observeVerify=dispatchAndObserveVerify,
   buildFramework=buildFrameworkOnPr}={}){
   const turn=admitPrTurn(event,eventName,actor,repository);
   if(typeof get!=='function'||typeof post!=='function'||typeof patch!=='function')
@@ -231,9 +235,11 @@ export async function handlePrConversation({event,eventName,actor,repository,get
   }else if(intent.kind==='rescan'){
     await post(ROOT+'/actions/workflows/self-scan-pr.yml/dispatches',{ref:'main'});
     action={requested:true};
-  }else if(intent.kind==='implement'){
+  }else if(intent.kind==='implement'||intent.kind==='implement-multi'){
     try{
-      action=await generate({pr,objective:intent.objective,get,post});
+      action=intent.kind==='implement-multi'?
+        await generateMulti({pr,paths:intent.paths,objective:intent.objective,get,post}):
+        await generate({pr,objective:intent.objective,get,post});
     }catch(error){action={error:error instanceof Error?error.message:'Model inference failed'};}
     if(!action.error&&SHA.test(action.commitSha||'')){
       pr.head.sha=action.commitSha;
