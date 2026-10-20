@@ -2,39 +2,38 @@ import { extractModelPatch, selectTargetLine, localCpuInference,
   explicitRewriteGoal, rewriteGoalMet, explicitMarkdownCorrection } from './pr-brain-model.mjs';
 import { assertModelSourceSafe } from './pr-brain-safety.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
+import { capacityLimits } from './capacity.mjs';
 
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const SOURCE=/^(?:src|docs|test|scripts)\/[A-Za-z0-9_./-]+\.(?:mjs|js|md|json|html|css)$/;
 const SHA=/^[a-f0-9]{40}$/;
-const MAX_FILES=4;
-const MAX_FILE_BYTES=6500;
-const MAX_TOTAL_BYTES=18000;
 
 /**
  * Explicit multi-file PR command. No command text can supply paths outside
  * the existing source tree, change GitHub workflows, or write to main.
  */
-export function parseMultiFileRequest(text) {
+export function parseMultiFileRequest(text,{env=process.env}={}) {
+  const limits=capacityLimits(env);
   if(typeof text!=='string')return null;
   const match=text.match(/^implement\s+files\s+([^\n:]{8,420})\s*:\s*([\s\S]{5,300})$/i);
   if(!match)return null;
   const paths=match[1].split(',').map(x=>x.trim());
   const objective=match[2].trim();
-  if(paths.length<2||paths.length>MAX_FILES||new Set(paths).size!==paths.length||
+  if(paths.length<2||paths.length>limits.maxFiles||new Set(paths).size!==paths.length||
     paths.some(x=>!SOURCE.test(x)||x.split('/').some(y=>!y||y==='..'||y.startsWith('.')))||
-    !objective || objective.length>300)
-    return {kind:'invalid-multi',error:'Use 2-4 distinct existing source paths and a clear objective'};
+    !objective || objective.length>limits.maxObjective)
+    return {kind:'invalid-multi',error:'Use 2-'+limits.maxFiles+' distinct existing source paths and a clear objective'};
   return {kind:'implement-multi',paths,objective};
 }
-function decode(file,path) {
+function decode(file,path,limits) {
   if(file?.encoding!=='base64'||!SHA.test(file?.sha||''))
     throw Error('Unverified PR source: '+path);
   const content=Buffer.from(file.content.replace(/\s/g,''),'base64').toString('utf8');
-  if(!content||Buffer.byteLength(content)>MAX_FILE_BYTES)
+  if(!content||Buffer.byteLength(content)>limits.maxFileBytes)
     throw Error('File exceeds bounded model context: '+path);
   return content;
 }
-async function readSources(pr,paths,get) {
+async function readSources(pr,paths,get,limits) {
   if(!SHA.test(pr?.head?.sha||'')||typeof get!=='function')
     throw Error('Invalid multi-file PR source authority');
   const commit=await get(ROOT+'/git/commits/'+pr.head.sha);
@@ -46,10 +45,10 @@ async function readSources(pr,paths,get) {
   if(paths.some(x=>!known.has(x)))throw Error('Source path not present in current PR tree');
   const sources=[];
   for(const path of paths) {
-    const content=decode(await get(ROOT+'/contents/'+path+'?ref='+pr.head.sha),path);
+    const content=decode(await get(ROOT+'/contents/'+path+'?ref='+pr.head.sha),path,limits);
     sources.push({path,content});
   }
-  if(sources.reduce((n,x)=>n+Buffer.byteLength(x.content),0)>MAX_TOTAL_BYTES)
+  if(sources.reduce((n,x)=>n+Buffer.byteLength(x.content),0)>limits.maxTotalBytes)
     throw Error('Multi-file context exceeds bounded CPU memory budget');
   return sources;
 }
@@ -78,11 +77,12 @@ function wordCount(content,word) {
 export async function generateAndApplyMulti({
   pr,paths,objective,get,post,model=localCpuInference,apply=applyPrPatch
 }={}) {
+  const limits=capacityLimits();
   const parsed=parseMultiFileRequest('implement files '+(paths||[]).join(', ')+': '+objective);
   if(parsed?.kind!=='implement-multi'||typeof model!=='function'||
     typeof apply!=='function'||typeof post!=='function')
     throw Error(parsed?.error||'Invalid multi-file code generation request');
-  const sources=await readSources(pr,parsed.paths,get);
+  const sources=await readSources(pr,parsed.paths,get,limits);
   const changes=[];
   const preflights=[];
   const goal=explicitRewriteGoal(objective);

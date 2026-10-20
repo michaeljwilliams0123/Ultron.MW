@@ -21,6 +21,9 @@ test('local runtime restores persistent server and standby endpoint', async () =
     assert.equal(standby.receipt.kind, 'ultron-standby-receipt');
     assert.equal(standby.receipt.authority.executable, false);
     assert.equal(standby.receipt.modelInvocations, 0);
+    assert.equal(standby.recent.count,1);
+    assert.equal(standby.recent.latest.modelInvocations,0);
+    assert.equal(standby.recent.latest.creditCost,0);
     const capabilities = await (await fetch(base + '/api/capabilities')).json();
     assert.equal(capabilities.runtime, 'local');
   } finally {

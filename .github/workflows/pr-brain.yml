@@ -65,6 +65,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ULTRON_PUBLIC_CPU_INFERENCE: ${{ github.event.repository.private == false && 'enabled' || 'disabled' }}
+          ULTRON_CAPACITY: ${{ vars.ULTRON_CAPACITY || 'standard' }}
           ULTRON_ENABLE_DATADOG: ${{ vars.ULTRON_ENABLE_DATADOG || '0' }}
           ULTRON_DATADOG_SITE: ${{ vars.ULTRON_DATADOG_SITE || 'datadoghq.com' }}
           ULTRON_DATADOG_API_KEY: ${{ secrets.ULTRON_DATADOG_API_KEY }}

@@ -210,6 +210,96 @@ test('a verified passing generated patch is not rolled back',async()=>{
 });
 
 
+test('owner source patch shares independently verified one-step rollback with CPU model lane',async()=>{
+  const m=fixture();
+  const manifest=JSON.stringify({objective:'issue32 recovery proof',baseSha:SHA,
+    changes:[{path:'test/canary.test.mjs',before:'pending',after:'verified'}]});
+  const ev=event('@ultron patch\n'+manifest,false,1101);
+  m.add(ev);
+  const patches=[];
+  let verifies=0;
+  const result=await handlePrConversation({
+    event:ev,eventName:'issue_comment',actor:OWNER,repository:REPO,
+    get:m.get,post:m.post,
+    patch:async({manifest:raw})=>{
+      patches.push(JSON.parse(raw));
+      return {commitSha:patches.length===1?OTHER:'c'.repeat(40),
+        paths:['test/canary.test.mjs']};
+    },
+    observeVerify:async({headSha})=>({
+      state:'completed',conclusion:++verifies===1?'failure':'success',
+      sha:headSha,url:'https://github.com/'+REPO+'/actions/runs/'+verifies,
+    }),
+  });
+  assert.equal(result.intent,'patch');
+  assert.equal(verifies,2);
+  assert.equal(patches.length,2);
+  assert.equal(patches[1].baseSha,OTHER);
+  assert.deepEqual(patches[1].changes,[{
+    path:'test/canary.test.mjs',before:'verified',after:'pending',
+  }]);
+  assert.equal(result.action.rollback.status,'committed');
+  assert.equal(result.action.rollback.sha,'c'.repeat(40));
+  assert.equal(result.action.rollback.verify.conclusion,'success');
+  assert.match(m.state.comments.at(-1).body,/automatically restored/);
+  assert.match(m.state.comments.at(-1).body,/Restored-head Verify: \*\*success\*\*/);
+});
+
+test('inconclusive CI results never activate rollback or fail-open approval',async()=>{
+  for(const conclusion of ['action_required','cancelled','timed_out','neutral','skipped']) {
+    const m=fixture(),ev=event('@ultron patch\n'+JSON.stringify({
+      objective:'conclusive CI required',baseSha:SHA,
+      changes:[{path:'docs/example.md',before:'old',after:'new'}],
+    }),false,1200+conclusion.length);
+    m.add(ev);
+    let commits=0;
+    const result=await handlePrConversation({
+      event:ev,eventName:'issue_comment',actor:OWNER,repository:REPO,
+      get:m.get,post:m.post,
+      patch:async()=>{commits++;return {commitSha:OTHER,paths:['docs/example.md']};},
+      observeVerify:async({headSha})=>({
+        state:'completed',conclusion,sha:headSha,url:'https://github.com/x',
+      }),
+    });
+    assert.equal(commits,1,conclusion);
+    assert.equal(result.action.rollback,undefined,conclusion);
+    assert.match(m.state.comments.at(-1).body,/No independently verified source failure/);
+  }
+  const m=fixture(),ev=event('@ultron patch\n'+JSON.stringify({
+    objective:'terminal result not yet observable',baseSha:SHA,
+    changes:[{path:'docs/example.md',before:'old',after:'new'}],
+  }),false,1300);
+  m.add(ev);
+  let commits=0;
+  const pending=await handlePrConversation({
+    event:ev,eventName:'issue_comment',actor:OWNER,repository:REPO,
+    get:m.get,post:m.post,
+    patch:async()=>{commits++;return {commitSha:OTHER,paths:['docs/example.md']};},
+    observeVerify:async()=>{throw Error('GitHub API temporarily inaccessible');},
+  });
+  assert.equal(commits,1);
+  assert.equal(pending.action.verify.state,'pending');
+  assert.equal(pending.action.rollback,undefined);
+});
+
+test('stale Verify failure with mismatched SHA cannot trigger rollback',async()=>{
+  const m=fixture(),ev=event('@ultron patch\n'+JSON.stringify({
+    objective:'stale check must not revert current head',baseSha:SHA,
+    changes:[{path:'docs/example.md',before:'before',after:'after'}],
+  }),false,1401);
+  m.add(ev);
+  let writes=0;
+  const result=await handlePrConversation({
+    event:ev,eventName:'issue_comment',actor:OWNER,repository:REPO,
+    get:m.get,post:m.post,
+    patch:async()=>{writes++;return {commitSha:OTHER,paths:['docs/example.md']};},
+    observeVerify:async()=>({state:'completed',conclusion:'failure',
+      sha:'f'.repeat(40),url:'https://github.com/x'}),
+  });
+  assert.equal(writes,1);
+  assert.equal(result.action.rollback,undefined);
+});
+
 test('closed or superseded PR comments are ignored without failure or GitHub writes',async()=>{
   const m=fixture(),ev=event('@ultron regress',false,911);
   m.pr.state='closed';m.add(ev);
