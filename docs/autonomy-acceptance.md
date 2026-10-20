@@ -2,7 +2,7 @@
 
 This file is a controlled non-production target for GitHub-hosted PR conversation testing.
 
-Acceptance label: PENDING
+Acceptance label: MODEL_PROPOSED
 
 Tests to perform using actual owner-authored PR comments:
 - @ultron regress: full Verify, exact-head dispatch and result receipt
