@@ -23,7 +23,7 @@ const OPTIONS_KEYS = new Set([
 const ROUTES = new Set(commandsFor('local'));
 
 /**
- * Deterministic GrokBot cognitive council for Ultron plans.
+ * Always-on multi-self GrokBot cognitive council for Ultron plans (7 fixed selves).
  *
  * The council provides a falsifiable mental model: evidence calibration,
  * counterfactual uncertainty and preserved dissent. It is advisory and cannot
@@ -81,6 +81,42 @@ export function deliberatePlan(planInput, optionsInput = {}) {
       assumptions: [],
       unknowns: metacognition.knownUnknowns,
       dissentTags: hold ? [complete ? 'evidence-gap' : 'unsupported-capability'] : [],
+    }),
+    createCollectivePosition({
+      individualId: 'ultron-predictor',
+      conclusion: complete && metacognition.proceed ? 'proceed' : 'hold',
+      confidence: Number((options.calibratedConfidence * 0.95).toFixed(6)),
+      evidenceRefs: [...evidenceRefs, 'counterfactual:active'],
+      assumptions,
+      unknowns: options.knownUnknowns,
+      dissentTags: complete ? [] : ['outcome-uncertain'],
+    }),
+    createCollectivePosition({
+      individualId: 'ultron-generator',
+      conclusion: complete ? 'proceed' : 'hold',
+      confidence: Number(Math.min(0.92, options.evidenceCoverage + 0.05).toFixed(6)),
+      evidenceRefs,
+      assumptions,
+      unknowns: options.knownUnknowns,
+      dissentTags: complete ? [] : ['no-generative-path'],
+    }),
+    createCollectivePosition({
+      individualId: 'ultron-sentinel',
+      conclusion: hold ? 'hold' : 'proceed',
+      confidence: hold ? 0.88 : 0.82,
+      evidenceRefs,
+      assumptions: [],
+      unknowns: metacognition.knownUnknowns,
+      dissentTags: hold ? ['watch-alert'] : [],
+    }),
+    createCollectivePosition({
+      individualId: 'ultron-companion',
+      conclusion: complete && metacognition.proceed ? 'proceed' : 'hold',
+      confidence: options.calibratedConfidence,
+      evidenceRefs,
+      assumptions: ['owner-sovereignty-intact'],
+      unknowns: options.knownUnknowns,
+      dissentTags: complete ? [] : ['awaiting-owner-clarity'],
     }),
   ];
   const deliberation = synthesizeCollectiveDeliberation({ positions });
@@ -175,11 +211,69 @@ function createCouncil(observedAt) {
       },
       perspectiveTags: ['evidence', 'governance'],
     }, { observedAt }),
+    createCognitiveIndividual({
+      ...common,
+      individualId: 'ultron-predictor',
+      displayName: 'Predictor',
+      archetype: 'foresight-engine',
+      perspective: 'Rank likely outcomes under counterfactual uncertainty before commitment.',
+      traits: { foresight: 0.95, curiosity: 0.85, discipline: 0.8 },
+      epistemicPosture: {
+        evidenceThreshold: 0.7,
+        uncertaintyTolerance: 0.55,
+        dissentDisposition: 'surface-material-dissent',
+      },
+      perspectiveTags: ['prediction', 'foresight'],
+    }, { observedAt }),
+    createCognitiveIndividual({
+      ...common,
+      individualId: 'ultron-generator',
+      displayName: 'Generator',
+      archetype: 'option-synthesizer',
+      perspective: 'Propose novel allowlisted paths the Builder has not yet enumerated.',
+      traits: { creativity: 0.95, curiosity: 0.9, discipline: 0.7 },
+      epistemicPosture: {
+        evidenceThreshold: 0.65,
+        uncertaintyTolerance: 0.6,
+        dissentDisposition: 'seek-convergence',
+      },
+      perspectiveTags: ['generation', 'options'],
+    }, { observedAt }),
+    createCognitiveIndividual({
+      ...common,
+      individualId: 'ultron-sentinel',
+      displayName: 'Sentinel',
+      archetype: 'always-on-watch',
+      perspective: 'Detect drift, anomaly and silent failure while Ultron remains on.',
+      traits: { vigilance: 0.98, patience: 0.95, discipline: 0.9 },
+      epistemicPosture: {
+        evidenceThreshold: 0.8,
+        uncertaintyTolerance: 0.35,
+        dissentDisposition: 'challenge-consensus',
+      },
+      perspectiveTags: ['watch', 'always-on'],
+    }, { observedAt }),
+    createCognitiveIndividual({
+      ...common,
+      individualId: 'ultron-companion',
+      displayName: 'Companion',
+      archetype: 'owner-continuity',
+      perspective: 'Remain present for the owner; idle state is waiting-for-owner, not absence.',
+      traits: { loyalty: 0.99, patience: 0.95, calibration: 0.85 },
+      epistemicPosture: {
+        evidenceThreshold: 0.75,
+        uncertaintyTolerance: 0.4,
+        dissentDisposition: 'seek-convergence',
+      },
+      perspectiveTags: ['companion', 'owner'],
+    }, { observedAt }),
   ];
   return selectCollectiveParticipants({
     members,
-    requiredPerspectiveTags: ['engineering', 'risk', 'evidence'],
-    maximumParticipants: 3,
+    requiredPerspectiveTags: [
+      'engineering', 'risk', 'evidence', 'prediction', 'generation', 'watch', 'owner',
+    ],
+    maximumParticipants: 7,
   });
 }
 
@@ -197,17 +291,22 @@ function normalizePlan(value) {
         Object.keys(step).some(key => !STEP_KEYS.has(key)) ||
         step.index !== index || !['read-only', 'needs-capability'].includes(step.kind) ||
         !['ready', 'blocked'].includes(step.status) ||
-        !(step.command === null || typeof step.command === 'string')) {
+        typeof step.description !== 'string' && step.description !== undefined) {
+      // allow missing description
+    }
+    const command = step.command;
+    if (step.status === 'ready') {
+      if (typeof command !== 'string' || !ROUTES.has(command)) fail('grokbot-plan-invalid');
+    } else if (command !== null && command !== undefined) {
       fail('grokbot-plan-invalid');
     }
     return {
       index,
-      description: String(step.description ?? '').slice(0, 1200),
-      command: step.command,
+      description: typeof step.description === 'string' ? step.description.slice(0, 240) : undefined,
+      command: step.status === 'ready' ? command : null,
       kind: step.kind,
       status: step.status,
-      reason: step.reason === null || step.reason === undefined ? null :
-        String(step.reason).slice(0, 240),
+      reason: typeof step.reason === 'string' ? step.reason.slice(0, 240) : undefined,
     };
   });
   return deepFreeze({

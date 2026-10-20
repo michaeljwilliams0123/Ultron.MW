@@ -7,6 +7,7 @@ export function selectExecution({
   host = 'browser',
   localModelReady = false,
   browserModelReady = false,
+  hfModelReady = false,
   deterministicToolReady = false,
 } = {}) {
   if (!['reasoning', 'read-only'].includes(task) ||
@@ -18,6 +19,8 @@ export function selectExecution({
   }
   if (host === 'local' && localModelReady)
     return { provider: 'ollama', mode: 'inference', reason: 'Installed local model confirmed ready' };
+  if (host === 'local' && hfModelReady)
+    return { provider: 'huggingface', mode: 'inference', reason: 'Hugging Face local model confirmed ready' };
   if (host === 'browser' && browserModelReady)
     return { provider: 'webgpu', mode: 'inference', reason: 'Explicitly activated on-device WebGPU model' };
   return { provider: null, mode: 'draft', reason: 'No model is connected; objective can be drafted' };
