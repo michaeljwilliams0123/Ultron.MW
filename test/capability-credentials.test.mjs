@@ -82,3 +82,34 @@ test('MCP adapter lists and executes only safe public GitHub read tools',async()
   assert.throws(()=>createMcpHandler({kind:'mcp',name:'my-mcp',
     operations:['shell']}),/allowlisted/);
 });
+test('MCP adapter implements the stateless 2026-07-28 request contract',async()=>{
+  const handle=createMcpHandler({kind:'mcp',name:'my-mcp',operations:['status','ci']},
+    {githubGet:mockGet});
+  const meta={'io.modelcontextprotocol/protocolVersion':'2026-07-28',
+    'io.modelcontextprotocol/clientCapabilities':{}};
+  const discover=await handle({jsonrpc:'2.0',id:1,method:'server/discover',_meta:meta});
+  assert.equal(discover.result.resultType,'complete');
+  assert.deepEqual(discover.result.supportedVersions,
+    ['2026-07-28','2025-06-18']);
+  const listed=await handle({jsonrpc:'2.0',id:2,method:'tools/list',_meta:meta});
+  assert.equal(listed.result.resultType,'complete');
+  assert.equal(listed.result.cacheScope,'public');
+  assert.equal(listed.result._meta['io.modelcontextprotocol/serverInfo'].name,'ultron-my-mcp');
+  const called=await handle({jsonrpc:'2.0',id:3,method:'tools/call',_meta:meta,
+    params:{name:'ultron_status',arguments:{}}});
+  assert.equal(called.result.resultType,'complete');
+  assert.equal(called.result.isError,false);
+  const unsupported=await handle({jsonrpc:'2.0',id:4,method:'tools/list',_meta:{
+    ...meta,'io.modelcontextprotocol/protocolVersion':'1900-01-01'}});
+  assert.equal(unsupported.error.code,-32022);
+  assert.deepEqual(unsupported.error.data.supported,['2026-07-28','2025-06-18']);
+  const missingCapabilities=await handle({jsonrpc:'2.0',id:5,method:'tools/list',
+    _meta:{'io.modelcontextprotocol/protocolVersion':'2026-07-28'}});
+  assert.equal(missingCapabilities.error.code,-32602);
+  const invalidMetadata=await handle({jsonrpc:'2.0',id:6,method:'tools/list',_meta:{
+    'io.modelcontextprotocol/protocolVersion':20260728,
+    'io.modelcontextprotocol/clientCapabilities':[]}});
+  assert.equal(invalidMetadata.error.code,-32602);
+  const noHandshake=await handle({jsonrpc:'2.0',id:7,method:'initialize',_meta:meta});
+  assert.equal(noHandshake.error.code,-32601);
+});

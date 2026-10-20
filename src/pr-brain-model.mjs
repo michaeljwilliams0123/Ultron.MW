@@ -39,6 +39,30 @@ export function selectTargetLine(content,objective){
     .sort((a,b)=>b.score-a.score||a.index-b.index);
   return ranked[0]?.score>=(ranked.length===1?1:2)?ranked[0].line:null;
 }
+/** Recognize the small class of source objectives we can score without a model. */
+export function explicitRewriteGoal(objective) {
+  const text=String(objective||'');
+  const match=text.match(/\b(?:from\s+([a-z][a-z0-9-]{1,39})\s+to|replace\s+([a-z][a-z0-9-]{1,39})\s+with|change\s+([a-z][a-z0-9-]{1,39})\s+to)\s+([a-z][a-z0-9-]{1,39})\b/i);
+  const from=match?.[1]||match?.[2]||match?.[3],to=match?.[4];
+  return from&&to&&from.toLowerCase()!==to.toLowerCase()?
+    Object.freeze({from,to}):null;
+}
+function wordCount(content,word) {
+  return (String(content).match(new RegExp('\\b'+word+'\\b','gi'))||[]).length;
+}
+export function rewriteGoalMet(original,change,goal) {
+  if(!goal)return true;
+  const after=original.replace(change.before,change.after);
+  return wordCount(original,goal.from)>wordCount(after,goal.from) &&
+    wordCount(after,goal.to)>wordCount(original,goal.to);
+}
+export function explicitMarkdownCorrection(path,content,target,goal) {
+  if(!goal||!path.endsWith('.md')||typeof target!=='string')return null;
+  if(wordCount(target,goal.from)!==1||content.indexOf(target)<0||
+    content.indexOf(target,content.indexOf(target)+target.length)>=0)return null;
+  const after=target.replace(new RegExp('\\b'+goal.from+'\\b','i'),goal.to);
+  return after!==target?{path,before:target,after}:null;
+}
 function makeManifest(entry,{path,head,objective}){
   if(typeof entry?.before!=='string'||!entry.before||
     typeof entry.after!=='string'||!entry.after||
@@ -64,11 +88,14 @@ export function extractModelPatch(reply,{path,head,objective,targetLine=null}){
   if(targetLine){
     const original=targetLine.trim();
     const prefix=original.slice(0,Math.min(8,original.length));
+    const goal=explicitRewriteGoal(objective);
+    const exactGoalLine=goal?original.replace(
+      new RegExp('\\b'+goal.from+'\\b','i'),goal.to):null;
     const lines=text.replace(/\x60{3}[^\n]*\n?/g,'').split('\n')
       .map(x=>x.trim().replace(/^(?:AFTER|REPLACEMENT|NEW LINE)\s*:\s*/i,''))
       .filter(x=>x&&x.length<=550);
-    const replacement=lines.find(x=>x!==original&&x.startsWith(prefix)&&
-      !x.startsWith('<<<'));
+    const replacement=lines.find(x=>x!==original&&!x.startsWith('<<<')&&
+      (x.startsWith(prefix)||x===exactGoalLine));
     if(replacement)return makeManifest({path,before:targetLine,
       after:(targetLine.match(/^\s*/)?.[0]||'')+replacement},
       {path,head,objective});
@@ -113,7 +140,12 @@ export async function generateAndApply({
   if(typeof model!=='function'||typeof apply!=='function')
     throw Error('Autonomous model or edit backend missing');
   const source=await chooseSourceForObjective({objective,pr,get});
-  const target=selectTargetLine(source.content,objective);
+  const goal=explicitRewriteGoal(objective);
+  const matching=goal?source.content.split('\n').filter(line=>
+    wordCount(line,goal.from)>0&&line.trim().length>10):[];
+  if(goal&&matching.length!==1)
+    throw Error('Explicit objective has no unique source line: '+source.path);
+  const target=goal?matching[0]:selectTargetLine(source.content,objective);
   const common={path:source.path,head:pr.head.sha,objective,targetLine:target};
   const instruction='You are a code repair assistant. Output only a single replacement source line with the original JavaScript/Markdown structure. Do not output JSON, an explanation or markdown fences.';
   const prompt='Objective: '+objective+'\nFilename: '+source.path+
@@ -131,11 +163,33 @@ export async function generateAndApply({
         target+'\nObjective: '+objective+'\nReply with one replacement line only.'}]);
     manifest=extractModelPatch(response,common);
   }
+  let parsed=JSON.parse(manifest);
+  let change=parsed.changes[0];
+  const correctedPaths=[];
+  if(goal&&!rewriteGoalMet(source.content,change,goal)){
+    const revision=await model([{role:'system',content:instruction},{role:'user',content:
+      'The previous suggestion did not replace '+JSON.stringify(goal.from)+' with '+
+      JSON.stringify(goal.to)+'.\nExact original line:\n'+target+
+      '\nReturn the complete corrected line, nothing else.'}]);
+    try{
+      const candidate=JSON.parse(extractModelPatch(revision,common)).changes[0];
+      if(rewriteGoalMet(source.content,candidate,goal))change=candidate;
+    }catch{/* The bounded Markdown fallback below remains independently checkable. */}
+  }
+  if(!rewriteGoalMet(source.content,change,goal)){
+    const corrected=explicitMarkdownCorrection(source.path,source.content,target,goal);
+    if(!corrected)throw Error('Model output did not satisfy explicit source objective: '+source.path);
+    change=corrected;
+    correctedPaths.push(source.path);
+  }
+  manifest=JSON.stringify({objective:objective.slice(0,300),baseSha:pr.head.sha,
+    changes:[change]});
   const preflight=assertModelSourceSafe({path:source.path,original:source.content,manifest});
-  const parsed=JSON.parse(manifest);
+  parsed=JSON.parse(manifest);
   const rollbackChanges=parsed.changes.map(x=>({path:x.path,before:x.after,after:x.before}));
   const result=await apply({pr,manifest,get,post});
   return {...result,rollbackChanges,preflight:{validated:preflight.validated,bytes:preflight.bytes},
     model:MODEL,modelRevision:REVISION,sourcePath:source.path,
+    goalAssurance:{mode:goal?'explicit-substitution':'unscored',correctedPaths},
     generatedBy:'public-CPU-ONNX-inference',verifiedCommit:true};
 }

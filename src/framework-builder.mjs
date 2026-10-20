@@ -25,7 +25,7 @@ function safeReadme(input){
     '## Credential boundary','',
     kind==='api'?
     'Hosting requires ULTRON_<NAME>_SIGNING_KEY stored as a protected environment secret. Use issueCapabilityToken() from src/capability-credentials.mjs inside your approved runtime; do not print, commit or embed key material in the Pages UI.':
-    'MCP speaks JSON-RPC 2.0 over stdio. Its process identity and permissions belong to the host runtime; it does not mint GitHub access or request tokens.',
+    'MCP speaks JSON-RPC 2.0 over stdio and supports the stateless 2026-07-28 protocol contract. Its process identity and permissions belong to the host runtime; it does not mint GitHub access or request tokens.',
     'The GitHub Actions GITHUB_TOKEN is ephemeral and must stay within the workflow.',
     'Third-party provider tokens, OAuth consent and account secrets are not automatically issued by this generator.',
     '',

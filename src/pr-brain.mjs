@@ -182,12 +182,11 @@ function answer({turn,pr,intent,findings,history,action}){
       'Model: '+action.model+' (pinned model files)',
       'New source SHA: '+action.commitSha,
       'Changed: '+action.paths.join(', '),
-      ...(intent.kind==='implement-multi'?
-        ['Semantic objective: '+(action.goalAssurance?.mode==='explicit-substitution'?
-          'explicit replacement independently checked':'not independently scored'),
-        action.goalAssurance?.correctedPaths?.length?
-          'Deterministic Markdown corrections required: '+action.goalAssurance.correctedPaths.join(', '):
-          'No deterministic correction applied.']:[]),
+      'Semantic objective: '+(action.goalAssurance?.mode==='explicit-substitution'?
+        'explicit replacement independently checked':'not independently scored'),
+      ...(action.goalAssurance?.correctedPaths?.length?
+        ['Deterministic Markdown corrections required: '+action.goalAssurance.correctedPaths.join(', ')]:
+        ['No deterministic correction applied.']),
       verifyLine(action),
       action.rollback?.status==='committed'?
         'Failed model patch automatically restored by a new auditable commit: '+action.rollback.sha+
