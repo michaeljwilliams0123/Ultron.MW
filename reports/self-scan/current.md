@@ -1,10 +1,10 @@
 <!-- ULTRON_SELF_SCAN_REPORT_V1 -->
 # Ultron self-scan — actionable source findings
 
-Finding signature: 4eacc2600b68df1a30aa2e7ff70052af60d73563935991fddf2fd11d3602bb91
-Observed GitHub main SHA: 2e381354b4875858a5e3f57f53eb07f4937f1081
-Observed source tree SHA: 6668249c757fd9850366c0a9bdc7113cdd6d7e52
-Observed at: 2026-10-20T06:05:56.485Z
+Finding signature: 937e5b42bc00478e44f47e7e4a10f8578d486af513f11f01b9f9cf4626c22d09
+Observed GitHub main SHA: 03403f69e37e27bdbb3670d7baa922557e18ed1a
+Observed source tree SHA: 7903b00544f6fb0310d336835fe1673173859999
+Observed at: 2026-10-20T12:04:09.017Z
 Authority: exact GitHub main, not a deployed production runtime
 
 ## Findings
@@ -12,18 +12,17 @@ Authority: exact GitHub main, not a deployed production runtime
 | Priority | Code | Evidence | Suggested next action |
 | --- | --- | --- | --- |
 | high | live-execution-unobserved | Source inspection cannot attest a production request or response | Run an authenticated end-to-end task and validate its durable result |
-| high | ci-head-failing | Exact-main GitHub Verify completed: failure | Repair the failed or blocked check and independently rerun Verify |
 | medium | learning-effect-unobserved | The scan has no independently scored future-task or held-out cognition outcome | Compare actual realized outcomes against prior predictions before updating policy |
 
 ## Scanned source
 
-- Files inventoried: 89
-- Source files: 28
-- Test files: 34
+- Files inventoried: 114
+- Source files: 35
+- Test files: 44
 - Workflow files: 5
 - Static evidence coverage: 1
-- Observed current-main CI: failure
-- GitHub CI evidence run: https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/39363150830
+- Observed current-main CI: success
+- GitHub CI evidence run: https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/39419061575
 
 ## Static wiring checks
 
@@ -53,7 +52,6 @@ Authority: exact GitHub main, not a deployed production runtime
 ## Next steps
 
 - Compare actual realized outcomes against prior predictions before updating policy
-- Repair the failed or blocked check and independently rerun Verify
 - Run an authenticated end-to-end task and validate its durable result
 
 This PR is a source scan, not a verified code fix.
