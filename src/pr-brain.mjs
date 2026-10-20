@@ -5,6 +5,8 @@ import { githubRequest } from './cloud-pr.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
 import { generateAndApply } from './pr-brain-model.mjs';
 import { dispatchAndObserveVerify } from './pr-brain-verify.mjs';
+import { buildFrameworkOnPr } from './framework-builder.mjs';
+import { CREDENTIAL_POLICY } from './capability-credentials.mjs';
 
 const OWNER='michaeljwilliams0123';
 const REPO=OWNER+'/Ultron.MW';
@@ -58,6 +60,12 @@ export function routePrTurn(body,history=[]){
   if(/^(findings|gaps|weaknesses|what is wrong)\??$/i.test(value))return {kind:'findings'};
   if(/^(next|and now|what next|next steps)\??$/i.test(value))return {kind:'next'};
   if(/^(verify|run checks|rerun checks)\??$/i.test(value))return {kind:'verify'};
+  if(/^(regress|regression|run regression|run regression tests|full regression)\??$/i.test(value))
+    return {kind:'regress'};
+  const create=value.match(/^build\s+(api|mcp)\s+([a-z][a-z0-9-]{2,30})$/i);
+  if(create)return {kind:'build',type:create[1].toLowerCase(),slug:create[2].toLowerCase()};
+  if(/^(credentials|secrets|tokens|credential status)\??$/i.test(value))
+    return {kind:'credentials'};
   if(/^(rescan|scan again|scan yourself)\??$/i.test(value))return {kind:'rescan'};
   const specific=value.match(/^(?:address|fix|explain|why|plan)\s+([a-z0-9][a-z0-9-]{0,80})\??$/i);
   if(specific)return {kind:'address',code:specific[1].toLowerCase()};
@@ -99,7 +107,7 @@ function answer({turn,pr,intent,findings,history,action}){
     ''];
   switch(intent.kind){
   case 'help':lines.push(
-    'Available: @ultron status, findings, next, address <finding-code>, verify, rescan, implement <objective>, or patch followed by a JSON manifest.',
+    'Available: @ultron status, findings, next, address <finding-code>, regress, build api <slug>, build mcp <slug>, credentials, verify, rescan, implement <objective>, or patch followed by a JSON manifest.',
     'Owner-authored replies in the same conversation can use short follow-ups. Source mutations require an explicit exact-head manifest.');break;
   case 'status':lines.push('Open PR branch: '+pr.head.ref,
     'Exact PR head: '+pr.head.sha,'Source-scan findings: '+findings.length,
@@ -122,8 +130,31 @@ function answer({turn,pr,intent,findings,history,action}){
       lines.push('To commit a source repair here, supply @ultron patch followed by a bounded JSON manifest.');
     }break;
   }
-  case 'verify':lines.push('Verify workflow dispatched for branch '+pr.head.ref+'.',
-    verifyLine(action));break;
+  case 'verify':case 'regress':
+    lines.push('Complete cloud regression suite requested against PR head '+pr.head.ref+'.',
+      verifyLine(action));
+    if(action?.verify?.conclusion!=='success')
+      lines.push('No green regression claim until exact-head CI independently finishes.');
+    break;
+  case 'credentials':
+    lines.push('Owner-controlled credentials framework:',
+      '- '+CREDENTIAL_POLICY.owner,
+      '- '+CREDENTIAL_POLICY.externalProviders,
+      '- '+CREDENTIAL_POLICY.deployedApi,
+      '- '+CREDENTIAL_POLICY.publicRepo,
+      'Runtime-owned HMAC bearer tokens can be issued with fixed scopes and expiry. GitHub/OAuth/third-party secret grants cannot be fabricated by a public PR comment.');
+    break;
+  case 'build':
+    if(action.error)lines.push('Framework build rejected: '+short(action.error,280),
+      'No source commit or generated credentials claimed.');
+    else lines.push('Generated '+action.kind.toUpperCase()+' integration: '+action.slug,
+      'Source commit: '+action.commitSha,
+      'Generated source, test and deployment contract: '+action.paths.join(', '),
+      'Credential authority: runtime secret references; no values written to GitHub.',
+      'The generated connector is not a continuously deployed API.',
+      verifyLine(action),
+      'No automatic merge. New provider scopes still require owner-authorized credentials.');
+    break;
   case 'rescan':lines.push('Self-scan workflow dispatched on main.',
     'Material changes update the existing findings PR; no Issue is created.');break;
   case 'implement':
@@ -156,11 +187,15 @@ function answer({turn,pr,intent,findings,history,action}){
   return lines.join('\n');
 }
 export async function handlePrConversation({event,eventName,actor,repository,get,post,patch,
-  generate=generateAndApply,observeVerify=dispatchAndObserveVerify}={}){
+  generate=generateAndApply,observeVerify=dispatchAndObserveVerify,
+  buildFramework=buildFrameworkOnPr}={}){
   const turn=admitPrTurn(event,eventName,actor,repository);
   if(typeof get!=='function'||typeof post!=='function'||typeof patch!=='function')
     throw Error('PR conversation GitHub adapter incomplete');
   const pr=await get(ROOT+'/pulls/'+turn.number);
+  // Closed/superseded PR discussions are ordinary no-ops, not failed agents.
+  if(pr?.number===turn.number && pr.state==='closed')
+    return {status:'ignored-closed',prNumber:turn.number,created:false};
   if(pr?.number!==turn.number||pr.state!=='open'||pr.base?.ref!=='main'||
     pr.base?.repo?.full_name!==REPO||pr.head?.repo?.full_name!==REPO||
     !pr.head?.ref?.startsWith('ultron/')||!SHA.test(pr.head?.sha||''))
@@ -190,7 +225,7 @@ export async function handlePrConversation({event,eventName,actor,repository,get
   const findings=readFindings(report?
     Buffer.from(report.content.replace(/\s/g,''),'base64').toString('utf8'):'');
   let action={};
-  if(intent.kind==='verify'||intent.kind==='address'&&
+  if(intent.kind==='verify'||intent.kind==='regress'||intent.kind==='address'&&
     intent.code==='ci-head-unobserved'){
     action={requested:true,verify:await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha})};
   }else if(intent.kind==='rescan'){
@@ -224,6 +259,15 @@ export async function handlePrConversation({event,eventName,actor,repository,get
           reason:error instanceof Error?error.message:'Rollback failed'};}
       }
     }
+  }else if(intent.kind==='build'){
+    try{
+      action=await buildFramework({pr,kind:intent.type,slug:intent.slug,get,post});
+      pr.head.sha=action.commitSha;
+      try{
+        action.verify=await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha});
+      }catch(error){action.verify={state:'pending',conclusion:null,
+        reason:'Independent regression observation unavailable'};}
+    }catch(error){action={error:error instanceof Error?error.message:'Build unavailable'};}
   }else if(intent.kind==='patch'){
     action=await patch({pr,manifest:intent.manifest,get,post});
     pr.head.sha=action.commitSha;

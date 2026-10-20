@@ -189,3 +189,11 @@ The hourly self-scan now also reads exact-current-main Verify metadata and disti
 ## Bounded self-healing for model-generated changes
 
 The native PR brain now rejects CPU-generated invalid JavaScript before committing, with an independent syntax-only Node check, and protects capability proof references against unverified rewrites. After a model-generated commit, an independently observed failing exact-head Verify triggers **one auditable inverse source commit and a second Verify** on the restored PR head. Outcomes are explained in the same PR conversation, without a forced ref update, direct `main` mutation or paid model usage. This addresses a real live-model regression observed on PR #24 and preserves the no-automatic-merge boundary.
+
+## Native API/MCP framework generation and regression tests
+
+From an owner comment on a supported open PR, use `@ultron regress`, `@ultron build api <slug>`, `@ultron build mcp <slug>`, or `@ultron credentials`. The deterministic generator commits read-only source, tests and docs to the PR branch and dispatches exact-head GitHub-hosted verification.
+
+Ultron can create short-lived **self-owned** bearer tokens when running in an authorized deployment. It cannot fabricate third-party provider credentials or authorize OAuth grants; no secrets are ever committed to the public repository. Generated API modules require a separately authorized host and a protected signing key.
+
+See [framework builder authority and acceptance](docs/FRAMEWORK-BUILDER.md).
