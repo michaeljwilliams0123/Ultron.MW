@@ -1,1 +1,1 @@
-export const missionState = 'fault-injected';
+export const missionState = 'verified';
