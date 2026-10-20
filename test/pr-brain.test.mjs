@@ -208,3 +208,57 @@ test('a verified passing generated patch is not rolled back',async()=>{
   assert.equal(outcome.action.rollback,undefined);
   assert.equal(attempts,0);
 });
+
+
+test('closed or superseded PR comments are ignored without failure or GitHub writes',async()=>{
+  const m=fixture(),ev=event('@ultron regress',false,911);
+  m.pr.state='closed';m.add(ev);
+  const result=await m.invoke(ev);
+  assert.equal(result.status,'ignored-closed');
+  assert.equal(result.prNumber,24);
+  assert.equal(m.state.posts.length,0);
+});
+
+test('owner framework build replies only with the committed SHA and independent test evidence',async()=>{
+  const m=fixture(),ev=event('@ultron build api telemetry',false,912);
+  m.add(ev);
+  let received=null,verified=null;
+  const outcome=await handlePrConversation({
+    event:ev,eventName:'issue_comment',actor:OWNER,repository:REPO,
+    get:m.get,post:m.post,patch:async()=>{throw Error('No patch');},
+    buildFramework:async args=>{
+      received={kind:args.kind,slug:args.slug,head:args.pr.head.sha};
+      return {kind:'api',slug:'telemetry',commitSha:OTHER,
+        paths:['src/generated/telemetry/api.mjs',
+          'test/generated-api-telemetry.test.mjs',
+          'docs/integrations/telemetry-api.md']};
+    },
+    observeVerify:async args=>{verified=args;return {state:'completed',
+      conclusion:'success',sha:OTHER,url:'https://github.com/x/actions/runs/21'};},
+  });
+  assert.equal(outcome.intent,'build');
+  assert.deepEqual(received,{kind:'api',slug:'telemetry',head:SHA});
+  assert.equal(verified.headSha,OTHER);
+  assert.match(m.state.comments.at(-1).body,/Generated API integration/);
+  assert.match(m.state.comments.at(-1).body,/Authenticated exact-head Verify: \*\*success\*\*/);
+  assert.match(m.state.comments.at(-1).body,new RegExp(OTHER));
+});
+
+test('regression routing triggers full Verify without claiming a pending result passed',async()=>{
+  const m=fixture(),ev=event('@ultron regress',false,913);
+  m.add(ev);
+  const result=await m.invoke(ev);
+  assert.equal(result.intent,'regress');
+  assert.ok(m.state.posts.some(x=>x.path.endsWith('/dispatches')));
+  assert.match(m.state.comments.at(-1).body,/No green regression claim/);
+});
+
+test('credentials status provides policy, never literal owner keys',async()=>{
+  const m=fixture(),ev=event('@ultron credentials',false,914);
+  m.add(ev);
+  const result=await m.invoke(ev);
+  assert.equal(result.intent,'credentials');
+  assert.match(m.state.comments.at(-1).body,/owner-authorized grants/);
+  assert.match(m.state.comments.at(-1).body,/short-lived workflow credential/);
+  assert.doesNotMatch(m.state.comments.at(-1).body,/ghp_[a-zA-Z0-9]+/);
+});

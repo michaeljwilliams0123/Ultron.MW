@@ -16,9 +16,11 @@ jobs:
       github.actor == 'michaeljwilliams0123' &&
       github.event.comment.user.login == 'michaeljwilliams0123' &&
       ((github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request != null) ||
+        github.event.issue.pull_request != null &&
+        github.event.issue.state == 'open') ||
        (github.event_name == 'pull_request_review_comment' &&
-        github.event.pull_request.number > 0))
+        github.event.pull_request.number > 0 &&
+        github.event.pull_request.state == 'open'))
     runs-on: ubuntu-latest
     timeout-minutes: 18
     permissions:
@@ -39,6 +41,9 @@ jobs:
           node --check src/pr-brain.mjs
           node --check src/pr-brain-patch.mjs
           node --check src/pr-brain-model.mjs
+          node --check src/framework-builder.mjs
+          node --check src/framework-integration-runtime.mjs
+          node --check src/capability-credentials.mjs
       - name: Detect optional CPU model request
         id: model-request
         env:
