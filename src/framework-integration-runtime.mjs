@@ -3,6 +3,10 @@ import { verifyCapabilityToken } from './capability-credentials.mjs';
 const REPO='michaeljwilliams0123/Ultron.MW';
 const DEFAULT_TYPES=Object.freeze(['status','ci']);
 const APPROVED=/^[a-z][a-z0-9-]{1,39}$/;
+const MCP_VERSION='2026-07-28';
+const MCP_LEGACY='2025-06-18';
+const MCP_PROTOCOL='io.modelcontextprotocol/protocolVersion';
+const MCP_CAPABILITIES='io.modelcontextprotocol/clientCapabilities';
 
 export function validateIntegrationConfig(config) {
   if(!config || typeof config!=='object' || Array.isArray(config)||
@@ -72,12 +76,28 @@ export function createMcpHandler(config,{githubGet=publicGet}={}) {
       jsonrpc:'2.0',id,...(error?{error}:{result})};
     if(message?.jsonrpc!=='2.0'||typeof message.method!=='string')
       return reply(null,{code:-32600,message:'Invalid JSON-RPC request'});
+    const requested=message._meta?.[MCP_PROTOCOL];
+    const current=requested!==undefined;
+    if(current&&typeof requested!=='string')
+      return reply(null,{code:-32602,message:'Invalid params'});
+    if(current&&requested!==MCP_VERSION)
+      return reply(null,{code:-32022,message:'Unsupported protocol version',
+        data:{supported:[MCP_VERSION,MCP_LEGACY],requested}});
+    const capabilities=message._meta?.[MCP_CAPABILITIES];
+    if(current&&(!capabilities||typeof capabilities!=='object'||Array.isArray(capabilities)))
+      return reply(null,{code:-32602,message:'Invalid params'});
+    const serverMeta={['io.modelcontextprotocol/serverInfo']:{
+      name:'ultron-'+c.name,version:'1.0.0'}};
+    if(current&&message.method==='server/discover')return reply({
+      resultType:'complete',supportedVersions:[MCP_VERSION,MCP_LEGACY],
+      capabilities:{tools:{}},_meta:serverMeta,ttlMs:300000,cacheScope:'public'});
     if(message.method==='notifications/initialized')return null;
-    if(message.method==='initialize')return reply({
-      protocolVersion:'2025-06-18',capabilities:{tools:{}},
+    if(message.method==='initialize'&&!current)return reply({
+      protocolVersion:MCP_LEGACY,capabilities:{tools:{}},
       serverInfo:{name:'ultron-'+c.name,version:'1.0.0'}});
     if(message.method==='tools/list')
-      return reply({tools:c.operations.map(op=>({
+      return reply({...(current?{resultType:'complete',ttlMs:300000,
+        cacheScope:'public',_meta:serverMeta}:{}),tools:c.operations.map(op=>({
         name:'ultron_'+op,description:'Read-only Ultron '+op,
         inputSchema:{type:'object',properties:{},additionalProperties:false}}))});
     if(message.method==='tools/call') {
@@ -86,10 +106,11 @@ export function createMcpHandler(config,{githubGet=publicGet}={}) {
       if(!c.operations.includes(op)||!message.params?.arguments ||
         Object.keys(message.params.arguments).length)
         return reply(null,{code:-32602,message:'Unadmitted tool or arguments'});
-      try{return reply({content:[{type:'text',text:JSON.stringify(
-        await runRead(op,githubGet))}],isError:false});}
-      catch{return reply({content:[{type:'text',text:'Authenticated read unavailable'}],
-        isError:true});}
+      try{return reply({...(current?{resultType:'complete',_meta:serverMeta}:{}),
+        content:[{type:'text',text:JSON.stringify(await runRead(op,githubGet))}],
+        isError:false});}
+      catch{return reply({...(current?{resultType:'complete',_meta:serverMeta}:{}),
+        content:[{type:'text',text:'Authenticated read unavailable'}],isError:true});}
     }
     return reply(null,{code:-32601,message:'Method not found'});
   };

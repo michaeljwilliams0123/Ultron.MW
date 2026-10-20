@@ -99,6 +99,12 @@ test('generated JS is node-parseable before any GitHub mutation',async()=>{
     }
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+test('generated MCP contract points to the current stateless protocol',()=>{
+  const files=generateIntegrationFiles({kind:'mcp',slug:'current-mcp'});
+  const readme=files.find(x=>x.path.endsWith('.md')).content;
+  assert.match(readme,/MCP speaks JSON-RPC 2\.0 over stdio/);
+  assert.match(readme,/2026-07-28/);
+});
 test('autonomous PR build commits source, tests and docs on branch after exact-main readback',async()=>{
   const f=fixture();
   const result=await buildFrameworkOnPr({pr:f.pr,kind:'api',slug:'telemetry',

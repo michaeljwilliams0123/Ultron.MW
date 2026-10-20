@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {chooseSourceForObjective,selectTargetLine,extractModelPatch,generateAndApply} from '../src/pr-brain-model.mjs';
+import {chooseSourceForObjective,selectTargetLine,extractModelPatch,generateAndApply,
+  explicitRewriteGoal,rewriteGoalMet} from '../src/pr-brain-model.mjs';
 import {routePrTurn} from '../src/pr-brain.mjs';
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const SHA='a'.repeat(40),TREE='b'.repeat(40),COMMIT='c'.repeat(40);
@@ -111,4 +112,33 @@ test('AFTER-labeled model source patch preserves exact observed line anchor',()=
     path:'docs/alpha.md',head:SHA,objective:'replace pending',
     targetLine:'Alpha outcome: pending'
   }),/valid exact-context/);
+});
+test('common replacement phrases receive deterministic semantic scoring',()=>{
+  for(const objective of [
+    'rewrite status from pending to verified',
+    'replace pending with verified',
+    'change pending to verified',
+  ])assert.deepEqual(explicitRewriteGoal(objective),{from:'pending',to:'verified'});
+  assert.equal(explicitRewriteGoal('make status better'),null);
+  const goal=explicitRewriteGoal('replace pending with verified');
+  assert.equal(rewriteGoalMet('Status: pending',{before:'Status: pending',
+    after:'Status: verified'},goal),true);
+  assert.equal(rewriteGoalMet('Status: pending',{before:'Status: pending',
+    after:'Status: pending!'},goal),false);
+});
+test('single-file explicit goal retries the model and reports semantic assurance',async()=>{
+  const r=repository();let calls=0;
+  const result=await generateAndApply({
+    pr:structuredClone(PR),objective:'replace old with new in src/utility.mjs',
+    get:r.get,post:async()=>{},
+    model:async()=>++calls===1?'export const marker="wrong";':
+      'export const marker="new";',
+    apply:async({manifest})=>{
+      assert.equal(JSON.parse(manifest).changes[0].after,'export const marker="new";');
+      return {commitSha:COMMIT,paths:[PATH]};
+    },
+  });
+  assert.equal(calls,2);
+  assert.equal(result.goalAssurance.mode,'explicit-substitution');
+  assert.deepEqual(result.goalAssurance.correctedPaths,[]);
 });

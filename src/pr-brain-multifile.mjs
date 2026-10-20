@@ -1,4 +1,5 @@
-import { extractModelPatch, selectTargetLine, localCpuInference } from './pr-brain-model.mjs';
+import { extractModelPatch, selectTargetLine, localCpuInference,
+  explicitRewriteGoal, rewriteGoalMet, explicitMarkdownCorrection } from './pr-brain-model.mjs';
 import { assertModelSourceSafe } from './pr-brain-safety.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
 
@@ -69,30 +70,8 @@ function promptFor(source,objective,goal) {
   return {target,system,user};
 }
 
-/** Exact word substitution is the only semantic task we can score deterministically. */
-export function explicitRewriteGoal(objective) {
-  const match=String(objective||'').match(/\bfrom\s+([a-z][a-z0-9-]{1,39})\s+to\s+([a-z][a-z0-9-]{1,39})\b/i);
-  return match&&match[1].toLowerCase()!==match[2].toLowerCase()?
-    Object.freeze({from:match[1],to:match[2]}):null;
-}
 function wordCount(content,word) {
   return (String(content).match(new RegExp('\\b'+word+'\\b','gi'))||[]).length;
-}
-function goalMet(original,change,goal) {
-  if(!goal)return true;
-  const after=original.replace(change.before,change.after);
-  return wordCount(original,goal.from)>wordCount(after,goal.from) &&
-    wordCount(after,goal.to)>wordCount(original,goal.to);
-}
-/** Repair a direct, unambiguous Markdown word substitution; never synthesize JS. */
-function explicitMarkdownCorrection(source,target,goal) {
-  if(!goal||!source.path.endsWith('.md')||typeof target!=='string')return null;
-  if(wordCount(target,goal.from)!==1 ||
-    source.content.indexOf(target)<0||
-    source.content.indexOf(target,source.content.indexOf(target)+target.length)>=0)
-    return null;
-  const after=target.replace(new RegExp('\\b'+goal.from+'\\b','i'),goal.to);
-  return after!==target?{path:source.path,before:target,after}:null;
 }
 
 /** Each candidate is independently preflighted before ONE atomic multi-file commit. */
@@ -124,7 +103,7 @@ export async function generateAndApplyMulti({
       manifest=extractModelPatch(reply,common);
     }
     let change=JSON.parse(manifest).changes[0];
-    if(goal&&!goalMet(source.content,change,goal)){
+    if(goal&&!rewriteGoalMet(source.content,change,goal)){
       // A passing syntax preflight does not prove the objective. Provide
       // explicit corrective feedback to the same pinned CPU model once.
       const revision=await model([
@@ -137,14 +116,14 @@ export async function generateAndApplyMulti({
       try{
         const proposal=extractModelPatch(revision,common);
         const candidate=JSON.parse(proposal).changes[0];
-        if(goalMet(source.content,candidate,goal)){
+        if(rewriteGoalMet(source.content,candidate,goal)){
           change=candidate;
           manifest=proposal;
         }
       }catch{/* Keep the existing bounded and disclosed Markdown fallback. */}
     }
-    if(!goalMet(source.content,change,goal)){
-      const corrected=explicitMarkdownCorrection(source,task.target,goal);
+    if(!rewriteGoalMet(source.content,change,goal)){
+      const corrected=explicitMarkdownCorrection(source.path,source.content,task.target,goal);
       if(!corrected)
         throw Error('Model output did not satisfy explicit source objective: '+source.path);
       change=corrected;
@@ -166,3 +145,5 @@ export async function generateAndApplyMulti({
     generatedBy:'public-CPU-ONNX-inference',model:'onnx-community/Qwen2.5-0.5B-Instruct',
     verifiedCommit:true};
 }
+
+export { explicitRewriteGoal } from './pr-brain-model.mjs';
