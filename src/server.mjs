@@ -8,6 +8,7 @@ import { COMMANDS, executeReadOnly } from './operations.mjs';
 import { createLocalOllama } from './providers/ollama.mjs';
 import { createHuggingFace } from './providers/huggingface.mjs';
 import { standbyTick, isAlwaysOnEnabled } from './always-on.mjs';
+import { appendHeartbeatReceipt, reduceHeartbeatLedger } from './heartbeat-ledger.mjs';
 import { createBrain } from './brain.mjs';
 import { createActionGateway, validateAction, keyIsValid, makeSessionKey } from './action-gateway.mjs';
 import { advanceExperience, evaluateExperience, suggestFromExperience, verifiedExperiences } from './experience.mjs';
@@ -70,9 +71,13 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const brain = createBrain({ provider, root, snapshot: () => ({ learning: new LearningLoop(state.learning).snapshot() }) });
   let lastStandby = alwaysOn ? standbyTick({ reason: 'boot-standby' }) : null;
+  const standbyReceipts = [];
+  if(lastStandby)appendHeartbeatReceipt(standbyReceipts,lastStandby);
   const standbyTimer = alwaysOn ? setInterval(() => {
-    try { lastStandby = standbyTick({ reason: 'idle-heartbeat' }); }
-    catch (error) { console.error('Ultron standby tick failed:', error.message); }
+    try {
+      lastStandby = standbyTick({ reason: 'idle-heartbeat' });
+      appendHeartbeatReceipt(standbyReceipts,lastStandby);
+    } catch (error) { console.error('Ultron standby tick failed:', error.message); }
   }, 60_000) : null;
   standbyTimer?.unref?.();
   let pending = Promise.resolve();
@@ -115,7 +120,7 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           'text/javascript; charset=utf-8');
       }
       if (req.method === 'GET' && req.url === '/api/standby') {
-        return response(res, 200, { enabled: !!alwaysOn, posture: alwaysOn ? 'waiting-for-owner' : 'disabled', receipt: lastStandby });
+        return response(res, 200, { enabled: !!alwaysOn, posture: alwaysOn ? 'waiting-for-owner' : 'disabled', receipt: lastStandby, recent: reduceHeartbeatLedger(standbyReceipts) });
       }
       if (req.method === 'GET' && req.url === '/api/health') {
         const model = await brain.status();
