@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { LearningLoop } from './learning.mjs';
 import { COMMANDS, executeReadOnly } from './operations.mjs';
 import { createLocalOllama } from './providers/ollama.mjs';
+import { createHuggingFace } from './providers/huggingface.mjs';
+import { standbyTick, isAlwaysOnEnabled } from './always-on.mjs';
 import { createBrain } from './brain.mjs';
 import { createActionGateway, validateAction, keyIsValid, makeSessionKey } from './action-gateway.mjs';
 import { advanceExperience, evaluateExperience, suggestFromExperience, verifiedExperiences } from './experience.mjs';
@@ -41,7 +43,7 @@ async function readJson(req) {
   catch { throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 }); }
 }
 
-export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = createLocalOllama(), gateway = createActionGateway({ root }), ownerKey = makeSessionKey(), githubDraftEnabled = process.env.ULTRON_ENABLE_GITHUB_DRAFT === '1' } = {}) {
+export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = (process.env.ULTRON_ENABLE_HF === '1' ? createHuggingFace() : createLocalOllama()), alwaysOn = isAlwaysOnEnabled(), gateway = createActionGateway({ root }), ownerKey = makeSessionKey(), githubDraftEnabled = process.env.ULTRON_ENABLE_GITHUB_DRAFT === '1' } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
   let state = { objectives: [], receipts: [], plans: [], conversations: [], ownerJobs: [],
     experience: { active: null, history: [], assessments: [], lastEvidence: null },
@@ -67,6 +69,12 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
     };
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const brain = createBrain({ provider, root, snapshot: () => ({ learning: new LearningLoop(state.learning).snapshot() }) });
+  let lastStandby = alwaysOn ? standbyTick({ reason: 'boot-standby' }) : null;
+  const standbyTimer = alwaysOn ? setInterval(() => {
+    try { lastStandby = standbyTick({ reason: 'idle-heartbeat' }); }
+    catch (error) { console.error('Ultron standby tick failed:', error.message); }
+  }, 60_000) : null;
+  standbyTimer?.unref?.();
   let pending = Promise.resolve();
   async function transact(update) {
     const task = pending.then(async () => {
@@ -106,18 +114,26 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           await readFile(resolve(root, 'docs', req.url.slice(1)), 'utf8'),
           'text/javascript; charset=utf-8');
       }
+      if (req.method === 'GET' && req.url === '/api/standby') {
+        return response(res, 200, { enabled: !!alwaysOn, posture: alwaysOn ? 'waiting-for-owner' : 'disabled', receipt: lastStandby });
+      }
       if (req.method === 'GET' && req.url === '/api/health') {
         const model = await brain.status();
-        return response(res, 200, { name: 'Ultron', connected: true, mode: 'local-read-only', executionReady: true, autonomousReady: false, modelReady: model.ready, model: model.ready ? model.model : null });
+        return response(res, 200, { name: 'Ultron', connected: true, mode: 'local-read-only', executionReady: true, autonomousReady: false, modelReady: model.ready, model: model.ready ? model.model : null,
+          modelProvider: model.ready ? model.provider : null,
+          standby: { enabled: !!alwaysOn, posture: alwaysOn ? 'waiting-for-owner' : 'disabled',
+            selvesActive: lastStandby?.selvesActive || [] } });
       }
       if (req.method === 'GET' && req.url === '/api/capabilities') {
         const model = await brain.status();
         return response(res, 200, {
           runtime: 'local', autonomy: false, commands: COMMANDS,
           manifest: capabilityManifest('local'),
-          providers: model.ready ? [{ id: 'ollama', model: model.model, ready: true }] : [],
+          providers: model.ready ? [{ id: model.provider || 'ollama', model: model.model, ready: true }] : [],
           choices: {
-            reasoning: selectExecution({ host: 'local', localModelReady: model.ready }),
+            reasoning: selectExecution({ host: 'local',
+              localModelReady: model.ready && model.provider !== 'huggingface',
+              hfModelReady: model.ready && model.provider === 'huggingface' }),
             tools: selectExecution({ host: 'local', task: 'read-only', deterministicToolReady: true }),
           },
         });
@@ -508,10 +524,11 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
   });
   await new Promise((ok, fail) => { server.once('error', fail); server.listen(port, '127.0.0.1', ok); });
   return { server, port: server.address().port, ownerKey,
-    close: () => new Promise((ok, fail) => server.close(error => error ? fail(error) : ok())) };
+    close: () => { if (standbyTimer) clearInterval(standbyTimer);
+      return new Promise((ok, fail) => server.close(error => error ? fail(error) : ok())); } };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === sourcePath) {
-  startLocalServer().then(app => { console.log('Ultron local UI: http://127.0.0.1:' + app.port); console.log('Local owner pairing key (changes on restart): ' + app.ownerKey); })
+  startLocalServer().then(app => { console.log('Ultron local UI: http://127.0.0.1:' + app.port); console.log('Local owner pairing key (changes on restart): ' + app.ownerKey); if (isAlwaysOnEnabled()) console.log('Always-on standby: waiting-for-owner'); })
     .catch(error => { console.error(error.message); process.exitCode = 1; });
 }

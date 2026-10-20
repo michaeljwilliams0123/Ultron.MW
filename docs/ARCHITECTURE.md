@@ -81,3 +81,9 @@ Each `grokbot-deliberation-receipt` is immutable, fingerprinted, zero-credit and
 CI runs for all PRs and main pushes. It checks exact-head syntax and regression tests, validates all workflow syntax with checksum-pinned actionlint, and pins external actions to immutable SHAs. Verification has read-only repository permissions and no persisted Git credentials. Branch rules, merge enforcement and deployment activation are administrative/runtime states requiring separate read-back; configuration in source alone is not proof.
 
 Device/WebGPU/Ollama acceptance, sustained heartbeat reliability, an enforced failing-PR merge gate, real-task benchmark quality and deployment at the final merge SHA remain separate acceptance work. The dated baseline document tracks these boundaries.
+
+## Optional local intelligence and standby
+
+The existing local HTTP server remains the single runtime entrypoint (`src/server.mjs`); its prior state persistence, owner pairing, and read-only endpoints are preserved. The opt-in Hugging Face adapter is selected with `ULTRON_ENABLE_HF=1`. The seven-self GrokBot advisor is distinct from inference and does not create execution authority. With `ULTRON_ALWAYS_ON=1`, a 60-second local, zero-credit standby tick is exposed through `/api/health` and `/api/standby`; no cloud daemon or external provider is implied. See [GrokBot](GROKBOT.md).
+
+Native PR conversation framework commands use the exact GitHub branch head, deterministic source templates, and independent CI evidence. They do not autonomously grant third-party credentials. See [Framework Builder](FRAMEWORK-BUILDER.md).

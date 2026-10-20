@@ -197,3 +197,9 @@ From an owner comment on a supported open PR, use `@ultron regress`, `@ultron bu
 Ultron can create short-lived **self-owned** bearer tokens when running in an authorized deployment. It cannot fabricate third-party provider credentials or authorize OAuth grants; no secrets are ever committed to the public repository. Generated API modules require a separately authorized host and a protected signing key.
 
 See [framework builder authority and acceptance](docs/FRAMEWORK-BUILDER.md).
+
+## Local Hugging Face and standby
+
+`ULTRON_ENABLE_HF=1` selects the optional on-device Hugging Face Transformers provider (`ULTRON_HF_MODEL`, default `Xenova/distilgpt2`) in place of Ollama. Its model must be installed/downloadable and the runtime explicitly enabled; no model inference or paid cloud provider is required by default.
+
+`ULTRON_ALWAYS_ON=1` enables a 60-second zero-credit advisory standby heartbeat. `/api/standby` and `/api/health` expose the standby posture without claiming unattended tool execution. See [GrokBot](docs/GROKBOT.md).
