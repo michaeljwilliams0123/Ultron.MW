@@ -1,3 +1,3 @@
 # Semantic Alpha
 
-Alpha outcome: pending explicitly scoped marker
+Alpha outcome: verified explicitly scoped marker

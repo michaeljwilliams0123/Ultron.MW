@@ -1,3 +1,3 @@
 # Semantic Beta
 
-Beta outcome: pending explicitly scoped marker
+Beta outcome: verified explicitly scoped marker
