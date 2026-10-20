@@ -199,7 +199,7 @@ test('existing main report is updated with blob SHA rather than rejected HTTP 42
   const result=await publishSelfScanPr(args(mock));
   assert.equal(result.status,'created');
   assert.equal(mock.state.putCalls.length,1);
-  assert.equal(mock.state.putCalls[0].sha,'d'.repeat(40));
+  assert.equal(mock.state.putCalls[0].body.sha,'d'.repeat(40));
   assert.equal(mock.state.postCalls.filter(x=>x.path===ROOT+'/git/refs').length,1);
 });
 test('orphan branch at exact main is safely resumed rather than wedging hourly scan',async()=>{
@@ -208,5 +208,5 @@ test('orphan branch at exact main is safely resumed rather than wedging hourly s
   const result=await publishSelfScanPr(args(mock));
   assert.equal(result.status,'created');
   assert.equal(mock.state.postCalls.filter(x=>x.path===ROOT+'/git/refs').length,0);
-  assert.equal(mock.state.putCalls[0].sha,'d'.repeat(40));
+  assert.equal(mock.state.putCalls[0].body.sha,'d'.repeat(40));
 });
