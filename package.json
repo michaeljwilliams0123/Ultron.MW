@@ -1,12 +1,2 @@
 {
-  "name": "ultron-mw",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
-  "dependencies": {
-    "@huggingface/transformers": "4.3.1"
-  }
-}
+  
