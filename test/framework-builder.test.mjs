@@ -26,9 +26,13 @@ function fixture(){
     if(path===ROOT+'/git/commits/'+HEAD)return {tree:{sha:TREE}};
     if(path===ROOT+'/git/trees/'+TREE+'?recursive=1')
       return {truncated:false,tree:[{type:'blob',path:'reports/self-scan/current.md'}]};
-    const match=path.match(new RegExp('^'+ROOT+'/contents/(.+)\\\\?ref='+NEXT+'$'));
-    if(match&&nextFiles[match[1]])return {encoding:'base64',
-      content:Buffer.from(nextFiles[match[1]]).toString('base64')};
+    const filePrefix=ROOT+'/contents/';
+    const fileSuffix='?ref='+NEXT;
+    if(path.startsWith(filePrefix)&&path.endsWith(fileSuffix)){
+      const name=path.slice(filePrefix.length,-fileSuffix.length);
+      if(nextFiles[name])return {encoding:'base64',
+        content:Buffer.from(nextFiles[name]).toString('base64')};
+    }
     throw Error('Unexpected GET '+path);
   };
   const blobMap={};
