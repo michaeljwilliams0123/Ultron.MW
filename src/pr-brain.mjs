@@ -107,6 +107,39 @@ function verifyLine(action){
   if(result?.state==='completed')return 'Authenticated exact-head Verify: **'+result.conclusion+'** ('+result.url+').';
   return 'Verify requested but its terminal conclusion was not yet independently observed.';
 }
+/**
+ * Shared, bounded inverse-patch recovery for owner-authored and CPU-model edits.
+ * A real failure must be read back at the exact candidate SHA. Unknown, blocked,
+ * cancelled or pending runs are not evidence of a source defect.
+ */
+async function restoreFailedVerify({action,pr,patch,get,post,observeVerify}) {
+  if(action?.verify?.state!=='completed' ||
+     action.verify.conclusion!=='failure' ||
+     action.verify.sha!==pr.head.sha ||
+     !Array.isArray(action.rollbackChanges) ||
+     action.rollbackChanges.length===0)return;
+  try {
+    const manifest=JSON.stringify({
+      objective:'Restore source after independently failed Verify',
+      baseSha:pr.head.sha,changes:action.rollbackChanges,
+    });
+    const restored=await patch({pr,manifest,get,post});
+    pr.head.sha=restored.commitSha;
+    action.rollback={status:'committed',sha:restored.commitSha};
+    try {
+      action.rollback.verify=await observeVerify({
+        get,post,branch:pr.head.ref,headSha:pr.head.sha,
+      });
+    } catch(error) {
+      action.rollback.verify={state:'pending',conclusion:null};
+      action.rollback.verifyError=error instanceof Error?error.message:'Restored-head Verify unavailable';
+    }
+  } catch(error) {
+    action.rollback={status:'failed',
+      reason:error instanceof Error?error.message:'One-step rollback unavailable'};
+  }
+}
+
 function answer({turn,pr,intent,findings,history,action}){
   const lines=[MARK+turn.commentId+' -->','### Ultron PR brain','',
     'PR #'+turn.number+' to main; head '+pr.head.sha.slice(0,12),
@@ -200,6 +233,14 @@ function answer({turn,pr,intent,findings,history,action}){
   case 'patch':lines.push('Exact-context source patch committed to this PR branch.',
     'New commit: '+action.commitSha,'Files: '+action.paths.join(', '),
     verifyLine(action),
+    action.rollback?.status==='committed'?
+      'Failed source patch automatically restored by an auditable commit: '+action.rollback.sha+
+      '. '+(action.rollback.verify?.state==='completed'?
+        'Restored-head Verify: **'+action.rollback.verify.conclusion+'**.':
+        'Restored-head Verify has not completed.'):
+    action.rollback?.status==='failed'?
+      'Bounded source rollback did not finish: '+short(action.rollback.reason):
+      'No independently verified source failure required rollback.',
     'No automatic merge or production deployment occurred.');break;
   default:lines.push('I cannot verify an open-ended answer or safely infer source changes from that message.',
     'Try @ultron findings or @ultron address ci-head-unobserved.',
@@ -266,23 +307,7 @@ export async function handlePrConversation({event,eventName,actor,repository,get
         action.verify=await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha});
       }catch(error){action.verify={state:'pending',conclusion:null};
         action.verifyError=error instanceof Error?error.message:'Verify could not be observed';}
-      // One bounded, exact-context undo on independent Verify failure.
-      // Never force-update main; this writes a new auditable revert commit
-      // and independently verifies the restored PR head.
-      if(action.verify?.state==='completed'&&action.verify.conclusion!=='success'&&
-        Array.isArray(action.rollbackChanges)&&action.rollbackChanges.length){
-        try{
-          const manifest=JSON.stringify({objective:'Restore source after failed model Verify',
-            baseSha:pr.head.sha,changes:action.rollbackChanges});
-          const restored=await patch({pr,manifest,get,post});
-          pr.head.sha=restored.commitSha;
-          action.rollback={status:'committed',sha:restored.commitSha};
-          try{action.rollback.verify=await observeVerify({get,post,
-            branch:pr.head.ref,headSha:pr.head.sha});}
-          catch(error){action.rollback.verify={state:'pending',conclusion:null};}
-        }catch(error){action.rollback={status:'failed',
-          reason:error instanceof Error?error.message:'Rollback failed'};}
-      }
+      await restoreFailedVerify({action,pr,patch,get,post,observeVerify});
     }
   }else if(intent.kind==='build'){
     try{
@@ -295,8 +320,20 @@ export async function handlePrConversation({event,eventName,actor,repository,get
     }catch(error){action={error:error instanceof Error?error.message:'Build unavailable'};}
   }else if(intent.kind==='patch'){
     action=await patch({pr,manifest:intent.manifest,get,post});
+    const changes=JSON.parse(intent.manifest).changes;
+    action.rollbackChanges=changes.map(item=>({
+      path:item.path,before:item.after,after:item.before,
+    }));
     pr.head.sha=action.commitSha;
-    action.verify=await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha});
+    try {
+      action.verify=await observeVerify({
+        get,post,branch:pr.head.ref,headSha:pr.head.sha,
+      });
+    } catch(error) {
+      action.verify={state:'pending',conclusion:null};
+      action.verifyError=error instanceof Error?error.message:'Verify unavailable';
+    }
+    await restoreFailedVerify({action,pr,patch,get,post,observeVerify});
   }
   const body=answer({turn,pr,intent,findings,history:prior,action});
   const replyPath=turn.inline?ROOT+'/pulls/'+turn.number+'/comments/'+turn.commentId+
