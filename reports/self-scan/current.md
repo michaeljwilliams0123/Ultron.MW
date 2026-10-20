@@ -1,10 +1,10 @@
 <!-- ULTRON_SELF_SCAN_REPORT_V1 -->
 # Ultron self-scan — actionable source findings
 
-Finding signature: 386065a0cac6f5ac1dd05ea8ad5e194f27cc733763d10fdd17ba7b41e74fe0f0
-Observed GitHub main SHA: 51140b441ebffcf7e876c3b1c21810dc9491912f
-Observed source tree SHA: 4e0fce64fe4efd1548b90729e5cf95f919d95658
-Observed at: 2026-10-20T17:14:43.453Z
+Finding signature: b7885086a40f393dbd2553571295419657d5a4e5a759db1241f5b5a9ed7806a4
+Observed GitHub main SHA: ab5c36e10ac5cf1937dc548b4727202d60e82f78
+Observed source tree SHA: 000af6913213cbf8e2ced47c0bd000f6f38bdb44
+Observed at: 2026-10-20T23:56:23.080Z
 Authority: exact GitHub main, not a deployed production runtime
 
 ## Findings
@@ -16,13 +16,13 @@ Authority: exact GitHub main, not a deployed production runtime
 
 ## Scanned source
 
-- Files inventoried: 120
-- Source files: 35
-- Test files: 44
+- Files inventoried: 138
+- Source files: 37
+- Test files: 46
 - Workflow files: 5
 - Static evidence coverage: 1
 - Observed current-main CI: success
-- GitHub CI evidence run: https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/39437188259
+- GitHub CI evidence run: https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/39511002363
 
 ## Static wiring checks
 
