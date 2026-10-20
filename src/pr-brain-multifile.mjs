@@ -52,13 +52,20 @@ async function readSources(pr,paths,get) {
     throw Error('Multi-file context exceeds bounded CPU memory budget');
   return sources;
 }
-function promptFor(source,objective) {
-  const target=selectTargetLine(source.content,objective);
-  const system='Repair this exact existing source file. Return only ONE corrected complete source line; never invent a file or claim tests passed.';
-  const user='Task: '+objective+'\nPath: '+source.path+
-    '\nOriginal source:\n'+source.content+
-    '\nSuggested exact line:\n'+(target||'(select a line from source)')+
-    '\nReturn only the replacement line.';
+function promptFor(source,objective,goal) {
+  // Prefer an exact observed old-word line over fuzzy ranking.
+  const matching=goal?source.content.split('\n').filter(line=>
+    wordCount(line,goal.from)>0&&line.trim().length>10):[];
+  if(goal&&matching.length!==1)
+    throw Error('Explicit objective has no unique source line: '+source.path);
+  const target=goal?matching[0]:selectTargetLine(source.content,objective);
+  const system='Edit an existing file. Return ONE complete corrected source line, with its original prefix and unrelated words unchanged. No JSON, fences, or explanation.';
+  const directive=goal?'Replace the whole word '+JSON.stringify(goal.from)+' with '+
+    JSON.stringify(goal.to)+'. The new line must NOT contain '+
+    JSON.stringify(goal.from)+'.\n':'';
+  const user='Objective: '+objective+'\nPath: '+source.path+'\n'+directive+
+    'Exact original line:\n'+(target||'(choose an existing source line)')+
+    '\nReply only with the complete corrected line:';
   return {target,system,user};
 }
 
@@ -102,7 +109,7 @@ export async function generateAndApplyMulti({
   const goal=explicitRewriteGoal(objective);
   const correctedPaths=[];
   for(const source of sources) {
-    const task=promptFor(source,objective);
+    const task=promptFor(source,objective,goal);
     const common={path:source.path,head:pr.head.sha,objective,targetLine:task.target};
     let reply=await model([{role:'system',content:task.system},{role:'user',content:task.user}]);
     let manifest;
@@ -117,9 +124,29 @@ export async function generateAndApplyMulti({
       manifest=extractModelPatch(reply,common);
     }
     let change=JSON.parse(manifest).changes[0];
-    if(!goalMet(source.content,change,goal)) {
+    if(goal&&!goalMet(source.content,change,goal)){
+      // A passing syntax preflight does not prove the objective. Provide
+      // explicit corrective feedback to the same pinned CPU model once.
+      const revision=await model([
+        {role:'system',content:task.system},
+        {role:'user',content:'The previous suggestion did not replace '+
+          JSON.stringify(goal.from)+' with '+JSON.stringify(goal.to)+'.\n'+
+          'Exact original line:\n'+task.target+'\n'+
+          'Return the complete line with the requested replacement, nothing else.'}
+      ]);
+      try{
+        const proposal=extractModelPatch(revision,common);
+        const candidate=JSON.parse(proposal).changes[0];
+        if(goalMet(source.content,candidate,goal)){
+          change=candidate;
+          manifest=proposal;
+        }
+      }catch{/* Keep the existing bounded and disclosed Markdown fallback. */}
+    }
+    if(!goalMet(source.content,change,goal)){
       const corrected=explicitMarkdownCorrection(source,task.target,goal);
-      if(!corrected)throw Error('Model output did not satisfy explicit source objective: '+source.path);
+      if(!corrected)
+        throw Error('Model output did not satisfy explicit source objective: '+source.path);
       change=corrected;
       manifest=JSON.stringify({objective:objective.slice(0,300),baseSha:pr.head.sha,changes:[change]});
       correctedPaths.push(source.path);
