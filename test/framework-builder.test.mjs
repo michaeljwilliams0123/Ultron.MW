@@ -21,7 +21,8 @@ function fixture(){
     if(path===ROOT+'/git/ref/heads/main')return {object:{sha:main}};
     if(path===ROOT+'/git/ref/heads/'+pr.head.ref)return {object:{sha:head}};
     if(path===ROOT+'/compare/'+main+'...'+HEAD)
-      return {status:'ahead',behind_by:0,merge_base_commit:{sha:main}};
+      return {status:main===MAIN?'ahead':'diverged',behind_by:main===MAIN?0:1,
+        merge_base_commit:{sha:MAIN}};
     if(path===ROOT+'/git/commits/'+HEAD)return {tree:{sha:TREE}};
     if(path===ROOT+'/git/trees/'+TREE+'?recursive=1')
       return {truncated:false,tree:[{type:'blob',path:'reports/self-scan/current.md'}]};
@@ -34,7 +35,7 @@ function fixture(){
   const post=async(path,body)=>{
     log.push('POST '+path);
     if(path===ROOT+'/git/blobs'){
-      const sha=String.fromCharCode(102+Object.keys(blobMap).length).repeat(40);
+      const sha=String(Object.keys(blobMap).length+1).repeat(40);
       blobMap[sha]=body.content;return {sha};
     }
     if(path===ROOT+'/git/trees'){
