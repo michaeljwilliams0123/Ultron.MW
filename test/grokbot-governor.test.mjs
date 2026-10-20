@@ -34,7 +34,7 @@ test('GrokBot council produces a deterministic zero-credit proceed receipt', () 
   assert.equal(first.authority.executable, false);
   assert.equal(first.modelInvocations, 0);
   assert.equal(first.creditCost, 0);
-  assert.equal(first.participants.length, 3);
+  assert.equal(first.participants.length, 7);
   assert.match(first.fingerprint, /^[a-f0-9]{64}$/);
 });
 
