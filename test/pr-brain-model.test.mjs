@@ -99,3 +99,16 @@ test('bounded corrective retry can turn non-JSON model output into a scoped veri
   assert.equal(count,2);
   assert.equal(applied.verifiedCommit,true);
 });
+
+test('AFTER-labeled model source patch preserves exact observed line anchor',()=>{
+  const r=JSON.parse(extractModelPatch('AFTER: Alpha outcome: verified',{
+    path:'docs/alpha.md',head:SHA,objective:'replace pending',
+    targetLine:'Alpha outcome: pending'
+  }));
+  assert.deepEqual(r.changes,[{path:'docs/alpha.md',
+    before:'Alpha outcome: pending',after:'Alpha outcome: verified'}]);
+  assert.throws(()=>extractModelPatch('AFTER: Unrelated outcome: verified',{
+    path:'docs/alpha.md',head:SHA,objective:'replace pending',
+    targetLine:'Alpha outcome: pending'
+  }),/valid exact-context/);
+});

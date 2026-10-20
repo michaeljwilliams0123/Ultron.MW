@@ -13,3 +13,7 @@ CI on a PR branch must independently confirm functional correctness. No inferenc
 ## Semantic acceptance
 
 When the owner states an explicit single-word request such as 'from pending to verified', Ultron checks that the old marker decreases and the new marker increases **in every edited file** before committing. If a model misses the instruction, an unambiguous Markdown source line can be repaired deterministically from the owner's exact substitution; the receipt explicitly discloses the corrected paths. Generated JavaScript is never silently rewritten this way. Other objectives are marked semantically unscored and require acceptance tests beyond syntax and CI.
+
+## Corrective model prompting
+
+For an explicit `from OLD to NEW` request, select the unique source line that contains OLD, prompt with the exact requested edit, and retry the model once with targeted correction when the first valid-looking patch misses the objective. An anchored `AFTER:` response is parsed without relaxing source/path guards. The existing deterministic Markdown-only substitution remains an explicitly disclosed last resort. All commits still require exact-context preflight, atomic GitHub writes, independent full Verify, and inverse rollback where appropriate.

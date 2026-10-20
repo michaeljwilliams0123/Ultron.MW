@@ -111,3 +111,33 @@ test('local model output that misses explicit goal gets deterministic Markdown c
   assert.deepEqual(result.goalAssurance.correctedPaths,pathsLocal);
   assert.equal(result.goalAssurance.mode,'explicit-substitution');
 });
+
+test('semantic miss is repaired by targeted model retry before any deterministic fallback',async()=>{
+  const originals=['Alpha outcome: pending','Beta outcome: pending'];
+  let calls=0,writes=0;
+  const result=await generateAndApplyMulti({
+    pr,paths,objective:'change each outcome from pending to verified',
+    get:async p=>{
+      if(p===ROOT+'/git/commits/'+SHA)return {tree:{sha:TREE}};
+      if(p===ROOT+'/git/trees/'+TREE+'?recursive=1')
+        return {truncated:false,tree:paths.map(path=>({type:'blob',path}))};
+      const i=paths.findIndex(path=>p===ROOT+'/contents/'+path+'?ref='+SHA);
+      if(i>=0)return {sha:COMMIT,encoding:'base64',content:Buffer.from(originals[i]+'\n').toString('base64')};
+      throw Error('Unexpected source '+p);
+    },post:async()=>{},
+    model:async messages=>{
+      calls++;
+      const i=messages[1].content.includes('Alpha outcome')?0:1;
+      return calls%2?originals[i]+'!':originals[i].replace('pending','verified');
+    },
+    apply:async({manifest})=>{
+      writes++;
+      const p=JSON.parse(manifest);
+      assert.deepEqual(p.changes.map(x=>x.after),['Alpha outcome: verified','Beta outcome: verified']);
+      return {commitSha:COMMIT,paths};
+    }
+  });
+  assert.equal(calls,4);
+  assert.equal(writes,1);
+  assert.deepEqual(result.goalAssurance.correctedPaths,[]);
+});
