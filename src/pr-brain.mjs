@@ -4,9 +4,12 @@ import { pathToFileURL } from 'node:url';
 import { githubRequest } from './cloud-pr.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
 import { generateAndApply } from './pr-brain-model.mjs';
+import { parseMultiFileRequest, generateAndApplyMulti } from './pr-brain-multifile.mjs';
 import { dispatchAndObserveVerify } from './pr-brain-verify.mjs';
 import { buildFrameworkOnPr } from './framework-builder.mjs';
 import { CREDENTIAL_POLICY } from './capability-credentials.mjs';
+import { providerAuthorizationPlan } from './provider-authority.mjs';
+import { publishTelemetry } from './observability.mjs';
 
 const OWNER='michaeljwilliams0123';
 const REPO=OWNER+'/Ultron.MW';
@@ -66,9 +69,13 @@ export function routePrTurn(body,history=[]){
   if(create)return {kind:'build',type:create[1].toLowerCase(),slug:create[2].toLowerCase()};
   if(/^(credentials|secrets|tokens|credential status)\??$/i.test(value))
     return {kind:'credentials'};
+  const credentials=value.match(/^credentials\s+(github|datadog|huggingface)\??$/i);
+  if(credentials)return {kind:'credentials',provider:credentials[1].toLowerCase()};
   if(/^(rescan|scan again|scan yourself)\??$/i.test(value))return {kind:'rescan'};
   const specific=value.match(/^(?:address|fix|explain|why|plan)\s+([a-z0-9][a-z0-9-]{0,80})\??$/i);
   if(specific)return {kind:'address',code:specific[1].toLowerCase()};
+  const multi=parseMultiFileRequest(value);
+  if(multi)return multi;
   const implement=value.match(/^implement\s+([\s\S]{5,500})$/i);
   if(implement)return {kind:'implement',objective:implement[1].trim()};
   const patch=value.match(/^(?:patch|apply)\s*\n([\s\S]+)$/i);
@@ -137,6 +144,16 @@ function answer({turn,pr,intent,findings,history,action}){
       lines.push('No green regression claim until exact-head CI independently finishes.');
     break;
   case 'credentials':
+    if(intent.provider){
+      const grant=providerAuthorizationPlan(intent.provider,{env:process.env});
+      lines.push('Provider: '+grant.provider,
+        'Credential readiness: '+grant.status,
+        'Grant mode: '+grant.mode,
+        'Scope requirements: '+grant.requestedScopes.join(', '),
+        'Next: '+grant.next,
+        'No third-party credential has been minted by this comment.');
+      break;
+    }
     lines.push('Owner-controlled credentials framework:',
       '- '+CREDENTIAL_POLICY.owner,
       '- '+CREDENTIAL_POLICY.externalProviders,
@@ -157,11 +174,11 @@ function answer({turn,pr,intent,findings,history,action}){
     break;
   case 'rescan':lines.push('Self-scan workflow dispatched on main.',
     'Material changes update the existing findings PR; no Issue is created.');break;
-  case 'implement':
+  case 'implement':case 'implement-multi':
     if(action.error)lines.push('CPU model implementation did not produce an accepted source change.',
       'Reason: '+short(action.error,240),
       'No code commit, test pass or deployment is claimed. Try a smaller objective naming one file.');
-    else lines.push('Public CPU model proposed a source change, validated and committed on this PR branch.',
+    else lines.push('Public CPU model proposed '+(intent.kind==='implement-multi'?'coordinated source changes':'a source change')+', validated and committed on this PR branch.',
       'Model: '+action.model+' (pinned model files)',
       'New source SHA: '+action.commitSha,
       'Changed: '+action.paths.join(', '),
@@ -187,7 +204,8 @@ function answer({turn,pr,intent,findings,history,action}){
   return lines.join('\n');
 }
 export async function handlePrConversation({event,eventName,actor,repository,get,post,patch,
-  generate=generateAndApply,observeVerify=dispatchAndObserveVerify,
+  generate=generateAndApply,generateMulti=generateAndApplyMulti,
+  observeVerify=dispatchAndObserveVerify,
   buildFramework=buildFrameworkOnPr}={}){
   const turn=admitPrTurn(event,eventName,actor,repository);
   if(typeof get!=='function'||typeof post!=='function'||typeof patch!=='function')
@@ -231,9 +249,11 @@ export async function handlePrConversation({event,eventName,actor,repository,get
   }else if(intent.kind==='rescan'){
     await post(ROOT+'/actions/workflows/self-scan-pr.yml/dispatches',{ref:'main'});
     action={requested:true};
-  }else if(intent.kind==='implement'){
+  }else if(intent.kind==='implement'||intent.kind==='implement-multi'){
     try{
-      action=await generate({pr,objective:intent.objective,get,post});
+      action=intent.kind==='implement-multi'?
+        await generateMulti({pr,paths:intent.paths,objective:intent.objective,get,post}):
+        await generate({pr,objective:intent.objective,get,post});
     }catch(error){action={error:error instanceof Error?error.message:'Model inference failed'};}
     if(!action.error&&SHA.test(action.commitSha||'')){
       pr.head.sha=action.commitSha;
@@ -300,6 +320,21 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
       await appendFile(process.env.GITHUB_STEP_SUMMARY,
         '### Ultron PR brain\n\nStatus: '+result.status+
         '\nPR: #'+(result.prNumber||'n/a')+'\nIntent: '+(result.intent||'none')+'\n');
+    try{
+      const delivered=await publishTelemetry({
+        kind:'pr-execution',state:result.action?.error?'failed':
+          result.action?.verify?.state==='completed'?
+            (result.action.verify.conclusion==='success'?'succeeded':'failed'):
+          result.action?.verify?'pending':
+          result.status==='replied'?'responded':
+          result.status==='ignored'?'skipped':'unknown',
+        intent:result.intent||'unknown',sha:result.action?.commitSha||process.env.GITHUB_SHA,
+        prNumber:result.prNumber,runId:Number(process.env.GITHUB_RUN_ID),
+        checksSucceeded:result.action?.verify?.conclusion==='success'?1:0,
+        checksFailed:result.action?.verify?.conclusion==='failure'?1:0,
+      });
+      console.log('Ultron telemetry: '+delivered.state);
+    }catch{console.log('Ultron telemetry: unavailable');}
     console.log(JSON.stringify(result));
   }catch(e){console.error('Ultron PR brain rejected: '+e.message);process.exitCode=1;}
 }

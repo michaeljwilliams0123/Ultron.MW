@@ -41,6 +41,9 @@ jobs:
           node --check src/pr-brain.mjs
           node --check src/pr-brain-patch.mjs
           node --check src/pr-brain-model.mjs
+          node --check src/pr-brain-multifile.mjs
+          node --check src/observability.mjs
+          node --check src/provider-authority.mjs
           node --check src/framework-builder.mjs
           node --check src/framework-integration-runtime.mjs
           node --check src/capability-credentials.mjs
@@ -62,4 +65,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ULTRON_PUBLIC_CPU_INFERENCE: ${{ github.event.repository.private == false && 'enabled' || 'disabled' }}
+          ULTRON_ENABLE_DATADOG: ${{ vars.ULTRON_ENABLE_DATADOG || '0' }}
+          ULTRON_DATADOG_SITE: ${{ vars.ULTRON_DATADOG_SITE || 'datadoghq.com' }}
+          ULTRON_DATADOG_API_KEY: ${{ secrets.ULTRON_DATADOG_API_KEY }}
         run: node src/pr-brain.mjs
