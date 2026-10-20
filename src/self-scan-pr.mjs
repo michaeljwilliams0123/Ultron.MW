@@ -21,14 +21,13 @@ export function selfScanSignature(report) {
       !SHA.test(report?.sourceAuthority?.treeSha || '') ||
       !Array.isArray(report.evidence) || !Array.isArray(report.weaknesses))
     throw Error('Cannot publish an unverified self-scan');
-  // Only material findings affect the signature. Main SHA and scan timestamp
-  // remain in the audit report, but do not create hourly PR noise.
+  // Only source-route evidence and actual finding changes affect the signature.
+  // File counts, runtime claims, main SHA and timestamp stay in the audit report,
+  // but ordinary file growth must not create spurious findings PRs.
   const material = {
     schema: report.schema,
     sourceEvidence: report.evidence.map(x => [x.kind, x.sourcePath, x.status, x.detail]),
     weaknesses: report.weaknesses.map(x => [x.code, x.priority, x.detail, x.repair]),
-    inventory: report.inventory,
-    uncertainty: report.uncertainty,
   };
   return createHash('sha256').update(JSON.stringify(material)).digest('hex');
 }

@@ -154,6 +154,29 @@ test('identical findings do not create duplicate PR or write on hourly rescan',a
   assert.equal(mock.state.postCalls.length,before.post);
 });
 
+test('ordinary source-tree inventory growth is not a material new finding',async()=>{
+  const original=scanReport();
+  const additionalFiles=scanReport({time:'2026-10-20T22:30:00Z'});
+  additionalFiles.inventory={allFiles:129,source:40,tests:48,workflows:5};
+  additionalFiles.uncertainty={...additionalFiles.uncertainty,
+    sourceCoverage:original.uncertainty.sourceCoverage};
+  assert.equal(selfScanSignature(original),selfScanSignature(additionalFiles));
+  const mock=github();
+  await publishSelfScanPr(args(mock,original));
+  const reread=await publishSelfScanPr(args(mock,additionalFiles));
+  assert.equal(reread.status,'already-open');
+  assert.equal(mock.state.putCalls.length,1);
+  assert.equal(mock.state.postCalls.filter(x=>x.path.endsWith('/pulls')).length,1);
+});
+
+test('source-evidence regression changes self-scan signature even if file count does not',()=>{
+  const original=scanReport();
+  const regressed=scanReport();
+  regressed.evidence=[{...regressed.evidence[0],status:'missing',
+    detail:'Native self-scan publisher route missing'}];
+  assert.notEqual(selfScanSignature(original),selfScanSignature(regressed));
+});
+
 test('new material findings update existing PR, not create additional PRs',async()=>{
   const mock=github();
   const first=await publishSelfScanPr(args(mock));
