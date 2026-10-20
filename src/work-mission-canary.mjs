@@ -1,1 +1,1 @@
-export const missionState = 'pending';
+export const missionState = 'verified';
