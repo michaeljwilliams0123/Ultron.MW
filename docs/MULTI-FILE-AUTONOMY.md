@@ -9,3 +9,7 @@ This route runs a pinned, free CPU model once per existing source file (with a b
 For now the route supports **2–4 explicitly named existing files** with a combined source context budget of 18 KB. A missing, ambiguous, or unsafe source path aborts before any mutation. New code modules and API/MCP connector files are created through existing separate generator commands. This is broadening code generation, not unrestricted authority, unattended root shell, arbitrary third-party credential creation, or proof that a small model reliably solves all development objectives.
 
 CI on a PR branch must independently confirm functional correctness. No inference response alone counts as execution evidence.
+
+## Semantic acceptance
+
+When the owner states an explicit single-word request such as 'from pending to verified', Ultron checks that the old marker decreases and the new marker increases **in every edited file** before committing. If a model misses the instruction, an unambiguous Markdown source line can be repaired deterministically from the owner's exact substitution; the receipt explicitly discloses the corrected paths. Generated JavaScript is never silently rewritten this way. Other objectives are marked semantically unscored and require acceptance tests beyond syntax and CI.

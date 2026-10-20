@@ -61,6 +61,33 @@ function promptFor(source,objective) {
     '\nReturn only the replacement line.';
   return {target,system,user};
 }
+
+/** Exact word substitution is the only semantic task we can score deterministically. */
+export function explicitRewriteGoal(objective) {
+  const match=String(objective||'').match(/\bfrom\s+([a-z][a-z0-9-]{1,39})\s+to\s+([a-z][a-z0-9-]{1,39})\b/i);
+  return match&&match[1].toLowerCase()!==match[2].toLowerCase()?
+    Object.freeze({from:match[1],to:match[2]}):null;
+}
+function wordCount(content,word) {
+  return (String(content).match(new RegExp('\\b'+word+'\\b','gi'))||[]).length;
+}
+function goalMet(original,change,goal) {
+  if(!goal)return true;
+  const after=original.replace(change.before,change.after);
+  return wordCount(original,goal.from)>wordCount(after,goal.from) &&
+    wordCount(after,goal.to)>wordCount(original,goal.to);
+}
+/** Repair a direct, unambiguous Markdown word substitution; never synthesize JS. */
+function explicitMarkdownCorrection(source,target,goal) {
+  if(!goal||!source.path.endsWith('.md')||typeof target!=='string')return null;
+  if(wordCount(target,goal.from)!==1 ||
+    source.content.indexOf(target)<0||
+    source.content.indexOf(target,source.content.indexOf(target)+target.length)>=0)
+    return null;
+  const after=target.replace(new RegExp('\\b'+goal.from+'\\b','i'),goal.to);
+  return after!==target?{path:source.path,before:target,after}:null;
+}
+
 /** Each candidate is independently preflighted before ONE atomic multi-file commit. */
 export async function generateAndApplyMulti({
   pr,paths,objective,get,post,model=localCpuInference,apply=applyPrPatch
@@ -72,6 +99,8 @@ export async function generateAndApplyMulti({
   const sources=await readSources(pr,parsed.paths,get);
   const changes=[];
   const preflights=[];
+  const goal=explicitRewriteGoal(objective);
+  const correctedPaths=[];
   for(const source of sources) {
     const task=promptFor(source,objective);
     const common={path:source.path,head:pr.head.sha,objective,targetLine:task.target};
@@ -87,7 +116,14 @@ export async function generateAndApplyMulti({
       ]);
       manifest=extractModelPatch(reply,common);
     }
-    const change=JSON.parse(manifest).changes[0];
+    let change=JSON.parse(manifest).changes[0];
+    if(!goalMet(source.content,change,goal)) {
+      const corrected=explicitMarkdownCorrection(source,task.target,goal);
+      if(!corrected)throw Error('Model output did not satisfy explicit source objective: '+source.path);
+      change=corrected;
+      manifest=JSON.stringify({objective:objective.slice(0,300),baseSha:pr.head.sha,changes:[change]});
+      correctedPaths.push(source.path);
+    }
     const check=assertModelSourceSafe({path:source.path,original:source.content,manifest});
     changes.push(change);
     preflights.push({path:source.path,bytes:check.bytes,validated:check.validated});
@@ -99,6 +135,7 @@ export async function generateAndApplyMulti({
   const result=await apply({pr,manifest,get,post});
   return {...result,rollbackChanges:changes.map(x=>({path:x.path,before:x.after,after:x.before})),
     preflight:preflights,sourcePaths:parsed.paths,
+    goalAssurance:{mode:goal?'explicit-substitution':'unscored',correctedPaths},
     generatedBy:'public-CPU-ONNX-inference',model:'onnx-community/Qwen2.5-0.5B-Instruct',
     verifiedCommit:true};
 }
