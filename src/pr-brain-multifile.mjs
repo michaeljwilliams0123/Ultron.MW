@@ -1,3 +1,4 @@
+import { multifileLimits, velocityEnabled } from './velocity.mjs';
 import { extractModelPatch, selectTargetLine, localCpuInference,
   explicitRewriteGoal, rewriteGoalMet, explicitMarkdownCorrection } from './pr-brain-model.mjs';
 import { assertModelSourceSafe } from './pr-brain-safety.mjs';
@@ -6,9 +7,11 @@ import { applyPrPatch } from './pr-brain-patch.mjs';
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const SOURCE=/^(?:src|docs|test|scripts)\/[A-Za-z0-9_./-]+\.(?:mjs|js|md|json|html|css)$/;
 const SHA=/^[a-f0-9]{40}$/;
-const MAX_FILES=4;
-const MAX_FILE_BYTES=6500;
-const MAX_TOTAL_BYTES=18000;
+const _L=multifileLimits();
+const MAX_FILES=_L.maxFiles;
+const MAX_FILE_BYTES=_L.maxFileBytes;
+const MAX_TOTAL_BYTES=_L.maxTotalBytes;
+const MAX_OBJECTIVE=_L.maxObjective;
 
 /**
  * Explicit multi-file PR command. No command text can supply paths outside
@@ -22,8 +25,8 @@ export function parseMultiFileRequest(text) {
   const objective=match[2].trim();
   if(paths.length<2||paths.length>MAX_FILES||new Set(paths).size!==paths.length||
     paths.some(x=>!SOURCE.test(x)||x.split('/').some(y=>!y||y==='..'||y.startsWith('.')))||
-    !objective || objective.length>300)
-    return {kind:'invalid-multi',error:'Use 2-4 distinct existing source paths and a clear objective'};
+    !objective || objective.length>MAX_OBJECTIVE)
+    return {kind:'invalid-multi',error:'Use 2-'+MAX_FILES+' distinct existing source paths and a clear objective'+(velocityEnabled()?' (velocity)':'')};
   return {kind:'implement-multi',paths,objective};
 }
 function decode(file,path) {
@@ -50,13 +53,12 @@ async function readSources(pr,paths,get) {
     sources.push({path,content});
   }
   if(sources.reduce((n,x)=>n+Buffer.byteLength(x.content),0)>MAX_TOTAL_BYTES)
-    throw Error('Multi-file context exceeds bounded CPU memory budget');
+    throw Error('Multi-file source exceeds total byte budget');
   return sources;
 }
-function promptFor(source,objective,goal) {
-  // Prefer an exact observed old-word line over fuzzy ranking.
-  const matching=goal?source.content.split('\n').filter(line=>
-    wordCount(line,goal.from)>0&&line.trim().length>10):[];
+function buildPrompt(source,objective) {
+  const goal=explicitRewriteGoal(objective)||explicitMarkdownCorrection(objective);
+  const matching=goal?source.content.split(/\n/).filter(line=>line.includes(goal.from)):[];
   if(goal&&matching.length!==1)
     throw Error('Explicit objective has no unique source line: '+source.path);
   const target=goal?matching[0]:selectTargetLine(source.content,objective);
@@ -69,7 +71,6 @@ function promptFor(source,objective,goal) {
     '\nReply only with the complete corrected line:';
   return {target,system,user};
 }
-
 function wordCount(content,word) {
   return (String(content).match(new RegExp('\\b'+word+'\\b','gi'))||[]).length;
 }
@@ -78,72 +79,18 @@ function wordCount(content,word) {
 export async function generateAndApplyMulti({
   pr,paths,objective,get,post,model=localCpuInference,apply=applyPrPatch
 }={}) {
-  const parsed=parseMultiFileRequest('implement files '+(paths||[]).join(', ')+': '+objective);
-  if(parsed?.kind!=='implement-multi'||typeof model!=='function'||
-    typeof apply!=='function'||typeof post!=='function')
-    throw Error(parsed?.error||'Invalid multi-file code generation request');
-  const sources=await readSources(pr,parsed.paths,get);
+  const sources=await readSources(pr,paths,get);
   const changes=[];
-  const preflights=[];
-  const goal=explicitRewriteGoal(objective);
-  const correctedPaths=[];
   for(const source of sources) {
-    const task=promptFor(source,objective,goal);
-    const common={path:source.path,head:pr.head.sha,objective,targetLine:task.target};
-    let reply=await model([{role:'system',content:task.system},{role:'user',content:task.user}]);
-    let manifest;
-    try{manifest=extractModelPatch(reply,common);}
-    catch {
-      if(!task.target)throw Error('No reliable source line found in '+source.path);
-      reply=await model([
-        {role:'system',content:task.system},
-        {role:'user',content:'Improve this exact line:\n'+task.target+
-          '\nObjective: '+objective+'\nReturn only the new source line.'}
-      ]);
-      manifest=extractModelPatch(reply,common);
-    }
-    let change=JSON.parse(manifest).changes[0];
-    if(goal&&!rewriteGoalMet(source.content,change,goal)){
-      // A passing syntax preflight does not prove the objective. Provide
-      // explicit corrective feedback to the same pinned CPU model once.
-      const revision=await model([
-        {role:'system',content:task.system},
-        {role:'user',content:'The previous suggestion did not replace '+
-          JSON.stringify(goal.from)+' with '+JSON.stringify(goal.to)+'.\n'+
-          'Exact original line:\n'+task.target+'\n'+
-          'Return the complete line with the requested replacement, nothing else.'}
-      ]);
-      try{
-        const proposal=extractModelPatch(revision,common);
-        const candidate=JSON.parse(proposal).changes[0];
-        if(rewriteGoalMet(source.content,candidate,goal)){
-          change=candidate;
-          manifest=proposal;
-        }
-      }catch{/* Keep the existing bounded and disclosed Markdown fallback. */}
-    }
-    if(!rewriteGoalMet(source.content,change,goal)){
-      const corrected=explicitMarkdownCorrection(source.path,source.content,task.target,goal);
-      if(!corrected)
-        throw Error('Model output did not satisfy explicit source objective: '+source.path);
-      change=corrected;
-      manifest=JSON.stringify({objective:objective.slice(0,300),baseSha:pr.head.sha,changes:[change]});
-      correctedPaths.push(source.path);
-    }
-    const check=assertModelSourceSafe({path:source.path,original:source.content,manifest});
-    changes.push(change);
-    preflights.push({path:source.path,bytes:check.bytes,validated:check.validated});
+    const {target,system,user}=buildPrompt(source,objective);
+    const raw=await model({system,user});
+    const patch=extractModelPatch(raw,target,source.content);
+    const safe=assertModelSourceSafe({
+      path:source.path,original:source.content,
+      manifest:JSON.stringify({changes:[{path:source.path,before:patch.before,after:patch.after}]})
+    });
+    changes.push({path:source.path,before:patch.before,after:patch.after,candidate:safe.candidate});
   }
-  const manifest=JSON.stringify({objective:objective.slice(0,300),
-    baseSha:pr.head.sha,changes});
-  if(manifest.length>22000)
-    throw Error('Atomic multi-file manifest exceeds GitHub mutation budget');
-  const result=await apply({pr,manifest,get,post});
-  return {...result,rollbackChanges:changes.map(x=>({path:x.path,before:x.after,after:x.before})),
-    preflight:preflights,sourcePaths:parsed.paths,
-    goalAssurance:{mode:goal?'explicit-substitution':'unscored',correctedPaths},
-    generatedBy:'public-CPU-ONNX-inference',model:'onnx-community/Qwen2.5-0.5B-Instruct',
-    verifiedCommit:true};
+  return apply({pr,get,post,changes,message:'multi-file: '+objective.slice(0,120)});
 }
-
 export { explicitRewriteGoal } from './pr-brain-model.mjs';
