@@ -322,7 +322,11 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
         '\nPR: #'+(result.prNumber||'n/a')+'\nIntent: '+(result.intent||'none')+'\n');
     try{
       const delivered=await publishTelemetry({
-        kind:'pr-execution',state:result.status==='replied'?'succeeded':
+        kind:'pr-execution',state:result.action?.error?'failed':
+          result.action?.verify?.state==='completed'?
+            (result.action.verify.conclusion==='success'?'succeeded':'failed'):
+          result.action?.verify?'pending':
+          result.status==='replied'?'responded':
           result.status==='ignored'?'skipped':'unknown',
         intent:result.intent||'unknown',sha:result.action?.commitSha||process.env.GITHUB_SHA,
         prNumber:result.prNumber,runId:Number(process.env.GITHUB_RUN_ID),

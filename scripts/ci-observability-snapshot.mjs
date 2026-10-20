@@ -7,7 +7,7 @@ try {
   if(!Array.isArray(data?.workflow_runs))throw Error('CI inventory unavailable');
   const runs=data.workflow_runs.filter(x=>x.head_branch==='main');
   const completed=runs.filter(x=>x.status==='completed');
-  event={...event,state:'succeeded',runId:completed[0]?.id,
+  event={...event,state:'observed',runId:completed[0]?.id,
     checksSucceeded:completed.filter(x=>x.conclusion==='success').length,
     checksFailed:completed.filter(x=>x.conclusion==='failure').length};
 } catch { event={...event,state:'unknown'}; }

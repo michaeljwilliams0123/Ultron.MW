@@ -51,3 +51,9 @@ test('unapproved Datadog endpoints are rejected',async()=>{
   });
   assert.equal(r.state,'site-unapproved');
 });
+
+test('observability keeps pending and failure states distinct from completion',()=>{
+  assert.equal(executionEvent({kind:'pr-execution',state:'pending'}).state,'pending');
+  assert.equal(executionEvent({kind:'pr-execution',state:'failed'}).state,'failed');
+  assert.equal(executionEvent({kind:'pr-execution',state:'responded'}).state,'responded');
+});
