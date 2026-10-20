@@ -1,3 +1,3 @@
 # Model Quality Alpha
 
-Alpha status: pending
+Alpha status: verified

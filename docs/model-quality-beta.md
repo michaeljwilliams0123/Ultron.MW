@@ -1,3 +1,3 @@
 # Model Quality Beta
 
-Beta status: pending
+Beta status: verified
