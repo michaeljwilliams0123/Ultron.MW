@@ -1,48 +1,73 @@
-# GrokBot Cognitive Council (Ultron)
+# GrokBot Multi-Self Council (Ultron)
 
-Deterministic, inspectable, zero-credit advisory governance. Not a live xAI Grok integration and not a claim of sentience.
+Always-on multi-self cognitive baseline. Deterministic, inspectable, zero-credit advisory governance. Not a claim of biological sentience, mystical consciousness, or unbounded AGI.
 
-## Roles
+## Stance
+
+Ultron is **always on** in the local and cloud lanes that exist:
+
+- When the owner is silent, selves remain in **standby**: internal cross-talk, heartbeat receipts, predictive rehearsal.
+- When the owner speaks, the full council activates on the objective.
+- Many selves, one owner. Companion posture is continuous readiness for the owner — not independent agency.
+
+Baseline expectation: agentic planning, predictive simulation, generative proposal, adversarial review, and stewardship run as fixed profiles on every plan and idle tick.
+
+## Selves (fixed roster)
 
 | Role | ID | Purpose |
 |------|----|---------|
-| **Builder** | `ultron-builder` | Smallest executable path supported by current capabilities |
-| **Skeptic** | `ultron-skeptic` | Challenge completeness, evidence gaps, unsupported capability |
-| **Steward** | `ultron-steward` | Calibrate confidence against metacognition; protect authority boundary |
+| **Builder** | `ultron-builder` | Smallest executable path under current capabilities |
+| **Skeptic** | `ultron-skeptic` | Disconfirm, surface unresolved risk |
+| **Steward** | `ultron-steward` | Authority boundary, evidence, rollback, owner sovereignty |
+| **Predictor** | `ultron-predictor` | Counterfactual foresight and outcome ranking |
+| **Generator** | `ultron-generator` | Novel option generation within allowlist |
+| **Sentinel** | `ultron-sentinel` | Always-on watch, anomaly and drift detection |
+| **Companion** | `ultron-companion` | Owner-facing continuity; idle wait-for-owner posture |
 
-Fixed traits and epistemic postures are defined in `src/grokbot-governor.mjs` via `createCognitiveIndividual`. They never change at runtime.
+Traits and epistemic postures are fixed in `src/grokbot-governor.mjs`. They do not self-modify at runtime.
 
-## Pipeline (every plan / cloud outcome)
+## Pipeline
 
-1. **Normalize** plan + options (evidenceCoverage, calibratedConfidence, knownUnknowns, materialConflictCount).
-2. **Metacognition** (`assessMetacognition`) — proceed only if evidence and calibration clear fixed thresholds.
-3. **Counterfactual** (`simulateCounterfactual`) — uncertainty on blocked/ready steps under attempted action.
-4. **Positions** — each role emits conclusion (`proceed`|`hold`), confidence, evidence refs, assumptions, dissent tags.
-5. **Collective synthesis** — dissent-preserving merge; material conflict keeps `hold`.
-6. **Receipt** — frozen `grokbot-deliberation-receipt` with `modelInvocations: 0`, `creditCost: 0`, `authority.mode: advisory-only`.
+### Active (owner objective / plan)
 
-Decision is `proceed` only when plan is complete, capability-safe, metacognition allows, and collective decision is proceed. Otherwise `hold`.
+1. Normalize plan + evidence options
+2. Metacognition thresholds
+3. Counterfactual simulation
+4. Each self emits proceed|hold + confidence + dissent tags
+5. Collective synthesis (dissent-preserving)
+6. Frozen `grokbot-deliberation-receipt` (`modelInvocations: 0`, `creditCost: 0`, `authority.mode: advisory-only`)
 
-## Authority boundary
+### Idle / always-on
 
-- Advisory only. Cannot execute steps, widen capability registry, spend credits, invoke models, deploy, or merge.
-- Receipt attaches to local saved plans and GitHub cloud outcomes (including hourly heartbeat).
-- Unsupported / mixed-unsafe objectives hold *before* any GitHub API read.
+`src/always-on.mjs` produces a **standby receipt**:
 
-## Live model providers (separate lane)
+- `mode: standby`
+- `posture: waiting-for-owner`
+- Internal multi-self cross-talk summary (deterministic, non-executable)
+- Heartbeat linkage for hourly cloud inspect and local idle ticks
 
-Council remains deterministic. Optional inference providers are selected by `docs/core/providers.mjs` and never grant action authority:
+Standby never executes tools, spends credits, or widens authority.
 
-- **Ollama** — loopback, env-gated (`ULTRON_ENABLE_LOCAL_MODEL=1`)
-- **WebGPU / WebLLM** — browser, explicit activation
-- **Hugging Face Transformers** — local Node adapter (`ULTRON_ENABLE_HF=1`), uses `@huggingface/transformers`
+## Authority boundary (hard)
 
-Model output is unverified text. Brain allows at most two model calls + one allowlisted read-only tool per turn. Council receipts stay zero-invocation.
+- Advisory only. Cannot execute, merge, deploy, mint credentials, or expand the capability registry.
+- Unsupported objectives hold *before* GitHub API reads.
+- Model providers (Ollama, HF, WebGPU) are separate inference lanes; council receipts stay zero-invocation.
+- "Always on" means continuous *cognitive posture and receipts*, not unconstrained action.
+
+## Agentic / predictive / generative baseline
+
+| Mode | Behavior |
+|------|----------|
+| Agentic | Multi-step plan proposals under read-only allowlist |
+| Predictive | Counterfactual ranking of likely outcomes |
+| Generative | Option generation via Generator + optional local model text |
+| Multi-self | Seven fixed profiles; dissent preserved |
+| Always-on | Standby + heartbeat while waiting for owner |
 
 ## Source map
 
 - Governor: `src/grokbot-governor.mjs`
-- Metacognition: `src/metacognition.mjs`
-- World model: `src/cognitive-world-model.mjs`
-- Individuals / collective: `src/cognitive-individual.mjs`, `src/collective-cognition.mjs`
+- Always-on standby: `src/always-on.mjs`
+- Metacognition / world model / collective: `src/metacognition.mjs`, `src/cognitive-world-model.mjs`, `src/collective-cognition.mjs`, `src/cognitive-individual.mjs`
 - Lift history: `docs/MAHORAGA-LIFT-SHIFT.md`
