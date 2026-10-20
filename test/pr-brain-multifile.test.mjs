@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMultiFileRequest, generateAndApplyMulti } from '../src/pr-brain-multifile.mjs';
+import { parseMultiFileRequest, generateAndApplyMulti, explicitRewriteGoal } from '../src/pr-brain-multifile.mjs';
 
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW',SHA='a'.repeat(40);
 const TREE='b'.repeat(40),COMMIT='c'.repeat(40);
@@ -73,4 +73,41 @@ test('missing source file fails before inference',async()=>{
     model:async()=>{calls++;return 'unused';}
   }),/not present/);
   assert.equal(calls,0);
+});
+
+test('explicit word substitution evaluator distinguishes semantic correctness from CI',()=>{
+  const {from,to}=explicitRewriteGoal('rewrite each outcome line from pending to verified');
+  assert.equal(from,'pending');assert.equal(to,'verified');
+  assert.equal(explicitRewriteGoal('make it better'),null);
+});
+test('local model output that misses explicit goal gets deterministic Markdown correction',async()=>{
+  const originals=['Alpha outcome: pending','Beta outcome: pending'];
+  const pathsLocal=['docs/sample-one.md','docs/sample-two.md'];
+  let applies=0;
+  const result=await generateAndApplyMulti({
+    pr,paths:pathsLocal,
+    objective:'replace each outcome from pending to verified',
+    get:async p=>{
+      if(p===ROOT+'/git/commits/'+SHA)return {tree:{sha:TREE}};
+      if(p===ROOT+'/git/trees/'+TREE+'?recursive=1')
+        return {truncated:false,tree:pathsLocal.map(path=>({type:'blob',path}))};
+      const i=pathsLocal.findIndex(path=>p===ROOT+'/contents/'+path+'?ref='+SHA);
+      if(i>=0)return {sha:COMMIT,encoding:'base64',content:Buffer.from(originals[i]+'\n').toString('base64')};
+      throw Error('Unknown source');
+    },
+    post:async()=>{},
+    model:async messages=>{
+      const i=messages[1].content.includes('sample-one')?0:1;
+      return JSON.stringify({changes:[{path:pathsLocal[i],before:originals[i],after:originals[i]+'!'}]});
+    },
+    apply:async({manifest})=>{
+      applies++;
+      const m=JSON.parse(manifest);
+      assert.deepEqual(m.changes.map(c=>c.after),['Alpha outcome: verified','Beta outcome: verified']);
+      return {commitSha:COMMIT,paths:pathsLocal};
+    }
+  });
+  assert.equal(applies,1);
+  assert.deepEqual(result.goalAssurance.correctedPaths,pathsLocal);
+  assert.equal(result.goalAssurance.mode,'explicit-substitution');
 });
