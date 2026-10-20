@@ -25,8 +25,8 @@ function scanReport({weakness='runtime untested',time='2026-10-19T21:00:00Z'}={}
       independentLearningGain:'not-established'},
   };
 }
-function github() {
-  const state={main:MAIN,branch:null,branchSha:null,branchFile:null,landedFile:null,
+function github({landedFile=null,orphanBranch=false}={}) {
+  const state={main:MAIN,branch:null,branchSha:null,branchFile:null,landedFile,
     pr:null,postCalls:[],putCalls:[],getCalls:[]};
   const file=text=>text?{sha:'d'.repeat(40),encoding:'base64',
     content:Buffer.from(text).toString('base64')}:null;
@@ -54,8 +54,14 @@ function github() {
       return file(ref===state.main?state.landedFile:
         ref===state.branch?state.branchFile:null);
     }
-    if(path.startsWith(ROOT+'/git/ref/heads/'))
+    if(path.startsWith(ROOT+'/git/ref/heads/')){
+      if(orphanBranch && !state.branch){
+        state.branch=path.slice((ROOT+'/git/ref/heads/').length);
+        state.branchSha=MAIN;
+        state.branchFile=state.landedFile;
+      }
       return state.branch ? get(path):null;
+    }
     throw Error('Unexpected GET optional '+path);
   };
   const post=async(path,body)=>{
@@ -84,7 +90,8 @@ function github() {
     state.putCalls.push({path,body});
     assert.equal(path,REPORT_PATH);
     assert.equal(body.branch,state.branch);
-    if(state.branchFile)assert.equal(body.sha,'d'.repeat(40));
+    if(state.branchFile || state.landedFile)
+      assert.equal(body.sha,'d'.repeat(40));
     else assert.equal(body.sha,undefined);
     state.branchFile=Buffer.from(body.content,'base64').toString('utf8');
     state.branchSha=NEW;
@@ -184,4 +191,22 @@ test('scan signatures bind material evidence, not wall-clock time',()=>{
   assert.notEqual(same,selfScanSignature(scanReport({weakness:'different'})));
   assert.equal(reportSignature(renderScanReport(scanReport())),same);
   assert.equal(reportSignature('this is not a scan'),null);
+});
+
+test('existing main report is updated with blob SHA rather than rejected HTTP 422',async()=>{
+  const existing=renderScanReport(scanReport({weakness:'prior finding'}));
+  const mock=github({landedFile:existing});
+  const result=await publishSelfScanPr(args(mock));
+  assert.equal(result.status,'created');
+  assert.equal(mock.state.putCalls.length,1);
+  assert.equal(mock.state.putCalls[0].sha,'d'.repeat(40));
+  assert.equal(mock.state.postCalls.filter(x=>x.path===ROOT+'/git/refs').length,1);
+});
+test('orphan branch at exact main is safely resumed rather than wedging hourly scan',async()=>{
+  const existing=renderScanReport(scanReport({weakness:'prior finding'}));
+  const mock=github({landedFile:existing,orphanBranch:true});
+  const result=await publishSelfScanPr(args(mock));
+  assert.equal(result.status,'created');
+  assert.equal(mock.state.postCalls.filter(x=>x.path===ROOT+'/git/refs').length,0);
+  assert.equal(mock.state.putCalls[0].sha,'d'.repeat(40));
 });

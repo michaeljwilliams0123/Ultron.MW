@@ -140,17 +140,23 @@ export async function publishSelfScanPr({
   const active = scanPRs[0] ?? null;
   const branch = active?.head.ref || BRANCH_PREFIX + signature.slice(0,16);
   const branchPath = REPO_API + '/git/ref/heads/' + branch;
+  // A successful ref creation can precede a rejected/unfinished file write.
+  // Recover only an orphan that still points to the exact observed main.
+  const orphan = !active ? await getOptional(branchPath) : null;
   if (active) {
     const confirmed = await get(REPO_API + '/pulls/' + active.number);
     if (!validatePull(confirmed) || confirmed.head.ref !== branch)
       throw Error('Active scan PR no longer matches verified routing');
-  } else if (await getOptional(branchPath)) {
-    throw Error('Existing scan branch without active PR; reconcile before reuse');
+  } else if (orphan?.object?.sha !== undefined &&
+    orphan.object.sha !== executorSha) {
+    throw Error('Orphan scan branch advanced; cannot safely reuse it');
   }
 
+  // New branches inherit main's report. PUT requires its blob SHA when the
+  // pathname is already tracked, even if the PR branch itself is brand new.
   const existing = active ?
-    await getOptional(latestPath + '?ref=' + encodeURIComponent(branch)) : null;
-  if (existing && reportSignature(fileBytes(existing)) === signature) {
+    await getOptional(latestPath + '?ref=' + encodeURIComponent(branch)) : currentFile;
+  if (existing && reportSignature(fileBytes(existing)) === signature && active) {
     return { status:'already-open', created:false, updated:false,
       prNumber:active.number, prUrl:active.html_url, branch,
       signature, observedMainSha:executorSha, base:'main' };
@@ -161,7 +167,7 @@ export async function publishSelfScanPr({
   if ((await get(REPO_API + '/git/ref/heads/main'))?.object?.sha !== executorSha)
     throw Error('Main changed since scan; no source publication was attempted');
 
-  if (!active) {
+  if (!active && !orphan) {
     const branchCreated = await post(REPO_API + '/git/refs',
       {ref:'refs/heads/'+branch,sha:executorSha});
     if (branchCreated?.ref !== 'refs/heads/'+branch)
@@ -170,6 +176,9 @@ export async function publishSelfScanPr({
     if (found?.object?.sha !== executorSha)
       throw Error('Scan PR branch could not be independently verified');
   }
+  if (!active && orphan &&
+      (await get(branchPath))?.object?.sha !== executorSha)
+    throw Error('Orphan scan branch changed before reuse');
   const written = await put(latestPath, {
     message:'docs: record observed Ultron self-scan findings',
     branch,
