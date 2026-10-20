@@ -52,7 +52,7 @@ The Node server binds to `127.0.0.1`, validates Host and request Origin, and exp
 
 The owner-action lifecycle is `prepared → running → verified | reconcile-required`. Durable leases precede side effects; independent read-back precedes successful receipts. Uncertain operations do not auto-replay. Learning joins only verified receipts and matching owner ratings.
 
-Ollama and browser model adapters accept bounded user/assistant history as untrusted context. Model-generated answers are never successful tool evidence. Browser activation is opt-in; Ollama is off by default and loopback-only. General cloud model inference, encrypted cloud chat sync, code-writing workers and a sub-agent workforce remain unimplemented.
+Ollama and browser model adapters accept bounded user/assistant history as untrusted context. Model-generated answers are never successful tool evidence. Browser activation is opt-in; Ollama is off by default and loopback-only. The owner-only PR lane performs bounded CPU inference and exact-context single-file or 2–4-file patch proposals on admitted same-repository `ultron/*` branches. General remote cloud chat inference, encrypted cloud chat sync, unrestricted code-writing workers, autonomous merge/deployment, and a sub-agent workforce remain unimplemented.
 
 ## Learning and release evidence
 
@@ -78,7 +78,7 @@ The council combines four lifted and adapted Mahoraga contracts:
 
 Each `grokbot-deliberation-receipt` is immutable, fingerprinted, zero-credit and advisory-only. A `proceed` decision means the plan is consistent with the currently implemented read-only allowlist and supplied evidence. It does not execute the plan or prove live readiness. A `hold` decision records the missing capability, evidence gap or conflict. See [`MAHORAGA-LIFT-SHIFT.md`](MAHORAGA-LIFT-SHIFT.md) for source-to-target provenance and deferred surfaces.
 
-CI runs for all PRs and main pushes. It checks exact-head syntax and regression tests, validates all workflow syntax with checksum-pinned actionlint, and pins external actions to immutable SHAs. Verification has read-only repository permissions and no persisted Git credentials. Branch rules, merge enforcement and deployment activation are administrative/runtime states requiring separate read-back; configuration in source alone is not proof.
+CI runs for all PRs and main pushes. It performs a script-disabled lockfile install, production dependency audit, Transformers import smoke test, exact-head syntax and regression checks, validates all workflow syntax with checksum-pinned actionlint, and pins external actions to immutable SHAs. Verification has read-only repository permissions and no persisted Git credentials. GitHub read-back currently shows `main` protected with required `test` enforcement for non-admins; the full admin-only policy, failing-PR block, merge enforcement details and deployment activation still require separate live evidence.
 
 Device/WebGPU/Ollama acceptance, sustained heartbeat reliability, an enforced failing-PR merge gate, real-task benchmark quality and deployment at the final merge SHA remain separate acceptance work. The dated baseline document tracks these boundaries.
 

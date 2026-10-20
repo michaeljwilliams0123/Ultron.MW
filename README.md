@@ -29,7 +29,7 @@ The deterministic tool catalogue is defined once in [`docs/core/capabilities.mjs
 
 **Public data:** this repository, task issues, issue comments and Pages source are public. Do not add credentials, client information, personal details, or confidential objectives. The canonical-command filter reduces accidental disclosure through the console; it is not a secret scanner and cannot prevent someone manually editing an issue on GitHub. Changing visibility later cannot retract copies of earlier public content. Pages never receives a GitHub API token.
 
-The cloud lane needs no personal PC, localhost service, Ollama, Cloudflare, or paid model provider. Every job must prove that its executor SHA equals current GitHub `main` before execution. Issue tasks reread the live issue and require the same open owner-authored title and body; immediately before posting a receipt, they recheck both the issue snapshot and current `main`. `/repo inspect` separately reads authoritative GitHub `main`, not the runner's checkout. `/system status` describes the current runner; `/learning status` explicitly reports that cloud learning evidence is not connected.
+The cloud lane needs no personal PC, localhost service, Ollama, Cloudflare, or paid model provider. Every job must prove that its executor SHA equals current GitHub `main` before execution. Issue tasks reread the live issue and require the same open owner-authored title and body; immediately before posting a receipt, they recheck both the issue snapshot and current `main`. `/repo inspect` separately reads authoritative GitHub `main`, not the runner's checkout. `/system status` describes the current runner; `/learning status` joins only qualifying public owner feedback to exact receipt provenance and reports measured suggestion evidence or insufficient evidence. It does not train model weights or widen authority.
 
 ## Receipts and recovery
 
@@ -37,7 +37,7 @@ A receipt records its schema, task digest, issue number, timestamp, run ID/link,
 
 Issue replay scans up to 1,000 comments and suppresses execution only for a bot-authored, parsed successful receipt for the same task digest. Incomplete audits fail closed. Failed and partial read-only attempts may be manually rerun up to a three-attempt budget; duplicate comments for one Actions attempt count once. A blocked objective is terminal and cannot be replayed into execution. Ultron never schedules automatic retries. Each v2 receipt records the attempt ordinal, budget and retry disposition, while replay remains compatible with v1 receipts. Each posted receipt is reread directly by comment ID and checked for exact content and bot author. If a post may have succeeded but read-back fails, inspect the issue before retrying.
 
-Actions are asynchronous, quota-limited and ephemeral. An hourly heartbeat is not a durable queue or an always-running reasoning agent. Issue closure does not cancel a running workflow; use GitHub Actions cancellation and inspect whether a receipt was already posted. A missing scheduled run is unknown, not a success. No cloud code-editing worker or autonomous merge pipeline is implemented.
+Actions are asynchronous, quota-limited and ephemeral. An hourly heartbeat is not a durable queue or an always-running reasoning agent. Issue closure does not cancel a running workflow; use GitHub Actions cancellation and inspect whether a receipt was already posted. A missing scheduled run is unknown, not a success. Cloud source edits exist only on admitted owner-authored Ultron PR branches through exact-context manifests or bounded CPU proposals; no autonomous merge, deployment, or unattended agent pipeline is implemented.
 
 ## Optional local runtime
 
@@ -84,9 +84,9 @@ node scripts/verify.mjs
 bash scripts/lint-workflows.sh
 ```
 
-Verification syntax-checks every JavaScript module in `src`, `docs`, `scripts` and `test`, then runs the regression suite. Workflow lint uses an official actionlint release with a committed SHA-256 digest. Every PR and every push to `main` runs verification without path filters; checkout uses the exact PR head, pinned action SHAs and no persisted Git credentials. PR checks validate the head, not a simulated merge result, so reverify after base-branch changes.
+Verification performs a script-disabled clean install, audits the production lockfile for high/critical advisories, imports the pinned Transformers runtime, syntax-checks every JavaScript module in `src`, `docs`, `scripts` and `test`, and runs the regression suite. Workflow lint uses an official actionlint release with a committed SHA-256 digest. Every PR and every push to `main` runs verification without path filters; checkout uses the exact PR head, pinned action SHAs and no persisted Git credentials. PR checks validate the head, not a simulated merge result, so reverify after base-branch changes.
 
-**Repository settings remain separate:** the reviewed `main` was unprotected. Workflow files cannot enforce branch protection. Required-check configuration, blocked force-push/deletion, and owner review policy need an administrative settings change and read-back before they can be claimed active. See [`docs/verification/BASELINE-2026-10-19.md`](docs/verification/BASELINE-2026-10-19.md) for the reviewed baseline, acceptance gaps, and next implementation order.
+**Repository settings remain separate:** GitHub branch read-back on 2026-10-20 reports `main` protected with the Actions `test` check required for non-admins. The connected GitHub App cannot read the full admin-only protection response, so strict-up-to-date behavior, force-push/deletion rules, review requirements, and administrator bypass remain unverified. See [`docs/verification/BASELINE-2026-10-19.md`](docs/verification/BASELINE-2026-10-19.md) for the historical baseline and [issue #32](https://github.com/michaeljwilliams0123/Ultron.MW/issues/32) for the remaining live acceptance evidence.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for current architecture and [`SECURITY.md`](SECURITY.md) for data boundaries and reporting. No license grant is declared pending the owner's license decision.
 
@@ -101,10 +101,11 @@ under-counting. It does **not** count generated council text, unauthenticated
 comments, unverified historical receipts, or synthetic tests as learning.
 
 Metrics deliberately separate **attested execution outcomes** from **owner-rated
-learning evidence**: the latter remains zero until an authenticated feedback
-mechanism is implemented, so no policy or model is promoted from mere GitHub
-success receipts. This uses the existing cloud command and GitHub API access,
-with no new provider, database, UI, or computer dependency.
+learning evidence**. Authenticated owner feedback is implemented, but only
+qualifying labels and held-out results count; insufficient or regressing evidence
+produces no validated suggestion, policy promotion, or model-weight change. This
+uses the existing cloud command and GitHub API access, with no new provider,
+database, UI, or computer dependency.
 
 ## Cloud-native Create PR to main
 
@@ -116,7 +117,7 @@ Ultron's single GitHub Pages interface now offers **Create PR to main**, separat
 4. Opens a **non-draft PR targeting `main`**, rereads the PR's source branch and target, and explicitly dispatches the existing exact-head Verify job.
 5. Posts the new PR link and verification request back to the owner Issue with independent comment read-back.
 
-**What this proves:** Ultron has a real cloud write action capable of creating a branch, committing a file and opening a PR against `main` without a specific PC or API token in Pages. **What it does not prove:** It cannot implement arbitrary application source from a natural-language request, deploy or auto-merge the PR, or circumvent the required CI check. This first write action creates reviewable documentation proposals only. Code implementation remains a separately reviewed task.
+**What this proves:** Ultron has a real cloud write action capable of creating a branch, committing a file and opening a PR against `main` without a specific PC or API token in Pages. **What this route does not prove:** this proposal-only action does not implement application source, deploy or auto-merge the PR, or circumvent the required CI check. A separate owner-only PR conversation lane can propose bounded model-generated source edits, but no route provides unrestricted natural-language coding authority.
 
 The default GitHub Actions token stays read-only. Only `.github/workflows/cloud-pr.yml`, running for owner-created marked PR Issues, requests `contents: write`, `pull-requests: write`, `issues: write`, and `actions: write`. GitHub's repository setting allowing Actions-created PRs must be enabled; the combined setting also technically allows workflow PR approvals, but no Ultron workflow requests or submits one. Public Issues and proposals must not contain private data. No Cloudflare, hosted LLM subscription, local Ollama, SD009WC7, or ports 4782/4792 are required.
 
@@ -154,7 +155,7 @@ The same **Create PR to main** action accepts a structured, owner-authored JSON 
 
 Up to eight distinct source-file edits or creations (`{"path":"src/new.mjs","create":"<complete contents>"}`) are supported. The JSON must be submitted **as public text** through the authenticated owner Issue. The executor checks current `main` against `baseSha`, rereads source, applies each exact once-only context replacement, creates a single atomic tree/commit, independently verifies the resulting branch/PR/files, dispatches head verification, and posts a receipt. A changed `main` or ambiguous patch fails instead of silently applying an incorrect edit. Branch names are unique per Issue and are not force-updated.
 
-**Boundaries:** The route executes already-authored source changes; neither GitHub Pages nor GitHub Actions generates code from an arbitrary English objective. Optional browser/local inference or a connected coding agent can author the manifest, but must not be confused with authenticated GitHub publication. No permissions are self-granted, no security gate is bypassed, no automatic merge or deployment is performed, and verification remains observable. Reward and learning loops should score measured task completion and successful recovery, **not** the evasion of access controls or test failures. This is an implementation route, not a claim of AGI.
+**Boundaries:** This structured Issue route executes already-authored source changes. GitHub Pages never generates code; a separate owner-only PR conversation lane can ask a pinned small CPU model to propose bounded single-file or explicitly named 2–4-file edits on admitted branches. Neither route grants unrestricted natural-language coding authority. No permissions are self-granted, no security gate is bypassed, no automatic merge or deployment is performed, and verification remains observable. Reward and learning loops should score measured task completion and successful recovery, **not** the evasion of access controls or test failures. These are implementation routes, not claims of SGI or AGI.
 
 ## Operational self-awareness (self-observation, not consciousness)
 
@@ -174,7 +175,7 @@ Ultron PRs now support owner-authored `@ultron` conversation comments on ordinar
 
 ## Closed-loop PR cognition (GitHub native)
 
-Comment `@ultron implement src/target.mjs: <description>` on an open Ultron PR to request a source-grounded code patch from a pinned public Qwen2.5-0.5B-Instruct ONNX model running on the hosted Actions CPU. The model does **not** use a paid inference API; it runs only for explicit implementation requests on public repositories, and its output must pass the same exact-head source-patch validation before a commit is created. Ambiguous context, oversized files or invalid code suggestions are rejected rather than committed. The small CPU model is experimental, not an assurance of autonomous coding competence.
+Comment `@ultron implement src/target.mjs: <description>` on an open Ultron PR for one source-grounded patch, or `@ultron implement files docs/a.md, src/b.mjs: <objective>` for 2–4 explicitly named existing files. A pinned public Qwen2.5-0.5B-Instruct ONNX model runs on the hosted Actions CPU without a paid inference API. The branch must contain current `main` with zero commits behind, and every output must pass exact-context/path validation before one atomic commit is published. Ambiguous context, oversized files, invalid code, or stale branches are rejected. The small CPU model is experimental, not an assurance of autonomous coding competence.
 
 After `@ultron verify`, explicit patch or accepted model-generated change, the existing Verify workflow runs. The original PR conversation worker reads the newly launched exact-head Verify run, waits for its terminal result within a bounded window, and replies with the independently observed conclusion and run URL (or marks it pending). GitHub PR comments hold the conversation and CI receipts; no new Issues, private external services, forced pushes, autonomous merges or production rollout.
 
