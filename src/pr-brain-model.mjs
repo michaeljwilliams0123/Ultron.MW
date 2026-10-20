@@ -88,11 +88,14 @@ export function extractModelPatch(reply,{path,head,objective,targetLine=null}){
   if(targetLine){
     const original=targetLine.trim();
     const prefix=original.slice(0,Math.min(8,original.length));
+    const goal=explicitRewriteGoal(objective);
+    const exactGoalLine=goal?original.replace(
+      new RegExp('\\b'+goal.from+'\\b','i'),goal.to):null;
     const lines=text.replace(/\x60{3}[^\n]*\n?/g,'').split('\n')
       .map(x=>x.trim().replace(/^(?:AFTER|REPLACEMENT|NEW LINE)\s*:\s*/i,''))
       .filter(x=>x&&x.length<=550);
-    const replacement=lines.find(x=>x!==original&&x.startsWith(prefix)&&
-      !x.startsWith('<<<'));
+    const replacement=lines.find(x=>x!==original&&!x.startsWith('<<<')&&
+      (x.startsWith(prefix)||x===exactGoalLine));
     if(replacement)return makeManifest({path,before:targetLine,
       after:(targetLine.match(/^\s*/)?.[0]||'')+replacement},
       {path,head,objective});

@@ -112,6 +112,13 @@ test('AFTER-labeled model source patch preserves exact observed line anchor',()=
     path:'docs/alpha.md',head:SHA,objective:'replace pending',
     targetLine:'Alpha outcome: pending'
   }),/valid exact-context/);
+  const leading=JSON.parse(extractModelPatch('Independently generated on a PR branch.',{
+    path:'docs/alpha.md',head:SHA,
+    objective:'change introduction from Autonomously to Independently',
+    targetLine:'Autonomously generated on a PR branch.'}));
+  assert.deepEqual(leading.changes,[{path:'docs/alpha.md',
+    before:'Autonomously generated on a PR branch.',
+    after:'Independently generated on a PR branch.'}]);
 });
 test('common replacement phrases receive deterministic semantic scoring',()=>{
   for(const objective of [
