@@ -9,7 +9,7 @@ const pr={number:24,state:'open',
   head:{ref:BRANCH,sha:HEAD,repo:{full_name:REPO}},
   base:{ref:'main',sha:'9'.repeat(40),repo:{full_name:REPO}}};
 const source='first old line final\n';
-function fixture({behind=false}={}){
+function fixture({behind=false,staleRefReads=0,staleFileReads=0}={}){
   const state={sha:HEAD,main:pr.base.sha,calls:[],blobs:[],
     files:{'src/example.mjs':source},updated:null};
   const get=async path=>{
@@ -18,10 +18,14 @@ function fixture({behind=false}={}){
     if(path===ROOT+'/compare/'+state.main+'...'+HEAD)return {
       status:behind?'diverged':'ahead',behind_by:behind?1:0,
       merge_base_commit:{sha:behind?'8'.repeat(40):state.main}};
-    if(path===ROOT+'/git/ref/heads/'+BRANCH)return {object:{sha:state.sha}};
+    if(path===ROOT+'/git/ref/heads/'+BRANCH){
+      if(state.sha===NEXT && staleRefReads-->0)return {object:{sha:HEAD}};
+      return {object:{sha:state.sha}};
+    }
     if(path===ROOT+'/git/commits/'+HEAD)return {tree:{sha:TREE}};
     const match=path.match(/^\/repos\/michaeljwilliams0123\/Ultron\.MW\/contents\/([^?]+)\?ref=([a-f0-9]{40})$/);
     if(match){
+      if(match[2]===NEXT && staleFileReads-->0)throw Error('GitHub content not visible yet');
       const body=state.files[match[1]];
       if(body===undefined)throw Error('missing file');
       return {encoding:'base64',sha:'e'.repeat(40),
@@ -79,4 +83,13 @@ test('head drift, ambiguous context and workflow mutations fail before source co
   await assert.rejects(()=>applyPrPatch(stale.args([
     {path:'src/example.mjs',before:'old',after:'new'}])),/behind current main/);
   assert.equal(stale.state.calls.some(x=>x[0]==='POST'),false);
+});
+
+test('eventually consistent GitHub ref and content reads recover without replaying write',async()=>{
+  const f=fixture({staleRefReads:3,staleFileReads:2});
+  const args=f.args([{path:'src/example.mjs',before:'old',after:'new'}]);
+  const result=await applyPrPatch({...args,sleep:async()=>{}});
+  assert.equal(result.commitSha,NEXT);
+  assert.equal(f.state.calls.filter(x=>x[0]==='PATCH').length,1);
+  assert.ok(f.state.calls.filter(x=>x[1]===ROOT+'/git/ref/heads/'+BRANCH).length>=5);
 });

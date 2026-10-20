@@ -12,9 +12,11 @@ const MAX_FILE=16000;
  * No model-generated code is claimed without an actual provider.
  */
 export async function applyPrPatch({pr,manifest,get,post,
-  updateRef=(path,body)=>githubRequest(path,{method:'PATCH',body})}={}){
+  updateRef=(path,body)=>githubRequest(path,{method:'PATCH',body}),
+  sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
   if(typeof manifest!=='string'||manifest.length>MAX_BODY||
-    typeof get!=='function'||typeof post!=='function'||typeof updateRef!=='function')
+    typeof get!=='function'||typeof post!=='function'||typeof updateRef!=='function'||
+    typeof sleep!=='function')
     throw Error('Invalid PR patch input');
   let patch;
   try{patch=JSON.parse(manifest);}catch{throw Error('Patch must be valid JSON');}
@@ -87,12 +89,27 @@ export async function applyPrPatch({pr,manifest,get,post,
   // GitHub uses singular /git/ref for reads but plural /git/refs for updates.
   const updatePath=ROOT+'/git/refs/heads/'+branch;
   const updated=await updateRef(updatePath,{sha:next.sha,force:false});
-  if(updated?.object?.sha!==next.sha||(await get(ref))?.object?.sha!==next.sha)
-    throw Error('PR head commit readback failed');
+  // GitHub ref and contents reads can lag a successful write. Re-read, never
+  // replay the mutation; failure here means reconciliation, not non-execution.
+  if(updated?.object?.sha!==next.sha)
+    throw Error('PR update acknowledgement uncertain; inspect commit '+next.sha);
+  async function confirm(read,accept){
+    for(let attempt=0;attempt<8;attempt++){
+      try { if(accept(await read())) return true; }
+      catch { /* GitHub may not expose the newly written object immediately. */ }
+      if(attempt<7)await sleep(500);
+    }
+    return false;
+  }
+  if(!await confirm(()=>get(ref),item=>item?.object?.sha===next.sha))
+    throw Error('PR head readback pending; inspect commit '+next.sha+' before retry');
   for(const item of changed){
-    const file=await get(ROOT+'/contents/'+item.path+'?ref='+next.sha);
-    if(file?.encoding!=='base64'||Buffer.from(file.content.replace(/\s/g,''),'base64').toString('utf8')!==item.content)
-      throw Error('Patch source-byte readback mismatch: '+item.path);
+    const confirmed=await confirm(
+      ()=>get(ROOT+'/contents/'+item.path+'?ref='+next.sha),
+      file=>file?.encoding==='base64'&&
+        Buffer.from(file.content.replace(/\\s/g,''),'base64').toString('utf8')===item.content);
+    if(!confirmed)
+      throw Error('Patch source readback pending; inspect commit '+next.sha+' before retry');
   }
   return {commitSha:next.sha,paths:changed.map(x=>x.path),objective:patch.objective};
 }
