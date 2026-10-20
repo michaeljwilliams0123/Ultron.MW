@@ -16,6 +16,7 @@ import { deliberatePlan } from './grokbot-governor.mjs';
 import { ACCEPTED_SEED, CANDIDATE, planObjective, commitRoutingCandidate } from '../docs/core/cycle.mjs';
 import { selectExecution } from '../docs/core/providers.mjs';
 import { capabilityManifest } from '../docs/core/capabilities.mjs';
+import { verifyGitHubs } from './git-hubs.mjs';
 
 const sourcePath = fileURLToPath(import.meta.url);
 const defaultRoot = resolve(dirname(sourcePath), '..');
@@ -128,6 +129,12 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           modelProvider: model.ready ? model.provider : null,
           standby: { enabled: !!alwaysOn, posture: alwaysOn ? 'waiting-for-owner' : 'disabled',
             selvesActive: lastStandby?.selvesActive || [] } });
+      }
+      if (req.method === 'GET' && req.url === '/api/hubs') {
+        return response(res, 200, {
+          ...(await verifyGitHubs(root)), source: 'local-git-worktree',
+          authority: 'catalog-only', executable: false,
+        });
       }
       if (req.method === 'GET' && req.url === '/api/capabilities') {
         const model = await brain.status();

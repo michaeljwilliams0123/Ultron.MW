@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "kind": "memory",
+      "id": "architecture-authority",
+      "path": "hubs/memory/architecture-authority.json",
+      "revision": 1,
+      "sha256": "85bb545d1f987fe5a470d73b101c9df737a92d5f726f872764cbd0ff829a970d",
+      "tests": [
+        "test/git-hubs.test.mjs"
+      ]
+    },
+    {
+      "kind": "skill",
+      "id": "repo-review",
+      "path": "hubs/skills/repo-review/SKILL.md",
+      "revision": 1,
+      "sha256": "c473744ec2f8ea014a6677c4344282bb0761590381754f68cd21a43c243a8d18",
+      "tests": [
+        "test/git-hubs.test.mjs"
+      ]
+    },
+    {
+      "kind": "harness",
+      "id": "owner-workflow",
+      "path": "hubs/harness/owner-workflow.json",
+      "revision": 1,
+      "sha256": "720c1e67f9e26980254636f3e0a5e25192e83264bbcf5f3c055279f856d01868",
+      "tests": [
+        "test/git-hubs.test.mjs"
+      ]
+    }
+  ]
+}
