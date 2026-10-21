@@ -88,6 +88,9 @@ export async function verifyGitHubs(root) {
   }
   const accepted=[];
   for(const entry of catalog.entries){
+    // Reject paths before any filesystem access, including any intermediate symlink.
+    if(!entry||!TYPES[entry.kind]||typeof entry.path!=='string'||
+       !TYPES[entry.kind].test(entry.path))reject('hub path outside allowlist');
     if(paths.has(entry.path)||identities.has(entry.kind+':'+entry.id))reject('duplicate entry');
     paths.add(entry.path);identities.add(entry.kind+':'+entry.id);
     const abs=resolve(root,entry.path);
