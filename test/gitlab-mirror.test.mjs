@@ -46,4 +46,14 @@ test('mirror action stays disabled until owner config and retains no checkout cr
   assert.match(yml,/persist-credentials: false/);
   assert.doesNotMatch(yml,/\bforce-push\b|git push -f|--force(?!-)/);
   assert.match(yml,/ULTRON_GITLAB_MIRROR_TOKEN/);
+  assert.match(yml,/actions: read/);
+  assert.match(yml,/actions\/workflows\/verify\.yml\/runs\?branch=main&event=push/);
+  assert.match(yml,/\.head_sha == /);
+  assert.match(yml,/\.conclusion == /);
+  assert.match(yml,/\.status == /);
+  assert.match(yml,/BLOCKED: no successful independent main Verify/);
+  assert.ok(yml.indexOf('Confirm independent successful Verify') <
+    yml.indexOf('Verify canonical head then fast-forward GitLab'),
+    'exact-main verified status must precede any token-authenticated push');
+
 });
