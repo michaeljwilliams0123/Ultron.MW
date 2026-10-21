@@ -11,6 +11,7 @@ const stage=async()=>{
   await cp(join(root,'hubs'),join(temp,'hubs'),{recursive:true});
   await mkdir(join(temp,'test'),{recursive:true});
   await writeFile(join(temp,'test/git-hubs.test.mjs'),'// fixture for test-path existence');
+  await writeFile(join(temp,'test/learning.test.mjs'),'// fixture for test-path existence');
   return temp;
 };
 test('canonical SHA preserves nested properties while ignoring object insertion order',()=>{
@@ -21,10 +22,14 @@ test('canonical SHA preserves nested properties while ignoring object insertion 
   assert.equal(snapshotSha(one).length,64);
   assert.throws(()=>canonicalJson({bad:Infinity}),/non-finite/);
 });
-test('all three public Git hubs pass committed integrity and reference gates',async()=>{
+test('hub content fingerprints are stable across Git line-ending conversion',()=>{
+  const lf='# Skill: Portable\n## Inputs\n## Fail-Closed Rules\n## Test Evidence\n';
+  assert.equal(contentDigest(lf),contentDigest(lf.replaceAll('\n','\r\n')));
+});
+test('all public Git hubs pass committed integrity and reference gates',async()=>{
   const verified=await verifyGitHubs(root);
-  assert.equal(verified.accepted,3);
-  assert.deepEqual(verified.byType,{memory:1,skill:1,harness:1});
+  assert.equal(verified.accepted,4);
+  assert.deepEqual(verified.byType,{memory:1,skill:2,harness:1});
 });
 test('tampered memory or skill contents cannot pass the committed digest',async()=>{
   const temp=await stage();

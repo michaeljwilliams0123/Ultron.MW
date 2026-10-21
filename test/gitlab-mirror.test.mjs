@@ -4,8 +4,14 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 
 const script=resolve(import.meta.dirname,'../scripts/mirror-gitlab.sh');
+const bash=process.platform==='win32' ? [
+  process.env.BASH,
+  process.env.LOCALAPPDATA&&join(process.env.LOCALAPPDATA,'Programs/Git/bin/bash.exe'),
+  process.env.ProgramFiles&&join(process.env.ProgramFiles,'Git/bin/bash.exe'),
+].find(value=>value&&existsSync(value))||'bash' : 'bash';
 const git=(cwd,...args)=>{
   const run=spawnSync('git',args,{cwd,encoding:'utf8'});
   assert.equal(run.status,0,run.stderr);
@@ -21,11 +27,11 @@ test('mirror fast-forwards exactly, is idempotent, and never overwrites divergen
     git(dir,'clone','--bare',src,dst);
     git(src,'-c','commit.gpgsign=false','commit','--allow-empty','-m','next');
     const sha=git(src,'rev-parse','HEAD');
-    const success=spawnSync('bash',[script,dst],{cwd:src,encoding:'utf8'});
+    const success=spawnSync(bash,[script,dst],{cwd:src,encoding:'utf8'});
     assert.equal(success.status,0,success.stderr);
     assert.match(success.stdout,/SYNCHRONIZED/);
     assert.equal(git(dst,'rev-parse','refs/heads/main'),sha);
-    const repeated=spawnSync('bash',[script,dst],{cwd:src,encoding:'utf8'});
+    const repeated=spawnSync(bash,[script,dst],{cwd:src,encoding:'utf8'});
     assert.equal(repeated.status,0,repeated.stderr);
     assert.match(repeated.stdout,/PARITY/);
     git(dir,'clone',dst,other);
@@ -33,7 +39,7 @@ test('mirror fast-forwards exactly, is idempotent, and never overwrites divergen
     git(other,'-c','commit.gpgsign=false','commit','--allow-empty','-m','diverge');
     git(other,'push','origin','HEAD:main');
     git(src,'-c','commit.gpgsign=false','commit','--allow-empty','-m','separate');
-    const conflict=spawnSync('bash',[script,dst],{cwd:src,encoding:'utf8'});
+    const conflict=spawnSync(bash,[script,dst],{cwd:src,encoding:'utf8'});
     assert.equal(conflict.status,4);
     assert.match(conflict.stderr,/CONFLICT/);
     assert.notEqual(git(dst,'rev-parse','HEAD'),git(src,'rev-parse','HEAD'));

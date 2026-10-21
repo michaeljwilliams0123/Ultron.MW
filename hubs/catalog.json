@@ -22,11 +22,22 @@
       ]
     },
     {
+      "kind": "skill",
+      "id": "continual-improvement",
+      "path": "hubs/skills/continual-improvement/SKILL.md",
+      "revision": 1,
+      "sha256": "6232ac28107566f0b3490fa6a95ca3b7bd9b30c0ea1c995846f25e91685a9c3f",
+      "tests": [
+        "test/learning.test.mjs",
+        "test/git-hubs.test.mjs"
+      ]
+    },
+    {
       "kind": "harness",
       "id": "owner-workflow",
       "path": "hubs/harness/owner-workflow.json",
-      "revision": 1,
-      "sha256": "720c1e67f9e26980254636f3e0a5e25192e83264bbcf5f3c055279f856d01868",
+      "revision": 2,
+      "sha256": "1a6b38370e535a46196c42369d576871849ace8153cb7f998632f435ddc49954",
       "tests": [
         "test/git-hubs.test.mjs"
       ]

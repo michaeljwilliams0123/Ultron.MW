@@ -15,6 +15,7 @@ Ultron is an independent, single-owner execution platform with a GitHub-hosted r
 | Browser memory | Opt-in encrypted vault | History, feedback, plans, encrypted import/export | Device-local; manual transfer rather than automatic synchronization |
 | Routing improvement | Shared core and local ledger | Fixed held-out routing evaluation and rollback | Policy selection, not model training or general intelligence |
 | Experience suggestions | Local owner-action ledger | Verified, rated outcomes inform suggestions | Minimum 16 distinct outcomes; chronological holdout; no new action authority |
+| Improvement disposition | Native deterministic evaluator | Binds source/artifact/receipt lineage to comparable development and held-out results | Selection only; publication and live gain remain separate GitHub evidence |
 | Cognitive governance | Local planning | Fixed GrokBot council, metacognition, counterfactual simulation and dissent-preserving synthesis | Deterministic, zero-credit and advisory; no new action authority |
 | Owner actions | Paired local Node | Bounded notes; optional documentation draft adapter | Draft adapter disabled by default; no shell, merge, or deployment permission |
 
@@ -58,6 +59,7 @@ Local endpoints include `GET /api/health`, `/api/capabilities`, `/api/state`; `P
 | `ULTRON_OLLAMA_MODEL` | Select an installed model | Optional explicit local model selection |
 | `ULTRON_OLLAMA_THINK` | Disabled | Set to `1` to request deeper optional reasoning |
 | `ULTRON_ENABLE_GITHUB_DRAFT` | Disabled | Set to `1` to enable the restricted local documentation draft adapter |
+| `ULTRON_HF_REVISION` | Unset | Required full 40-character Hub commit when enabling the optional Hugging Face provider |
 
 Ollama is contacted only at `127.0.0.1:11434`. A response uses at most two model calls and one allowlisted read-only tool call. Generated narrative remains separate from deterministic execution evidence. The local runtime retains up to 24 conversation exchanges as bounded, untrusted context, never as system instructions.
 
@@ -76,6 +78,8 @@ Promotion has a separate incumbent-governed commit receipt. The currently accept
 Every locally saved plan and every GitHub cloud outcome also carries a deterministic GrokBot deliberation receipt. Three fixed cognitive profiles—Builder, Skeptic and Steward—calibrate evidence, simulate uncertainty and preserve material dissent. The receipt records zero model invocations and zero credit cost and remains non-executable. These structures are an inspectable operational self-model; they are not evidence that Ultron is sentient, conscious or generally intelligent.
 
 Local experience suggestions require at least 16 distinct verified, owner-rated actions, positive/negative diversity and a chronological holdout. Candidates must improve by five percentage points without new held-out mistakes or unsafe recommendations. Suggestions cannot execute actions, enable an adapter, change permissions, or train model weights. With no qualified outcomes, Ultron reports insufficient evidence.
+
+Skill and harness candidates additionally use one evidence disposition contract: exact source SHA, baseline and candidate fingerprints, feedback receipt IDs, disjoint development/held-out cases, independent terminal evidence, invariant results, latency, observable cost and human intervention. The disposition is Accepted, Rejected, Blocked or Inconclusive. Accepted means eligible for the existing protected PR path; it does not mean merged, deployed or measurably better in the live workflow. Reef-assisted candidates remain Blocked unless a real Reef runtime record is supplied; installed guidance alone is not runtime proof. See [`docs/verification/ISSUE32-CONTINUAL-IMPROVEMENT-2026-10-20.md`](docs/verification/ISSUE32-CONTINUAL-IMPROVEMENT-2026-10-20.md).
 
 ## Development and verification
 
@@ -201,6 +205,6 @@ See [framework builder authority and acceptance](docs/FRAMEWORK-BUILDER.md).
 
 ## Local Hugging Face and standby
 
-`ULTRON_ENABLE_HF=1` selects the optional on-device Hugging Face Transformers provider (`ULTRON_HF_MODEL`, default `Xenova/distilgpt2`) in place of Ollama. Its model must be installed/downloadable and the runtime explicitly enabled; no model inference or paid cloud provider is required by default.
+`ULTRON_ENABLE_HF=1` selects the optional on-device Hugging Face Transformers provider (`ULTRON_HF_MODEL`, default `Xenova/distilgpt2`) in place of Ollama. Activation also requires `ULTRON_HF_REVISION` to name the model repository's full 40-character commit; the adapter passes that revision to Transformers.js and records `model@revision` on responses. Hub metadata does not prove downloaded bytes or successful inference. No model inference or paid cloud provider is required by default.
 
 `ULTRON_ALWAYS_ON=1` enables a 60-second zero-credit advisory standby heartbeat. `/api/standby` and `/api/health` expose the standby posture without claiming unattended tool execution. See [GrokBot](docs/GROKBOT.md).

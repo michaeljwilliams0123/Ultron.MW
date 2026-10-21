@@ -80,7 +80,7 @@ test('local hub catalog has independently verified SHA and no execution authorit
   const response = await fetch(base() + '/api/hubs');
   assert.equal(response.status, 200);
   const catalog = await response.json();
-  assert.deepEqual(catalog.byType,{memory:1,skill:1,harness:1});
+  assert.deepEqual(catalog.byType,{memory:1,skill:2,harness:1});
   assert.equal(catalog.executable,false);
   assert.equal(catalog.authority,'catalog-only');
   assert.match(catalog.indexSha256,/^[a-f0-9]{64}$/);

@@ -65,6 +65,10 @@ The continual-improvement lifecycle is explicitly separated into four evidence d
 3. **Grow** — routing or suggestion candidates are evaluated against fixed or chronological held-out cases. Candidate output cannot supply its own scores.
 4. **Commit** — the incumbent routing policy emits a promotion receipt only after the current benchmark passes with the required improvement, no new regressions and a named rollback version. The receipt becomes stale when the accepted version changes.
 
+The reusable skill/harness disposition boundary additionally requires an exact source SHA, distinct baseline and candidate fingerprints, receipt lineage and disjoint development/held-out case identities. Missing independent terminal evidence is Inconclusive; an unavailable Reef runtime is Blocked; essential-invariant or critical held-out regression is Rejected. Accepted selects a candidate only. GitHub PR publication, protected merge, post-merge exact-main verification and measured end-user improvement remain later evidence domains.
+
+The local status surface no longer maintains a second synthetic learning ledger. It summarizes the owner-action experience ledger and the routing-evaluation ledger that runtime operations actually update. Legacy state files containing the removed snapshot remain readable, but that snapshot grants no evidence or authority.
+
 ## Cognitive governance
 
 Local plan creation and the scheduled or owner-confirmed GitHub cloud lane invoke a fixed, deterministic GrokBot council. Builder, Skeptic and Steward are cognitive profiles, not operational subagents: they own no credentials, tools, deployment rights or independent task loop. The planner records public role projections while private episodic references remain non-exportable except through an explicit promotion policy. Cloud receipts bind the advisory decision to the exact plan fingerprint while retaining the existing read-only allowlist.
