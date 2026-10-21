@@ -41,5 +41,6 @@ jobs:
           # Header is runtime-only and never stored in source or remote config.
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=http.https://gitlab.com/.extraheader
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'oauth2:%s' "$GITLAB_TOKEN" | base64 -w0)"
+          mirror_auth="$(printf 'oauth2:%s' "$GITLAB_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $mirror_auth"
           bash scripts/mirror-gitlab.sh https://gitlab.com/michaelj.williams0123/Ultron.MW.git
