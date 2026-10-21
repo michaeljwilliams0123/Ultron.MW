@@ -2,6 +2,7 @@ import { readdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyGitHubs } from '../src/git-hubs.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 async function sourceFiles(directory){
@@ -22,5 +23,7 @@ function run(args){
 for(const directory of ['src','docs','scripts','test']){
   for(const path of await sourceFiles(directory))run(['--check',path]);
 }
+const hubs=await verifyGitHubs(root);
+console.log('Git-backed hubs verified:',hubs.accepted,hubs.indexSha256);
 const tests=(await sourceFiles('test')).filter(path=>path.endsWith('.test.mjs'));
 run(['--test',...tests]);

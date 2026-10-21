@@ -1,0 +1,9 @@
+{
+  "kind": "harness",
+  "id": "owner-workflow",
+  "revision": 1,
+  "authority": "read-only",
+  "commands": ["/help", "/system status", "/repo inspect", "/learning status"],
+  "skills": ["repo-review"],
+  "notes": "Describes existing read-only authority; it cannot grant new privileges or widen the router."
+}
