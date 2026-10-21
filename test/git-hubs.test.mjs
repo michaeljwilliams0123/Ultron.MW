@@ -57,5 +57,9 @@ test('invalid test references, duplicate entries, or incomplete catalog block ad
     catalog.entries.pop();catalog.entries[0].tests=['test/fake.test.mjs'];
     await writeFile(index,JSON.stringify(catalog));
     await assert.rejects(()=>verifyGitHubs(temp),/ENOENT/);
+    catalog.entries[0].tests=['test/git-hubs.test.mjs'];
+    catalog.entries[0].path='../../private-data.json';
+    await writeFile(index,JSON.stringify(catalog));
+    await assert.rejects(()=>verifyGitHubs(temp),/path outside allowlist/);
   }finally{await rm(temp,{recursive:true,force:true});}
 });
