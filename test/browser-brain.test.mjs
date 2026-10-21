@@ -68,6 +68,21 @@ test('explicit activation reports progress and returns an honest ephemeral respo
   assert.match(requests[0].messages[0].content, /no access to the filesystem/);
 });
 
+test('browser model explains its ready status without inventing WebGPU or WASM setup advice', async () => {
+  const requests = [];
+  const brain = createBrowserBrain({
+    gpu: mockGpu,
+    loadModule: async () => mockWebLLM({ onChat: request => requests.push(request) }),
+  });
+  await brain.enable();
+  await brain.respond('Why does the header say the browser model is ready?');
+  const system = requests[0].messages[0].content;
+  assert.match(system, /On-device browser model ready means inference runs in this browser after explicit activation/i);
+  assert.match(system, /no tools or external actions means no filesystem, GitHub, terminal, or execution authority/i);
+  assert.match(system, /does not mean WebGPU or WebAssembly is disabled, unavailable, or needs installation/i);
+  assert.match(system, /Never advise disabling WebGPU or installing or enabling WebAssembly/);
+});
+
 test('disallows unknown, empty and oversized messages', async () => {
   const brain = createBrowserBrain({ gpu: mockGpu, loadModule: async () => mockWebLLM() });
   await brain.enable();

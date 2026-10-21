@@ -433,11 +433,11 @@
       await instance.enable(progress => { browserInfo.textContent = progress; });
       browserBrain = instance;
       browserButton.textContent = 'On-device AI enabled';
-      browserInfo.textContent = 'Session-only AI responses. No tools, no cross-device memory, no hosted inference.';
+      browserInfo.textContent = 'Session-only AI responses. On-device text only; no tools, external actions, cross-device memory, or hosted inference.';
       $('status').textContent = 'On-device AI · no tools';
       $('status').classList.add('live');
       $('runtime').textContent = 'Browser';
-      $('hero-sub').textContent = 'Local WebGPU inference ready · external execution disabled';
+      $('hero-sub').textContent = 'On-device browser model ready · no tools or external actions';
     } catch (error) {
       browserBrain = null;
       browserButton.disabled = false;
