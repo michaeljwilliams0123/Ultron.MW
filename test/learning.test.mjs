@@ -70,6 +70,18 @@ test('missing independent or terminal evidence is inconclusive, never a zero-ris
   assert.match(report.reason, /missing independently observed terminal evidence/);
 });
 
+test('independently observed candidate failure is rejected, while a repaired baseline failure may improve', () => {
+  const failed = cases();
+  failed[6].candidate = result(.7, { status: 'failed' });
+  assert.equal(evaluateImprovementCandidate({ candidate: candidate(),
+    cases: failed }).disposition, 'Rejected');
+  const repaired = cases();
+  repaired[6].baseline = result(.2, { status: 'failed' });
+  repaired[6].candidate = result(.7);
+  assert.equal(evaluateImprovementCandidate({ candidate: candidate(),
+    cases: repaired }).disposition, 'Accepted');
+});
+
 test('unobserved latency and cost remain missing instead of becoming zero savings', () => {
   const benchmark = cases();
   benchmark[7].candidate = result(.7, { latencyMs: null, costUsd: null });
@@ -107,10 +119,10 @@ test('runtime learning summary uses the real experience and routing ledgers', ()
       assessments: [{ status: 'rejected' }, { status: 'validated' }],
       history: [{ action: 'promote' }, { action: 'rollback' }],
     },
-    evolution: { accepted: 'routing-v2', evaluations: [{}] },
+    evolution: { accepted: 'routing-v2', evaluations: [{ passed: true }] },
   });
   assert.deepEqual(summary, {
     acceptedVersion: 'experience-abc', routingVersion: 'routing-v2',
-    observationCount: 19, candidateCount: 3, promotionCount: 1,
+    observationCount: 19, candidateCount: 3, promotionCount: 2,
   });
 });

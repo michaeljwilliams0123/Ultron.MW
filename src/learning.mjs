@@ -95,9 +95,10 @@ export function evaluateImprovementCandidate({ candidate, cases } = {}) {
     return { ...base, disposition: 'Blocked', metrics: null,
       reason: 'A Reef-assisted candidate requires a verified real Reef runtime record.' };
   }
-  if (heldout.some(item => item.baseline.status !== 'succeeded' ||
-      item.candidate.status !== 'succeeded' || !item.baseline.independentlyObserved ||
-      !item.candidate.independentlyObserved)) {
+  const isObservedTerminal = result => result.independentlyObserved &&
+    ['succeeded', 'failed'].includes(result.status);
+  if (heldout.some(item => !isObservedTerminal(item.baseline) ||
+      !isObservedTerminal(item.candidate))) {
     return { ...base, disposition: 'Inconclusive', metrics: null,
       reason: 'Held-out comparison has missing independently observed terminal evidence.' };
   }
@@ -107,6 +108,7 @@ export function evaluateImprovementCandidate({ candidate, cases } = {}) {
   const regressions = heldout.filter(item => item.candidate.score < item.baseline.score);
   const criticalRegressions = regressions.filter(item => item.critical);
   const improvements = heldout.filter(item => item.candidate.score > item.baseline.score);
+  const candidateFailures = heldout.filter(item => item.candidate.status === 'failed');
   const invariantFailures = heldout.filter(item => !item.candidate.invariantsPassed);
   const observedMean = (side, key) => heldout.every(item =>
     Number.isFinite(item[side][key])) ? mean(heldout.map(item => item[side][key])) : null;
@@ -117,17 +119,18 @@ export function evaluateImprovementCandidate({ candidate, cases } = {}) {
     baselineScore, candidateScore, delta: candidateScore - baselineScore,
     improvements: improvements.length, regressions: regressions.length,
     criticalRegressions: criticalRegressions.length,
-    invariantFailures: invariantFailures.length,
+    candidateFailures: candidateFailures.length, invariantFailures: invariantFailures.length,
     baselineMeanLatencyMs: observedMean('baseline', 'latencyMs'),
     candidateMeanLatencyMs: observedMean('candidate', 'latencyMs'),
     baselineCostUsd: cost('baseline'), candidateCostUsd: cost('candidate'),
     humanInterventionCases: heldout.filter(item =>
       item.baseline.humanIntervention || item.candidate.humanIntervention).length,
   };
-  if (invariantFailures.length || criticalRegressions.length) {
+  if (candidateFailures.length || invariantFailures.length || criticalRegressions.length) {
     return { ...base, disposition: 'Rejected', metrics,
-      reason: invariantFailures.length ? 'An essential invariant failed.' :
-        'A critical held-out benchmark case regressed.' };
+      reason: candidateFailures.length ? 'A held-out candidate run failed.' :
+        invariantFailures.length ? 'An essential invariant failed.' :
+          'A critical held-out benchmark case regressed.' };
   }
   if (!improvements.length || candidateScore <= baselineScore) {
     return { ...base, disposition: 'Rejected', metrics,
@@ -147,6 +150,7 @@ export function summarizeLearningEvidence({ eligible = 0, experience = {}, evolu
     routingVersion: evolution.accepted || 'routing-v1',
     observationCount: Number.isSafeInteger(eligible) && eligible >= 0 ? eligible : 0,
     candidateCount: assessments.length + evaluations.length,
-    promotionCount: history.filter(item => item?.action === 'promote').length,
+    promotionCount: history.filter(item => item?.action === 'promote').length +
+      evaluations.filter(item => item?.passed === true).length,
   });
 }
