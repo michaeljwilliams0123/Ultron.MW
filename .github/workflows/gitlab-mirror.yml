@@ -28,13 +28,13 @@ jobs:
           GITLAB_TOKEN: ${{ secrets.ULTRON_GITLAB_MIRROR_TOKEN }}
         run: |
           set -euo pipefail
-          if ${{ -z "$GITLAB_TOKEN" }}; then
+          if test -z "$GITLAB_TOKEN"; then
             echo 'BLOCKED: ULTRON_GITLAB_MIRROR_TOKEN not configured' >&2
             exit 1
           fi
           source_sha="$(git rev-parse HEAD)"
           current_main="$(git ls-remote https://github.com/michaeljwilliams0123/Ultron.MW.git refs/heads/main | awk '{print $1}')"
-          if ${{ "$source_sha" != "$current_main" }}; then
+          if test "$source_sha" != "$current_main"; then
             echo 'BLOCKED: exact-head GitHub main changed since verification' >&2
             exit 1
           fi
