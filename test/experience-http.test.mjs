@@ -65,6 +65,9 @@ test('owner-paired observed learning adopts only a measured policy and survives 
     const initial = await(await request('GET','/api/owner/learning')).json();
     assert.equal(initial.eligible,24);
     assert.equal(initial.activeVersion,'baseline');
+    const publicState = await(await request('GET','/api/state')).json();
+    assert.equal(publicState.observations,24);
+    assert.equal(publicState.acceptedVersion,'baseline');
     const before = await(await request('POST','/api/owner/suggest',{
       objective:'Local workspace duplicate incorrect case',
     })).json();

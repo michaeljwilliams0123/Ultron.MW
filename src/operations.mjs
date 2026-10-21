@@ -32,14 +32,24 @@ export async function executeReadOnly(text, { root, learning }) {
       return {command,summary:'Local Ultron operational self-scan completed; live runtime readiness remains unverified',details};
     }
     case '/learning status':
-      return {
-        command, summary: 'Evidence ledger inspected',
-        details: {
-          acceptedVersion: learning.accepted,
-          observationCount: learning.observations.length,
-          candidateCount: learning.candidates.length,
-          promotionCount: learning.history.filter(item => item.action === 'promote').length,
-        },
-      };
+      {
+        const observations = Number.isSafeInteger(learning?.observationCount)
+          ? learning.observationCount : learning?.observations?.length || 0;
+        const candidates = Number.isSafeInteger(learning?.candidateCount)
+          ? learning.candidateCount : learning?.candidates?.length || 0;
+        const promotions = Number.isSafeInteger(learning?.promotionCount)
+          ? learning.promotionCount : learning?.history?.filter(item =>
+            item.action === 'promote').length || 0;
+        return {
+          command, summary: 'Evidence ledger inspected',
+          details: {
+            acceptedVersion: learning?.acceptedVersion || learning?.accepted || 'baseline',
+            routingVersion: learning?.routingVersion || null,
+            observationCount: observations,
+            candidateCount: candidates,
+            promotionCount: promotions,
+          },
+        };
+      }
   }
 }

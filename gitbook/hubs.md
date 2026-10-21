@@ -12,6 +12,8 @@ A SHA-256 digest is an integrity check of committed content, not proof a remote 
 
 The [skill playbooks](https://github.com/michaeljwilliams0123/Ultron.MW/tree/main/hubs/skills) use `SKILL.md`. The minimal accepted structure has a title, inputs, fail-closed conditions, and test evidence. Each skill must be referenced in the index with a valid digest and test path; the existing required GitHub Verify suite **runs the real Node tests**. Section headings alone are not sufficient to claim correctness, and a GitBook edit does not authorize execution.
 
+The continual-improvement playbook applies Serve → Observe → Grow → Commit while keeping candidate selection separate from publication. It requires exact source and artifact lineage, receipt-linked feedback, disjoint development and held-out cases, independently observed terminal results, invariant checks and honest missing cost/latency data. Plugin availability alone is never recorded as a successful Reef run.
+
 ## Harness Hub
 
 The [harness blueprints](https://github.com/michaeljwilliams0123/Ultron.MW/tree/main/hubs/harness) are versioned profiles referencing skill IDs. Their commands must remain within Ultron's currently supported, deterministic read-only command catalogue. A profile cannot create a credential, grant shell access, change protected-main merges, or deploy providers. Execution permissions continue to live in the existing router and action gateway.

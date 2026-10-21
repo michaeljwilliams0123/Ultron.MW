@@ -7,6 +7,11 @@ assert.equal(status.ready, false);
 assert.equal(status.provider, 'huggingface');
 assert.match(status.reason, /not enabled/i);
 
+const unpinned = createHuggingFace({ enabled: true, revision: null });
+const unpinnedStatus = await unpinned.status();
+assert.equal(unpinnedStatus.ready, false);
+assert.match(unpinnedStatus.reason, /40-character.*revision/i);
+
 try {
   await disabled.respond([{ role: 'user', content: 'hi' }]);
   assert.fail('should throw');

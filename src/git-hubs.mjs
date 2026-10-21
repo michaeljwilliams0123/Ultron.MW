@@ -16,7 +16,9 @@ const reject = message => { throw new Error('Git hub rejected: '+message); };
 
 export function contentDigest(text) {
   if(typeof text!=='string')reject('content must be text');
-  return createHash('sha256').update(text,'utf8').digest('hex');
+  // Git may materialize text as CRLF on Windows. Integrity covers content,
+  // not the checkout platform's line-ending representation.
+  return createHash('sha256').update(text.replace(/\r\n?/g,'\n'),'utf8').digest('hex');
 }
 
 /** Reproducible hashes preserve all nested keys and array order. */
