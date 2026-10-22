@@ -216,3 +216,39 @@ The repository includes docs/examples/computer-read-only.json. This exercises a 
 - Observe receipts contain hashes and origins, not remote write confirmations for every app. For a destructive or high-impact action use application-specific independent readback or refusal.
 - Uploaded data, login/CAPTCHA/MFA screens, private files, screenshot bytes and browser session storage need dedicated authenticated storage and safe user takeover before enablement.
 - Do not add unlimited evaluator prompts, generated secrets, powerful commands or new control-plane UIs without a feature-parity and abuse-case evaluation.
+
+## 14. Hardening follow-through — execution safety, durability and evidence
+
+**Scope:** The changes in this hardening tranche are source/contract/test improvements on PR #64, not a connected owner desktop, remote browser, cloud service or granted third-party account. Required exact-head CI applies after every change.
+
+### Checkpoint and concurrency boundary
+
+- Each run acquires an objective-specific exclusive lock before reading its stored state. The in-memory test store rejects parallel duplicate operations; the local file store uses an exclusive lock file across cooperating local processes.
+- A process killed while holding a file lock can leave a stale lock. This is intentionally **fail-closed**: a subsequent run must not break or steal the lock automatically. After confirming no active process and reconciling possible external action effects, the owner/operator can supervise recovery. A distributed cloud runtime requires transactional leases and fencing; local lock files are not a substitute.
+- A pending checkpoint is committed **before** dispatch. After an action, a complete successor checkpoint is committed before clearing pending in memory. If post-action storage fails, the pending action remains uncertain and cannot be blindly replayed.
+- Incomplete, inconsistent or tampered-with checkpoints are rejected rather than silently reconstructed as successful outcomes. A replay using the same task ID with different plan content is also rejected.
+
+### Browser and action boundary
+
+- Allowed origins must be canonical, explicit HTTPS origins or local loopback HTTP. Step types and properties are bounded; unknown action properties and unauthorized selectors/targets are rejected before execution.
+- Click, type and keypress require independently supplied affirmative owner authorization AND an explicit post-action expectation. The local CLI approval prompt discloses the target selector, expected state, action, input length and plan fingerprint, but not the input value.
+- Interactive actions must result in independently observable page-state differences. Playwright type operations additionally read back the specific field value and return only a boolean; unchanged page/body text alone cannot certify a click.
+- The Playwright context installs origin-based HTTP request interception **before first navigation**, closes popup tabs, refuses downloads and service workers and blocks all WebSockets. An older Playwright runtime lacking WebSocket interception is rejected before use. Third-party resource origins must be listed explicitly or they are blocked.
+- This is **not a complete production network sandbox**. Hosted deployment requires DNS/IP-level egress protection (including metadata and private addresses), redirect and iframe controls, instrumented auth/session leases, secure data retention and independent target-application write readback. A changed UI string does not prove a business operation committed.
+
+### Test evidence and what it does not show
+
+- Regressions now cover duplicate-run exclusion, failed post-effect checkpoint commit, unknown/malformed action properties, postcondition enforcement, no-observable-change denial, foreign-origin network requests and WebSockets, missing WebSocket interceptor, sensitive value readback without returning the value, and persistence across process/store reconstruction.
+- The existing verification script automatically discovers new .mjs tests and checks under src/, docs/, scripts/ and test/, so no additional CI workflow or control plane was introduced.
+- Passing mocked tests proves the JavaScript contract and regression fixtures, not user-authenticated browser operation. There is no Playwright browser binary provisioned or owner session linked by this PR.
+
+### Dependency order for remaining follow-up
+
+1. **Issue #65 (computer use)** — obtain authorized real browser access, install reviewed Playwright runtime supporting context WebSocket interception, verify the actual network boundary and owner-mediated clicking/typing, add screenshot/DOM and independent application postcondition capture.
+2. **Issue #66 (hosting)** — select one durable local/cloud execution plane, implement a DB-backed lease/fencing model, budgets, restart recovery, hard network isolation and kill switch before any unattended work.
+3. **Issue #67 (bindings)** — create user-authorized OAuth/session connections with typed scopes, live readiness checks and explicit permissions per provider. No master token or account creation without direct user consent.
+4. **Issue #68 (intelligence)** — evaluate reasoning, planning, memory, generated skills and predictive improvements against real held-out outcomes.
+5. **Issue #69 (pruning)** — preserve working Pages, PR brain, Verify, hosted objective, GitLab mirror, self-scan and GitBook until independently verified replacements meet feature and rollback parity.
+6. **Issue #32** continues to track authenticated PR brain/release-gate acceptance; **draft PR #58** remains independent of #64.
+
+**Stop/go:** Merge consideration requires exact-head CI plus review. Production enablement requires the separately observed live browser, owner identity, data handling, secure execution plane and negative-path acceptance. The user has not authorized a merge, service purchase, external account provisioning or legacy-workflow deletion merely by requesting this fortification.
