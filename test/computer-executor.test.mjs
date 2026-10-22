@@ -116,6 +116,7 @@ test('Playwright adapter translates actual page interaction methods', async () =
   const locator = selector => ({
     click: async () => { calls.push(['click', selector]); },
     fill: async value => { calls.push(['fill', selector, value]); },
+    inputValue: async () => 'hello',
     press: async key => { calls.push(['press', selector, key]); },
     innerText: async () => 'Observed',
     waitFor: async () => { calls.push(['wait', selector]); },
@@ -216,6 +217,22 @@ test('origin interception rejects disallowed browser requests and WebSockets', a
   assert.deepEqual(events, ['continued', 'blocked', 'blocked']);
   await socketRule({ close: () => { closed = true; } });
   assert.equal(closed, true);
+});
+test('unchanged interactive screen never counts as a successful click', async () => {
+  let calls = 0;
+  const h = createComputerExecutor({
+    driver: {
+      observe: async () => ({ url: 'https://example.test', title: 'Same', text: 'Done' }),
+      perform: async () => { calls++; },
+    },
+    allowedOrigins, store: createMemoryComputerStore(),
+    authorize: async () => true,
+  });
+  const p = plan([{ action: 'click', selector: 'button',
+    expect: { textIncludes: 'Done' } }]);
+  assert.equal((await h.run(p)).status, 'reconcile-required');
+  assert.equal((await h.run(p)).status, 'reconcile-required');
+  assert.equal(calls, 1);
 });
 test('browser startup fails closed when WebSocket interception is unavailable', async () => {
   await assert.rejects(installNetworkPolicy({ route: async () => {} },
