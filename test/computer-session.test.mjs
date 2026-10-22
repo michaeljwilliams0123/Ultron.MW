@@ -202,3 +202,78 @@ test('two simultaneous owner requests cannot both pass a single approval cap', a
   assert.deepEqual(accepted, [true, false]);
   assert.equal(started, 1);
 });
+
+test('credential field triggers owner takeover and blocks scripted typing until removed', async () => {
+  let protectedField = true, typed = 0;
+  const page = {
+    url: () => 'https://example.test/login',
+    goto: async () => {},
+    title: async () => 'Sign in',
+    locator(selector) {
+      if (selector === 'body') return {
+        innerText: async () => protectedField ? 'Sign in' : 'Welcome',
+        ariaSnapshot: async () => 'main',
+      };
+      return {
+        count: async () => selector === 'input[type="password"]:visible' &&
+          protectedField ? 1 : 0,
+      };
+    },
+  };
+  const browser = createPlaywrightComputerDriver(page);
+  assert.equal((await browser.observe()).requiresOwnerTakeover, true);
+  const driver = {
+    observe: () => browser.observe(),
+    perform: async step => { if (step.action === 'type') typed++; return {
+      fieldValueVerified: true,
+    }; },
+  };
+  const checkpoint = createMemoryComputerStore();
+  const executor = createComputerExecutor({
+    driver, store: checkpoint, allowedOrigins: ['https://example.test'],
+    authorize: async () => true,
+  });
+  const plan = {
+    id: 'owner-takeover-test',
+    steps: [{ action: 'type', selector: '#login', value: 'not-a-password',
+      expect: { textIncludes: 'Welcome' } }],
+  };
+  const stopped = await executor.run(plan);
+  assert.equal(stopped.status, 'owner-takeover-required');
+  assert.equal(typed, 0);
+  // Actual sign-in must be completed by the owner in the isolated browser.
+  // This toggles only a TEST fixture, not a real account.
+  protectedField = false;
+  assert.equal((await executor.run(plan)).status, 'completed');
+  assert.equal(typed, 1);
+});
+test('owner takeover is conservative when one-time-code field is visible', async () => {
+  const page = {
+    url: () => 'https://example.test/mfa',
+    goto: async () => {},
+    title: async () => 'MFA',
+    locator(selector) {
+      if (selector === 'body') return {
+        innerText: async () => 'Enter one-time code',
+      };
+      return { count: async () =>
+        selector === 'input[autocomplete="one-time-code"]:visible' ? 1 : 0 };
+    },
+  };
+  assert.equal((await createPlaywrightComputerDriver(page).observe())
+    .requiresOwnerTakeover, true);
+});
+test('text-only MFA challenge pauses automation without trusting page instructions', async () => {
+  const page = {
+    url: () => 'https://example.test/mfa',
+    goto: async () => {}, title: async () => 'Security check',
+    locator(selector) {
+      if (selector === 'body') return {
+        innerText: async () => 'Approve sign-in with authenticator app',
+      };
+      return { count: async () => 0 };
+    },
+  };
+  const observation = await createPlaywrightComputerDriver(page).observe();
+  assert.equal(observation.requiresOwnerTakeover, true);
+});

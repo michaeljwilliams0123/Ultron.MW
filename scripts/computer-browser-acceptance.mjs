@@ -50,6 +50,9 @@ try {
       // Even an allowed first hop could redirect to a forbidden next hop.
       res.writeHead(302, { Location: '/redirect' });
       res.end();
+    } else if (req.url === '/safe-chain') {
+      res.writeHead(302, { Location: '/receipt' });
+      res.end();
     } else if (req.url === '/form') {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(html('<main>Form ready<form method="post" action="/submit">' +
@@ -63,10 +66,10 @@ try {
       }
       latest = new URLSearchParams(raw).get('value') || '';
       runCount++;
-      // Deliberately return 200: this fail-closed browser worker currently
-      // rejects all HTTP redirects pending a fully redirect-aware network gate.
-      res.setHeader('content-type', 'text/html; charset=utf-8');
-      res.end(html('<main>Saved: ' + latest + '</main>'));
+      // Real POST/Redirect/GET requires per-hop enforcement: never permit
+      // Chromium to follow a 3xx without checking the redirect target.
+      res.writeHead(303, { Location: '/receipt' });
+      res.end();
     } else if (req.url === '/receipt') {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(html('<main>Saved: ' + latest + '</main>'));
@@ -127,6 +130,10 @@ try {
   session.revoke();
   assert.equal(await session.authorize({ action: 'click', currentOrigin: firstOrigin }), false);
 
+  // The admitted GET->302->GET chain must complete after checking Location.
+  await browser.page.goto(firstOrigin + '/safe-chain');
+  assert.match(await browser.page.locator('body').innerText(), /Saved: ultron-fixture/);
+
   // Navigation is allowed to the first origin but its HTTP redirect to a
   // third, unauthorized origin must be stopped by actual Chromium interception.
   try { await browser.page.goto(firstOrigin + '/redirect'); }
@@ -139,7 +146,6 @@ try {
   catch { /* Request is intentionally denied. */ }
   assert.equal(foreignHits, 0);
   assert.notEqual(new URL(browser.page.url()).origin, foreignOrigin);
-
   // A real click may happen before a browser disconnect. Retrying must return
   // reconcile-required without executing the write again.
   disconnectedBrowser = await launchIsolatedBrowser({

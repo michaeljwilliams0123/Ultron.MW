@@ -19,8 +19,10 @@ From a clean isolated checkout:
 
 ```powershell
 npm.cmd install --no-save --package-lock=false --ignore-scripts playwright
-node --test test/computer-executor.test.mjs test/computer-bindings.test.mjs test/computer-session.test.mjs
+node --test test/computer-executor.test.mjs test/computer-bindings.test.mjs test/computer-session.test.mjs test/computer-owner-verifier.test.mjs
 node scripts/computer-browser-acceptance.mjs --synthetic
+$env:ULTRON_COMPUTER_GITHUB_OWNER='michaeljwilliams0123'
+node scripts/computer-external-github-acceptance.mjs --read-only
 node scripts/verify.mjs
 ```
 
@@ -29,6 +31,29 @@ not changes to the project's committed dependencies or lockfile. System Chrome
 is selected explicitly (`channel: 'chrome'`), not a privileged existing profile.
 The existing local owner-operated script can select system Chrome using
 `ULTRON_BROWSER_CHANNEL=chrome`; it still requires every action's TTY approval.
+It also requires `ULTRON_COMPUTER_GITHUB_OWNER` to match the authenticated
+GitHub CLI `/user` identity before launching the browser; a credential never
+enters the browser context. For owner takeover set
+`ULTRON_COMPUTER_HEADED=1` in a real interactive terminal. The operator must
+sign in/MFA **directly in that new isolated Chrome window**, then type
+`RESUME` in the terminal. No OTP/password is ever requested by this CLI.
+A non-destructive, owner-only GitHub login/click example is checked in at
+`docs/verification/GITHUB-OWNER-LOGIN-ACCEPTANCE.example.json`:
+
+```powershell
+$env:ULTRON_COMPUTER_GITHUB_OWNER='michaeljwilliams0123'
+$env:ULTRON_COMPUTER_ALLOWED_ORIGINS='["https://github.com"]'
+$env:ULTRON_BROWSER_CHANNEL='chrome'
+$env:ULTRON_COMPUTER_HEADED='1'
+node scripts/computer-runner.mjs docs/verification/GITHUB-OWNER-LOGIN-ACCEPTANCE.example.json
+```
+
+Run only in an interactive terminal on the owner's Windows desktop. Manual
+login/MFA happens directly in the isolated Chrome window; the CLI asks the
+owner to `RESUME` after completion and then asks `APPROVE` for its
+read-only click. If the GitHub settings selector changed, the action fails
+closed and must be inspected rather than guessed. This **example has not
+been executed with real user authentication**.
 
 ## Acceptance matrix
 
@@ -38,24 +63,29 @@ The existing local owner-operated script can select system Chrome using
 | Type and click with post-action readback | Fixture form save and independently fetched state | Local synthetic proof |
 | Crash-safe idempotency | Rerun same objective, one external write | Local synthetic proof |
 | Visual observation | SHA-256 of real screenshot and accessibility snapshot in each receipt | Local synthetic proof; hashes, not image interpretation |
-| Redirect isolation | A direct foreign 302 and an apparently safe same-origin first-hop 302 both fail closed; third server receives zero requests | Local synthetic proof |
+| Redirect isolation/compatibility | POST/303/GET and allowed 302/GET chain succeed; foreign second-hop redirect, POST/307 replay and redirect loops fail closed | Real Chrome synthetic proof + unit regression |
 | Ambiguous disconnect | Browser closes just after actual submit; objective requires reconciliation; repeated run makes no second write | Local synthetic proof |
-| Owner session bounds | Independent injected verification callback, expiration, revocation, origin and approval cap | Unit tests; no external identity connected |
+| Owner session bounds | Independent injected verification callback, expiration, revocation, origin and approval cap | Unit tests; separate GitHub CLI host identity now verified |
 | Session stop during observation/checkpoint | Revocation denies subsequent passive navigation; a pending checkpoint becomes reconciliation-required without dispatch or replay | Unit tests; no external identity connected |
-| Actual authenticated SaaS owner approval and MFA takeover | Requires a connected approved owner host and authorization provider | **Not proven** |
+| Authenticated GitHub **host** identity | GitHub CLI `/user` matches configured repository owner; remote PR head read back from GitHub API | **Proven on SD009WC7**, not browser SSO |
+| Live external GitHub browser observation | Isolated Chrome opens public PR #72, verifies title and produces two action receipts | **Proven read-only**, no external write |
+| Credential/MFA takeover detection | Live GitHub `/login` stops before simulated credential typing | **Proven as a safe stop**, no owner sign-in or real MFA completion |
+| Actual browser SSO, MFA completion and independent human approval | Requires owner to authenticate in an isolated headed browser and approve actions through the local TTY | **Not proven** |
 | Screenshot-driven semantic visual reasoning and session persistence across devices | Requires separately accepted implementation and redaction policy | **Not proven** |
 | Production GitHub Pages dispatch and saved authenticated GitHub receipt | End-user session validation and current-main workflow evidence | **Not proven by this fixture** |
 
 ## Security boundaries
 
 - `route.continue()` by itself did not block HTTP redirects after an admitted
-  URL. More importantly, even `route.fulfill({ response: 3xx })` can permit a
-  browser-native redirect chain without invoking another route handler.
-  The worker now uses `maxRedirects: 0` and **rejects every HTTP 3xx**,
-  including apparently safe first hops. A future redirect-aware network
-  implementation is required before ordinary redirecting websites and the
-  standard POST/Redirect/GET pattern can be supported. The synthetic form
-  intentionally responds with HTTP 200 and verifies persisted state separately.
+  URL. Even `route.fulfill({ response: 3xx })` can permit a browser-native
+  redirect without another interceptor. The worker now uses `maxRedirects: 0`
+  and **resolves each hop via `context.request.fetch`** with independently
+  validated exact-origin allowlisting. At most five redirects are followed;
+  only GET/HEAD may be repeated. POST may transition to GET on 301/302/303,
+  but a POST 307/308 is blocked to prevent an unintended second write.
+  The final non-redirect response is fulfilled to Chromium. Cross-origin and
+  second-hop targets outside the exact allowlist are blocked. A network-layer
+  egress gate remains necessary before hosting untrusted private-network URLs.
 - WebSockets and popups remain closed; service workers remain blocked.
 - Screenshot buffers and accessibility snapshots are hashed **in memory**;
   their raw bytes/text are not included in durable checkpoints or test receipts.

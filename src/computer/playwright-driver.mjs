@@ -23,9 +23,28 @@ export function createPlaywrightComputerDriver(page) {
         ? createHash('sha256').update(String(await body.ariaSnapshot({
             timeout: 10000,
           })).slice(0, 10000)).digest('hex') : null;
+      // Credential / MFA controls are never automation targets. A challenge
+      // is a mandatory handoff to the owner, not a prompt for the model.
+      let requiresOwnerTakeover = false;
+      for (const selector of [
+        'input[type="password"]:visible',
+        'input[autocomplete="one-time-code"]:visible',
+        'input[name="otp"]:visible',
+      ]) {
+        const credentialField = page.locator(selector);
+        if (typeof credentialField.count === 'function' &&
+            await credentialField.count() > 0) {
+          requiresOwnerTakeover = true;
+          break;
+        }
+      }
+      // Push-based MFA and security-key prompts may have no input fields.
+      // Page text can ONLY pause automation; it can never grant permission.
+      if (/two.factor authentication|multi.factor authentication|one.time code|passkey|security key|verify it.s you|authenticator app/i.test(text))
+        requiresOwnerTakeover = true;
       return {
         url: page.url(), title: String(await page.title()).slice(0, 240),
-        text, screenshotDigest, accessibilityDigest,
+        text, screenshotDigest, accessibilityDigest, requiresOwnerTakeover,
       };
     },
     async perform(step) {
@@ -95,30 +114,51 @@ export async function installNetworkPolicy(context, allowedOrigins) {
       await route.abort('blockedbyclient');
       return;
     }
-    // BrowserContext.route intercepts the first request but NOT a redirect
-    // followed by Chromium after route.fulfill({ response: 3xx }). Until a
-    // network-level redirect-aware gate exists, fail closed for *all* redirects,
-    // even if their first Location is allowlisted (a later hop need not be).
+    // Chromium follows 3xx fulfilled responses WITHOUT a second route
+    // callback. Resolve every hop ourselves, with explicit origin checks.
+    // Follow only read-only redirects; a POST may transition to GET on 303.
+    // Never repeat an already-dispatched write on 307/308 or ambiguous errors.
     if (typeof route.fetch !== 'function' || typeof route.fulfill !== 'function') {
       await route.abort('blockedbyclient').catch(() => {});
       return;
     }
-    let response;
     try {
-      response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
-    } catch {
-      // A transport failure must never leave an unresolved, hanging route.
-      await route.abort('failed').catch(() => {});
-      return;
-    }
-    try {
-      if (response.status() >= 300 && response.status() < 400) {
-        await route.abort('blockedbyclient');
-        return;
+      let response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
+      let current = route.request().url();
+      let method = route.request().method?.() || 'GET';
+      let hops = 0;
+      while (response.status() >= 300 && response.status() < 400) {
+        const status = response.status();
+        const location = response.headers()['location'];
+        if (!location || hops++ >= 5) {
+          await route.abort('blockedbyclient');
+          return;
+        }
+        let next;
+        try { next = new URL(location, current); }
+        catch { await route.abort('blockedbyclient'); return; }
+        if (!['https:', 'http:'].includes(next.protocol) ||
+            next.username || next.password || !allowed.has(next.origin)) {
+          await route.abort('blockedbyclient');
+          return;
+        }
+        // Treat POST/Redirect/GET as safe to READ after the original write.
+        // Never resend POST or another mutating method as part of the chain.
+        if (status === 303 || ((status === 301 || status === 302) &&
+            method === 'POST')) method = 'GET';
+        if (!['GET', 'HEAD'].includes(method) ||
+            typeof context.request?.fetch !== 'function') {
+          await route.abort('blockedbyclient');
+          return;
+        }
+        current = next.href;
+        response = await context.request.fetch(current, {
+          method, maxRedirects: 0, timeout: 10000,
+        });
       }
       await route.fulfill({ response });
     } catch {
-      // A closed page may already have invalidated the route.
+      // Unknown response or a closed page is not proof of a completed write.
       await route.abort('failed').catch(() => {});
     }
   });
@@ -133,15 +173,17 @@ export async function installNetworkPolicy(context, allowedOrigins) {
  * runtime after installing Playwright and its browsers in that environment.
  */
 export async function launchIsolatedBrowser(options = {}) {
-  if (options.headless !== true)
-    throw Error('Headed browser requires a separately approved runtime');
+  if (options.headless !== true &&
+      !(options.headless === false && options.ownerApproval === true))
+    throw Error('Headed browser requires explicit local owner approval');
   let pw;
   try { pw = await import('playwright'); }
   catch { throw Error('Playwright not installed in this execution environment'); }
   if (options.channel !== undefined && options.channel !== 'chrome')
     throw Error('Only explicitly requested system Chrome is supported');
   const browser = await pw.chromium.launch({
-    headless: true, ...(options.channel ? { channel: options.channel } : {}),
+    headless: options.headless === true,
+    ...(options.channel ? { channel: options.channel } : {}),
   });
   try {
     const context = await browser.newContext({

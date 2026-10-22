@@ -1,0 +1,37 @@
+{
+  "id": "owner-github-live-browser-acceptance",
+  "steps": [
+    {
+      "id": "open-github-login",
+      "action": "navigate",
+      "url": "https://github.com/login",
+      "expect": {
+        "urlIncludes": "/login"
+      }
+    },
+    {
+      "id": "authenticated-profile",
+      "action": "navigate",
+      "url": "https://github.com/settings/profile",
+      "expect": {
+        "urlIncludes": "/settings/profile"
+      }
+    },
+    {
+      "id": "owner-approves-readonly-click",
+      "action": "click",
+      "selector": "a[href=\"/settings/emails\"]",
+      "expect": {
+        "urlIncludes": "/settings/emails"
+      }
+    },
+    {
+      "id": "github-pr-readback",
+      "action": "navigate",
+      "url": "https://github.com/michaeljwilliams0123/Ultron.MW/pull/72",
+      "expect": {
+        "urlIncludes": "/pull/72"
+      }
+    }
+  ]
+}

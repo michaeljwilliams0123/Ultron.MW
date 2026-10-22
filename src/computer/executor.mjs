@@ -136,6 +136,13 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       const before = await driver.observe();
       const blockedAfterObservation = await sessionGate(step);
       if (blockedAfterObservation) return blockedAfterObservation;
+      if (before.requiresOwnerTakeover && step.action !== 'observe') {
+        state.status = 'approval-required';
+        await store.write(plan.id, state);
+        return { status: 'owner-takeover-required', id: plan.id,
+          stepId: step.id, reason: 'Credential or MFA form needs owner takeover',
+          receipts: [...state.receipts] };
+      }
       // A newly launched isolated browser starts at about:blank.
       // Only first-step navigation may begin from that browser-native state.
       if (!(step.action === 'navigate' && before.url === 'about:blank'))

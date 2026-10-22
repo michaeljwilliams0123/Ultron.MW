@@ -343,3 +343,82 @@ test('network interception aborts failed fetch and missing runtime fetch capabil
   await handler({ ...route, fetch: undefined });
   assert.deepEqual(aborted, ['failed', 'blockedbyclient']);
 });
+
+test('redirect resolver follows a bounded same-origin POST/303/GET safely', async () => {
+  let intercept;
+  const follow = [];
+  const context = {
+    route: async (_, cb) => { intercept = cb; },
+    routeWebSocket: async () => {},
+    request: { fetch: async (url, opts) => {
+      follow.push({ url, method: opts.method, maxRedirects: opts.maxRedirects });
+      return { status: () => 200, headers: () => ({}) };
+    } },
+  };
+  await installNetworkPolicy(context, ['https://example.test']);
+  let fulfilled = 0, aborted = 0;
+  await intercept({
+    request: () => ({ url: () => 'https://example.test/submit', method: () => 'POST' }),
+    fetch: async opts => {
+      assert.equal(opts.maxRedirects, 0);
+      return { status: () => 303, headers: () => ({ location: '/receipt' }) };
+    },
+    fulfill: async ({ response }) => { assert.equal(response.status(), 200); fulfilled++; },
+    abort: async () => { aborted++; },
+  });
+  assert.equal(aborted, 0);
+  assert.equal(fulfilled, 1);
+  assert.deepEqual(follow, [{
+    url: 'https://example.test/receipt', method: 'GET', maxRedirects: 0,
+  }]);
+});
+
+test('redirect resolver rechecks each hop and blocks unauthorized second hop', async () => {
+  let intercept, foreignContact = 0, aborts = 0, fulfilled = 0;
+  const context = {
+    route: async (_, cb) => { intercept = cb; },
+    routeWebSocket: async () => {},
+    request: { fetch: async (url) => {
+      if (url.startsWith('https://evil.test')) foreignContact++;
+      return { status: () => 302, headers: () =>
+        ({ location: 'https://evil.test/steal' }) };
+    } },
+  };
+  await installNetworkPolicy(context, ['https://example.test']);
+  await intercept({
+    request: () => ({ url: () => 'https://example.test/start', method: () => 'GET' }),
+    fetch: async () => ({ status: () => 302, headers: () => ({ location: '/allowed' }) }),
+    fulfill: async () => { fulfilled++; },
+    abort: async () => { aborts++; },
+  });
+  assert.equal(aborts, 1);
+  assert.equal(fulfilled, 0);
+  assert.equal(foreignContact, 0);
+});
+
+test('redirect resolver refuses to replay a POST after 307 and caps loops', async () => {
+  let handler, fetches = 0, aborted = 0;
+  const context = {
+    route: async (_, cb) => { handler = cb; },
+    routeWebSocket: async () => {},
+    request: { fetch: async () => {
+      fetches++;
+      return { status: () => 302, headers: () => ({ location: '/loop' }) };
+    } },
+  };
+  await installNetworkPolicy(context, ['https://example.test']);
+  const route = status => ({
+    request: () => ({ url: () => 'https://example.test/post', method: () => 'POST' }),
+    fetch: async () => ({ status: () => status, headers: () => ({ location: '/loop' }) }),
+    fulfill: async () => { throw Error('must not fulfill blocked redirect'); },
+    abort: async () => { aborted++; },
+  });
+  await handler(route(307));
+  assert.equal(fetches, 0);
+  await handler({
+    ...route(302),
+    request: () => ({ url: () => 'https://example.test/get', method: () => 'GET' }),
+  });
+  assert.equal(fetches, 5);
+  assert.equal(aborted, 2);
+});
