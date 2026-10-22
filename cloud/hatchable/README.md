@@ -24,3 +24,14 @@ No provider LLM inference/credits, GitHub writes, PR merges, execution of arbitr
 **Deployment is not automatic:** Hatchable is currently deployed from its project console through its connector. Files under `cloud/hatchable/` are mirrored source for review and recovery. A subsequent change must update both and verify that exact deployed version; do not assume merging this PR deploys the backend. GitHub main SHA and platform version must be reconciled before claiming source–production parity.
 
 Never place API keys or private notes in this public repository.
+
+
+## October 22 source hardening (PR #76, **not deployed**)
+
+This PR now includes a lease-fenced, atomic task/event transition repair. Claim, completion, failure, expired-lease recovery, owner admission, cancellation/retry, note creation and hourly task admission write the matching audit receipt inside the **same PostgreSQL statement**. A worker that loses its lease returns `lost-lease` rather than inventing a `failed` receipt. The hourly handler processes a bounded batch and schedules at most one additional bounded batch when ready backlog remains; this is not unlimited polling.
+
+Evidence: GitHub core Verify on commit `fcef009b6bbd3d8ff653aa3ebad51fe483b496ea` passed. Mock-driver regression checks cover success/lost lease/idempotent admission/owner controls. Three representative atomic statements passed PostgreSQL non-executing `EXPLAIN` against live v2 schema. No crash fault-injection against the live runtime, user-session acceptance, or source-to-deployment parity is implied.
+
+**Do not deploy only these mirror files and assume the backend changed.** Review the complete PR, mirror the changed files through Hatchable's deployment path, validate with the platform dry-run, deploy deliberately, and then prove live task and event correlation, recovery, bounded backlog, owner authentication and rollback. Production is still version 2 until independently checked otherwise.
+
+For the model-powered next stage, see [OPENAI-AGENTS-INTEGRATION.md](./OPENAI-AGENTS-INTEGRATION.md). OpenAI inference and hosted sandboxes remain **off**; no billable requests were initiated.
