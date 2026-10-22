@@ -4,8 +4,17 @@ export async function queueObjective({db,scheduler},objective,key){
  if(!ALLOWED.has(objective))return {ok:false,error:'unsupported-objective'};
  if(key!=null && (typeof key!=='string'||!IDKEY.test(key)))return {ok:false,error:'invalid-idempotency-key'};
  const taskKey=key||('owner-'+crypto.randomUUID());
- const added=await db.query("INSERT INTO brain_tasks(task_key,objective) VALUES($1,$2) ON CONFLICT(task_key) DO NOTHING RETURNING id,task_key,objective,status",[taskKey,objective]);
- const exists=added.rows[0]||(await db.query("SELECT id,task_key,objective,status FROM brain_tasks WHERE task_key=$1",[taskKey])).rows[0];
+ const added=await db.query(`WITH admitted AS (
+    INSERT INTO brain_tasks(task_key,objective) VALUES($1,$2)
+    ON CONFLICT(task_key) DO NOTHING RETURNING id,task_key,objective,status
+  ), receipt AS (
+    INSERT INTO brain_events(task_id,event_type,details)
+    SELECT id,'owner-queued',jsonb_build_object('objective',objective)
+    FROM admitted RETURNING task_id
+  ) SELECT id,task_key,objective,status FROM admitted`,[taskKey,objective]);
+ const exists=added.rows[0]||(await db.query(
+  "SELECT id,task_key,objective,status FROM brain_tasks WHERE task_key=$1",[taskKey])).rows[0];
+ if(!exists)return {ok:false,error:'task-not-found-after-admission'};
  if(exists.objective!==objective)return {ok:false,error:'idempotency-key-conflict'};
  let scheduled=false;
  if(added.rows.length){
@@ -16,17 +25,33 @@ export async function queueObjective({db,scheduler},objective,key){
 }
 export async function saveNote({db},kind,body){
  if(!['goal','observation','decision'].includes(kind)||typeof body!=='string'||!body.trim()||body.trim().length>1200)return {ok:false,error:'invalid-note'};
- const row=(await db.query("INSERT INTO brain_notes(kind,body) VALUES($1,$2) RETURNING id,kind,body,created_at",[kind,body.trim()])).rows[0];
- return {ok:true,note:row};
+ // The receipt deliberately excludes the private note content.
+ const r=await db.query(`WITH created AS (
+   INSERT INTO brain_notes(kind,body) VALUES($1,$2)
+   RETURNING id,kind,body,created_at
+ ), receipt AS (
+   INSERT INTO brain_events(event_type,details)
+   SELECT 'owner-note',jsonb_build_object('note_id',id,'kind',kind) FROM created
+   RETURNING id
+ ) SELECT id,kind,body,created_at FROM created`,[kind,body.trim()]);
+ return {ok:true,note:r.rows[0]};
 }
 export async function controlTask({db},action,id){
  if(!Number.isInteger(id)||id<=0||id>1000000000)return {ok:false,error:'invalid-task-id'};
- let r;
- if(action==='cancel')r=await db.query("UPDATE brain_tasks SET status='canceled',owner_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND status IN ('queued','blocked') RETURNING id,status",[id]);
- else if(action==='retry')r=await db.query("UPDATE brain_tasks SET status='queued',attempts=0,owner_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND status='blocked' RETURNING id,status",[id]);
- else return {ok:false,error:'unsupported-action'};
+ if(action!=='cancel'&&action!=='retry')return {ok:false,error:'unsupported-action'};
+ const transition=action==='cancel'
+  ? "status='canceled',owner_token=NULL,lease_until=NULL"
+  : "status='queued',attempts=0,owner_token=NULL,lease_until=NULL";
+ const eligibility=action==='cancel' ? "status IN ('queued','blocked')" : "status='blocked'";
+ const event=action==='cancel'?'owner-cancel':'owner-retry';
+ const r=await db.query(`WITH moved AS (
+   UPDATE brain_tasks SET ${transition},updated_at=now()
+   WHERE id=$1 AND ${eligibility} RETURNING id,status
+ ), receipt AS (
+   INSERT INTO brain_events(task_id,event_type)
+   SELECT id,$2 FROM moved RETURNING task_id
+ ) SELECT id,status FROM moved`,[id,event]);
  if(!r.rows.length)return {ok:false,error:'task-not-eligible'};
- await db.query("INSERT INTO brain_events(task_id,event_type) VALUES($1,$2)",[id,action==='retry'?'owner-retry':'owner-cancel']);
  return {ok:true,task:r.rows[0]};
 }
 export async function snapshot({db}){
