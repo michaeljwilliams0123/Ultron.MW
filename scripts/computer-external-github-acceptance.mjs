@@ -4,7 +4,7 @@
  * CLI on an owner-controlled host. Does NOT reuse browser cookies, extract
  * credentials, open PRs or write anything to GitHub.
  *
- *   ULTRON_COMPUTER_GITHUB_OWNER=michaeljwilliams0123 \\
+ *   ULTRON_COMPUTER_GITHUB_OWNER=michaeljwilliams0123 \
  *      node scripts/computer-external-github-acceptance.mjs --read-only
  *
  * Separate evidence:
@@ -109,4 +109,4 @@ process.stdout.write(JSON.stringify({
   externalBrowserSignedIn: 'NOT_PROVEN',
   mfaCompleted: 'NOT_PROVEN',
   externalApplicationWrite: 'NOT_PERFORMED',
-}, null, 2) + '\\n');
+}, null, 2) + '\n');
