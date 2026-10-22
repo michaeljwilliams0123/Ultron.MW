@@ -97,6 +97,13 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
   run remains pending; do not mark issue #65 complete.
 - Press Ctrl+C, close the terminal, or decline the challenge to stop.
   If an effect is uncertain, inspect the destination before any retry.
+- **New Chrome session checkpoint handling:** A stopped run may leave a
+  checkpoint marking earlier navigation as complete even though a later
+  invocation opens Chrome at `about:blank`. The owner runner preserves the
+  old checkpoint and starts a fresh objective ID only when all previously
+  completed steps were passive and there is no pending action. It never
+  automatically restarts completed interactive actions or uncertain writes;
+  those require owner reconciliation first.
 - The owner's PC must stay on to execute this runner. PC-offline continuity is
   not available, and no zero-cost always-on hosting is claimed.
 - Removing this draft PR/runner leaves Pages, GitLab recovery, protected main,

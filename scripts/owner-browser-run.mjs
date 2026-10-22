@@ -10,6 +10,7 @@ import { launchIsolatedBrowser } from '../src/computer/playwright-driver.mjs';
 import { createOwnerConsoleAuthorizer } from '../src/computer/owner-console.mjs';
 import { createComputerSessionAuthority } from '../src/computer/session-authority.mjs';
 import { createGitHubCliOwnerVerifier } from '../src/computer/github-owner-verifier.mjs';
+import { restartSafeBrowserPlan } from '../src/computer/session-resume.mjs';
 
 /**
  * Canonical owner-operated browser entry point. The independent terminal
@@ -37,7 +38,7 @@ async function main() {
       Object.keys(configuration).some(key => !['allowedOrigins', 'plan'].includes(key)))
     throw Error('Expected a plan and an explicit allowedOrigins array');
 
-  const plan = normalizeComputerPlan(configuration.plan, {
+  let plan = normalizeComputerPlan(configuration.plan, {
     allowedOrigins: configuration.allowedOrigins,
   });
   if (plan.steps[0]?.action !== 'navigate')
@@ -50,6 +51,18 @@ async function main() {
 
   const store = createFileComputerStore(join(homedir(), '.ultron-mw',
     'browser-checkpoints'));
+  // A fresh isolated Chrome profile cannot inherit an older session's page.
+  // Reissue the objective ONLY when previous progress is entirely passive.
+  // Existing checkpoints containing clicks/typing/pending effects stop here.
+  const restart = restartSafeBrowserPlan(plan, await store.read(plan.id));
+  if (restart.restarted) {
+    process.stderr.write(
+      'Previous Chrome session checkpoint retained; restarting only ' +
+      'read-only navigation in a new isolated browser session.\\n');
+    plan = restart.plan;
+    if (await store.read(plan.id))
+      throw Error('Browser restart identifier collision; restart safely');
+  }
   const browser = await launchIsolatedBrowser({
     headless: !headed, ownerApproval: headed,
     allowedOrigins: plan.allowedOrigins,
