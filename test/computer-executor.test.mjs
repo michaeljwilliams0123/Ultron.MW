@@ -9,7 +9,7 @@ import {
   normalizeComputerPlan, createComputerExecutor, createMemoryComputerStore
 } from '../src/computer/executor.mjs';
 import { createFileComputerStore } from '../src/computer/file-store.mjs';
-import { createPlaywrightComputerDriver, installNetworkPolicy } from '../src/computer/playwright-driver.mjs';
+import { createPlaywrightComputerDriver, installNetworkPolicy, launchIsolatedBrowser } from '../src/computer/playwright-driver.mjs';
 
 const allowedOrigins = ['https://example.test'];
 const plan = steps => ({ id: 'check-001', steps });
@@ -312,4 +312,12 @@ test('invalid action properties and noncanonical origins are rejected', () => {
   assert.throws(() => normalizeComputerPlan(plan([
     { action: 'observe' },
   ]), { allowedOrigins: ['https://example.test/secret'] }), /allowlist/);
+});
+
+test('isolated browser refuses arbitrary browser channels before launch', async () => {
+  await assert.rejects(
+    launchIsolatedBrowser({ headless: true, channel: 'arbitrary-browser',
+      allowedOrigins: ['http://127.0.0.1:8753'] }),
+    /Unsupported browser channel/,
+  );
 });
