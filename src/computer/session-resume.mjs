@@ -10,7 +10,7 @@ const PASSIVE = new Set(['navigate', 'observe', 'extract', 'wait']);
 const VALID_ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
 
 export function restartSafeBrowserPlan(plan, checkpoint, {
-  suffix = () => randomUUID().slice(0, 12),
+  suffix = () => randomUUID().replaceAll('-', '').slice(0, 16),
 } = {}) {
   if (!checkpoint) return Object.freeze({ plan, restarted: false });
   const fingerprint = createHash('sha256')

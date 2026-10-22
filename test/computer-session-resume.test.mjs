@@ -36,6 +36,16 @@ test('old completed navigations safely restart from the first page with a new ob
   assert.equal(result.plan.steps[0].url, 'https://github.com/login');
   assert.deepEqual(result.plan.allowedOrigins, original.allowedOrigins);
 });
+test('default cryptographic session suffix is accepted without test injection', () => {
+  const first = restartSafeBrowserPlan(original, state(['login', 'profile']));
+  const second = restartSafeBrowserPlan(original, state(['login', 'profile']));
+  assert.equal(first.restarted, true);
+  assert.match(first.plan.id, /\.[a-f0-9]{16}$/);
+  assert.notEqual(first.plan.id, second.plan.id);
+  assert.equal(first.plan.steps[0].url, original.steps[0].url);
+  assert.equal(first.priorId, original.id);
+});
+
 test('old interactive action, even if marked completed, never auto-restarts', () => {
   assert.throws(() => restartSafeBrowserPlan(original,
     state(['login', 'profile', 'approve']), { suffix }), /interactive actions/);
