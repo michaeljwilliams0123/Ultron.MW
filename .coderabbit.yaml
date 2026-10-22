@@ -49,10 +49,10 @@ reviews:
       enabled: false
   pre_merge_checks:
     docstrings:
-      mode: off
+      mode: "off"
     title:
-      mode: off
+      mode: "off"
     description:
-      mode: off
+      mode: "off"
     issue_assessment:
-      mode: off
+      mode: "off"
