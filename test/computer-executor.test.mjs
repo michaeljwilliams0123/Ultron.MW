@@ -314,6 +314,25 @@ test('invalid action properties and noncanonical origins are rejected', () => {
   ]), { allowedOrigins: ['https://example.test/secret'] }), /allowlist/);
 });
 
+test('interactive plans reject empty postconditions before requesting approval', () => {
+  for (const action of ['click', 'type', 'keypress']) {
+    for (const expect of [{}, []]) {
+      const instruction = { action, selector: '#subject', expect };
+      if (action === 'type') instruction.value = 'fixture';
+      if (action === 'keypress') instruction.key = 'Enter';
+      assert.throws(
+        () => normalizeComputerPlan(plan([instruction]), { allowedOrigins }),
+        /verifiable postcondition/,
+        action + ' must not accept an empty assertion',
+      );
+    }
+  }
+  assert.doesNotThrow(() => normalizeComputerPlan(
+    plan([{ action: 'type', selector: '#subject', value: 'fixture',
+      expect: { textIncludes: 'Saved' } }]), { allowedOrigins },
+  ));
+});
+
 test('isolated browser refuses arbitrary browser channels before launch', async () => {
   await assert.rejects(
     launchIsolatedBrowser({ headless: true, channel: 'arbitrary-browser',
