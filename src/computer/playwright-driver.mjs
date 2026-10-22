@@ -44,6 +44,48 @@ export function createPlaywrightComputerDriver(page) {
 }
 
 /**
+ * Request interception is required before the first navigation. Origins are
+ * canonical and explicit. Even page-loaded scripts and redirects cannot
+ * silently fetch a new HTTP(S) destination, including cross-origin assets.
+ * This is a hostname-level policy; hosted workers additionally need DNS/IP
+ * egress controls before accessing sensitive networks.
+ */
+export async function installNetworkPolicy(context, allowedOrigins) {
+  if (!context || typeof context.route !== 'function' ||
+      !Array.isArray(allowedOrigins) || !allowedOrigins.length ||
+      allowedOrigins.some(origin => {
+        try {
+          const url = new URL(origin);
+          return url.origin !== origin || url.username || url.password ||
+            !['https:', 'http:'].includes(url.protocol) ||
+            url.protocol === 'http:' &&
+              !['localhost','127.0.0.1','[::1]'].includes(url.hostname);
+        } catch { return true; }
+      }))
+    throw Error('Network boundary requires canonical allowed origins');
+  const allowed = new Set(allowedOrigins);
+  await context.route('**/*', async route => {
+    try {
+      const target = new URL(route.request().url());
+      if (!['https:', 'http:'].includes(target.protocol) ||
+          !allowed.has(target.origin)) {
+        await route.abort('blockedbyclient');
+        return;
+      }
+    } catch {
+      await route.abort('blockedbyclient');
+      return;
+    }
+    await route.continue();
+  });
+  // WebSocket messages bypass HTTP route interception in some Playwright
+  // versions. Refuse them entirely in the initial browser worker.
+  if (typeof context.routeWebSocket === 'function') {
+    await context.routeWebSocket('**/*', socket => socket.close());
+  }
+}
+
+/**
  * The dependency is deliberately optional: the existing production Pages
  * site, CI and lockfile are unchanged. Use in an isolated owner-approved
  * runtime after installing Playwright and its browsers in that environment.
@@ -55,10 +97,20 @@ export async function launchIsolatedBrowser(options = {}) {
   try { pw = await import('playwright'); }
   catch { throw Error('Playwright not installed in this execution environment'); }
   const browser = await pw.chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    acceptDownloads: false, serviceWorkers: 'block',
-  });
-  const page = await context.newPage();
-  return { page, driver: createPlaywrightComputerDriver(page),
-    async close() { await browser.close(); } };
+  try {
+    const context = await browser.newContext({
+      acceptDownloads: false, serviceWorkers: 'block',
+    });
+    await installNetworkPolicy(context, options.allowedOrigins);
+    const page = await context.newPage();
+    // A popup is a new authority surface: close rather than follow it.
+    context.on('page', opened => {
+      if (opened !== page) void opened.close().catch(() => {});
+    });
+    return { page, driver: createPlaywrightComputerDriver(page),
+      async close() { await browser.close(); } };
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
 }
