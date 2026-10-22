@@ -7,7 +7,7 @@ import {
   normalizeComputerPlan, createComputerExecutor, createMemoryComputerStore
 } from '../src/computer/executor.mjs';
 import { createFileComputerStore } from '../src/computer/file-store.mjs';
-import { createPlaywrightComputerDriver } from '../src/computer/playwright-driver.mjs';
+import { createPlaywrightComputerDriver, installNetworkPolicy } from '../src/computer/playwright-driver.mjs';
 
 const allowedOrigins = ['https://example.test'];
 const plan = steps => ({ id: 'check-001', steps });
@@ -45,7 +45,7 @@ test('navigation and observable state complete with an evidence digest', async (
 test('click and typing require independent positive authorization', async () => {
   const h = harness();
   const out = await h.executor(createMemoryComputerStore()).run(plan([
-    { action: 'click', selector: '#submit' },
+    { action: 'click', selector: '#submit', expect: { textIncludes: 'Submitted' } },
   ]));
   assert.equal(out.status, 'approval-required');
   assert.equal(h.count, 0);
@@ -137,4 +137,91 @@ test('Playwright adapter translates actual page interaction methods', async () =
     ['goto','https://example.test'], ['wheel',0,150],
   ]);
   assert.equal((await driver.observe()).title, 'Sandbox');
+});
+
+test('interactive effects cannot pretend verification without a postcondition', async () => {
+  const h = harness({ authorization: async () => true });
+  await assert.rejects(h.executor(createMemoryComputerStore()).run(plan([
+    { action: 'click', selector: '#submit' },
+  ])), /postcondition/);
+  assert.equal(h.count, 0);
+});
+test('post-effect checkpoint failure never makes an uncertain action replayable', async () => {
+  const h = harness({ authorization: async () => true });
+  const inner = createMemoryComputerStore();
+  let writes = 0, failOne = true;
+  const store = {
+    read: inner.read,
+    async write(id, data) {
+      writes++;
+      if (writes === 2 && failOne) { failOne = false; throw Error('Disk full after action'); }
+      return inner.write(id, data);
+    },
+  };
+  const p = plan([{ action: 'click', selector: '#submit',
+    expect: { textIncludes: 'Submitted' } }]);
+  const first = await h.executor(store).run(p);
+  assert.equal(first.status, 'reconcile-required');
+  assert.equal((await inner.read(p.id)).pending, 'step-1');
+  assert.equal((await h.executor(store).run(p)).status, 'reconcile-required');
+  assert.equal(h.count, 1);
+});
+test('concurrent in-memory runs cannot dispatch the same objective twice', async () => {
+  const store = createMemoryComputerStore();
+  let dispatch = 0, release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const driver = {
+    observe: async () => ({ url: 'https://example.test', text: 'Ready' }),
+    perform: async () => { dispatch++; await gate; },
+  };
+  const runner = createComputerExecutor({ driver, store, allowedOrigins });
+  const p = plan([{ action: 'observe' }]);
+  const first = runner.run(p);
+  await Promise.resolve();
+  await assert.rejects(runner.run(p), /already running/);
+  release();
+  assert.equal((await first).status, 'completed');
+  assert.equal(dispatch, 1);
+});
+test('filesystem objective lock excludes a second writer and allows later runs', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ultron-lease-'));
+  try {
+    const a = createFileComputerStore(dir), b = createFileComputerStore(dir);
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const first = a.withLock('same-task', () => gate);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    await assert.rejects(b.withLock('same-task', () => 'no'), /lock exists/);
+    release();
+    await first;
+    assert.equal(await b.withLock('same-task', () => 'ok'), 'ok');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+test('origin interception rejects disallowed browser requests and WebSockets', async () => {
+  let intercept, socketRule, closed = false;
+  const context = {
+    async route(pattern, callback) { assert.equal(pattern, '**/*'); intercept = callback; },
+    async routeWebSocket(pattern, callback) { socketRule = callback; },
+  };
+  await installNetworkPolicy(context, ['https://example.test']);
+  const events = [];
+  const route = url => ({
+    request: () => ({ url: () => url }),
+    continue: async () => events.push('continued'),
+    abort: async () => events.push('blocked'),
+  });
+  await intercept(route('https://example.test/resource.js'));
+  await intercept(route('https://example.evil/resource.js'));
+  await intercept(route('http://127.0.0.1/admin'));
+  assert.deepEqual(events, ['continued', 'blocked', 'blocked']);
+  await socketRule({ close: () => { closed = true; } });
+  assert.equal(closed, true);
+});
+test('invalid action properties and noncanonical origins are rejected', () => {
+  assert.throws(() => normalizeComputerPlan(plan([
+    { action: 'observe', injected: true },
+  ]), { allowedOrigins }), /property/);
+  assert.throws(() => normalizeComputerPlan(plan([
+    { action: 'observe' },
+  ]), { allowedOrigins: ['https://example.test/secret'] }), /allowlist/);
 });
