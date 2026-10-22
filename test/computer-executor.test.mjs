@@ -217,6 +217,10 @@ test('origin interception rejects disallowed browser requests and WebSockets', a
   await socketRule({ close: () => { closed = true; } });
   assert.equal(closed, true);
 });
+test('browser startup fails closed when WebSocket interception is unavailable', async () => {
+  await assert.rejects(installNetworkPolicy({ route: async () => {} },
+    ['https://example.test']), /lacks WebSocket/);
+});
 test('invalid action properties and noncanonical origins are rejected', () => {
   assert.throws(() => normalizeComputerPlan(plan([
     { action: 'observe', injected: true },
