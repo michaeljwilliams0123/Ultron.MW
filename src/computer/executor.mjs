@@ -34,7 +34,9 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
       extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'] };
     if (Object.keys(s).some(k => !keys[s.action].includes(k)))
       throw Error('Unexpected computer action property');
-    if (ACTIVE.has(s.action) && !s.expect)
+    if (ACTIVE.has(s.action) &&
+        (!s.expect || typeof s.expect !== 'object' ||
+         Object.keys(s.expect).length === 0))
       throw Error('Interactive computer action requires a verifiable postcondition');
     const id = s.id || 'step-' + (index + 1);
     const entry = { id, action: s.action };

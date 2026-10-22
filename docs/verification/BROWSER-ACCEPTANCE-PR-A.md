@@ -42,13 +42,15 @@ A non-destructive, owner-only GitHub login/click example is checked in at
 
 ```powershell
 $env:ULTRON_COMPUTER_GITHUB_OWNER='michaeljwilliams0123'
-$env:ULTRON_COMPUTER_ALLOWED_ORIGINS='["https://github.com"]'
 $env:ULTRON_BROWSER_CHANNEL='chrome'
 $env:ULTRON_COMPUTER_HEADED='1'
-node scripts/computer-runner.mjs docs/verification/GITHUB-OWNER-LOGIN-ACCEPTANCE.example.json
+Copy-Item docs/verification/GITHUB-OWNER-LOGIN-ACCEPTANCE.example.json .local/github-owner-login-acceptance.json
+node scripts/owner-browser-run.mjs .local/github-owner-login-acceptance.json
 ```
 
-Run only in an interactive terminal on the owner's Windows desktop. Manual
+Run only in an interactive terminal on the owner's Windows desktop. The
+canonical owner runner (merged PR #73) now combines its independent local
+random challenge with the real GitHub CLI host identity check. Manual
 login/MFA happens directly in the isolated Chrome window; the CLI asks the
 owner to `RESUME` after completion and then asks `APPROVE` for its
 read-only click. If the GitHub settings selector changed, the action fails

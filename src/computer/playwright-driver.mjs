@@ -180,7 +180,7 @@ export async function launchIsolatedBrowser(options = {}) {
   try { pw = await import('playwright'); }
   catch { throw Error('Playwright not installed in this execution environment'); }
   if (options.channel !== undefined && options.channel !== 'chrome')
-    throw Error('Only explicitly requested system Chrome is supported');
+    throw Error('Unsupported browser channel; only system Chrome is admitted');
   const browser = await pw.chromium.launch({
     headless: options.headless === true,
     ...(options.channel ? { channel: options.channel } : {}),
