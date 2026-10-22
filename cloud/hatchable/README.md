@@ -35,3 +35,20 @@ Evidence: GitHub core Verify on historical commit `fcef009b6bbd3d8ff653aa3ebad51
 **Do not deploy only these mirror files and assume the backend changed.** Review the complete PR, mirror the changed files through Hatchable's deployment path, validate with the platform dry-run, deploy deliberately, and then prove live task and event correlation, recovery, bounded backlog, owner authentication and rollback. Production is still version 2 until independently checked otherwise.
 
 For the model-powered next stage, see [OPENAI-AGENTS-INTEGRATION.md](./OPENAI-AGENTS-INTEGRATION.md). OpenAI inference and hosted sandboxes remain **off**; no billable requests were initiated.
+
+## Read-only source/deployment parity check (not a deployment)
+
+To compare the source checked out at an exact PR head with a known live Hatchable deployment:
+
+1. In the **existing private Hatchable project**, retrieve `get_deployment(version)` for the **current** deployment and save its JSON response object (the fields `version`, `status`, and `file_manifest`) outside the repository, e.g. `/tmp/hatchable-deployment.json`. Do not save session data or credentials to GitHub.
+2. Check out the exact PR commit and run:
+
+   ```sh
+   node scripts/verify-hatchable-parity.mjs --manifest /tmp/hatchable-deployment.json --version 2 --head "$(git rev-parse HEAD)"
+   ```
+
+   In reviews/automation, replace the `--head` substitution with the exact expected **current PR head SHA** retrieved independently from GitHub, to detect an outdated checkout. Do not derive the expected SHA from the same checkout being checked.
+3. Inspect `parity`, `filesCompared`, and `differences`. Nonzero exit means mismatch or invalid evidence. The script compares SHA-256 *bytes and sizes* for every runtime file under `api/`, `lib/`, `mcp/`, `migrations/` and `hatchable.toml`, reporting missing/extra/changed files, stale Git head, invalid manifests and stale/non-live versions. README and proposals are not deployed runtime files and are excluded.
+4. Immediately re-read Hatchable's **current** deployment version and the GitHub PR head after the comparison. An unchanged version and head are prerequisites for interpreting this snapshot as current. This local verifier does **not** query Hatchable on its own or prove production traffic, owner authentication, receipt integrity, crash recovery, or end-to-end acceptance.
+
+Tests: `node --test test/hatchable-parity.test.mjs` (also included in `node scripts/verify.mjs`). Run against the existing private project only; do not deploy draft source to force matching hashes. A mismatch is an expected **PRODUCTION_HOLD** until a separately approved source-merge and deliberate deployment/rollback sequence has been verified.
