@@ -66,7 +66,7 @@ export async function executeObjective(){throw Error('real-objective-failure');}
  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,0);
  const failure=db.statements.filter(x=>x.sql.includes("'failed'"));
  assert.equal(failure.length,1);
- assert.match(failure[0].sql,/owner_token=\\$2 AND status='leased' AND lease_until>now\\(\\)/);
+ assert.match(failure[0].sql,/owner_token=\$2 AND status='leased' AND lease_until>now\(\)/);
 });
 test('cloud: claim and recovery include their receipts in the same SQL call',async()=>{
  const db=fakeRunnerDb({claimed:false});
