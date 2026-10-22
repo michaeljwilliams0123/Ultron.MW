@@ -100,7 +100,10 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
     for (const step of plan.steps) {
       if (state.completed.includes(step.id)) continue;
       const before = await driver.observe();
-      safeUrl(before.url, allowedOrigins);
+      // A newly launched isolated browser starts at about:blank.
+      // Only first-step navigation may begin from that browser-native state.
+      if (!(step.action === 'navigate' && before.url === 'about:blank'))
+        safeUrl(before.url, allowedOrigins);
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin
