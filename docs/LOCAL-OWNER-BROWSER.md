@@ -52,8 +52,9 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
        node scripts/owner-browser-run.mjs "C:\private\ultron-read-plan.json"
 
 5. Interactive click/type/keypress steps display plan ID, full fingerprint,
-   origin, selector, expected outcome and, for typing, the length but NEVER
-   the contents of the value. Enter the displayed per-step challenge.
+   origin, selector, assertion names (NOT assertion values), and, for
+   typing, the length but NEVER the contents of the value. Expected matches
+   can contain typed secrets, so their values are also always redacted. Enter the displayed per-step challenge.
    Incorrect entry, terminal closure or expiry denies the step. Approval
    does not carry forward to another action.
 6. Inspect the receipt and independently refresh the target page if a write
@@ -71,6 +72,9 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
 - Existing executor semantics require owner callbacks and expected postconditions
   for active interactions. It checkpoints before potential writes, treats
   uncertain effects as requiring reconciliation, and will not replay them.
+- CI indicators are denied before any approval, even when CI allocates a
+  pseudo-terminal. Redirected input/output are also rejected. This is a
+  fail-closed guard, not an unforgeable owner authentication mechanism.
 - The challenge demonstrates live local terminal interaction, NOT independent
   identity proof, SSO, remote owner authentication, visual grounding, session
   takeover or production browser execution. Do not mark issue #65 complete.
