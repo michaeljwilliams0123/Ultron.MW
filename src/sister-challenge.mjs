@@ -112,8 +112,8 @@ export async function observeSisterChallenge({ get } = {}) {
   const refPath = ROOT + SISTER_TARGET + '/git/ref/heads/main';
   const mainRef = await get(refPath);
   if (!SHA.test(mainRef?.object?.sha || '')) refuse('sister-main-sha-invalid');
-  const list = await get(ROOT + SISTER_TARGET + '/rulesets?includes_parents=true');
-  if (!Array.isArray(list) || list.length > 64) refuse('sister-ruleset-list-incomplete');
+  const list = await get(ROOT + SISTER_TARGET + '/rulesets?includes_parents=true&per_page=100');
+  if (!Array.isArray(list) || list.length >= 100) refuse('sister-ruleset-list-incomplete');
   const rulesets = [];
   for (const item of list) {
     if (item?.enforcement !== 'active') continue;

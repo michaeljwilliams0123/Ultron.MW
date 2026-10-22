@@ -73,7 +73,7 @@ test('read-only observer requires stable head and reads no private code', async 
     if (path === '/repos/' + SISTER_CHALLENGER) return challenger;
     if (path === root) return target;
     if (path === root + '/git/ref/heads/main') return mainRef;
-    if (path === root + '/rulesets?includes_parents=true') return [ruleset];
+    if (path === root + '/rulesets?includes_parents=true&per_page=100') return [ruleset];
     if (path === root + '/rulesets/42') return ruleset;
     if (path.startsWith(root + '/actions/runs?head_sha=')) return { workflow_runs: [verified] };
     throw Error('Unexpected data request');
@@ -87,7 +87,7 @@ test('read-only observer requires stable head and reads no private code', async 
     if (path === root) return target;
     if (path === root + '/git/ref/heads/main')
       return { object: { sha: (++reads === 1 ? MAIN : 'b'.repeat(40)) } };
-    if (path === root + '/rulesets?includes_parents=true') return [];
+    if (path === root + '/rulesets?includes_parents=true&per_page=100') return [];
     if (path.startsWith(root + '/actions/runs?')) return { workflow_runs: [] };
     throw Error('Unexpected request');
   } }), /sister-main-moved-retry-from-new-head/);
@@ -102,4 +102,22 @@ test('rendered report cannot disclose private API content or injected strings', 
   assert.throws(() => renderSisterChallenge({
     ...report, findings: [{ priority: 'P1', code: 'PRIVATE_API_PAYLOAD', repair: 'secret' }],
   }), /sister-report-untrusted-findings/);
+});
+
+test('ruleset collection fails closed on a full page rather than silently accepting partial protection evidence', async () => {
+  const root = '/repos/' + SISTER_TARGET;
+  const requests = [];
+  const get = async path => {
+    requests.push(path);
+    if (path === '/repos/' + SISTER_CHALLENGER) return challenger;
+    if (path === root) return target;
+    if (path === root + '/git/ref/heads/main') return mainRef;
+    if (path === root + '/rulesets?includes_parents=true&per_page=100') {
+      return Array.from({ length: 100 }, (_, id) => ({ id: id + 1, enforcement: 'disabled' }));
+    }
+    throw Error('Unexpected request after full ruleset page');
+  };
+  await assert.rejects(() => observeSisterChallenge({ get }), /sister-ruleset-list-incomplete/);
+  assert.ok(requests.includes(root + '/rulesets?includes_parents=true&per_page=100'));
+  assert.ok(!requests.some(path => path.includes('/actions/runs?')));
 });
