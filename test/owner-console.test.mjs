@@ -33,8 +33,14 @@ test('owner approval preview discloses target and expectation but not typed cont
   const preview = summarizeComputerApproval(request());
   assert.equal(preview.target, '#subject');
   assert.equal(preview.valueLength, 13);
-  assert.equal(preview.expected.textIncludes, 'Form');
+  assert.equal(preview.expected.textIncludes, '[redacted]');
   assert.ok(!JSON.stringify(preview).includes('never print me'));
+  const privatePreview = summarizeComputerApproval({ ...request(),
+    expectedState: { textIncludes: 'never print me', urlIncludes: 'url-secret-value' },
+  });
+  assert.deepEqual(privatePreview.expected,
+    { textIncludes: '[redacted]', urlIncludes: '[redacted]' });
+  assert.doesNotMatch(JSON.stringify(privatePreview), /never print me|url-secret-value/);
   assert.ok(!Object.hasOwn(preview, 'value'));
 });
 
@@ -51,10 +57,18 @@ test('owner approval rejects missing plan fingerprint, invalid actions and missi
   }), /timeout/);
 });
 
+test('pseudo-terminal is insufficient to approve inside CI', () => {
+  for (const marker of ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TF_BUILD', 'JENKINS_URL']) {
+    assert.throws(() => createOwnerConsoleAuthorizer({
+      input: { isTTY: true }, output: { isTTY: true }, environment: { [marker]: 'true' },
+    }), /CI execution/);
+  }
+});
+
 test('explicit matching challenge grants only the requested action', async () => {
   const streams = consoleStreams();
   const approve = createOwnerConsoleAuthorizer({
-    ...streams, timeoutMs: 2000, makeChallenge: () => 'cafe1234',
+    ...streams, environment: {}, timeoutMs: 2000, makeChallenge: () => 'cafe1234',
   });
   const pending = approve(request());
   streams.input.write('APPROVE cafe1234\n');
@@ -69,7 +83,7 @@ test('explicit matching challenge grants only the requested action', async () =>
 test('wrong challenge never grants authority', async () => {
   const streams = consoleStreams();
   const approve = createOwnerConsoleAuthorizer({
-    ...streams, timeoutMs: 2000, makeChallenge: () => 'cafe1234',
+    ...streams, environment: {}, timeoutMs: 2000, makeChallenge: () => 'cafe1234',
   });
   const pending = approve(request());
   streams.input.write('APPROVE wrong\n');
