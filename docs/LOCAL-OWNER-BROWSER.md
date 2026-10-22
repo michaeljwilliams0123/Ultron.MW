@@ -26,6 +26,12 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
        npm install --no-save --package-lock=false playwright
        npx playwright install chromium
 
+   **Windows alternative:** When Google Chrome is already installed, skip the
+   Chromium binary download and opt in to Playwright's supported Chrome channel
+   for this terminal session with `set ULTRON_BROWSER_CHANNEL=chrome` (CMD)
+   or `$env:ULTRON_BROWSER_CHANNEL='chrome'` (PowerShell). Only the exact
+   `chrome` value is admitted; arbitrary executable paths are rejected.
+
 3. Create a private JSON plan file. A read-only public navigation example:
 
        {
