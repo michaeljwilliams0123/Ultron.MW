@@ -50,10 +50,11 @@ test('owner approval rejects missing plan fingerprint, invalid actions and missi
   assert.throws(() => summarizeComputerApproval({ ...request(), action: 'navigate' }),
     /Invalid owner approval/);
   assert.throws(() => createOwnerConsoleAuthorizer({
-    input: { isTTY: false }, output: { isTTY: true },
+    input: { isTTY: false }, output: { isTTY: true }, environment: {},
   }), /interactive local terminal/);
   assert.throws(() => createOwnerConsoleAuthorizer({
-    input: { isTTY: true }, output: { isTTY: true }, timeoutMs: 180000,
+    input: { isTTY: true }, output: { isTTY: true }, environment: {},
+    timeoutMs: 180000,
   }), /timeout/);
 });
 
@@ -98,5 +99,5 @@ test('owner runner refuses headless GitHub Actions and piped input before launch
     { encoding: 'utf8', timeout: 5000 },
   );
   assert.equal(run.status, 1);
-  assert.match(run.stderr, /interactive local terminal/);
+  assert.match(run.stderr, /interactive local terminal|refuses CI execution/);
 });
