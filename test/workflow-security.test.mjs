@@ -11,7 +11,7 @@ test('every PR including workflow-only changes runs verification at its exact he
   assert.match(source,/permissions:\n  contents: read\n/);
   assert.doesNotMatch(source,/issues: write|contents: write|secrets\./);
   assert.match(source,/npm ci --ignore-scripts --no-audit --no-fund/);
-  assert.match(source,/npx --yes npm@11\.9\.0 audit --omit=dev --audit-level=high/);
+  assert.match(source,/timeout 6m npx --yes npm@11\.9\.0 audit --omit=dev --audit-level=high/);
   assert.match(source,/import\('@huggingface\/transformers'\)/);
   assert.match(source,/bash scripts\/lint-workflows.sh/);
   assert.match(source,/node scripts\/verify.mjs/);
