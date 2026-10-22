@@ -1,0 +1,107 @@
+#!/usr/bin/env node
+/** GitHub-only, read-only evidence probe: no secrets or task contents printed. */
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { parseCodexCall, codexRecordPaths } from '../src/codex-call.mjs';
+import { assessCodexLane } from '../src/codex-lane-evidence.mjs';
+import { resolveCodexAuthor } from '../docs/core/codex-authors.mjs';
+const exec = promisify(execFile);
+const REPO = 'michaeljwilliams0123/Ultron.MW';
+const ROOT = 'repos/' + REPO;
+const ID = /^[1-9][0-9]{0,7}$/;
+const SHA = /^[a-f0-9]{40}$/;
+async function get(path, { optional = false } = {}) {
+  try {
+    const { stdout } = await exec('gh', [
+      'api', '--hostname', 'github.com', '--method', 'GET', path
+    ], { windowsHide: true, maxBuffer: 2_000_000, timeout: 15000 });
+    return JSON.parse(stdout);
+  } catch (error) {
+    if (optional && /HTTP 404\b/.test(String(error.stderr || ''))) return null;
+    throw Error('GitHub evidence fetch failed; no positive status inferred');
+  }
+}
+async function atBranch(path, head) {
+  const raw = await get(ROOT + '/contents/' + path +
+    '?ref=' + encodeURIComponent(head));
+  if (raw?.encoding !== 'base64' || raw?.type !== 'file')
+    throw Error('GitHub branch source is not a file');
+  return Buffer.from(raw.content, 'base64').toString('utf8');
+}
+async function optionalRecord(path, head) {
+  const raw = await get(ROOT + '/contents/' + path +
+    '?ref=' + encodeURIComponent(head), { optional: true });
+  if (raw === null) return undefined;
+  if (raw?.encoding !== 'base64' || raw?.type !== 'file')
+    throw Error('Task record could not be verified');
+  return JSON.parse(Buffer.from(raw.content, 'base64').toString('utf8'));
+}
+async function runs(event, sha) {
+  const query = '?event=' + encodeURIComponent(event) +
+    '&head_sha=' + sha + '&per_page=100';
+  const list = await get(ROOT + '/actions/runs' + query);
+  if (!Array.isArray(list?.workflow_runs) ||
+      !Number.isSafeInteger(list?.total_count) ||
+      list?.total_count >= 100)
+    throw Error('Workflow audit window incomplete');
+  return list.workflow_runs.filter(run => run.head_sha === sha &&
+    run.event === event);
+}
+async function pullRuns(sha) {
+  const results = await runs('pull_request', sha);
+  const accepted = results.filter(run =>
+    run.name === 'Ultron core verification');
+  const enriched = [];
+  for (const run of accepted) {
+    if (!Number.isSafeInteger(run.id)) throw Error('Invalid workflow run ID');
+    const jobs = await get(ROOT + '/actions/runs/' + run.id +
+      '/jobs?per_page=100');
+    if (!Array.isArray(jobs?.jobs) || !Number.isSafeInteger(jobs.total_count) ||
+        jobs.total_count !== jobs.jobs.length || jobs.total_count >= 100)
+      throw Error('Workflow job evidence incomplete');
+    enriched.push({ ...run, jobs: jobs.jobs });
+  }
+  return enriched;
+}
+async function main() {
+  const number = process.argv[2];
+  if (!ID.test(number || '') || process.argv.length !== 3)
+    throw Error('Usage: node scripts/codex-lane-status.mjs <PR-number>');
+  const pr = await get(ROOT + '/pulls/' + number);
+  const call = parseCodexCall(pr.body);
+  const issue = await get(ROOT + '/issues/' + call.issueNumber);
+  const main = await get(ROOT + '/git/ref/heads/main');
+  if (!SHA.test(main?.object?.sha || '') || !SHA.test(pr.head?.sha || ''))
+    throw Error('Source identity could not be established');
+  const source = await atBranch('docs/proposals/issue-' + call.issueNumber +
+    '.md', pr.head.ref);
+  const paths = codexRecordPaths(call);
+  const [claim, receipt, pulls, dispatched, ownerComments] = await Promise.all([
+    optionalRecord(paths.claim, pr.head.ref),
+    optionalRecord(paths.receipt, pr.head.ref),
+    pullRuns(pr.head.sha), runs('workflow_dispatch', pr.head.sha),
+    get(ROOT + '/issues/' + pr.number + '/comments?per_page=100'),
+  ]);
+  if (!Array.isArray(ownerComments) || ownerComments.length >= 100)
+    throw Error('Owner comment audit incomplete');
+  const report = assessCodexLane({
+    pr, issue, proposalText: source,
+    mainSha: main.object.sha,
+    bindingFingerprint: resolveCodexAuthor(call.authorId,{ requireBinding:true })
+      .binding.fingerprint,
+    pullRequestRuns: pulls, workflowDispatchRuns: dispatched,
+    ownerComments,
+    ...(claim === undefined ? {} : { claim }),
+    ...(receipt === undefined ? {} : { receipt }),
+  });
+  const after = await get(ROOT + '/pulls/' + number);
+  const end = await get(ROOT + '/git/ref/heads/main');
+  if (after?.head?.sha !== pr.head.sha || after?.body !== pr.body ||
+      end?.object?.sha !== main.object.sha)
+    throw Error('PR/main changed during audit; retry read-only from new SHA');
+  console.log(JSON.stringify(report, null, 2));
+}
+main().catch(() => {
+  console.error('Codex lane evidence not established. No execution/identity acceptance.');
+  process.exitCode = 2;
+});
