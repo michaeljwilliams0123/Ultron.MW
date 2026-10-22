@@ -34,22 +34,11 @@ export async function runOne({db,browser}){
  ) SELECT id,objective,attempts FROM moved`,[token]);
  const task=claim.rows[0];
  if(!task)return {status:'idle',recovered:recovered.rows.length,blocked:blocked.rows.length};
+ let result;
  try{
   // In v2 these objectives are read-only/advisory. Any future write objective
   // requires a durable action checkpoint before it can use this retry policy.
-  const result=await executeObjective(task.objective,{db,browser});
-  const done=await db.query(`WITH moved AS (
-    UPDATE brain_tasks SET status='done',last_result=$1::jsonb,owner_token=NULL,
-      lease_until=NULL,updated_at=now()
-    WHERE id=$2 AND owner_token=$3 AND status='leased' AND lease_until>now()
-    RETURNING id,objective
-  ), receipt AS (
-    INSERT INTO brain_events(task_id,event_type,details)
-    SELECT id,'observed',jsonb_build_object('objective',objective,'source',$4::text)
-    FROM moved RETURNING task_id
-  ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown']);
-  if(done.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};
-  return {status:'done',task_id:task.id,objective:task.objective,summary:result};
+  result=await executeObjective(task.objective,{db,browser});
  }catch(e){
   const reason=String(e?.message||'execution-failed').replace(/[^a-z0-9-_]/gi,'-').slice(0,70);
   const failed=await db.query(`WITH moved AS (
@@ -66,5 +55,25 @@ export async function runOne({db,browser}){
   ) SELECT id,status FROM moved`,[task.id,token,reason]);
   if(failed.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};
   return {status:'failed',task_id:task.id,objective:task.objective,reason,next_status:failed.rows[0].status};
+ }
+ try{
+  const done=await db.query(`WITH moved AS (
+    UPDATE brain_tasks SET status='done',last_result=$1::jsonb,owner_token=NULL,
+      lease_until=NULL,updated_at=now()
+    WHERE id=$2 AND owner_token=$3 AND status='leased' AND lease_until>now()
+    RETURNING id,objective
+  ), receipt AS (
+    INSERT INTO brain_events(task_id,event_type,details)
+    SELECT id,'observed',jsonb_build_object('objective',objective,'source',$4::text)
+    FROM moved RETURNING task_id
+  ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown']);
+  if(done.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};
+  return {status:'done',task_id:task.id,objective:task.objective,summary:result};
+ }catch(_error){
+  // The completion query may have committed before the driver failed.
+  // Never misclassify a successful objective as failed or immediately requeue it.
+  // Only the existing lease-recovery path may revisit read-only objectives;
+  // any future consequential write objective requires an external-action checkpoint.
+  return {status:'completion-uncertain',task_id:task.id,objective:task.objective};
  }
 }
