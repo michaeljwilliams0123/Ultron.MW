@@ -141,6 +141,14 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         const result = await driver.perform(step);
         const after = await driver.observe();
         safeUrl(after.url, allowedOrigins);
+        // An expectation matching the PRE-action screen is not evidence
+        // of successful execution. Input fills may instead be confirmed by
+        // the Playwright driver reading back the specific field value.
+        const changed = before.url !== after.url || before.title !== after.title ||
+          before.text !== after.text;
+        if (ACTIVE.has(step.action) && !changed &&
+            !(step.action === 'type' && result?.fieldValueVerified === true))
+          throw Error('Interactive action has no independently observable effect');
         if (step.expect?.urlIncludes && !after.url.includes(step.expect.urlIncludes) ||
             step.expect?.textIncludes && !String(after.text || '').includes(step.expect.textIncludes))
           throw Error('Expected post-action state not observed');
