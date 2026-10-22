@@ -44,8 +44,11 @@ A non-destructive, owner-only GitHub login/click example is checked in at
 $env:ULTRON_COMPUTER_GITHUB_OWNER='michaeljwilliams0123'
 $env:ULTRON_BROWSER_CHANNEL='chrome'
 $env:ULTRON_COMPUTER_HEADED='1'
-Copy-Item docs/verification/GITHUB-OWNER-LOGIN-ACCEPTANCE.example.json .local/github-owner-login-acceptance.json
-node scripts/owner-browser-run.mjs .local/github-owner-login-acceptance.json
+$planDir = Join-Path $HOME '.ultron-mw\plans'
+New-Item -ItemType Directory -Force $planDir | Out-Null
+$planPath = Join-Path $planDir 'github-owner-login-acceptance.json'
+Copy-Item docs/verification/GITHUB-OWNER-LOGIN-ACCEPTANCE.example.json $planPath
+node scripts/owner-browser-run.mjs $planPath
 ```
 
 Run only in an interactive terminal on the owner's Windows desktop.
@@ -83,7 +86,7 @@ been executed with real user authentication**.
 | Type and click with post-action readback | Fixture form save and independently fetched state | Local synthetic proof |
 | Crash-safe idempotency | Rerun same objective, one external write | Local synthetic proof |
 | Visual observation | SHA-256 of real screenshot and accessibility snapshot in each receipt | Local synthetic proof; hashes, not image interpretation |
-| Redirect isolation/compatibility | POST/303/GET and allowed 302/GET chain succeed; foreign second-hop redirect, POST/307 replay and redirect loops fail closed | Real Chrome synthetic proof + unit regression |
+| Redirect isolation/fail-closed | All 3xx responses are blocked, including allowed-origin redirects; no rewrite of browser-visible URL/history is claimed | Unit regression and real Chrome synthetic proof |
 | Ambiguous disconnect | Browser closes just after actual submit; objective requires reconciliation; repeated run makes no second write | Local synthetic proof |
 | Owner session bounds | Independent injected verification callback, expiration, revocation, origin and approval cap | Unit tests; separate GitHub CLI host identity now verified |
 | Session stop during observation/checkpoint | Revocation denies subsequent passive navigation; a pending checkpoint becomes reconciliation-required without dispatch or replay | Unit tests; no external identity connected |
@@ -96,16 +99,16 @@ been executed with real user authentication**.
 
 ## Security boundaries
 
-- `route.continue()` by itself did not block HTTP redirects after an admitted
-  URL. Even `route.fulfill({ response: 3xx })` can permit a browser-native
-  redirect without another interceptor. The worker now uses `maxRedirects: 0`
-  and **resolves each hop via `context.request.fetch`** with independently
-  validated exact-origin allowlisting. At most five redirects are followed;
-  only GET/HEAD may be repeated. POST may transition to GET on 301/302/303,
-  but a POST 307/308 is blocked to prevent an unintended second write.
-  The final non-redirect response is fulfilled to Chromium. Cross-origin and
-  second-hop targets outside the exact allowlist are blocked. A network-layer
-  egress gate remains necessary before hosting untrusted private-network URLs.
+- `route.continue()` or fulfilling a 3xx lets Chromium follow redirects
+  without rechecking destination origins. Resolving hops through the API
+  context and fulfilling a final 200 body instead leaves Chromium's original
+  POST URL in browser history and receipts, risking refresh/resubmission.
+  **All 3xx responses are now blocked**, including redirects to allowed
+  origins. No API follow-up request is made. A redirected original write
+  might still have reached the first server and must be reconciled rather
+  than replayed. Non-redirect final responses can still be fulfilled.
+  Redirect compatibility requires browser-native correct destination/history
+  semantics, isolation on every hop, and an egress boundary before release.
 - WebSockets and popups remain closed; service workers remain blocked.
 - Screenshot buffers and accessibility snapshots are hashed **in memory**;
   their raw bytes/text are not included in durable checkpoints or test receipts.
