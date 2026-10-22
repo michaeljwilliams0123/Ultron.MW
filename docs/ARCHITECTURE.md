@@ -86,6 +86,8 @@ CI runs for all PRs and main pushes. It performs a script-disabled lockfile inst
 
 Device/WebGPU/Ollama acceptance, sustained heartbeat reliability, an enforced failing-PR merge gate, real-task benchmark quality and deployment at the final merge SHA remain separate acceptance work. The dated baseline document tracks these boundaries.
 
+Provider integrations use the versioned broker in `src/capability-bindings.mjs`. A binding records an opaque provider identity reference, exact origins, operations/effects/scopes, expiration, credential reference and cost ceiling. Registration is not readiness: an adapter must independently report the matching identity and all required scopes. Writes require separate authorization; every execution uses an idempotency key and independent observation, and an uncertain result is held for reconciliation rather than replayed. The broker stores digests and receipt metadata, not credentials or provider response bodies. Live evidence and remaining P0–P2 boundaries are recorded in [`verification/EXECUTION-PRESSURE-TEST-2026-10-21.md`](verification/EXECUTION-PRESSURE-TEST-2026-10-21.md).
+
 ## Optional local intelligence and standby
 
 The existing local HTTP server remains the single runtime entrypoint (`src/server.mjs`); its prior state persistence, owner pairing, and read-only endpoints are preserved. The opt-in Hugging Face adapter is selected with `ULTRON_ENABLE_HF=1`. The seven-self GrokBot advisor is distinct from inference and does not create execution authority. With `ULTRON_ALWAYS_ON=1`, a 60-second local, zero-credit standby tick is exposed through `/api/health` and `/api/standby`; no cloud daemon or external provider is implied. See [GrokBot](GROKBOT.md).
