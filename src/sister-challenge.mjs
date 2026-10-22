@@ -65,11 +65,17 @@ export function evaluateSisterEvidence({ challenger, target, mainRef, rulesets, 
   const exactRuns = workflowRuns.filter(item =>
     item?.head_sha === headSha &&
     (item?.path === '.github/workflows/verify.yml' ||
-      item?.path === 'michaeljwilliams0123/mahoraga/.github/workflows/verify.yml' ||
-      item?.name === 'Verify Mahoraga'));
+      item?.path === 'michaeljwilliams0123/mahoraga/.github/workflows/verify.yml'));
   const latest = [...exactRuns].sort((a, b) =>
     (Number(b.run_number) || 0) - (Number(a.run_number) || 0))[0];
-  const currentHeadCiSuccess = latest?.status === 'completed' && latest?.conclusion === 'success';
+  // A green workflow summary is not proof that both required OS jobs passed.
+  // Job head_sha, name, status and conclusion must independently match.
+  const jobs = Array.isArray(latest?.jobs) ? latest.jobs : [];
+  const currentHeadCiSuccess = latest?.status === 'completed' &&
+    latest?.conclusion === 'success' &&
+    REQUIRED.every(context => jobs.some(job =>
+      job?.name === context && job?.head_sha === headSha &&
+      job?.status === 'completed' && job?.conclusion === 'success'));
   const findings = [];
   if (!protectedMain) findings.push(finding('P1', 'sister-main-protection-unverified', FIXES.protection));
   if (!currentHeadCiSuccess) findings.push(finding('P1', 'sister-current-main-ci-unverified', FIXES.ci));
@@ -125,11 +131,33 @@ export async function observeSisterChallenge({ get } = {}) {
     '/actions/runs?head_sha=' + mainRef.object.sha + '&per_page=50');
   if (!Array.isArray(runs?.workflow_runs))
     refuse('sister-actions-evidence-unavailable');
+  // Fetch job-level proof for the latest exact-head Verify workflow only.
+  // Missing or truncated job evidence is unknown, never a claimed pass.
+  const matching = runs.workflow_runs.filter(item =>
+    item?.head_sha === mainRef.object.sha &&
+    (item?.path === '.github/workflows/verify.yml' ||
+      item?.path === 'michaeljwilliams0123/mahoraga/.github/workflows/verify.yml'));
+  const latest = [...matching].sort((a, b) =>
+    (Number(b.run_number) || 0) - (Number(a.run_number) || 0))[0];
+  let workflowRuns = runs.workflow_runs;
+  if (latest) {
+    if (!Number.isSafeInteger(latest.id) || latest.id <= 0)
+      refuse('sister-verify-run-identity-invalid');
+    const jobList = await get(ROOT + SISTER_TARGET + '/actions/runs/' +
+      latest.id + '/jobs?per_page=100');
+    if (!Array.isArray(jobList?.jobs) ||
+        !Number.isSafeInteger(jobList?.total_count) ||
+        jobList.total_count > jobList.jobs.length ||
+        jobList.jobs.length >= 100)
+      refuse('sister-verify-jobs-incomplete');
+    workflowRuns = runs.workflow_runs.map(item =>
+      item === latest ? { ...item, jobs: jobList.jobs } : item);
+  }
   const after = await get(refPath);
   if (after?.object?.sha !== mainRef.object.sha)
     refuse('sister-main-moved-retry-from-new-head');
   return evaluateSisterEvidence({
-    challenger, target, mainRef, rulesets, workflowRuns: runs.workflow_runs,
+    challenger, target, mainRef, rulesets, workflowRuns,
   });
 }
 

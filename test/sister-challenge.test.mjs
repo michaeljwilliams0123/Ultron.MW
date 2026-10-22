@@ -24,8 +24,14 @@ const ruleset = {
     } },
   ],
 };
-const verified = { head_sha: MAIN, name: 'Verify Mahoraga',
-  status: 'completed', conclusion: 'success', run_number: 3 };
+const verified = { id: 77, head_sha: MAIN, name: 'Verify Mahoraga',
+  path: '.github/workflows/verify.yml',
+  status: 'completed', conclusion: 'success', run_number: 3,
+  jobs: [
+    { name: 'Verify (ubuntu-latest)', head_sha: MAIN, status: 'completed', conclusion: 'success' },
+    { name: 'Verify (windows-latest)', head_sha: MAIN, status: 'completed', conclusion: 'success' },
+  ],
+};
 function evaluate(override = {}) {
   return evaluateSisterEvidence({ challenger, target, mainRef,
     rulesets: [ruleset], workflowRuns: [verified], ...override });
@@ -59,6 +65,25 @@ test('latest exact-main workflow evidence must be green', () => {
   }
 });
 
+test('workflow success cannot mask a missing, stale or failing required job', () => {
+  const cases = [
+    { ...verified, jobs: verified.jobs.slice(0, 1) },
+    { ...verified, jobs: verified.jobs.map((j, i) =>
+      i === 1 ? { ...j, conclusion: 'failure' } : j) },
+    { ...verified, jobs: verified.jobs.map((j, i) =>
+      i === 1 ? { ...j, status: 'queued', conclusion: null } : j) },
+    { ...verified, jobs: verified.jobs.map((j, i) =>
+      i === 1 ? { ...j, head_sha: 'b'.repeat(40) } : j) },
+    { ...verified, path: '.github/workflows/unrelated.yml' },
+    { ...verified, jobs: null },
+  ];
+  for (const run of cases) {
+    const report = evaluate({ workflowRuns: [run] });
+    assert.equal(report.evidence.currentMainCiSuccess, false);
+    assert.ok(report.findings.some(x => x.code === 'sister-current-main-ci-unverified'));
+  }
+});
+
 test('wrong identity or privacy boundary fails closed', () => {
   assert.throws(() => evaluate({ target: { ...target, private: false } }), /sister-read-evidence-invalid/);
   assert.throws(() => evaluate({ challenger: { ...challenger, full_name: SISTER_TARGET } }), /sister-read-evidence-invalid/);
@@ -76,6 +101,8 @@ test('read-only observer requires stable head and reads no private code', async 
     if (path === root + '/rulesets?includes_parents=true&per_page=100') return [ruleset];
     if (path === root + '/rulesets/42') return ruleset;
     if (path.startsWith(root + '/actions/runs?head_sha=')) return { workflow_runs: [verified] };
+    if (path === root + '/actions/runs/77/jobs?per_page=100')
+      return { total_count: 2, jobs: verified.jobs };
     throw Error('Unexpected data request');
   };
   const value = await observeSisterChallenge({ get });
@@ -120,4 +147,20 @@ test('ruleset collection fails closed on a full page rather than silently accept
   await assert.rejects(() => observeSisterChallenge({ get }), /sister-ruleset-list-incomplete/);
   assert.ok(requests.includes(root + '/rulesets?includes_parents=true&per_page=100'));
   assert.ok(!requests.some(path => path.includes('/actions/runs?')));
+});
+
+test('incomplete required job listing is rejected before issuing a public report', async () => {
+  const root = '/repos/' + SISTER_TARGET;
+  const get = async path => {
+    if (path === '/repos/' + SISTER_CHALLENGER) return challenger;
+    if (path === root) return target;
+    if (path === root + '/git/ref/heads/main') return mainRef;
+    if (path === root + '/rulesets?includes_parents=true&per_page=100') return [ruleset];
+    if (path === root + '/rulesets/42') return ruleset;
+    if (path.startsWith(root + '/actions/runs?head_sha=')) return { workflow_runs: [verified] };
+    if (path === root + '/actions/runs/77/jobs?per_page=100')
+      return { total_count: 3, jobs: verified.jobs };
+    throw Error('Unexpected request');
+  };
+  await assert.rejects(() => observeSisterChallenge({ get }), /sister-verify-jobs-incomplete/);
 });
