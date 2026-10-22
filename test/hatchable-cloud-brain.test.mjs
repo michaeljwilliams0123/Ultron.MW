@@ -6,23 +6,26 @@ const coreSource = `export const ALLOWED=new Set(['repo.inspect']);
 export const CAPABILITIES=[{id:'repo.inspect'}];
 export async function executeObjective(objective){return {objective,source:'fixture',sha:'fixed-test-sha'};}`;
 const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource).toString('base64');
-async function moduleUnderTest(path){
+async function moduleUnderTest(path,core=coreUrl){
  const source=await readFile(new URL('../cloud/hatchable/lib/'+path,import.meta.url),'utf8');
- const transformed=source.replace("from 'lib/brain-core.js'","from '"+coreUrl+"'");
+ const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'");
  assert.notEqual(transformed,source,'test import alias should be replaced');
  return import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 }
 const {runOne}=await moduleUnderTest('brain-runner.js');
 const {queueObjective,controlTask,saveNote}=await moduleUnderTest('brain-owner.js');
 
-function fakeRunnerDb({complete=true,claimed=true}={}){
+function fakeRunnerDb({complete=true,claimed=true,completionReject=false,failureStatus=null}={}){
  const statements=[];
  return {statements,async query(sql,params=[]){
   statements.push({sql,params});
   if(sql.includes("'lease-recovered'")||sql.includes("'attempt-limit'"))return {rows:[]};
   if(sql.includes("'claimed'"))return {rows:claimed?[{id:7,objective:'repo.inspect',attempts:1}]:[]};
-  if(sql.includes("'observed'"))return {rows:complete?[{id:7}]:[]};
-  if(sql.includes("'failed'"))return {rows:[]};
+  if(sql.includes("'observed'")){
+   if(completionReject)throw Error('simulated-completion-write-failure');
+   return {rows:complete?[{id:7}]:[]};
+  }
+  if(sql.includes("'failed'"))return {rows:failureStatus===null?[]:[{id:7,status:failureStatus}]};
   throw Error('unexpected-sql:'+sql.slice(0,80));
  }};
 }
@@ -41,6 +44,29 @@ test('cloud: stale lease cannot produce a contradictory failure receipt',async()
  const result=await runOne({db,browser:{}});
  assert.equal(result.status,'lost-lease');
  assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,0);
+});
+test('cloud: completion persistence rejection remains uncertain, not an objective failure',async()=>{
+ const db=fakeRunnerDb({completionReject:true});
+ const result=await runOne({db,browser:{}});
+ assert.deepEqual(result,{status:'completion-uncertain',task_id:7,objective:'repo.inspect'});
+ assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,1);
+ assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,0);
+});
+test('cloud: real objective execution failure remains lease-fenced and journaled',async()=>{
+ const throwingCore=`export const ALLOWED=new Set(['repo.inspect']);
+export const CAPABILITIES=[{id:'repo.inspect'}];
+export async function executeObjective(){throw Error('real-objective-failure');}`;
+ const failingCoreUrl='data:text/javascript;base64,'+Buffer.from(throwingCore).toString('base64');
+ const {runOne:runFailing}=await moduleUnderTest('brain-runner.js',failingCoreUrl);
+ const db=fakeRunnerDb({failureStatus:'queued'});
+ const result=await runFailing({db,browser:{}});
+ assert.equal(result.status,'failed');
+ assert.equal(result.next_status,'queued');
+ assert.match(result.reason,/real-objective-failure/);
+ assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,0);
+ const failure=db.statements.filter(x=>x.sql.includes("'failed'"));
+ assert.equal(failure.length,1);
+ assert.match(failure[0].sql,/owner_token=\\$2 AND status='leased' AND lease_until>now\\(\\)/);
 });
 test('cloud: claim and recovery include their receipts in the same SQL call',async()=>{
  const db=fakeRunnerDb({claimed:false});
