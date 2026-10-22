@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -197,6 +199,41 @@ test('filesystem objective lock excludes a second writer and allows later runs',
     await first;
     assert.equal(await b.withLock('same-task', () => 'ok'), 'ok');
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+test('process death leaves the objective lock for explicit reconciliation', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ultron-crash-lock-'));
+  const moduleUrl = new URL('../src/computer/file-store.mjs', import.meta.url).href;
+  const source = `
+    const { createFileComputerStore } = await import(process.argv[1]);
+    const store = createFileComputerStore(process.argv[2]);
+    await store.withLock('crash-task', async () => {
+      process.stdout.write('LOCKED\\n');
+      await new Promise(() => {});
+    });`;
+  const child = spawn(process.execPath,
+    ['--input-type=module', '-e', source, moduleUrl, dir],
+    { stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(Error('Child did not acquire lock')), 5000);
+      child.once('error', reject);
+      child.stdout.on('data', chunk => {
+        if (String(chunk).includes('LOCKED')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+    child.kill('SIGKILL');
+    await once(child, 'exit');
+    await assert.rejects(
+      createFileComputerStore(dir).withLock('crash-task', async () => 'unsafe'),
+      /requires reconciliation/,
+    );
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 test('origin interception rejects disallowed browser requests and WebSockets', async () => {
   let intercept, socketRule, closed = false;

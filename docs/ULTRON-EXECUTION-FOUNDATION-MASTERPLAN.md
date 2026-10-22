@@ -238,6 +238,8 @@ The repository includes docs/examples/computer-read-only.json. This exercises a 
 
 ### Test evidence and what it does not show
 
+The next pressure-test tranche is recorded in [`verification/EXECUTION-PRESSURE-TEST-2026-10-21.md`](verification/EXECUTION-PRESSURE-TEST-2026-10-21.md). It adds a process-death lock test, a provider-neutral capability broker, two-provider read evidence and a source-reference inventory. PR #64 remains open; real owner-browser and hosted-runtime acceptance remain pending.
+
 - Regressions now cover duplicate-run exclusion, failed post-effect checkpoint commit, unknown/malformed action properties, postcondition enforcement, no-observable-change denial, foreign-origin network requests and WebSockets, missing WebSocket interceptor, sensitive value readback without returning the value, and persistence across process/store reconstruction.
 - The existing verification script automatically discovers new .mjs tests and checks under src/, docs/, scripts/ and test/, so no additional CI workflow or control plane was introduced.
 - Passing mocked tests proves the JavaScript contract and regression fixtures, not user-authenticated browser operation. There is no Playwright browser binary provisioned or owner session linked by this PR.
