@@ -30,16 +30,20 @@ async function main() {
   const input = createInterface({ input: process.stdin, output: process.stderr });
   let instance;
   try {
-    instance = await launchIsolatedBrowser({ headless: true });
+    instance = await launchIsolatedBrowser({ headless: true, allowedOrigins });
     const executor = createBoundComputerExecutor({
       binding, driver: instance.driver,
       store: createFileComputerStore(resolve('.local', 'computer-checkpoints')),
-      authorize: async ({ stepId, action, currentOrigin }) => {
+      authorize: async ({ stepId, action, currentOrigin, selector, valueLength, expectedState, planFingerprint }) => {
         if (!process.stdin.isTTY) return false;
         const challenge = 'APPROVE ' + stepId;
         const reply = await input.question(
           'Authorize ' + action + ' on ' + currentOrigin +
-          ' for step ' + stepId + '? Enter "' + challenge + '": ');
+          ' for step ' + stepId + ' (target=' + selector +
+          ', valueLength=' + (valueLength ?? 'n/a') +
+          ', expected=' + JSON.stringify(expectedState) +
+          ', plan=' + planFingerprint.slice(0, 12) +
+          ')? Enter "' + challenge + '": ');
         return reply.trim() === challenge;
       },
     });
