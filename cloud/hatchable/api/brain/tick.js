@@ -1,5 +1,4 @@
-import { db,browser,scheduler } from 'hatchable';
-import { runOne } from 'lib/brain-runner.js';
+import { db,scheduler } from 'hatchable';
 export const access='scheduler';
 export const methods=['POST'];
 export default async function(req,res){
@@ -11,13 +10,9 @@ export default async function(req,res){
    INSERT INTO brain_events(task_id,event_type)
    SELECT id,'scheduled-hourly' FROM admitted RETURNING task_id
  ) SELECT id FROM admitted`,['hourly-'+hour]);
- const results=[];
- for(let i=0;i<4;i++){
-  const result=await runOne({db,browser});
-  results.push(result);
-  if(result.status==='idle'||result.status==='lost-lease')break;
- }
- // Continue once through the existing scheduler endpoint, without recursive scheduling.
+ // A scheduled tick has a short fire budget. Queue only: browser renders and
+ // bounded multi-task processing belong to /api/brain/run, never this tick.
+ // Continue once through the existing scheduler endpoint, without recursion.
  const remaining=await db.query(`SELECT count(*)::int AS n FROM brain_tasks
   WHERE status='queued' AND attempts < max_attempts
   AND (lease_until IS NULL OR lease_until <= now())`);
@@ -27,6 +22,6 @@ export default async function(req,res){
   try{await scheduler.now('/api/brain/run',{via:'hourly-backlog'});continuation_scheduled=true;}
   catch(_e){continuation_scheduled=false;}
  }
- return res.json({trigger:'hourly',processed:results.filter(r=>r.status==='done').length,
-   pending,continuation_scheduled,results});
+ return res.json({trigger:'hourly',processed:0,pending,continuation_scheduled,
+   mode:'dispatch-only'});
 }
