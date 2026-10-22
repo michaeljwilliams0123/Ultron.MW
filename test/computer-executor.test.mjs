@@ -245,13 +245,22 @@ test('origin interception rejects disallowed browser requests and WebSockets', a
   const events = [];
   const route = url => ({
     request: () => ({ url: () => url }),
-    continue: async () => events.push('continued'),
+    fetch: async options => {
+      assert.equal(options.maxRedirects, 0);
+      return {
+        status: () => url.includes('/redirect') ? 302 : 200,
+        headers: () => url.includes('/redirect') ?
+          { location: 'https://example.evil/private' } : {},
+      };
+    },
+    fulfill: async () => events.push('continued'),
     abort: async () => events.push('blocked'),
   });
   await intercept(route('https://example.test/resource.js'));
+  await intercept(route('https://example.test/redirect'));
   await intercept(route('https://example.evil/resource.js'));
   await intercept(route('http://127.0.0.1/admin'));
-  assert.deepEqual(events, ['continued', 'blocked', 'blocked']);
+  assert.deepEqual(events, ['continued', 'blocked', 'blocked', 'blocked']);
   await socketRule({ close: () => { closed = true; } });
   assert.equal(closed, true);
 });

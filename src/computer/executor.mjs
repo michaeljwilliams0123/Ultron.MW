@@ -163,9 +163,12 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           stepId: step.id, action: step.action, status: 'verified', observedAt: clock(),
           origin: new URL(after.url).origin, observationDigest: digest({
             url: after.url, text: String(after.text || '').slice(0, 10000),
-            title: after.title || ''
+            title: after.title || '', screenshotDigest: after.screenshotDigest || null,
+            accessibilityDigest: after.accessibilityDigest || null,
           }),
           resultDigest: digest(result ?? null),
+          visualDigest: after.screenshotDigest || null,
+          accessibilityDigest: after.accessibilityDigest || null,
         };
         // Do not mutate the in-memory last durable checkpoint until the
         // complete next checkpoint has been committed. Failed post-action

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * Adapter to a provided Playwright Page. Not connected to an external
  * account or browser until the owner supplies a separate authenticated
@@ -9,10 +11,21 @@ export function createPlaywrightComputerDriver(page) {
     throw TypeError('An actual Playwright Page is required');
   return Object.freeze({
     async observe() {
+      const body = page.locator('body');
+      const text = String(await body.innerText({ timeout: 10000 })).slice(0, 10000);
+      // Visual and accessibility evidence stay in process memory only. Never
+      // save screenshots, page HTML or account contents to GitHub/checkpoints.
+      const screenshotDigest = typeof page.screenshot === 'function'
+        ? createHash('sha256').update(await page.screenshot({
+            type: 'png', animations: 'disabled', timeout: 10000,
+          })).digest('hex') : null;
+      const accessibilityDigest = typeof body.ariaSnapshot === 'function'
+        ? createHash('sha256').update(String(await body.ariaSnapshot({
+            timeout: 10000,
+          })).slice(0, 10000)).digest('hex') : null;
       return {
-        url: page.url(),
-        title: String(await page.title()).slice(0, 240),
-        text: String(await page.locator('body').innerText({ timeout: 10000 })).slice(0, 10000),
+        url: page.url(), title: String(await page.title()).slice(0, 240),
+        text, screenshotDigest, accessibilityDigest,
       };
     },
     async perform(step) {
@@ -74,7 +87,7 @@ export async function installNetworkPolicy(context, allowedOrigins) {
     try {
       const target = new URL(route.request().url());
       if (!['https:', 'http:'].includes(target.protocol) ||
-          !allowed.has(target.origin)) {
+          target.username || target.password || !allowed.has(target.origin)) {
         await route.abort('blockedbyclient');
         return;
       }
@@ -82,7 +95,24 @@ export async function installNetworkPolicy(context, allowedOrigins) {
       await route.abort('blockedbyclient');
       return;
     }
-    await route.continue();
+    // Playwright's route.continue() does NOT necessarily re-intercept redirect
+    // destinations. Fetch only the admitted URL WITHOUT following redirects,
+    // inspect Location, then fulfill. A forbidden target is never requested.
+    if (typeof route.fetch !== 'function' || typeof route.fulfill !== 'function')
+      throw Error('Playwright runtime lacks redirect-safe request interception');
+    const response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
+    if ([301, 302, 303, 307, 308].includes(response.status())) {
+      const location = response.headers()['location'];
+      let target;
+      try { target = new URL(location, route.request().url()); }
+      catch { await route.abort('blockedbyclient'); return; }
+      if (!['https:', 'http:'].includes(target.protocol) ||
+          target.username || target.password || !allowed.has(target.origin)) {
+        await route.abort('blockedbyclient');
+        return;
+      }
+    }
+    await route.fulfill({ response });
   });
   // WebSocket messages bypass HTTP route interception in some Playwright
   // versions. Refuse them entirely in the initial browser worker.
@@ -100,7 +130,11 @@ export async function launchIsolatedBrowser(options = {}) {
   let pw;
   try { pw = await import('playwright'); }
   catch { throw Error('Playwright not installed in this execution environment'); }
-  const browser = await pw.chromium.launch({ headless: true });
+  if (options.channel !== undefined && options.channel !== 'chrome')
+    throw Error('Only explicitly requested system Chrome is supported');
+  const browser = await pw.chromium.launch({
+    headless: true, ...(options.channel ? { channel: options.channel } : {}),
+  });
   try {
     const context = await browser.newContext({
       acceptDownloads: false, serviceWorkers: 'block',
