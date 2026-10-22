@@ -233,3 +233,36 @@ test('orphan branch at exact main is safely resumed rather than wedging hourly s
   assert.equal(mock.state.postCalls.filter(x=>x.path===ROOT+'/git/refs').length,0);
   assert.equal(mock.state.putCalls[0].body.sha,'d'.repeat(40));
 });
+
+
+test('advanced orphan is preserved and a source-bound fallback publishes a PR',async()=>{
+  const mock=github(), report=scanReport();
+  const oldBranch=BRANCH+selfScanSignature(report).slice(0,16);
+  const originalGetOptional=mock.getOptional;
+  mock.getOptional=async path=>{
+    if(path===ROOT+'/git/ref/heads/'+oldBranch)
+      return {object:{sha:'e'.repeat(40)}};
+    return originalGetOptional(path);
+  };
+  const r=await publishSelfScanPr(args(mock,report));
+  assert.equal(r.status,'created');
+  assert.equal(r.branch,oldBranch+'-'+MAIN.slice(0,12));
+  assert.equal(mock.state.branch,r.branch);
+  assert.equal(mock.state.postCalls.filter(x=>x.path===ROOT+'/git/refs').length,1);
+  assert.equal(mock.state.postCalls.filter(x=>x.path===ROOT+'/pulls').length,1);
+  assert.equal(mock.state.putCalls[0].body.branch,r.branch);
+  assert.equal(mock.state.postCalls.filter(x=>x.path.includes('/issues')).length,0);
+});
+
+test('occupied fallback never overwrites old branch or publishes a PR',async()=>{
+  const mock=github(), report=scanReport();
+  const originalGetOptional=mock.getOptional;
+  mock.getOptional=async path=>{
+    if(path.startsWith(ROOT+'/git/ref/heads/'+BRANCH))
+      return {object:{sha:'e'.repeat(40)}};
+    return originalGetOptional(path);
+  };
+  await assert.rejects(()=>publishSelfScanPr(args(mock,report)),/fallback scan branch is occupied/);
+  assert.equal(mock.state.postCalls.length,0);
+  assert.equal(mock.state.putCalls.length,0);
+});
