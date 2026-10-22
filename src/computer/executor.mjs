@@ -1,0 +1,159 @@
+import { createHash } from 'node:crypto';
+
+export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait']);
+const ACTIVE = new Set(['click','type','keypress']);
+const ACTIONS = new Set(COMPUTER_ACTIONS);
+const VALID_ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
+const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const bounded = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
+const safeUrl = (url, origins) => {
+  let parsed;
+  try { parsed = new URL(url); } catch { throw Error('Invalid browser URL'); }
+  if (!['https:','http:'].includes(parsed.protocol) ||
+    (parsed.protocol === 'http:' && !['localhost','127.0.0.1','[::1]'].includes(parsed.hostname)) ||
+    parsed.username || parsed.password || !origins.includes(parsed.origin))
+    throw Error('Browser origin not admitted');
+  return parsed;
+};
+
+export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
+  if (!raw || !VALID_ID.test(raw.id || '') || !Array.isArray(raw.steps) ||
+      raw.steps.length < 1 || raw.steps.length > 30 ||
+      !Array.isArray(allowedOrigins) || !allowedOrigins.length ||
+      allowedOrigins.some(x => typeof x !== 'string' || !/^https?:\/\//.test(x)))
+    throw Error('Invalid computer plan or missing explicit origin allowlist');
+  const steps = raw.steps.map((s, index) => {
+    if (!s || s.id !== undefined && !VALID_ID.test(s.id) || !ACTIONS.has(s.action))
+      throw Error('Unknown or unbounded computer action');
+    const id = s.id || 'step-' + (index + 1);
+    const entry = { id, action: s.action };
+    if (s.action === 'navigate') {
+      if (!bounded(s.url, 2048)) throw Error('Navigation URL required');
+      safeUrl(s.url, allowedOrigins);
+      entry.url = s.url;
+    } else if (['click','type','keypress','extract','wait'].includes(s.action)) {
+      if (!bounded(s.selector, 240) || /[\u0000-\u001f]/.test(s.selector))
+        throw Error('Bounded selector required');
+      entry.selector = s.selector;
+    }
+    if (s.action === 'type') {
+      if (typeof s.value !== 'string' || s.value.length > 2048)
+        throw Error('Type value invalid');
+      entry.value = s.value;
+    }
+    if (s.action === 'keypress') {
+      if (!bounded(s.key, 48) || !/^[a-zA-Z0-9+_-]+$/.test(s.key))
+        throw Error('Key sequence invalid');
+      entry.key = s.key;
+    }
+    if (s.action === 'scroll') {
+      if (!Number.isInteger(s.pixels) || Math.abs(s.pixels) > 3000)
+        throw Error('Scroll magnitude invalid');
+      entry.pixels = s.pixels;
+    }
+    if (s.action === 'wait') {
+      if (!Number.isInteger(s.timeoutMs) || s.timeoutMs < 1 || s.timeoutMs > 10000)
+        throw Error('Wait timeout invalid');
+      entry.timeoutMs = s.timeoutMs;
+    }
+    if (s.expect !== undefined) {
+      if (!s.expect || typeof s.expect !== 'object' ||
+        !Object.keys(s.expect).every(k => ['urlIncludes','textIncludes'].includes(k)) ||
+        !Object.values(s.expect).every(v => bounded(v, 120)))
+        throw Error('Invalid verification expectation');
+      entry.expect = { ...s.expect };
+    }
+    return Object.freeze(entry);
+  });
+  if (new Set(steps.map(s => s.id)).size !== steps.length)
+    throw Error('Duplicate step IDs');
+  return Object.freeze({ id: raw.id, steps, allowedOrigins: Object.freeze([...allowedOrigins]) });
+}
+
+/**
+ * A minimal, evidence-grounded browser worker. It never grants itself
+ * approval. An external owner-authenticated callback must authorize all
+ * mouse/keyboard interactions, including apparently harmless clicks.
+ * State is persisted BEFORE dispatch; an ambiguous write never replays.
+ */
+export function createComputerExecutor({ driver, store, authorize = async () => false,
+  allowedOrigins, clock = () => new Date().toISOString() } = {}) {
+  if (!driver || typeof driver.observe !== 'function' || !store ||
+      typeof store.read !== 'function' || typeof store.write !== 'function' ||
+      typeof authorize !== 'function')
+    throw Error('Executor requires driver, durable store and authority callback');
+
+  async function run(raw) {
+    const plan = normalizeComputerPlan(raw, { allowedOrigins });
+    const fingerprint = digest(plan);
+    let state = await store.read(plan.id);
+    if (state && state.fingerprint !== fingerprint)
+      throw Error('Plan ID reused with different instructions');
+    state ||= { id: plan.id, fingerprint, status: 'running', completed: [],
+      receipts: [], pending: null, createdAt: clock() };
+    if (state.pending)
+      return { status: 'reconcile-required', id: plan.id, pending: state.pending,
+        receipts: [...state.receipts] };
+    if (state.status === 'completed')
+      return { status: 'completed', id: plan.id, receipts: [...state.receipts], resumed: true };
+
+    for (const step of plan.steps) {
+      if (state.completed.includes(step.id)) continue;
+      const before = await driver.observe();
+      safeUrl(before.url, allowedOrigins);
+      if (ACTIVE.has(step.action) && await authorize({
+        planId: plan.id, planFingerprint: fingerprint, action: step.action,
+        stepId: step.id, currentOrigin: new URL(before.url).origin
+      }) !== true) {
+        state.status = 'approval-required';
+        await store.write(plan.id, state);
+        return { status: 'approval-required', id: plan.id, stepId: step.id,
+          receipts: [...state.receipts] };
+      }
+      state.status = 'running';
+      state.pending = step.id;
+      await store.write(plan.id, state);
+      try {
+        const result = await driver.perform(step);
+        const after = await driver.observe();
+        safeUrl(after.url, allowedOrigins);
+        if (step.expect?.urlIncludes && !after.url.includes(step.expect.urlIncludes) ||
+            step.expect?.textIncludes && !String(after.text || '').includes(step.expect.textIncludes))
+          throw Error('Expected post-action state not observed');
+        const receipt = {
+          stepId: step.id, action: step.action, status: 'verified', observedAt: clock(),
+          origin: new URL(after.url).origin, observationDigest: digest({
+            url: after.url, text: String(after.text || '').slice(0, 10000),
+            title: after.title || ''
+          }),
+          resultDigest: digest(result ?? null),
+        };
+        state.completed.push(step.id);
+        state.receipts.push(receipt);
+        state.pending = null;
+        await store.write(plan.id, state);
+      } catch (error) {
+        // The interaction may already have occurred. It is never replayed
+        // or labeled failed-without-side-effects by the executor.
+        state.status = 'reconcile-required';
+        state.errorCode = 'outcome-unverified';
+        await store.write(plan.id, state);
+        return { status: 'reconcile-required', id: plan.id, pending: step.id,
+          reason: 'Outcome unverified; inspect the application before retrying',
+          receipts: [...state.receipts] };
+      }
+    }
+    state.status = 'completed';
+    await store.write(plan.id, state);
+    return { status: 'completed', id: plan.id, receipts: [...state.receipts] };
+  }
+  return Object.freeze({ run });
+}
+
+export function createMemoryComputerStore() {
+  const map = new Map();
+  return {
+    async read(id) { return map.has(id) ? structuredClone(map.get(id)) : null; },
+    async write(id, value) { map.set(id, structuredClone(value)); },
+  };
+}
