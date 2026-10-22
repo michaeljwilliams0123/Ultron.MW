@@ -448,3 +448,115 @@ test('isolated browser refuses arbitrary browser channels before launch', async 
     /Unsupported browser channel/,
   );
 });
+
+test('missing click target is rejected by trial before requesting owner approval', async () => {
+  let approvals = 0, dispatches = 0, trialChecks = 0;
+  const state = { url: 'https://example.test/settings/profile', title: 'Profile',
+    text: 'Profile' };
+  const driver = {
+    observe: async () => ({ ...state }),
+    preflight: async () => { trialChecks++; return false; },
+    perform: async () => { dispatches++; },
+  };
+  const store = createMemoryComputerStore();
+  const p = { id: 'missing-github-selector', steps: [{
+    id: 'email-click', action: 'click', selector: 'a[href="/settings/emails"]',
+    expect: { urlIncludes: '/settings/emails' },
+  }] };
+  const executor = createComputerExecutor({
+    driver, store, allowedOrigins,
+    authorize: async () => { approvals++; return true; },
+  });
+  const result = await executor.run(p);
+  assert.equal(result.status, 'action-not-ready');
+  assert.equal(result.stepId, 'email-click');
+  assert.equal(trialChecks, 1);
+  assert.equal(approvals, 0);
+  assert.equal(dispatches, 0);
+  assert.equal((await store.read(p.id)).pending, null);
+});
+
+test('Playwright actionability trial never sends an actual click', async () => {
+  const calls = [];
+  const page = {
+    url: () => 'https://example.test/settings/profile',
+    goto: async () => {},
+    locator: selector => ({
+      click: async opts => { calls.push({ selector, ...opts }); },
+    }),
+  };
+  const driver = createPlaywrightComputerDriver(page);
+  assert.equal(await driver.preflight({
+    action: 'click', selector: 'a[href="/settings/emails"]',
+  }), true);
+  assert.deepEqual(calls, [{
+    selector: 'a[href="/settings/emails"]', trial: true, timeout: 4000,
+  }]);
+});
+
+test('post-click timeout records sanitized diagnostic without ever replaying', async () => {
+  let count = 0, observes = 0;
+  const token = 'privateQueryStringNeverPersisted';
+  const driver = {
+    async observe() {
+      observes++;
+      const url = observes === 1 ? 'https://example.test/settings/profile' :
+        'https://example.test/settings/emails?token=' + token;
+      return { url, title: 'Settings', text: 'UI data not persisted',
+        screenshotDigest: 'f'.repeat(64) };
+    },
+    async preflight() { return true; },
+    async perform() {
+      count++;
+      const e = Error('User email and secret should not be persisted: ' + token);
+      e.name = 'TimeoutError';
+      throw e;
+    },
+  };
+  const store = createMemoryComputerStore();
+  const p = { id: 'click-timeout-observation', steps: [{
+    action: 'click', selector: '#emails',
+    expect: { urlIncludes: '/settings/emails' },
+  }] };
+  const executor = createComputerExecutor({
+    driver, store, authorize: async () => true, allowedOrigins,
+  });
+  const first = await executor.run(p);
+  assert.equal(first.status, 'reconcile-required');
+  assert.equal(first.failurePhase, 'action-dispatch');
+  assert.equal(first.failureKind, 'browser-timeout');
+  assert.equal(first.observedPath, '/settings/emails');
+  assert.equal(first.observedOrigin, 'https://example.test');
+  assert.equal(first.observedVisualDigest, 'f'.repeat(64));
+  assert.equal(first.receipts.length, 0);
+  const checkpoint = await store.read(p.id);
+  assert.equal(checkpoint.pending, 'step-1');
+  assert.equal(JSON.stringify(checkpoint).includes(token), false);
+  assert.equal((await executor.run(p)).status, 'reconcile-required');
+  assert.equal(count, 1);
+});
+
+test('click with unchanged screen remains uncertain but gives failure phase', async () => {
+  let actions = 0;
+  const driver = {
+    observe: async () => ({
+      url: 'https://example.test/settings/profile',
+      title: 'Profile', text: 'Unchanged',
+    }),
+    preflight: async () => true,
+    perform: async () => { actions++; },
+  };
+  const store = createMemoryComputerStore();
+  const p = { id: 'click-unverified', steps: [{
+    action: 'click', selector: '#emails',
+    expect: { urlIncludes: '/settings/emails' },
+  }] };
+  const out = await createComputerExecutor({
+    driver, store, authorize: async () => true, allowedOrigins,
+  }).run(p);
+  assert.equal(out.status, 'reconcile-required');
+  assert.equal(out.failurePhase, 'postcondition-verification');
+  assert.equal(out.observedPath, '/settings/profile');
+  assert.equal((await store.read(p.id)).pending, 'step-1');
+  assert.equal(actions, 1);
+});

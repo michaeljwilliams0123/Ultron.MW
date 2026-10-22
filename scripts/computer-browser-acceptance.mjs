@@ -127,6 +127,27 @@ try {
   assert.equal(resumed.resumed, true);
   assert.equal(runCount, 1);
   const runCountAfterResume = runCount;
+
+  // An absent target must be rejected by a real Playwright trial click
+  // BEFORE either user approval or a durable pending action is created.
+  await browser.driver.perform({ action: 'navigate', url: firstOrigin + '/form' });
+  let missingTargetApprovals = 0;
+  const preflightStore = createFileComputerStore(join(dir, 'preflight'));
+  const preflightExecutor = createComputerExecutor({
+    driver: browser.driver, store: preflightStore, allowedOrigins,
+    authorize: async () => { missingTargetApprovals++; return true; },
+  });
+  const preflightId = 'synthetic-missing-selector';
+  const preflightResult = await preflightExecutor.run({
+    id: preflightId,
+    steps: [{ action: 'click', selector: '#nonexistent-settings-link',
+      expect: { textIncludes: 'Never sent' } }],
+  });
+  assert.equal(preflightResult.status, 'action-not-ready');
+  assert.equal(missingTargetApprovals, 0);
+  assert.equal((await preflightStore.read(preflightId)).pending, null);
+  assert.equal(runCount, 1);
+
   session.revoke();
   assert.equal(await session.authorize({ action: 'click', currentOrigin: firstOrigin }), false);
 
@@ -185,6 +206,8 @@ try {
     resumeNoDuplicate: resumed.resumed === true && runCountAfterResume === 1,
     persistedReadback: true, interceptedForeignRedirect: foreignHits === 0,
     disconnectOutcome: ambiguous.status, noBlindReplay: runCount === 2,
+    missingSelectorBlockedBeforeApproval: preflightResult.status === 'action-not-ready'
+      && missingTargetApprovals === 0,
   }, null, 2) + '\n');
 } finally {
   await Promise.allSettled([browser?.close(), disconnectedBrowser?.close()]);

@@ -64,7 +64,8 @@ test('Playwright observation gives hashes of screenshot and accessibility tree, 
   const pixels = Buffer.from('synthetic-png-test');
   const accessibility = '- main: Form\n- button: Send';
   const body = { innerText: async () => 'Form ready',
-    ariaSnapshot: async () => accessibility };
+    ariaSnapshot: async () => accessibility,
+    click: async options => { assert.equal(options.trial, true); } };
   const page = { goto: async () => {}, url: () => origin,
     title: async () => 'Form', locator: () => body,
     screenshot: async () => pixels };

@@ -134,6 +134,53 @@ unprivileged UI rendering/navigation evidence; it does **not** establish
 authenticated GitHub dispatch, live browser owner approval, or the PR's
 unmerged code running in production.
 
+
+## Real owner-approved click — unresolved outcome (October 22, 2026)
+
+An owner-operated, headed Chrome session reached GitHub's own account
+settings after manual `RESUME`. The terminal presented a one-time
+`APPROVE` challenge for a read-only email-settings link. The owner
+entered the correct challenge. The runner recorded the first two
+navigation receipts as verified, but the click produced:
+
+- `status: reconcile-required`
+- `pending: owner-approves-readonly-click`
+- `errorCode: outcome-unverified`
+
+**This is evidence of actual operator authorization, NOT evidence of the
+click executing or of the expected destination being verified.** A click
+may have happened before Playwright timed out or the navigation/receipt
+check failed. The original checkpoint and root/child lineage must stay
+unchanged; **never delete the checkpoint or replay the click**.
+
+The previous runner collapsed all exceptions after action dispatch into a
+single generic result, so the original failure phase cannot be recovered.
+A later source-of-truth page readback may help reconcile the current
+application state, but cannot prove what happened during the closed session.
+
+### Diagnostic hardening for subsequent NEW, explicitly approved objectives
+
+1. For clicks, the Playwright adapter first performs `click({trial:true})`
+   to verify target actionability *without clicking*. If it fails, the
+   executor returns `action-not-ready` before prompting for owner approval,
+   without creating a pending action.
+2. An uncertain dispatched action stays `reconcile-required`. Its local
+   checkpoint now includes a small allowlisted failure phase/category, a
+   bounded URL pathname (no query string or fragment) when observable, and
+   a screenshot digest only. Error text, cookies, page content, screenshots,
+   and typed values are never persisted by the diagnostics.
+3. If observation after a timed-out click succeeds, the observed pathname
+   is contextual evidence, **not a successful action receipt**. The owner
+   must still reconcile the result.
+4. Synthetic tests cover missing targets, an actual Playwright trial
+   in installed Chrome, a timed-out click whose observable URL changed,
+   unchanged postconditions, and refusal to replay an uncertain write.
+
+This hardening does NOT retroactively turn the failed user-run acceptance
+into success. The owner-authenticated end-to-end click receipt remains
+outstanding, as does the independent CodeRabbit redirect/navigation
+finding. Keep PR #72 unmerged until reconciled and reviewed.
+
 ## Release boundary
 
 Draft PR only. Do not merge on test-green alone. Issues #65 and #32 must stay

@@ -10,6 +10,19 @@ export function createPlaywrightComputerDriver(page) {
       typeof page.locator !== 'function' || typeof page.url !== 'function')
     throw TypeError('An actual Playwright Page is required');
   return Object.freeze({
+    // A read-only actionability trial checks the intended target BEFORE
+    // a human is asked to approve. It does not click, type or press a key.
+    // A later DOM change can still make the real action uncertain.
+    async preflight(step) {
+      if (step.action === 'click') {
+        await page.locator(step.selector).click({ trial: true, timeout: 4000 });
+      } else if (step.action === 'type' || step.action === 'keypress') {
+        await page.locator(step.selector).waitFor({
+          state: 'visible', timeout: 4000,
+        });
+      }
+      return true;
+    },
     async observe() {
       const body = page.locator('body');
       const text = String(await body.innerText({ timeout: 10000 })).slice(0, 10000);
