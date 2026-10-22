@@ -29,9 +29,15 @@ async function main() {
     throw Error('Isolated browser plan must begin with explicit navigation');
 
   const store = createFileComputerStore(join(homedir(), '.ultron-mw', 'browser-checkpoints'));
+  // Opt in to a trusted installed Chrome binary on Windows without downloading
+  // Playwright's separate Chromium runtime. Unrecognized values fail closed.
+  const browserChannel = process.env.ULTRON_BROWSER_CHANNEL;
+  if (browserChannel !== undefined && browserChannel !== 'chrome')
+    throw Error('Unsupported ULTRON_BROWSER_CHANNEL');
   const session = await launchIsolatedBrowser({
     headless: true,
     allowedOrigins: plan.allowedOrigins,
+    ...(browserChannel ? { channel: browserChannel } : {}),
   });
   try {
     const executor = createComputerExecutor({
