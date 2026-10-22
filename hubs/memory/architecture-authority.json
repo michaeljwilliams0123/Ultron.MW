@@ -1,0 +1,15 @@
+{
+  "kind": "memory",
+  "id": "architecture-authority",
+  "revision": 1,
+  "visibility": "public",
+  "facts": [
+    "GitHub main is the authoritative code and release source; GitLab is a downstream recovery replica.",
+    "GitBook's private space is a documentation consumer and not a deployment authority.",
+    "Ultron may run the existing read-only commands without creating new privileged action routes."
+  ],
+  "evidence": [
+    "https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/ARCHITECTURE.md",
+    "https://github.com/michaeljwilliams0123/Ultron.MW/issues/32"
+  ]
+}

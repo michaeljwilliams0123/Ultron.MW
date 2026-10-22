@@ -1,0 +1,62 @@
+name: Ultron GitLab recovery mirror
+on:
+  workflow_run:
+    workflows: ["Ultron core verification"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  mirror:
+    # Disabled until owner adds a scoped secret and explicitly enables the variable.
+    if: >-
+      vars.ULTRON_GITLAB_MIRROR_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Confirm independent successful Verify for exact main commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          candidate="$(git rev-parse HEAD)"
+          # Manual dispatch does not inherit a successful workflow_run.
+          # Require actual verified main push result, not a green run for an older head.
+          verified="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/verify.yml/runs?branch=main&event=push&per_page=100" \
+            --jq ".workflow_runs[] | select(.head_sha == \"$candidate\" and .head_branch == \"main\" and .status == \"completed\" and .conclusion == \"success\") | .id")"
+          if test -z "$verified"; then
+            echo "BLOCKED: no successful independent main Verify for exact SHA $candidate" >&2
+            exit 1
+          fi
+      - name: Verify canonical head then fast-forward GitLab with exact SHA readback
+        shell: bash
+        env:
+          GITLAB_TOKEN: ${{ secrets.ULTRON_GITLAB_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          if test -z "$GITLAB_TOKEN"; then
+            echo 'BLOCKED: ULTRON_GITLAB_MIRROR_TOKEN not configured' >&2
+            exit 1
+          fi
+          source_sha="$(git rev-parse HEAD)"
+          current_main="$(git ls-remote https://github.com/michaeljwilliams0123/Ultron.MW.git refs/heads/main | awk '{print $1}')"
+          if test "$source_sha" != "$current_main"; then
+            echo 'BLOCKED: exact-head GitHub main changed since verification' >&2
+            exit 1
+          fi
+          # Header is runtime-only and never stored in source or remote config.
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://gitlab.com/.extraheader
+          mirror_auth="$(printf 'oauth2:%s' "$GITLAB_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $mirror_auth"
+          bash scripts/mirror-gitlab.sh https://gitlab.com/michaelj.williams0123/Ultron.MW.git

@@ -1,0 +1,16 @@
+{
+  "id": "computer-readonly-demo-20261021",
+  "steps": [
+    {
+      "id": "navigate-to-example",
+      "action": "navigate",
+      "url": "https://example.com",
+      "expect": { "textIncludes": "Example Domain" }
+    },
+    {
+      "id": "read-result",
+      "action": "observe",
+      "expect": { "urlIncludes": "example.com" }
+    }
+  ]
+}

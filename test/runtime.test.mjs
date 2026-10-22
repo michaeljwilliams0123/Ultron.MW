@@ -76,6 +76,16 @@ test('simultaneous draft writes persist without lost updates', async () => fixtu
   assert.equal(file.objectives.length, 10);
 }));
 
+test('local hub catalog has independently verified SHA and no execution authority', async () => fixture(async ({ base }) => {
+  const response = await fetch(base() + '/api/hubs');
+  assert.equal(response.status, 200);
+  const catalog = await response.json();
+  assert.deepEqual(catalog.byType,{memory:1,skill:2,harness:1});
+  assert.equal(catalog.executable,false);
+  assert.equal(catalog.authority,'catalog-only');
+  assert.match(catalog.indexSha256,/^[a-f0-9]{64}$/);
+}));
+
 test('runtime serves exactly the same UI and JS as static Pages source', async () => fixture(async ({ base }) => {
   const home = await fetch(base() + '/');
   assert.equal(home.status, 200);

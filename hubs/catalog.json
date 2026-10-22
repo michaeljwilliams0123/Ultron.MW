@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "kind": "memory",
+      "id": "architecture-authority",
+      "path": "hubs/memory/architecture-authority.json",
+      "revision": 1,
+      "sha256": "85bb545d1f987fe5a470d73b101c9df737a92d5f726f872764cbd0ff829a970d",
+      "tests": [
+        "test/git-hubs.test.mjs"
+      ]
+    },
+    {
+      "kind": "skill",
+      "id": "repo-review",
+      "path": "hubs/skills/repo-review/SKILL.md",
+      "revision": 1,
+      "sha256": "c473744ec2f8ea014a6677c4344282bb0761590381754f68cd21a43c243a8d18",
+      "tests": [
+        "test/git-hubs.test.mjs"
+      ]
+    },
+    {
+      "kind": "skill",
+      "id": "continual-improvement",
+      "path": "hubs/skills/continual-improvement/SKILL.md",
+      "revision": 1,
+      "sha256": "6232ac28107566f0b3490fa6a95ca3b7bd9b30c0ea1c995846f25e91685a9c3f",
+      "tests": [
+        "test/learning.test.mjs",
+        "test/git-hubs.test.mjs"
+      ]
+    },
+    {
+      "kind": "harness",
+      "id": "owner-workflow",
+      "path": "hubs/harness/owner-workflow.json",
+      "revision": 2,
+      "sha256": "1a6b38370e535a46196c42369d576871849ace8153cb7f998632f435ddc49954",
+      "tests": [
+        "test/git-hubs.test.mjs"
+      ]
+    }
+  ]
+}

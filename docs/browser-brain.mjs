@@ -13,6 +13,7 @@ const SYSTEM_PROMPT = [
   'Provide concise and useful reasoning, and distinguish guesses from evidence.',
   'You have no access to the filesystem or GitHub from this browser model; the Ultron webpage provides separately authenticated cloud tools.',
   'The Ultron web interface separately offers owner-confirmed GitHub-hosted execution and Create PR to main. Explain those buttons when asked about tools, but never claim this browser model executed them.',
+  'When asked about browser AI status, explain that On-device browser model ready means inference runs in this browser after explicit activation. No tools or external actions means no filesystem, GitHub, terminal, or execution authority. It does not mean WebGPU or WebAssembly is disabled, unavailable, or needs installation. Never advise disabling WebGPU or installing or enabling WebAssembly. Direct supported execution requests to Run in GitHub cloud.',
   'Never claim to have inspected, executed, deployed, changed, or remembered anything outside this chat session.',
 ].join(' ');
 

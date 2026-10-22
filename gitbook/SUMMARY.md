@@ -10,5 +10,6 @@
 * [GitHub and GitLab synchronization](sync-and-disaster-recovery.md)
 
 ## Stewardship
+* [Memory, Skill, and Harness Hubs](hubs.md)
 * [Growth decisions and lessons](decisions.md)
 * [Known limitations and next steps](limitations.md)

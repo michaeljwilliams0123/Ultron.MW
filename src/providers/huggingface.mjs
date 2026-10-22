@@ -3,10 +3,12 @@
 // Requires ULTRON_ENABLE_HF=1 and a downloadable model id.
 
 const MODEL_ID = /^[a-zA-Z0-9._:/-]{1,200}$/;
+const REVISION = /^[a-f0-9]{40}$/;
 
 export function createHuggingFace({
   enabled = process.env.ULTRON_ENABLE_HF === '1',
   modelId = process.env.ULTRON_HF_MODEL || 'Xenova/distilgpt2',
+  revision = process.env.ULTRON_HF_REVISION || null,
   maxNewTokens = 256,
   temperature = 0,
 } = {}) {
@@ -15,10 +17,12 @@ export function createHuggingFace({
   async function loadPipeline() {
     if (!enabled) throw new Error('Hugging Face provider not enabled');
     if (!MODEL_ID.test(modelId)) throw new Error('Invalid HF model id');
+    if (!REVISION.test(revision || ''))
+      throw new Error('A pinned 40-character Hugging Face revision is required');
     if (!pipelinePromise) {
       pipelinePromise = (async () => {
         const { pipeline } = await import('@huggingface/transformers');
-        return pipeline('text-generation', modelId, { dtype: 'q8' });
+        return pipeline('text-generation', modelId, { dtype: 'q8', revision });
       })();
     }
     return pipelinePromise;
@@ -31,9 +35,13 @@ export function createHuggingFace({
     if (!MODEL_ID.test(modelId)) {
       return { ready: false, provider: 'huggingface', reason: 'Invalid HF model id' };
     }
+    if (!REVISION.test(revision || '')) {
+      return { ready: false, provider: 'huggingface',
+        reason: 'A pinned 40-character Hugging Face revision is required' };
+    }
     try {
       await loadPipeline();
-      return { ready: true, provider: 'huggingface', model: modelId };
+      return { ready: true, provider: 'huggingface', model: modelId, revision };
     } catch (err) {
       return {
         ready: false,
@@ -73,7 +81,7 @@ export function createHuggingFace({
     } catch {
       decision = { action: 'reply', text: trimmed.slice(0, 4000) };
     }
-    return { model: modelId, decision };
+    return { model: modelId + '@' + revision, decision };
   }
 
   return { status, respond };

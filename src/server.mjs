@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, mkdir, rename, writeFile, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LearningLoop } from './learning.mjs';
+import { summarizeLearningEvidence } from './learning.mjs';
 import { COMMANDS, executeReadOnly } from './operations.mjs';
 import { createLocalOllama } from './providers/ollama.mjs';
 import { createHuggingFace } from './providers/huggingface.mjs';
@@ -16,9 +16,17 @@ import { deliberatePlan } from './grokbot-governor.mjs';
 import { ACCEPTED_SEED, CANDIDATE, planObjective, commitRoutingCandidate } from '../docs/core/cycle.mjs';
 import { selectExecution } from '../docs/core/providers.mjs';
 import { capabilityManifest } from '../docs/core/capabilities.mjs';
+import { verifyGitHubs } from './git-hubs.mjs';
 
 const sourcePath = fileURLToPath(import.meta.url);
 const defaultRoot = resolve(dirname(sourcePath), '..');
+
+function learningSnapshot(state) {
+  return summarizeLearningEvidence({
+    eligible: verifiedExperiences(state.ownerJobs, state.receipts).length,
+    experience: state.experience, evolution: state.evolution,
+  });
+}
 
 function response(res, status, body, contentType = 'application/json; charset=utf-8') {
   res.writeHead(status, {
@@ -48,11 +56,10 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
   let state = { objectives: [], receipts: [], plans: [], conversations: [], ownerJobs: [],
     experience: { active: null, history: [], assessments: [], lastEvidence: null },
-    evolution: { accepted: ACCEPTED_SEED, evaluations: [] },
-    learning: new LearningLoop().snapshot() };
+    evolution: { accepted: ACCEPTED_SEED, evaluations: [] } };
   try {
     const loaded = JSON.parse(await readFile(statePath, 'utf8'));
-    if (!Array.isArray(loaded.objectives) || !loaded.learning ||
+    if (!Array.isArray(loaded.objectives) ||
       (loaded.receipts !== undefined && !Array.isArray(loaded.receipts))) {
       throw new Error('Stored state has invalid structure');
     }
@@ -66,10 +73,10 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         { active: null, history: [], assessments: [], lastEvidence: null },
       evolution: loaded.evolution?.accepted === CANDIDATE ? loaded.evolution :
         { accepted: ACCEPTED_SEED, evaluations: [] },
-      learning: new LearningLoop(loaded.learning).snapshot(),
     };
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const brain = createBrain({ provider, root, snapshot: () => ({ learning: new LearningLoop(state.learning).snapshot() }) });
+  const brain = createBrain({ provider, root,
+    snapshot: () => ({ learning: learningSnapshot(state) }) });
   let lastStandby = alwaysOn ? standbyTick({ reason: 'boot-standby' }) : null;
   const standbyReceipts = [];
   if(lastStandby)appendHeartbeatReceipt(standbyReceipts,lastStandby);
@@ -129,12 +136,19 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
           standby: { enabled: !!alwaysOn, posture: alwaysOn ? 'waiting-for-owner' : 'disabled',
             selvesActive: lastStandby?.selvesActive || [] } });
       }
+      if (req.method === 'GET' && req.url === '/api/hubs') {
+        return response(res, 200, {
+          ...(await verifyGitHubs(root)), source: 'local-git-worktree',
+          authority: 'catalog-only', executable: false,
+        });
+      }
       if (req.method === 'GET' && req.url === '/api/capabilities') {
         const model = await brain.status();
         return response(res, 200, {
           runtime: 'local', autonomy: false, commands: COMMANDS,
           manifest: capabilityManifest('local'),
-          providers: model.ready ? [{ id: model.provider || 'ollama', model: model.model, ready: true }] : [],
+          providers: model.ready ? [{ id: model.provider || 'ollama',
+            model: model.model, revision: model.revision || null, ready: true }] : [],
           choices: {
             reasoning: selectExecution({ host: 'local',
               localModelReady: model.ready && model.provider !== 'huggingface',
@@ -144,13 +158,15 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         });
       }
       if (req.method === 'GET' && req.url === '/api/state') {
-        const learning = new LearningLoop(state.learning);
+        const learning = learningSnapshot(state);
         return response(res, 200, {
           objectives: state.objectives.slice(-100), receipts: state.receipts.slice(-100),
           plans: state.plans.slice(-30), evolution: state.evolution,
           conversations: state.conversations.slice(-24),
-          acceptedVersion: learning.accepted, observations: learning.observations.size,
-          candidates: learning.candidates.size, executionReady: true, autonomousReady: false,
+          acceptedVersion: learning.acceptedVersion,
+          observations: learning.observationCount, candidates: learning.candidateCount,
+          promotionCount: learning.promotionCount,
+          executionReady: true, autonomousReady: false,
         });
       }
       // Narrow owner-approved actions on localhost. No model output can call this endpoint.
@@ -399,7 +415,7 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
               if (step.status !== 'ready' || !step.command) continue;
               try {
                 const outcome = await executeReadOnly(step.command, { root,
-                  learning: new LearningLoop(next.learning).snapshot() });
+                  learning: learningSnapshot(next) });
                 const receipt = { id: 'receipt-' + randomUUID(), planId: plan.id,
                   kind: 'deterministic-read', command: outcome.command,
                   status: 'succeeded', summary: outcome.summary,
@@ -498,7 +514,8 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
         }
         if (req.url === '/api/execute') {
           let outcome;
-          try { outcome = await executeReadOnly(text, { root, learning: new LearningLoop(state.learning).snapshot() }); }
+          try { outcome = await executeReadOnly(text, { root,
+            learning: learningSnapshot(state) }); }
           catch (error) { return response(res, error.statusCode || 422, { error: error.message }); }
           const receipt = await transact(next => {
             const item = {
