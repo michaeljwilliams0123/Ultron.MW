@@ -176,11 +176,13 @@ export async function launchIsolatedBrowser(options = {}) {
   if (options.headless !== true &&
       !(options.headless === false && options.ownerApproval === true))
     throw Error('Headed browser requires explicit local owner approval');
+  if (options.channel !== undefined && options.channel !== 'chrome')
+    throw Error('Unsupported browser channel; only system Chrome is admitted');
+  // Validate policy BEFORE importing optional dependencies: a clean CI host
+  // without Playwright must still reject an unsafe channel deterministically.
   let pw;
   try { pw = await import('playwright'); }
   catch { throw Error('Playwright not installed in this execution environment'); }
-  if (options.channel !== undefined && options.channel !== 'chrome')
-    throw Error('Unsupported browser channel; only system Chrome is admitted');
   const browser = await pw.chromium.launch({
     headless: options.headless === true,
     ...(options.channel ? { channel: options.channel } : {}),
