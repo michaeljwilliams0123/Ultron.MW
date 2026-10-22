@@ -181,11 +181,13 @@ application state, but cannot prove what happened during the closed session.
 
 This hardening does NOT retroactively turn the failed user-run acceptance
 into success. The owner-authenticated end-to-end click receipt remains
-outstanding, as does the independent CodeRabbit redirect/navigation
-finding. Keep PR #72 unmerged until reconciled and reviewed.
+outstanding. All CodeRabbit threads were resolved at `c42af6e`, but review
+resolution and green CI do not replace browser acceptance. Keep PR #72
+unmerged until the external result is reconciled and independently witnessed.
 
 ## Release boundary
 
-Draft PR only. Do not merge on test-green alone. Issues #65 and #32 must stay
-open until external owner-authenticated acceptance, actual approved browser UI,
-negative-path gate and source-of-truth receipts have been witnessed.
+Open PR only. Do not merge on test-green alone. Issue #65 must stay open until
+external owner-authenticated acceptance, an actually approved browser action,
+negative-path gates and source-of-truth receipts have been witnessed. Issue #32
+is closed after its separate release-gate evidence; that does not satisfy #65.

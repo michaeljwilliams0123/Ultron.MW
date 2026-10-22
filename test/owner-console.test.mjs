@@ -93,11 +93,16 @@ test('wrong challenge never grants authority', async () => {
   streams.output.destroy();
 });
 
-test('owner runner refuses headless GitHub Actions and piped input before launching a browser', () => {
-  const run = spawnSync(process.execPath,
-    ['scripts/owner-browser-run.mjs', 'does-not-exist.json'],
-    { encoding: 'utf8', timeout: 5000 },
-  );
-  assert.equal(run.status, 1);
-  assert.match(run.stderr, /interactive local terminal|refuses CI execution/);
+test('every owner runner refuses headless automation before launching a browser', () => {
+  for (const script of ['scripts/owner-browser-run.mjs',
+    'scripts/computer-runner.mjs']) {
+    const run = spawnSync(process.execPath, [script, 'does-not-exist.json'], {
+      encoding: 'utf8', timeout: 5000,
+      env: { ...process.env, ULTRON_COMPUTER_ALLOWED_ORIGINS:
+        '["https://example.test"]' },
+    });
+    assert.equal(run.status, 1, script);
+    assert.match(run.stderr,
+      /interactive local terminal|refuses CI execution/, script);
+  }
 });

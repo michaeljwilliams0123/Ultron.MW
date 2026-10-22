@@ -131,6 +131,22 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         reason: 'Owner session expired or revoked', receipts: [...state.receipts] };
     }
 
+    async function preflightAction(step) {
+      if (!ACTIVE.has(step.action) || typeof driver.preflight !== 'function')
+        return true;
+      try { return await driver.preflight(step) === true; }
+      catch { return false; }
+    }
+
+    async function actionNotReady(step, reason) {
+      state.status = 'approval-required';
+      await store.write(plan.id, state);
+      return {
+        status: 'action-not-ready', id: plan.id, stepId: step.id,
+        reason, receipts: [...state.receipts],
+      };
+    }
+
     for (const step of plan.steps) {
       if (state.completed.includes(step.id)) continue;
       const blocked = await sessionGate(step);
@@ -154,20 +170,9 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         throw Error('Interactive postcondition already satisfied before action');
       // Validate actionability before asking the owner for permission or
       // recording an uncertain pending action. Trial clicks never activate UI.
-      if (ACTIVE.has(step.action) && typeof driver.preflight === 'function') {
-        let ready = false;
-        try { ready = await driver.preflight(step) === true; }
-        catch { ready = false; }
-        if (!ready) {
-          state.status = 'approval-required';
-          await store.write(plan.id, state);
-          return {
-            status: 'action-not-ready', id: plan.id, stepId: step.id,
-            reason: 'Target not actionable; no interaction dispatched',
-            receipts: [...state.receipts],
-          };
-        }
-      }
+      if (!await preflightAction(step))
+        return actionNotReady(step,
+          'Target not actionable; no interaction dispatched');
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
@@ -180,6 +185,12 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         return { status: 'approval-required', id: plan.id, stepId: step.id,
           receipts: [...state.receipts] };
       }
+      // Approval can take long enough for a script or navigation to replace
+      // the target. Revalidate after consent and before the durable pending
+      // checkpoint so a stale approval never dispatches a different element.
+      if (!await preflightAction(step))
+        return actionNotReady(step,
+          'Target changed or became unavailable after owner approval');
       const blockedBeforeCheckpoint = await sessionGate(step);
       if (blockedBeforeCheckpoint) return blockedBeforeCheckpoint;
       state.status = 'running';

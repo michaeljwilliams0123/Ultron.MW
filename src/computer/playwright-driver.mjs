@@ -9,17 +9,28 @@ export function createPlaywrightComputerDriver(page) {
   if (!page || typeof page.goto !== 'function' ||
       typeof page.locator !== 'function' || typeof page.url !== 'function')
     throw TypeError('An actual Playwright Page is required');
+  // Keep the exact Playwright ElementHandle that passed the first trial.
+  // A second preflight after owner consent checks that same node, and perform
+  // never resolves the selector again to a replacement element.
+  const preparedTargets = new Map();
   return Object.freeze({
     // A read-only actionability trial checks the intended target BEFORE
     // a human is asked to approve. It does not click, type or press a key.
-    // A later DOM change can still make the real action uncertain.
     async preflight(step) {
+      const locator = page.locator(step.selector);
+      let target = preparedTargets.get(step.id);
+      if (!target && typeof locator.elementHandle === 'function') {
+        target = await locator.elementHandle({ timeout: 4000 });
+        if (!target) throw Error('Browser target is unavailable');
+        preparedTargets.set(step.id, target);
+      }
+      target ||= locator;
       if (step.action === 'click') {
-        await page.locator(step.selector).click({ trial: true, timeout: 4000 });
+        await target.click({ trial: true, timeout: 4000 });
       } else if (step.action === 'type' || step.action === 'keypress') {
-        await page.locator(step.selector).waitFor({
-          state: 'visible', timeout: 4000,
-        });
+        if (typeof target.waitForElementState === 'function')
+          await target.waitForElementState('visible', { timeout: 4000 });
+        else await target.waitFor({ state: 'visible', timeout: 4000 });
       }
       return true;
     },
@@ -61,33 +72,41 @@ export function createPlaywrightComputerDriver(page) {
       };
     },
     async perform(step) {
-      switch (step.action) {
-        case 'navigate':
-          await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 20000 }); break;
-        case 'click':
-          await page.locator(step.selector).click({ timeout: 10000 }); break;
-        case 'type': {
-          const target = page.locator(step.selector);
-          await target.fill(step.value, { timeout: 10000 });
-          // Never return or persist the typed value itself.
-          return { fieldValueVerified: await target.inputValue({ timeout: 10000 }) === step.value };
+      const prepared = preparedTargets.get(step.id);
+      try {
+        switch (step.action) {
+          case 'navigate':
+            await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 20000 }); break;
+          case 'click':
+            await (prepared || page.locator(step.selector)).click({ timeout: 10000 }); break;
+          case 'type': {
+            const target = prepared || page.locator(step.selector);
+            await target.fill(step.value, { timeout: 10000 });
+            // Never return or persist the typed value itself.
+            return { fieldValueVerified: await target.inputValue({ timeout: 10000 }) === step.value };
+          }
+          case 'keypress':
+            await (prepared || page.locator(step.selector)).press(step.key, { timeout: 10000 }); break;
+          case 'scroll':
+            await page.mouse.wheel(0, step.pixels); break;
+          case 'wait':
+            await page.locator(step.selector).waitFor({ state: 'visible', timeout: step.timeoutMs }); break;
+          case 'extract':
+            return { text: String(await page.locator(step.selector).innerText({
+              timeout: 10000
+            })).slice(0, 10000) };
+          case 'observe':
+            return null;
+          default:
+            throw Error('Unrecognized browser action');
         }
-        case 'keypress':
-          await page.locator(step.selector).press(step.key, { timeout: 10000 }); break;
-        case 'scroll':
-          await page.mouse.wheel(0, step.pixels); break;
-        case 'wait':
-          await page.locator(step.selector).waitFor({ state: 'visible', timeout: step.timeoutMs }); break;
-        case 'extract':
-          return { text: String(await page.locator(step.selector).innerText({
-            timeout: 10000
-          })).slice(0, 10000) };
-        case 'observe':
-          return null;
-        default:
-          throw Error('Unrecognized browser action');
+        return null;
+      } finally {
+        if (prepared) {
+          preparedTargets.delete(step.id);
+          try { await prepared.dispose?.(); } catch {}
+        }
       }
-      return null;
     },
   });
 }

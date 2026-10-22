@@ -4,11 +4,12 @@ import { randomUUID } from 'node:crypto';
  *
  * Requires separate, explicitly installed Playwright browser runtime.
  * Never reads an existing browser profile or attempts background execution.
- * Any click/type/keypress requires an interactive local operator to type
- * APPROVE followed by the exact step ID. No response means DENY.
+ * Any click/type/keypress requires the shared fail-closed owner console
+ * authorizer with a random, single-action challenge. No response means DENY.
  */
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { createFileComputerStore } from '../src/computer/file-store.mjs';
@@ -16,10 +17,14 @@ import { createBoundComputerExecutor } from '../src/computer/binding-contract.mj
 import { launchIsolatedBrowser } from '../src/computer/playwright-driver.mjs';
 import { createComputerSessionAuthority } from '../src/computer/session-authority.mjs';
 import { createGitHubCliOwnerVerifier } from '../src/computer/github-owner-verifier.mjs';
+import { createOwnerConsoleAuthorizer } from '../src/computer/owner-console.mjs';
 
 async function main() {
   if (process.argv.length !== 3)
     throw Error('Usage: node scripts/computer-runner.mjs path-to-plan.json');
+  // Apply the same CI, pseudo-TTY, and redirected-I/O rejection as the
+  // canonical owner runner before reading a plan, host identity or opening Chrome.
+  const approveOnce = createOwnerConsoleAuthorizer();
   const raw = JSON.parse(await readFile(resolve(process.argv[2]), 'utf8'));
   const allowedOrigins = JSON.parse(process.env.ULTRON_COMPUTER_ALLOWED_ORIGINS || '[]');
   if (!Array.isArray(allowedOrigins) || !allowedOrigins.length)
@@ -53,23 +58,12 @@ async function main() {
       // operator presence. Neither implies the target SaaS browser is signed in.
       verifyOwner: async () => process.stdin.isTTY === true &&
         await verifyGithubOwner(),
-      requestApproval: async ({ stepId, action, currentOrigin, selector,
-        valueLength, key, expectedState, planFingerprint }) => {
-        const challenge = 'APPROVE ' + stepId;
-        const reply = await input.question(
-          'Authorize ' + action + ' on ' + currentOrigin +
-          ' for step ' + stepId + ' (target=' + selector +
-          ', valueLength=' + (valueLength ?? 'n/a') +
-          ', key=' + (key ?? 'n/a') +
-          ', expected=' + JSON.stringify(expectedState) +
-          ', plan=' + planFingerprint.slice(0, 12) +
-          ')? Enter "' + challenge + '": ');
-        return reply.trim() === challenge;
-      },
+      requestApproval: approveOnce,
     });
     const executor = createBoundComputerExecutor({
       binding, driver: instance.driver,
-      store: createFileComputerStore(resolve('.local', 'computer-checkpoints')),
+      store: createFileComputerStore(join(homedir(), '.ultron-mw',
+        'browser-checkpoints')),
       authorize: session.authorize,
       canContinue: session.canContinue,
     });

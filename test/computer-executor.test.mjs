@@ -437,6 +437,30 @@ test('missing click target is rejected by trial before requesting owner approval
   assert.equal((await store.read(p.id)).pending, null);
 });
 
+test('approved target is revalidated before checkpoint and dispatch', async () => {
+  let trials = 0, dispatches = 0;
+  const store = createMemoryComputerStore();
+  const p = { id: 'stale-approved-target', steps: [{
+    id: 'save-click', action: 'click', selector: '#save',
+    expect: { textIncludes: 'Saved' },
+  }] };
+  const executor = createComputerExecutor({
+    driver: {
+      observe: async () => ({ url: 'https://example.test/form',
+        title: 'Form', text: 'Ready' }),
+      preflight: async () => ++trials === 1,
+      perform: async () => { dispatches++; },
+    },
+    store, allowedOrigins, authorize: async () => true,
+  });
+  const result = await executor.run(p);
+  assert.equal(result.status, 'action-not-ready');
+  assert.match(result.reason, /after owner approval/);
+  assert.equal(trials, 2);
+  assert.equal(dispatches, 0);
+  assert.equal((await store.read(p.id)).pending, null);
+});
+
 test('Playwright actionability trial never sends an actual click', async () => {
   const calls = [];
   const page = {
@@ -453,6 +477,37 @@ test('Playwright actionability trial never sends an actual click', async () => {
   assert.deepEqual(calls, [{
     selector: 'a[href="/settings/emails"]', trial: true, timeout: 4000,
   }]);
+});
+
+test('Playwright revalidation and dispatch stay bound to the prepared element', async () => {
+  const calls = [];
+  let elementLookups = 0, liveLocatorClicks = 0, disposed = 0;
+  const handle = {
+    click: async opts => { calls.push(opts); },
+    dispose: async () => { disposed++; },
+  };
+  const page = {
+    url: () => 'https://example.test/settings/profile',
+    goto: async () => {},
+    locator: () => ({
+      elementHandle: async () => { elementLookups++; return handle; },
+      click: async () => { liveLocatorClicks++; },
+    }),
+  };
+  const driver = createPlaywrightComputerDriver(page);
+  const step = { id: 'email-link', action: 'click',
+    selector: 'a[href="/settings/emails"]' };
+  assert.equal(await driver.preflight(step), true);
+  assert.equal(await driver.preflight(step), true);
+  await driver.perform(step);
+  assert.equal(elementLookups, 1);
+  assert.equal(liveLocatorClicks, 0);
+  assert.deepEqual(calls, [
+    { trial: true, timeout: 4000 },
+    { trial: true, timeout: 4000 },
+    { timeout: 10000 },
+  ]);
+  assert.equal(disposed, 1);
 });
 
 test('post-click timeout records sanitized diagnostic without ever replaying', async () => {
