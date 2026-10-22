@@ -7,7 +7,7 @@ export default async function(req,res){
  for(let i=0;i<4;i++){
   const result=await runOne({db,browser});
   results.push(result);
-  if(result.status!=='done')break;
+  if(result.status==='idle'||result.status==='lost-lease')break;
  }
  return res.json({trigger:'owner-requested',count:results.filter(r=>r.status==='done').length,results});
 }
