@@ -20,11 +20,19 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
   if (!raw || !VALID_ID.test(raw.id || '') || !Array.isArray(raw.steps) ||
       raw.steps.length < 1 || raw.steps.length > 30 ||
       !Array.isArray(allowedOrigins) || !allowedOrigins.length ||
-      allowedOrigins.some(x => typeof x !== 'string' || !/^https?:\/\//.test(x)))
+      allowedOrigins.some(x => { try { const u = new URL(x); return u.origin !== x || u.username || u.password || !['https:','http:'].includes(u.protocol) || u.protocol === 'http:' && !['localhost','127.0.0.1','[::1]'].includes(u.hostname); } catch { return true; } }))
     throw Error('Invalid computer plan or missing explicit origin allowlist');
   const steps = raw.steps.map((s, index) => {
     if (!s || s.id !== undefined && !VALID_ID.test(s.id) || !ACTIONS.has(s.action))
       throw Error('Unknown or unbounded computer action');
+    const keys = { navigate: ['id','action','url','expect'], click: ['id','action','selector','expect'],
+      type: ['id','action','selector','value','expect'], keypress: ['id','action','selector','key','expect'],
+      scroll: ['id','action','pixels','expect'], observe: ['id','action','expect'],
+      extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'] };
+    if (Object.keys(s).some(k => !keys[s.action].includes(k)))
+      throw Error('Unexpected computer action property');
+    if (ACTIVE.has(s.action) && !s.expect)
+      throw Error('Interactive computer action requires a verifiable postcondition');
     const id = s.id || 'step-' + (index + 1);
     const entry = { id, action: s.action };
     if (s.action === 'navigate') {
@@ -85,15 +93,26 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
 
   async function run(raw) {
     const plan = normalizeComputerPlan(raw, { allowedOrigins });
+    if (typeof store.withLock === 'function')
+      return store.withLock(plan.id, () => runLocked(plan));
+    return runLocked(plan);
+  }
+
+  async function runLocked(plan) {
     const fingerprint = digest(plan);
     let state = await store.read(plan.id);
     if (state && state.fingerprint !== fingerprint)
       throw Error('Plan ID reused with different instructions');
     state ||= { id: plan.id, fingerprint, status: 'running', completed: [],
       receipts: [], pending: null, createdAt: clock() };
-    if (state.pending)
+    if (state.pending || state.status === 'reconcile-required')
       return { status: 'reconcile-required', id: plan.id, pending: state.pending,
         receipts: [...state.receipts] };
+    if (!Array.isArray(state.completed) || !Array.isArray(state.receipts) ||
+        !['running','approval-required','completed'].includes(state.status) ||
+        state.completed.some(id => !plan.steps.some(s => s.id === id)) ||
+        new Set(state.completed).size !== state.completed.length)
+      throw Error('Checkpoint inconsistent; reconciliation required');
     if (state.status === 'completed')
       return { status: 'completed', id: plan.id, receipts: [...state.receipts], resumed: true };
 
@@ -106,7 +125,9 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         safeUrl(before.url, allowedOrigins);
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
-        stepId: step.id, currentOrigin: new URL(before.url).origin
+        stepId: step.id, currentOrigin: new URL(before.url).origin,
+        selector: step.selector, valueLength: step.action === 'type' ? step.value.length : undefined,
+        expectedState: step.expect
       }) !== true) {
         state.status = 'approval-required';
         await store.write(plan.id, state);
@@ -131,15 +152,18 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           }),
           resultDigest: digest(result ?? null),
         };
-        state.completed.push(step.id);
-        state.receipts.push(receipt);
-        state.pending = null;
-        await store.write(plan.id, state);
+        // Do not mutate the in-memory last durable checkpoint until the
+        // complete next checkpoint has been committed. Failed post-action
+        // persistence MUST leave the last durable pending step in place.
+        const next = { ...state, completed: [...state.completed, step.id],
+          receipts: [...state.receipts, receipt], pending: null };
+        await store.write(plan.id, next);
+        state = next;
       } catch (error) {
         // The interaction may already have occurred. It is never replayed
         // or labeled failed-without-side-effects by the executor.
-        state.status = 'reconcile-required';
-        state.errorCode = 'outcome-unverified';
+        state = { ...state, pending: step.id, status: 'reconcile-required',
+          errorCode: 'outcome-unverified' };
         await store.write(plan.id, state);
         return { status: 'reconcile-required', id: plan.id, pending: step.id,
           reason: 'Outcome unverified; inspect the application before retrying',
@@ -154,9 +178,14 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
 }
 
 export function createMemoryComputerStore() {
-  const map = new Map();
+  const map = new Map(), locks = new Set();
   return {
     async read(id) { return map.has(id) ? structuredClone(map.get(id)) : null; },
     async write(id, value) { map.set(id, structuredClone(value)); },
+    async withLock(id, action) {
+      if (locks.has(id)) throw Error('Computer objective already running; reconcile before retry');
+      locks.add(id);
+      try { return await action(); } finally { locks.delete(id); }
+    },
   };
 }
