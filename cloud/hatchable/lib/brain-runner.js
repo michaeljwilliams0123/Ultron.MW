@@ -57,7 +57,7 @@ export async function runOne({db,browser}){
       status=CASE WHEN attempts>=max_attempts THEN 'blocked' ELSE 'queued' END,
       lease_until=CASE WHEN attempts>=max_attempts THEN NULL ELSE now()+interval '15 minutes' END,
       owner_token=NULL,updated_at=now()
-    WHERE id=$1 AND owner_token=$2 AND status='leased'
+    WHERE id=$1 AND owner_token=$2 AND status='leased' AND lease_until>now()
     RETURNING id,objective,status
   ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
