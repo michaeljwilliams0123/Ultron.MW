@@ -31,3 +31,28 @@ reviews:
   in_progress_fortune: false
   poem: false
   enable_prompt_for_ai_agents: false
+
+  # Keep an opted-in review analytical: no generated fix/test/docstring panels
+  # and no duplicate merge checklist beside the required GitHub Verify gate.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: off
+    title:
+      mode: off
+    description:
+      mode: off
+    issue_assessment:
+      mode: off
