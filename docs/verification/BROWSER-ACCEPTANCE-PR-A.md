@@ -38,9 +38,10 @@ The existing local owner-operated script can select system Chrome using
 | Type and click with post-action readback | Fixture form save and independently fetched state | Local synthetic proof |
 | Crash-safe idempotency | Rerun same objective, one external write | Local synthetic proof |
 | Visual observation | SHA-256 of real screenshot and accessibility snapshot in each receipt | Local synthetic proof; hashes, not image interpretation |
-| Foreign redirect | Allowed origin responds with 302 to forbidden third origin; third server must receive zero requests | Local synthetic proof |
+| Redirect isolation | A direct foreign 302 and an apparently safe same-origin first-hop 302 both fail closed; third server receives zero requests | Local synthetic proof |
 | Ambiguous disconnect | Browser closes just after actual submit; objective requires reconciliation; repeated run makes no second write | Local synthetic proof |
 | Owner session bounds | Independent injected verification callback, expiration, revocation, origin and approval cap | Unit tests; no external identity connected |
+| Session stop during observation/checkpoint | Revocation denies subsequent passive navigation; a pending checkpoint becomes reconciliation-required without dispatch or replay | Unit tests; no external identity connected |
 | Actual authenticated SaaS owner approval and MFA takeover | Requires a connected approved owner host and authorization provider | **Not proven** |
 | Screenshot-driven semantic visual reasoning and session persistence across devices | Requires separately accepted implementation and redaction policy | **Not proven** |
 | Production GitHub Pages dispatch and saved authenticated GitHub receipt | End-user session validation and current-main workflow evidence | **Not proven by this fixture** |
@@ -48,9 +49,13 @@ The existing local owner-operated script can select system Chrome using
 ## Security boundaries
 
 - `route.continue()` by itself did not block HTTP redirects after an admitted
-  URL. Redirect-safe interception now fetches only the already-admitted request
-  with `maxRedirects: 0`, checks its `Location` origin, then fulfills or aborts.
-  The actual Chrome test caught the previous forbidden-origin contact.
+  URL. More importantly, even `route.fulfill({ response: 3xx })` can permit a
+  browser-native redirect chain without invoking another route handler.
+  The worker now uses `maxRedirects: 0` and **rejects every HTTP 3xx**,
+  including apparently safe first hops. A future redirect-aware network
+  implementation is required before ordinary redirecting websites and the
+  standard POST/Redirect/GET pattern can be supported. The synthetic form
+  intentionally responds with HTTP 200 and verifies persisted state separately.
 - WebSockets and popups remain closed; service workers remain blocked.
 - Screenshot buffers and accessibility snapshots are hashed **in memory**;
   their raw bytes/text are not included in durable checkpoints or test receipts.
@@ -58,11 +63,26 @@ The existing local owner-operated script can select system Chrome using
 - The injected `verifyOwner` callback **must be implemented by a trusted,
   authenticated host**; arbitrary webpage JS or an LLM cannot be a verifier.
 - The local console runner is a bounded, interactive operator tool, not SSO.
+- `canContinue` is checked before/after observation and before dispatch of
+  **all** actions, including navigation. On expiry or revocation, no new step
+  is dispatched. If the session ends after a pending checkpoint is saved, the
+  worker conservatively requires reconciliation instead of replay.
 - An action already in flight at revocation may have executed. Its unverified
   outcome remains `reconcile-required`; it cannot be silently replayed.
 - Application-layer allowlists are not protection against DNS rebinding or
   arbitrary private-network access in a hosted runtime. Add network-level
   egress controls before expanding beyond approved local testing.
+
+## Independent read-only Pages smoke
+
+Using a **fresh, cookie-free Chrome context** against the existing public Pages
+deployment (not the draft PR), the Brain, Learning and Systems tabs were
+clicked and verified at desktop (1280 × 760) and mobile (390 × 844) viewports.
+Both document navigations returned HTTP 200 with zero observed page errors.
+Screenshots were hashed only in memory, not saved or published. This is
+unprivileged UI rendering/navigation evidence; it does **not** establish
+authenticated GitHub dispatch, live browser owner approval, or the PR's
+unmerged code running in production.
 
 ## Release boundary
 

@@ -87,3 +87,118 @@ test('Playwright observation gives hashes of screenshot and accessibility tree, 
       expect: { textIncludes: 'Saved' } }] })).status, 'reconcile-required');
   assert.equal(submissions, 1);
 });
+
+test('revoked owner session stops the next read-only navigation', async () => {
+  const authority = createComputerSessionAuthority({ ...base,
+    verifyOwner: async () => true, requestApproval: async () => true });
+  let url = 'about:blank', performed = 0;
+  const driver = {
+    async observe() { return { url, title: 'Local', text: 'Ready' }; },
+    async perform(step) {
+      performed++;
+      url = step.url;
+      authority.revoke();
+    },
+  };
+  const executor = createComputerExecutor({ driver,
+    store: createMemoryComputerStore(), allowedOrigins: [origin],
+    canContinue: authority.canContinue });
+  const result = await executor.run({ id: 'stopped-after-first', steps: [
+    { id: 'first', action: 'navigate', url: origin + '/first' },
+    { id: 'second', action: 'navigate', url: origin + '/second' },
+  ] });
+  assert.equal(result.status, 'approval-required');
+  assert.equal(result.stepId, 'second');
+  assert.equal(result.receipts.length, 1);
+  assert.equal(performed, 1);
+});
+
+test('revocation while observing prevents the first action', async () => {
+  const authority = createComputerSessionAuthority({ ...base,
+    verifyOwner: async () => true, requestApproval: async () => true });
+  let performed = 0;
+  const executor = createComputerExecutor({
+    driver: {
+      async observe() {
+        authority.revoke();
+        return { url: 'about:blank', title: '', text: '' };
+      },
+      async perform() { performed++; },
+    },
+    store: createMemoryComputerStore(), allowedOrigins: [origin],
+    canContinue: authority.canContinue,
+  });
+  const result = await executor.run({ id: 'stopped-during-observe',
+    steps: [{ action: 'navigate', url: origin + '/safe' }] });
+  assert.equal(result.status, 'approval-required');
+  assert.equal(performed, 0);
+});
+
+test('revocation after durable pending write cannot dispatch or replay', async () => {
+  const authority = createComputerSessionAuthority({ ...base,
+    verifyOwner: async () => true, requestApproval: async () => true });
+  const checkpoint = createMemoryComputerStore();
+  const store = {
+    read: checkpoint.read,
+    async write(id, next) {
+      await checkpoint.write(id, next);
+      if (next.pending) authority.revoke();
+    },
+  };
+  let performed = 0;
+  const executor = createComputerExecutor({
+    driver: {
+      async observe() { return { url: 'about:blank', title: '', text: '' }; },
+      async perform() { performed++; },
+    },
+    store, allowedOrigins: [origin], canContinue: authority.canContinue,
+  });
+  const plan = { id: 'pending-session-stop',
+    steps: [{ action: 'navigate', url: origin + '/safe' }] };
+  const result = await executor.run(plan);
+  assert.equal(result.status, 'reconcile-required');
+  assert.equal((await executor.run(plan)).status, 'reconcile-required');
+  assert.equal(performed, 0);
+  assert.equal((await checkpoint.read(plan.id)).pending, 'step-1');
+});
+
+test('parallel requests reserve capacity before asynchronous owner verification', async () => {
+  let release, verifications = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const authority = createComputerSessionAuthority({ ...base, maxApprovals: 1,
+    verifyOwner: async () => { verifications++; await gate; return true; },
+    requestApproval: async () => true });
+  const first = authority.authorize(click);
+  assert.equal(await authority.authorize({ ...click, stepId: 'another' }), false);
+  release();
+  assert.equal(await first, true);
+  assert.equal(verifications, 1);
+  assert.equal(authority.status, 'exhausted');
+});
+test('failed or rejected owner callback releases its pending approval slot', async () => {
+  let attempts = 0;
+  const authority = createComputerSessionAuthority({ ...base, maxApprovals: 1,
+    verifyOwner: async () => true,
+    requestApproval: async () => {
+      attempts++;
+      if (attempts === 1) throw Error('consent UI disconnected');
+      return true;
+    } });
+  await assert.rejects(authority.authorize(click), /disconnected/);
+  assert.equal(await authority.authorize(click), true);
+  assert.equal(authority.status, 'exhausted');
+});
+test('two simultaneous owner requests cannot both pass a single approval cap', async () => {
+  let release, started = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const authority = createComputerSessionAuthority({ ...base, maxApprovals: 1,
+    verifyOwner: async () => true,
+    requestApproval: async () => { started++; await gate; return true; } });
+  const first = authority.authorize(click);
+  await Promise.resolve();
+  const second = authority.authorize({ ...click, stepId: 'parallel' });
+  release();
+  const accepted = await Promise.all([first, second]);
+  assert.deepEqual(accepted, [true, false]);
+  assert.equal(started, 1);
+});

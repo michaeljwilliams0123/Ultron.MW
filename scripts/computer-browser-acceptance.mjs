@@ -46,6 +46,10 @@ try {
     if (req.url === '/redirect') {
       res.writeHead(302, { Location: foreignOrigin + '/outside' });
       res.end();
+    } else if (req.url === '/same-origin-redirect') {
+      // Even an allowed first hop could redirect to a forbidden next hop.
+      res.writeHead(302, { Location: '/redirect' });
+      res.end();
     } else if (req.url === '/form') {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(html('<main>Form ready<form method="post" action="/submit">' +
@@ -59,8 +63,10 @@ try {
       }
       latest = new URLSearchParams(raw).get('value') || '';
       runCount++;
-      res.writeHead(303, { Location: '/receipt' });
-      res.end();
+      // Deliberately return 200: this fail-closed browser worker currently
+      // rejects all HTTP redirects pending a fully redirect-aware network gate.
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      res.end(html('<main>Saved: ' + latest + '</main>'));
     } else if (req.url === '/receipt') {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(html('<main>Saved: ' + latest + '</main>'));
@@ -89,7 +95,7 @@ try {
   const store = createFileComputerStore(join(dir, 'checkpoints'));
   const executor = createComputerExecutor({
     driver: browser.driver, store,
-    authorize: session.authorize, allowedOrigins,
+    authorize: session.authorize, canContinue: session.canContinue, allowedOrigins,
   });
   const plan = {
     id: 'synthetic-browser-primary',
@@ -117,6 +123,7 @@ try {
   const resumed = await executor.run(plan);
   assert.equal(resumed.resumed, true);
   assert.equal(runCount, 1);
+  const runCountAfterResume = runCount;
   session.revoke();
   assert.equal(await session.authorize({ action: 'click', currentOrigin: firstOrigin }), false);
 
@@ -124,6 +131,12 @@ try {
   // third, unauthorized origin must be stopped by actual Chromium interception.
   try { await browser.page.goto(firstOrigin + '/redirect'); }
   catch { /* Some Chromium versions throw on a blocked redirect. */ }
+  assert.equal(foreignHits, 0);
+  assert.notEqual(new URL(browser.page.url()).origin, foreignOrigin);
+  // A same-origin first Location must also fail closed, because Chromium will
+  // not re-run the route handler for the next redirect.
+  try { await browser.page.goto(firstOrigin + '/same-origin-redirect'); }
+  catch { /* Request is intentionally denied. */ }
   assert.equal(foreignHits, 0);
   assert.notEqual(new URL(browser.page.url()).origin, foreignOrigin);
 
@@ -163,7 +176,7 @@ try {
     status: 'passed', completedSteps: first.receipts.length,
     screenshotDigests: first.receipts.length,
     accessibilityDigests: first.receipts.length,
-    resumeNoDuplicate: resumed.resumed === true && runCount === 2,
+    resumeNoDuplicate: resumed.resumed === true && runCountAfterResume === 1,
     persistedReadback: true, interceptedForeignRedirect: foreignHits === 0,
     disconnectOutcome: ambiguous.status, noBlindReplay: runCount === 2,
   }, null, 2) + '\n');

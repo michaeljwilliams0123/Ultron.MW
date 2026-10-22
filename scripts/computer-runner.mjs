@@ -61,6 +61,7 @@ async function main() {
       binding, driver: instance.driver,
       store: createFileComputerStore(resolve('.local', 'computer-checkpoints')),
       authorize: session.authorize,
+      canContinue: session.canContinue,
     });
     const result = await executor.run(raw);
     // Reports only hashes, action names and origins, never typed values.

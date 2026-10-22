@@ -248,9 +248,10 @@ test('origin interception rejects disallowed browser requests and WebSockets', a
     fetch: async options => {
       assert.equal(options.maxRedirects, 0);
       return {
-        status: () => url.includes('/redirect') ? 302 : 200,
-        headers: () => url.includes('/redirect') ?
-          { location: 'https://example.evil/private' } : {},
+        status: () => url.includes('redirect') ? 302 : 200,
+        headers: () => url.includes('redirect') ?
+          { location: url.includes('allowed') ? '/safe' :
+            'https://example.evil/private' } : {},
       };
     },
     fulfill: async () => events.push('continued'),
@@ -258,9 +259,10 @@ test('origin interception rejects disallowed browser requests and WebSockets', a
   });
   await intercept(route('https://example.test/resource.js'));
   await intercept(route('https://example.test/redirect'));
+  await intercept(route('https://example.test/allowed-redirect'));
   await intercept(route('https://example.evil/resource.js'));
   await intercept(route('http://127.0.0.1/admin'));
-  assert.deepEqual(events, ['continued', 'blocked', 'blocked', 'blocked']);
+  assert.deepEqual(events, ['continued', 'blocked', 'blocked', 'blocked', 'blocked']);
   await socketRule({ close: () => { closed = true; } });
   assert.equal(closed, true);
 });
@@ -321,4 +323,23 @@ test('invalid action properties and noncanonical origins are rejected', () => {
   assert.throws(() => normalizeComputerPlan(plan([
     { action: 'observe' },
   ]), { allowedOrigins: ['https://example.test/secret'] }), /allowlist/);
+});
+
+test('network interception aborts failed fetch and missing runtime fetch capabilities', async () => {
+  let handler;
+  await installNetworkPolicy({
+    route: async (_, callback) => { handler = callback; },
+    routeWebSocket: async () => {},
+  }, ['https://example.test']);
+  const aborted = [];
+  const route = {
+    request: () => ({ url: () => 'https://example.test/ok' }),
+    fetch: async () => { throw Error('connection reset'); },
+    abort: async reason => { aborted.push(reason); },
+    fulfill: async () => { throw Error('must not fulfill'); },
+  };
+  await handler(route);
+  assert.deepEqual(aborted, ['failed']);
+  await handler({ ...route, fetch: undefined });
+  assert.deepEqual(aborted, ['failed', 'blockedbyclient']);
 });

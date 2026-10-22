@@ -32,24 +32,38 @@ export function createComputerSessionAuthority({
   const admitted = new Set(allowedOrigins);
   let revoked = false;
   let approved = 0;
-  const live = () => !revoked && Number.isFinite(clock()) &&
-    clock() < deadline && approved < maxApprovals;
+  let pending = 0;
+  const canContinue = () => {
+    const current = clock();
+    return !revoked && Number.isFinite(current) && current < deadline;
+  };
+  // Reserve every outstanding approval so parallel callers cannot each
+  // consume the same final slot while awaiting owner authentication.
+  const live = () => canContinue() && approved + pending < maxApprovals;
 
   return Object.freeze({
     get status() { return revoked ? 'revoked' : clock() >= deadline ? 'expired' :
       approved >= maxApprovals ? 'exhausted' : 'active'; },
     revoke() { revoked = true; },
+    // Read-only actions also stop once the owner revokes/expires the session.
+    // The approval count limits INTERACTIVE actions separately.
+    canContinue,
     async authorize(context) {
       if (!live() || !context || !INTERACTIVE.has(context.action) ||
           !admitted.has(context.currentOrigin)) return false;
-      // The actual identity/session validity is checked by a separate trusted
-      // host. The model, page contents and source plan never choose this result.
-      if (await verifyOwner({ sessionId, action: context.action,
-        currentOrigin: context.currentOrigin }) !== true || !live()) return false;
-      if (await requestApproval({ ...context, sessionId, expiresAt }) !== true ||
-          !live()) return false;
-      approved++;
-      return true;
+      pending++;
+      try {
+        // The identity proof and approval originate outside the model/page.
+        if (await verifyOwner({ sessionId, action: context.action,
+          currentOrigin: context.currentOrigin }) !== true || !canContinue())
+          return false;
+        if (await requestApproval({ ...context, sessionId, expiresAt }) !== true ||
+            !canContinue()) return false;
+        approved++;
+        return true;
+      } finally {
+        pending--;
+      }
     },
   });
 }

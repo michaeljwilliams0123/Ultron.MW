@@ -95,24 +95,32 @@ export async function installNetworkPolicy(context, allowedOrigins) {
       await route.abort('blockedbyclient');
       return;
     }
-    // Playwright's route.continue() does NOT necessarily re-intercept redirect
-    // destinations. Fetch only the admitted URL WITHOUT following redirects,
-    // inspect Location, then fulfill. A forbidden target is never requested.
-    if (typeof route.fetch !== 'function' || typeof route.fulfill !== 'function')
-      throw Error('Playwright runtime lacks redirect-safe request interception');
-    const response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
-    if ([301, 302, 303, 307, 308].includes(response.status())) {
-      const location = response.headers()['location'];
-      let target;
-      try { target = new URL(location, route.request().url()); }
-      catch { await route.abort('blockedbyclient'); return; }
-      if (!['https:', 'http:'].includes(target.protocol) ||
-          target.username || target.password || !allowed.has(target.origin)) {
+    // BrowserContext.route intercepts the first request but NOT a redirect
+    // followed by Chromium after route.fulfill({ response: 3xx }). Until a
+    // network-level redirect-aware gate exists, fail closed for *all* redirects,
+    // even if their first Location is allowlisted (a later hop need not be).
+    if (typeof route.fetch !== 'function' || typeof route.fulfill !== 'function') {
+      await route.abort('blockedbyclient').catch(() => {});
+      return;
+    }
+    let response;
+    try {
+      response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
+    } catch {
+      // A transport failure must never leave an unresolved, hanging route.
+      await route.abort('failed').catch(() => {});
+      return;
+    }
+    try {
+      if (response.status() >= 300 && response.status() < 400) {
         await route.abort('blockedbyclient');
         return;
       }
+      await route.fulfill({ response });
+    } catch {
+      // A closed page may already have invalidated the route.
+      await route.abort('failed').catch(() => {});
     }
-    await route.fulfill({ response });
   });
   // WebSocket messages bypass HTTP route interception in some Playwright
   // versions. Refuse them entirely in the initial browser worker.

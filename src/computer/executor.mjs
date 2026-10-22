@@ -88,10 +88,11 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
  * State is persisted BEFORE dispatch; an ambiguous write never replays.
  */
 export function createComputerExecutor({ driver, store, authorize = async () => false,
-  allowedOrigins, clock = () => new Date().toISOString() } = {}) {
+  canContinue = async () => true, allowedOrigins,
+  clock = () => new Date().toISOString() } = {}) {
   if (!driver || typeof driver.observe !== 'function' || !store ||
       typeof store.read !== 'function' || typeof store.write !== 'function' ||
-      typeof authorize !== 'function')
+      typeof authorize !== 'function' || typeof canContinue !== 'function')
     throw Error('Executor requires driver, durable store and authority callback');
 
   async function run(raw) {
@@ -119,9 +120,22 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
     if (state.status === 'completed')
       return { status: 'completed', id: plan.id, receipts: [...state.receipts], resumed: true };
 
+    async function sessionGate(step) {
+      if (await canContinue({ planId: plan.id, stepId: step.id,
+        action: step.action }) === true) return null;
+      state.status = 'approval-required';
+      await store.write(plan.id, state);
+      return { status: 'approval-required', id: plan.id, stepId: step.id,
+        reason: 'Owner session expired or revoked', receipts: [...state.receipts] };
+    }
+
     for (const step of plan.steps) {
       if (state.completed.includes(step.id)) continue;
+      const blocked = await sessionGate(step);
+      if (blocked) return blocked;
       const before = await driver.observe();
+      const blockedAfterObservation = await sessionGate(step);
+      if (blockedAfterObservation) return blockedAfterObservation;
       // A newly launched isolated browser starts at about:blank.
       // Only first-step navigation may begin from that browser-native state.
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
@@ -141,10 +155,17 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         return { status: 'approval-required', id: plan.id, stepId: step.id,
           receipts: [...state.receipts] };
       }
+      const blockedBeforeCheckpoint = await sessionGate(step);
+      if (blockedBeforeCheckpoint) return blockedBeforeCheckpoint;
       state.status = 'running';
       state.pending = step.id;
       await store.write(plan.id, state);
       try {
+        // If the session ends during checkpoint persistence, preserve the
+        // pending action for explicit reconciliation rather than dispatching.
+        if (await canContinue({ planId: plan.id, stepId: step.id,
+          action: step.action }) !== true)
+          throw Error('Owner session ended before action dispatch');
         const result = await driver.perform(step);
         const after = await driver.observe();
         safeUrl(after.url, allowedOrigins);
