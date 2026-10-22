@@ -8,7 +8,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { createFileComputerStore } from '../src/computer/file-store.mjs';
 import { createBoundComputerExecutor } from '../src/computer/binding-contract.mjs';
@@ -52,8 +52,7 @@ async function main() {
     if (instance) await instance.close();
   }
 }
-if (process.argv[1] && import.meta.url ===
-    new URL('file://' + fileURLToPath(import.meta.url).replace(/\\/g, '/')).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch(error => {
     process.stderr.write('Computer run blocked: ' + error.message + '\n');
     process.exitCode = 1;
