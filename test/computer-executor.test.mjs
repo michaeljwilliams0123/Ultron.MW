@@ -9,7 +9,7 @@ import {
   normalizeComputerPlan, createComputerExecutor, createMemoryComputerStore
 } from '../src/computer/executor.mjs';
 import { createFileComputerStore } from '../src/computer/file-store.mjs';
-import { createPlaywrightComputerDriver, installNetworkPolicy } from '../src/computer/playwright-driver.mjs';
+import { createPlaywrightComputerDriver, installNetworkPolicy, launchIsolatedBrowser } from '../src/computer/playwright-driver.mjs';
 
 const allowedOrigins = ['https://example.test'];
 const plan = steps => ({ id: 'check-001', steps });
@@ -312,4 +312,31 @@ test('invalid action properties and noncanonical origins are rejected', () => {
   assert.throws(() => normalizeComputerPlan(plan([
     { action: 'observe' },
   ]), { allowedOrigins: ['https://example.test/secret'] }), /allowlist/);
+});
+
+test('interactive plans reject empty postconditions before requesting approval', () => {
+  for (const action of ['click', 'type', 'keypress']) {
+    for (const expect of [{}, []]) {
+      const instruction = { action, selector: '#subject', expect };
+      if (action === 'type') instruction.value = 'fixture';
+      if (action === 'keypress') instruction.key = 'Enter';
+      assert.throws(
+        () => normalizeComputerPlan(plan([instruction]), { allowedOrigins }),
+        /verifiable postcondition/,
+        action + ' must not accept an empty assertion',
+      );
+    }
+  }
+  assert.doesNotThrow(() => normalizeComputerPlan(
+    plan([{ action: 'type', selector: '#subject', value: 'fixture',
+      expect: { textIncludes: 'Saved' } }]), { allowedOrigins },
+  ));
+});
+
+test('isolated browser refuses arbitrary browser channels before launch', async () => {
+  await assert.rejects(
+    launchIsolatedBrowser({ headless: true, channel: 'arbitrary-browser',
+      allowedOrigins: ['http://127.0.0.1:8753'] }),
+    /Unsupported browser channel/,
+  );
 });
