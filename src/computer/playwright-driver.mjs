@@ -21,8 +21,12 @@ export function createPlaywrightComputerDriver(page) {
           await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 20000 }); break;
         case 'click':
           await page.locator(step.selector).click({ timeout: 10000 }); break;
-        case 'type':
-          await page.locator(step.selector).fill(step.value, { timeout: 10000 }); break;
+        case 'type': {
+          const target = page.locator(step.selector);
+          await target.fill(step.value, { timeout: 10000 });
+          // Never return or persist the typed value itself.
+          return { fieldValueVerified: await target.inputValue({ timeout: 10000 }) === step.value };
+        }
         case 'keypress':
           await page.locator(step.selector).press(step.key, { timeout: 10000 }); break;
         case 'scroll':
