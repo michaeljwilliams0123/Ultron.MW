@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rename, realpath } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, realpath, open, unlink } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -18,7 +18,31 @@ export function createFileComputerStore(directory) {
     if (!path.startsWith(root + sep)) throw Error('Checkpoint escaped its root');
     return path;
   };
+  async function ensureDirectory() {
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    if (await realpath(root) !== root && process.platform !== 'win32')
+      throw Error('Checkpoint root is not a canonical local directory');
+  }
   return {
+    async withLock(id, action) {
+      locate(id);
+      await ensureDirectory();
+      const file = join(root, id + '.lock');
+      let handle;
+      try { handle = await open(file, 'wx', 0o600); }
+      catch (error) {
+        if (error?.code === 'EEXIST')
+          throw Error('Objective lock exists; running or interrupted task requires reconciliation');
+        throw error;
+      }
+      try {
+        await handle.writeFile(JSON.stringify({ id, acquiredAt: new Date().toISOString() }) + '\n');
+        return await action();
+      } finally {
+        await handle.close();
+        await unlink(file);
+      }
+    },
     async read(id) {
       const path = locate(id);
       try {
@@ -33,7 +57,7 @@ export function createFileComputerStore(directory) {
     async write(id, state) {
       const target = locate(id);
       if (state?.id !== id) throw Error('Checkpoint identity mismatch');
-      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+      await ensureDirectory();
       const canonical = await realpath(dirname(target));
       if (canonical !== await realpath(root))
         throw Error('Checkpoint directory changed');
