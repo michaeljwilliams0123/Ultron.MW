@@ -9,7 +9,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -18,12 +18,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - name: Install and audit locked model runtime
+      - name: Install audited locked model runtime
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          # npm 10's retired quick-audit endpoint can hang until the job timeout.
-          # Pin the current audit client while keeping Node 22 and the lockfile fixed.
-          timeout 6m npx --yes npm@11.9.0 audit --omit=dev --audit-level=high
+          node scripts/verify-audited-lockfile.mjs
           node --input-type=module -e "await import('@huggingface/transformers')"
       - name: Lint all workflows
         run: bash scripts/lint-workflows.sh
