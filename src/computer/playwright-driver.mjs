@@ -127,47 +127,21 @@ export async function installNetworkPolicy(context, allowedOrigins) {
       await route.abort('blockedbyclient');
       return;
     }
-    // Chromium follows 3xx fulfilled responses WITHOUT a second route
-    // callback. Resolve every hop ourselves, with explicit origin checks.
-    // Follow only read-only redirects; a POST may transition to GET on 303.
-    // Never repeat an already-dispatched write on 307/308 or ambiguous errors.
+    // Chromium can follow 3xx after route.fulfill without another route callback.
+    // Manually resolving hops and fulfilling the final response leaves the
+    // browser-visible URL at the original request (including POST).
+    // Fail closed on ALL redirects until the browser can preserve safe URL history.
     if (typeof route.fetch !== 'function' || typeof route.fulfill !== 'function') {
       await route.abort('blockedbyclient').catch(() => {});
       return;
     }
     try {
-      let response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
-      let current = route.request().url();
-      let method = route.request().method?.() || 'GET';
-      let hops = 0;
-      while (response.status() >= 300 && response.status() < 400) {
-        const status = response.status();
-        const location = response.headers()['location'];
-        if (!location || hops++ >= 5) {
-          await route.abort('blockedbyclient');
-          return;
-        }
-        let next;
-        try { next = new URL(location, current); }
-        catch { await route.abort('blockedbyclient'); return; }
-        if (!['https:', 'http:'].includes(next.protocol) ||
-            next.username || next.password || !allowed.has(next.origin)) {
-          await route.abort('blockedbyclient');
-          return;
-        }
-        // Treat POST/Redirect/GET as safe to READ after the original write.
-        // Never resend POST or another mutating method as part of the chain.
-        if (status === 303 || ((status === 301 || status === 302) &&
-            method === 'POST')) method = 'GET';
-        if (!['GET', 'HEAD'].includes(method) ||
-            typeof context.request?.fetch !== 'function') {
-          await route.abort('blockedbyclient');
-          return;
-        }
-        current = next.href;
-        response = await context.request.fetch(current, {
-          method, maxRedirects: 0, timeout: 10000,
-        });
+      const response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
+      if (response.status() >= 300 && response.status() < 400) {
+        // The original request may already have changed server state.
+        // Executor checkpoint reconciliation must refuse blind replay.
+        await route.abort('blockedbyclient');
+        return;
       }
       await route.fulfill({ response });
     } catch {
