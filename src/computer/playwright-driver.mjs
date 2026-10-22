@@ -63,6 +63,8 @@ export async function installNetworkPolicy(context, allowedOrigins) {
         } catch { return true; }
       }))
     throw Error('Network boundary requires canonical allowed origins');
+  if (typeof context.routeWebSocket !== 'function')
+    throw Error('Playwright runtime lacks WebSocket interception; update isolated executor');
   const allowed = new Set(allowedOrigins);
   await context.route('**/*', async route => {
     try {
@@ -80,9 +82,7 @@ export async function installNetworkPolicy(context, allowedOrigins) {
   });
   // WebSocket messages bypass HTTP route interception in some Playwright
   // versions. Refuse them entirely in the initial browser worker.
-  if (typeof context.routeWebSocket === 'function') {
-    await context.routeWebSocket('**/*', socket => socket.close());
-  }
+  await context.routeWebSocket('**/*', socket => socket.close());
 }
 
 /**
