@@ -94,3 +94,19 @@ test('cloud: private note contents are excluded from the audit receipt',async()=
  assert.match(sql,/jsonb_build_object\('note_id',id,'kind',kind\)/);
  assert.doesNotMatch(sql,/test-private-note/);
 });
+
+test('cloud: an expired worker may not requeue a still-owned lease after failure',async()=>{
+ const db=fakeRunnerDb({complete:true});
+ await runOne({db,browser:{}});
+ const updated=await readFile(new URL('../cloud/hatchable/lib/brain-runner.js',import.meta.url),'utf8');
+ const failure=updated.slice(updated.indexOf('const failed=await db.query'));
+ assert.match(failure,/owner_token=\$2 AND status='leased' AND lease_until>now\(\)/);
+});
+
+test('cloud: short hourly tick dispatches slow objective work instead of running it inline',async()=>{
+ const tick=await readFile(new URL('../cloud/hatchable/api/brain/tick.js',import.meta.url),'utf8');
+ assert.match(tick,/scheduler\.now\('\/api\/brain\/run'/);
+ assert.doesNotMatch(tick,/runOne\(/);
+ assert.doesNotMatch(tick,/import.*browser.*from 'hatchable'/);
+ assert.match(tick,/processed:0/);
+});
