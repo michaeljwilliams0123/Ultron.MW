@@ -4,6 +4,13 @@ Ultron is an independent, single-owner execution platform with a GitHub-hosted r
 
 **Console:** https://michaeljwilliams0123.github.io/Ultron.MW/
 
+**Named Codex authors:** The console displays **Mike's Codex** and **Destiny's
+Codex**, stable author fingerprints and separate route status. Use
+`/codex destiny-codex <public task>` to request the enrolled Work lane through
+an owner-confirmed Issue and task PR. Mike's route remains explicitly unbound
+until enrolled from his account. Registration is not account attestation or
+live execution proof; inspect each task's receipt. See [callable Codex authors](docs/CODEX-AUTHORS.md).
+
 ## Current capabilities
 
 | Capability | Environment | Implemented behavior | Evidence boundary |
