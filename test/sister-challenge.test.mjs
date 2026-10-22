@@ -24,7 +24,7 @@ const ruleset = {
     } },
   ],
 };
-const verified = { id: 77, head_sha: MAIN, name: 'Verify Mahoraga',
+const verified = { id: 77, head_sha: MAIN, head_branch: 'main', name: 'Verify Mahoraga',
   path: '.github/workflows/verify.yml',
   status: 'completed', conclusion: 'success', run_number: 3,
   jobs: [
@@ -84,6 +84,20 @@ test('workflow success cannot mask a missing, stale or failing required job', ()
   }
 });
 
+test('main branch and canonical ref-qualified Verify path must match', () => {
+  for (const path of [
+    '.github/workflows/verify.yml@main',
+    '.github/workflows/verify.yml@refs/heads/main',
+    SISTER_TARGET + '/.github/workflows/verify.yml@main',
+  ]) assert.equal(evaluate({workflowRuns:[{...verified,path}]}).evidence.currentMainCiSuccess,true);
+  for (const run of [
+    {...verified,head_branch:'feature/test'},
+    {...verified,head_branch:null},
+    {...verified,path:'.github/workflows/unrelated.yml@main'},
+    {...verified,path:'.github/workflows/verify.yml@feature'},
+  ]) assert.equal(evaluate({workflowRuns:[run]}).evidence.currentMainCiSuccess,false);
+});
+
 test('wrong identity or privacy boundary fails closed', () => {
   assert.throws(() => evaluate({ target: { ...target, private: false } }), /sister-read-evidence-invalid/);
   assert.throws(() => evaluate({ challenger: { ...challenger, full_name: SISTER_TARGET } }), /sister-read-evidence-invalid/);
@@ -118,6 +132,31 @@ test('read-only observer requires stable head and reads no private code', async 
     if (path.startsWith(root + '/actions/runs?')) return { workflow_runs: [] };
     throw Error('Unexpected request');
   } }), /sister-main-moved-retry-from-new-head/);
+});
+
+test('observer attaches jobs for main ref-qualified Verify and ignores foreign branches', async () => {
+  const root = '/repos/' + SISTER_TARGET;
+  for (const run of [
+    {...verified,path:'.github/workflows/verify.yml@main'},
+    {...verified,head_branch:'feature/other'},
+  ]) {
+    const requested=[];
+    const get=async path => {
+      requested.push(path);
+      if(path === '/repos/' + SISTER_CHALLENGER)return challenger;
+      if(path === root)return target;
+      if(path === root + '/git/ref/heads/main')return mainRef;
+      if(path === root + '/rulesets?includes_parents=true&per_page=100')return [ruleset];
+      if(path === root + '/rulesets/42')return ruleset;
+      if(path.startsWith(root + '/actions/runs?head_sha='))return {workflow_runs:[run]};
+      if(path === root + '/actions/runs/77/jobs?per_page=100')return {total_count:2,jobs:verified.jobs};
+      throw Error('Unexpected data request');
+    };
+    const out=await observeSisterChallenge({get});
+    assert.equal(out.evidence.currentMainCiSuccess,run.head_branch==='main');
+    assert.ok(requested.some(path=>path.includes('&branch=main&per_page=50')));
+    assert.equal(requested.some(path=>path.endsWith('/77/jobs?per_page=100')),run.head_branch==='main');
+  }
 });
 
 test('rendered report cannot disclose private API content or injected strings', () => {

@@ -10,6 +10,19 @@ export const SISTER_CHALLENGER = 'michaeljwilliams0123/Ultron.MW';
 const SHA = /^[0-9a-f]{40}$/;
 const ROOT = '/repos/';
 const REQUIRED = ['Verify (ubuntu-latest)', 'Verify (windows-latest)'];
+/**
+ * Require a canonical Verify workflow identity. GitHub can include a ref
+ * suffix in its REST workflow-run path, but not an arbitrary workflow.
+ */
+function isVerifyPath(path) {
+  if (typeof path !== 'string') return false;
+  const bases = [
+    '.github/workflows/verify.yml',
+    SISTER_TARGET + '/.github/workflows/verify.yml',
+  ];
+  return bases.some(base => path === base ||
+    path === base + '@main' || path === base + '@refs/heads/main');
+}
 
 function refuse(code) {
   const error = new Error(code);
@@ -63,9 +76,8 @@ export function evaluateSisterEvidence({ challenger, target, mainRef, rulesets, 
     Array.isArray(item.bypass_actors) &&
     item.bypass_actors.some(actor => actor.bypass_mode === 'always'));
   const exactRuns = workflowRuns.filter(item =>
-    item?.head_sha === headSha &&
-    (item?.path === '.github/workflows/verify.yml' ||
-      item?.path === 'michaeljwilliams0123/mahoraga/.github/workflows/verify.yml'));
+    item?.head_sha === headSha && item?.head_branch === 'main' &&
+    isVerifyPath(item?.path));
   const latest = [...exactRuns].sort((a, b) =>
     (Number(b.run_number) || 0) - (Number(a.run_number) || 0))[0];
   // A green workflow summary is not proof that both required OS jobs passed.
@@ -128,15 +140,14 @@ export async function observeSisterChallenge({ get } = {}) {
     rulesets.push(await get(ROOT + SISTER_TARGET + '/rulesets/' + item.id));
   }
   const runs = await get(ROOT + SISTER_TARGET +
-    '/actions/runs?head_sha=' + mainRef.object.sha + '&per_page=50');
+    '/actions/runs?head_sha=' + mainRef.object.sha + '&branch=main&per_page=50');
   if (!Array.isArray(runs?.workflow_runs))
     refuse('sister-actions-evidence-unavailable');
   // Fetch job-level proof for the latest exact-head Verify workflow only.
   // Missing or truncated job evidence is unknown, never a claimed pass.
   const matching = runs.workflow_runs.filter(item =>
-    item?.head_sha === mainRef.object.sha &&
-    (item?.path === '.github/workflows/verify.yml' ||
-      item?.path === 'michaeljwilliams0123/mahoraga/.github/workflows/verify.yml'));
+    item?.head_sha === mainRef.object.sha && item?.head_branch === 'main' &&
+    isVerifyPath(item?.path));
   const latest = [...matching].sort((a, b) =>
     (Number(b.run_number) || 0) - (Number(a.run_number) || 0))[0];
   let workflowRuns = runs.workflow_runs;
