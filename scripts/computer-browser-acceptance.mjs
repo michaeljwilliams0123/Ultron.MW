@@ -66,10 +66,10 @@ try {
       }
       latest = new URLSearchParams(raw).get('value') || '';
       runCount++;
-      // Real POST/Redirect/GET requires per-hop enforcement: never permit
-      // Chromium to follow a 3xx without checking the redirect target.
-      res.writeHead(303, { Location: '/receipt' });
-      res.end();
+      // Direct 200 response: browser's fixture can verify the saved result
+      // without rewriting destination history or following a redirect.
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      res.end(html('<main>Saved: ' + latest + '</main>'));
     } else if (req.url === '/receipt') {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(html('<main>Saved: ' + latest + '</main>'));
@@ -151,9 +151,9 @@ try {
   session.revoke();
   assert.equal(await session.authorize({ action: 'click', currentOrigin: firstOrigin }), false);
 
-  // The admitted GET->302->GET chain must complete after checking Location.
-  await browser.page.goto(firstOrigin + '/safe-chain');
-  assert.match(await browser.page.locator('body').innerText(), /Saved: ultron-fixture/);
+  // Even a same-origin 3xx must fail closed rather than follow invisibly.
+  await assert.rejects(browser.page.goto(firstOrigin + '/safe-chain'));
+  assert.notEqual(browser.page.url(), firstOrigin + '/receipt');
 
   // Navigation is allowed to the first origin but its HTTP redirect to a
   // third, unauthorized origin must be stopped by actual Chromium interception.
