@@ -13,8 +13,8 @@ function fixture(){
   const events=[];
   const selectorShape={
     'xpath=//input[@id="alias"]':{tag:'INPUT',type:'text',disabled:false},
-    '#save':{tag:'BUTTON',type:'',disabled:false},
-    '#not-allowed':{tag:'SCRIPT',disabled:false},
+    '#save':{tag:'BUTTON',type:'',disabled:false,html:'<button id="save">Save</button>'},
+    '#not-allowed':{tag:'SCRIPT',disabled:false,html:'<script id="not-allowed"></script>'},
   };
   let calls=0;
   const page={
@@ -29,7 +29,7 @@ function fixture(){
         async inputValue(){return state.input;},
       };
     },
-    async evaluate(_fn,selector){return selectorShape[selector]??null},
+    async evaluate(_fn,selector){const shape=selectorShape[selector];return shape?{html:'<'+shape.tag.toLowerCase()+'>',...shape}:null},
     async goto(url){events.push(['goto',url]);state.url=url},
     async waitForSelector(selector){events.push(['wait',selector])},
   };
@@ -41,10 +41,10 @@ function fixture(){
       {selector:'#save',method:'click'}
     ]}},
   };
-  return {page,agent,state,events,get acts(){return calls}};
+  return {page,agent,state,events,selectorShape,get acts(){return calls}};
 }
 test('Stagehand v4 asynchronous URL is normalized for Ultron executor',async()=>{
-  const f=fixture(),driver=createStagehandPageDriver(f.page);
+  const f=fixture(),driver=createStagehandPageDriver(f.page,{verifyTarget:async()=>true});
   assert.equal((await driver.observe()).url,origin+'/');
   assert.equal((await driver.perform({action:'type',selector:'xpath=//input[@id="alias"]',
     value:'synthetic'})).fieldValueVerified,true);
@@ -114,4 +114,72 @@ test('SQLite adapter is optional and refuses in-memory persistence',()=>{
   const saver=createOptionalSqliteGraphCheckpointer({
     SqliteSaver:{fromConnString:path=>({path})},databasePath:'D:/local/ultron.db'});
   assert.equal(saver.path,'D:/local/ultron.db');
+});
+
+test('long-page postconditions are verified beyond the visible text limit',async()=>{
+  const f=fixture(),base='x'.repeat(15000);
+  f.state.text=base+' Initial';
+  const original=f.page.locator.bind(f.page);
+  f.page.locator=selector=>{
+    const loc=original(selector);
+    if(selector==='#save')return {...loc,async click(){
+      f.events.push(['click',selector]);
+      f.state.text=base+' Saved successfully at page tail';
+    }};
+    return loc;
+  };
+  const driver=createStagehandPageDriver(f.page,{verifyTarget:async()=>true});
+  const before=await driver.observe({textIncludes:'Saved successfully at page tail'});
+  assert.ok(before.text.length<=10000);
+  const runner=createComputerExecutor({
+    driver,store:createMemoryComputerStore(),
+    allowedOrigins:[origin],authorize:async()=>true,
+  });
+  const out=await runner.run({id:'long-page-click',steps:[{
+    action:'click',selector:'#save',
+    expect:{textIncludes:'Saved successfully at page tail'}
+  }]});
+  const after=await driver.observe({textIncludes:'Saved successfully at page tail'});
+  assert.equal(out.status,'completed');
+  assert.equal(out.receipts.length,1);
+  assert.ok(after.text.length<=10000);
+  assert.ok(after.text.includes('Saved successfully at page tail'));
+  assert.notEqual(before.textDigest,after.textDigest);
+  assert.equal(f.events.length,1);
+});
+test('tail-only changes are detectable even without an expected text excerpt',async()=>{
+  const f=fixture(),base='z'.repeat(15000);
+  f.state.text=base+' old';
+  const driver=createStagehandPageDriver(f.page);
+  const before=await driver.observe({urlIncludes:'/foo'});
+  f.state.text=base+' new';
+  const after=await driver.observe({urlIncludes:'/foo'});
+  assert.equal(before.text,after.text);
+  assert.notEqual(before.textDigest,after.textDigest);
+});
+test('model-proposed target must be rechecked before dispatch',async()=>{
+  const f=fixture(),observer=createStagehandSelectorObserver({
+    agent:f.agent,page:f.page,allowedOrigins:[origin]});
+  const button=await observer.suggest({
+    instruction:'Find the synthetic Save button',action:'click'});
+  const driver=createStagehandPageDriver(f.page,{verifyTarget:observer.verifyTarget});
+  assert.equal(await observer.verifyTarget(button),true);
+  f.selectorShape['#save'].html='<button id="save" data-action="changed">Delete</button>';
+  assert.equal(await observer.verifyTarget(button),false);
+  await assert.rejects(driver.perform({
+    action:'click',selector:button.selector
+  }),/stale/);
+  assert.equal(f.events.length,0);
+  f.selectorShape['#save'].html='<button id="save">Save</button>';
+  await f.page.goto(origin+'/different-page');
+  assert.equal(await observer.verifyTarget(button),false);
+});
+test('unguarded AI interactive adapter fails closed',async()=>{
+  const f=fixture();
+  const driver=createStagehandPageDriver(f.page);
+  await assert.rejects(driver.perform({action:'click',selector:'#save'}),/stale/);
+  await assert.rejects(driver.perform({
+    action:'type',selector:'#save',value:'x'
+  }),/stale/);
+  assert.equal(f.events.length,0);
 });

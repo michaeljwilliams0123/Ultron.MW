@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto';
+
 /**
- * Stagehand v4 compatibility port for the existing Ultron computer executor.
- * A model can suggest selectors, but this port NEVER calls agent.act().
- * Every action must pass through createBoundComputerExecutor and owner policy.
+ * Stagehand v4 is a source of proposed browser targets, not an authority.
+ * The guarded driver always routes through Ultron's existing action executor.
  */
 const ACTIONS = new Set(['navigate','click','type','extract','observe','wait','scroll']);
+const INTERACTIVE = new Set(['click','type']);
+const sha256 = text => createHash('sha256').update(text).digest('hex');
 const canonicalOrigin = value => {
   try {
     const u = new URL(value);
@@ -12,21 +15,76 @@ const canonicalOrigin = value => {
         u.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(u.hostname));
   } catch { return false; }
 };
+const safeSelector = selector =>
+  typeof selector === 'string' && selector.length >= 1 && selector.length <= 240 &&
+  !/[\u0000-\u001f]/.test(selector) &&
+  !/(javascript:|data:|file:|https?:\/\/)/i.test(selector);
 
-export function createStagehandPageDriver(page) {
+/**
+ * Take an ephemeral fingerprint of the exact DOM target and document URL.
+ * The outerHTML is hashed in-process and never returned or persisted.
+ * A replaced or modified node requires a new AI observation.
+ */
+async function targetIdentity(page, selector) {
+  if (!safeSelector(selector) || await page.locator(selector).count() !== 1)
+    return null;
+  const url = String(await page.url());
+  const node = await page.evaluate(value => {
+    let element;
+    try {
+      element = value.startsWith('xpath=')
+        ? document.evaluate(value.slice(6),document,null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,null).singleNodeValue
+        : document.querySelector(value);
+    } catch { return null; }
+    if (!element || !element.isConnected || element.disabled) return null;
+    return {
+      tag: element.tagName,
+      type: String(element.getAttribute('type') || '').toLowerCase(),
+      contenteditable: element.getAttribute('contenteditable'),
+      // Never persist an untrusted node's HTML. It only enters a digest.
+      html: element.outerHTML,
+    };
+  }, selector);
+  if (!node || typeof node.html !== 'string') return null;
+  return Object.freeze({ url, ...{
+    fingerprint: sha256(JSON.stringify({url, node})),
+    tag: node.tag, type: node.type, contenteditable: node.contenteditable,
+  } });
+}
+
+/** Adapt a Stagehand v4 Page, including its asynchronously returned URL.
+ * Interactive actions fail closed unless a fresh selector-proposal verifier
+ * confirms the same page and target immediately before dispatch. */
+export function createStagehandPageDriver(page, { verifyTarget } = {}) {
   if (!page || typeof page.goto !== 'function' ||
       typeof page.locator !== 'function' || typeof page.url !== 'function')
     throw Error('Stagehand v4 Page is required');
   return Object.freeze({
-    async observe() {
+    async observe(expect = {}) {
+      const fullText = String(await page.locator('body').innerText());
+      const prefix = fullText.slice(0, 9000);
+      let excerpt = '';
+      const needle = expect?.textIncludes;
+      if (typeof needle === 'string' && needle &&
+          !prefix.includes(needle)) {
+        const index = fullText.indexOf(needle);
+        if (index >= 0) excerpt = fullText.slice(Math.max(0,index-180),index+needle.length+180);
+      }
       return {
         url: String(await page.url()),
         title: String(await page.title()).slice(0,240),
-        text: String(await page.locator('body').innerText()).slice(0,10000),
+        text: (prefix + (excerpt ? '\n[verified excerpt]\n' + excerpt : '')).slice(0,10000),
+        // A full-page digest detects tail-only changes without exposing the
+        // full content in receipts or leaving it in durable checkpoints.
+        textDigest: sha256(fullText),
       };
     },
     async perform(step) {
       if (!ACTIONS.has(step?.action)) throw Error('Unsupported Stagehand computer action');
+      if (INTERACTIVE.has(step.action) &&
+          (typeof verifyTarget !== 'function' || await verifyTarget(step) !== true))
+        throw Error('Stagehand target stale or not independently verified');
       switch(step.action) {
         case 'navigate':
           await page.goto(step.url); return null;
@@ -50,14 +108,9 @@ export function createStagehandPageDriver(page) {
   });
 }
 
-const safeSelector = selector =>
-  typeof selector === 'string' && selector.length >= 1 && selector.length <= 240 &&
-  !/[\u0000-\u001f]/.test(selector) &&
-  !/(javascript:|data:|file:|https?:\/\/)/i.test(selector);
-
 /**
- * Returns a *proposal*, never an instruction to execute. DOM confirmation
- * checks the model's proposed selector targets exactly one supported element.
+ * Ask Stagehand to suggest a selector, validate it against the current DOM,
+ * then retain only a hashed identity. No model can approve its own action.
  */
 export function createStagehandSelectorObserver({ agent, page, allowedOrigins }) {
   if (!agent || typeof agent.observe !== 'function' ||
@@ -66,10 +119,12 @@ export function createStagehandSelectorObserver({ agent, page, allowedOrigins })
       !Array.isArray(allowedOrigins) || !allowedOrigins.length ||
       allowedOrigins.some(x => !canonicalOrigin(x)))
     throw Error('Stagehand observation requires a bounded, canonical origin policy');
+  const validated = new Map();
+  const keyFor = (action, selector) => JSON.stringify([action, selector]);
   return Object.freeze({
     async suggest({ instruction, action }) {
       if (typeof instruction !== 'string' || instruction.length < 3 ||
-          instruction.length > 400 || !['click','type'].includes(action))
+          instruction.length > 400 || !INTERACTIVE.has(action))
         throw Error('Invalid untrusted observation request');
       const before = new URL(String(await page.url()));
       if (!allowedOrigins.includes(before.origin))
@@ -82,35 +137,30 @@ export function createStagehandSelectorObserver({ agent, page, allowedOrigins })
         if (action === 'click' && !method.includes('click') ||
             action === 'type' && !['fill','type','input'].some(x=>method.includes(x)))
           continue;
-        if (await page.locator(candidate.selector).count() !== 1) continue;
-        const shape = await page.evaluate(selector => {
-          let el;
-          try {
-            el = selector.startsWith('xpath=')
-              ? document.evaluate(selector.slice(6),document,null,
-                  XPathResult.FIRST_ORDERED_NODE_TYPE,null).singleNodeValue
-              : document.querySelector(selector);
-          } catch { return null; }
-          if (!el) return null;
-          return {
-            tag: el.tagName, type: String(el.getAttribute('type')||'').toLowerCase(),
-            disabled: Boolean(el.disabled), contenteditable: el.getAttribute('contenteditable'),
-          };
-        },candidate.selector);
-        if (!shape || shape.disabled) continue;
-        if (action === 'type' && !['INPUT','TEXTAREA'].includes(shape.tag) &&
-            shape.contenteditable !== 'true') continue;
-        if (action === 'click' && !['BUTTON','A','INPUT'].includes(shape.tag)) continue;
+        const identity = await targetIdentity(page, candidate.selector);
+        if (!identity) continue;
+        if (action === 'type' && !['INPUT','TEXTAREA'].includes(identity.tag) &&
+            identity.contenteditable !== 'true') continue;
+        if (action === 'click' && !['BUTTON','A','INPUT'].includes(identity.tag)) continue;
         const after = new URL(String(await page.url()));
         if (after.origin !== before.origin)
           throw Error('Origin changed during Stagehand observation');
+        validated.set(keyFor(action, candidate.selector), identity);
         return Object.freeze({
           selector:candidate.selector, action,
           origin:before.origin, evidence:'single-DOM-element',
         });
       }
       throw Error('No verified Stagehand selector candidate');
-    }
+    },
+    async verifyTarget({ action, selector }) {
+      const saved = validated.get(keyFor(action,selector));
+      if (!saved) return false;
+      if (!allowedOrigins.includes(new URL(saved.url).origin)) return false;
+      const current = await targetIdentity(page,selector);
+      return !!current && current.url === saved.url &&
+        current.fingerprint === saved.fingerprint;
+    },
   });
 }
 

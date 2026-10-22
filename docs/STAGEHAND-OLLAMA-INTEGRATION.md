@@ -48,3 +48,47 @@ Observed success on 2026-10-22: actual Chrome, 2 local model observations, 3 ver
 - Other agent's issues and draft PRs are left intact; PR merge order should be decided after review of their independent action/identity and redirect security work.
 
 **Remaining evidence:** an owner-authenticated external session with observed click/type/save, safe takeover and negative-case acceptance; durable multi-process/cloud lease; production-safe egress guard; and evaluated latency and model accuracy on unfamiliar tasks.
+
+## Review hardening: long-page outcomes and changed targets
+
+CodeRabbit identified that truncating browser observations at 10,000 characters
+can hide a successful change near the end of a long page. The implementation
+now keeps a bounded published observation (at most 10,000 characters), computes
+a full-page text digest in memory, and adds a short excerpt of any requested
+textIncludes assertion when it lies beyond the initial prefix. The existing
+Ultron executor passes each step's expectation to the observer, compares the
+full-page digests for changed-state detection, and binds the digest into its
+receipt without persisting the entire page body.
+
+The independent code review identified selector retargeting across DOM changes.
+The Stagehand observer now keeps a short-lived, hashed snapshot of the target's
+outer HTML plus exact document URL. For every interactive action, the driver
+requires verifyTarget from the observer and checks the target fingerprint again
+immediately before dispatch. A modified target, a different page, or a missing
+verifier is rejected. A changed page requires a fresh AI observation.
+
+The guard is conservative, not a formal race-free browser permission primitive:
+a malicious page might mutate between the final check and the actual click or
+replace a node with indistinguishable markup. Real account operation still needs
+the separately authenticated owner-session permission flow, browser egress and
+redirect isolation, application-specific outcome readback, and a revocable stop
+control from PRs #72 and #73.
+
+### Regression evidence
+
+- A result located after the first 15,000 text characters is independently
+  observable and satisfies the specified postcondition without storing all text.
+- A tail-only change updates the full-page digest even if the displayed prefix
+  is unchanged.
+- A model-selected target modified after observation is denied before clicking.
+- A target reused after a page change and any interactive driver lacking a
+  verifier are denied.
+- Four new tests augment the original six bridge tests.
+
+Owner PC test harness:
+C:\Users\MikeWilliams\Ultron-External-Tools\integrated-ultron-bridge.mjs
+
+This test now passes the Stagehand observer's verifyTarget callback to the
+Ultron driver. It performs model-selected, DOM-checked typing and clicking,
+verifies one synthetic server-side form write, and confirms no duplicate.
+It is not an authenticated SaaS session or evidence of production deployment.

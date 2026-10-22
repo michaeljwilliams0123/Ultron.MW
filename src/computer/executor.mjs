@@ -121,7 +121,7 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
 
     for (const step of plan.steps) {
       if (state.completed.includes(step.id)) continue;
-      const before = await driver.observe();
+      const before = await driver.observe(step.expect);
       // A newly launched isolated browser starts at about:blank.
       // Only first-step navigation may begin from that browser-native state.
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
@@ -146,13 +146,16 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       await store.write(plan.id, state);
       try {
         const result = await driver.perform(step);
-        const after = await driver.observe();
+        const after = await driver.observe(step.expect);
         safeUrl(after.url, allowedOrigins);
         // An expectation matching the PRE-action screen is not evidence
         // of successful execution. Input fills may instead be confirmed by
         // the Playwright driver reading back the specific field value.
         const changed = before.url !== after.url || before.title !== after.title ||
-          before.text !== after.text;
+          before.text !== after.text ||
+          (typeof before.textDigest === 'string' &&
+           typeof after.textDigest === 'string' &&
+           before.textDigest !== after.textDigest);
         if (step.action === 'type' && result?.fieldValueVerified !== true)
           throw Error('Typed field value was not independently verified');
         if (ACTIVE.has(step.action) && step.action !== 'type' && !changed)
@@ -163,7 +166,8 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           stepId: step.id, action: step.action, status: 'verified', observedAt: clock(),
           origin: new URL(after.url).origin, observationDigest: digest({
             url: after.url, text: String(after.text || '').slice(0, 10000),
-            title: after.title || ''
+            title: after.title || '',
+            ...(typeof after.textDigest === 'string' ? { textDigest: after.textDigest } : {})
           }),
           resultDigest: digest(result ?? null),
         };
