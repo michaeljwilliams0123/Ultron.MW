@@ -53,14 +53,19 @@ Run only in an interactive terminal on the owner's Windows desktop.
 **Checkpoint / new-browser recovery:** Every invocation creates a fresh Chrome
 context, which cannot inherit pages or GitHub login from a previous session.
 If a previous attempt recorded only completed read-only steps and has no
-pending action, the owner runner retains that checkpoint unchanged and
-starts the plan again under a new unique objective ID, beginning with the
-first navigation. This prevents an old completed-navigation checkpoint from
-skipping the new browser's `about:blank` startup and reporting `Browser
-origin not admitted`. If the checkpoint contains a click, type, keypress,
-or any pending/unverified action, the runner **refuses automatic restart**
-and requires explicit manual reconciliation. Never delete checkpoint
-evidence just to clear an error.
+pending action, the owner runner retains those receipts and **durably links**
+a fresh objective ID to the original plan before launching Chrome. Its root
+objective lock remains held across login/MFA, every owner approval and the
+final readback. On later invocations it inspects the entire linked attempt
+history; if any linked attempt contains a completed click/type/keypress,
+pending action or uncertain write, the runner **refuses automatic restart**
+and requires explicit reconciliation. Only all-passive attempts can restart
+from the first navigation in a new isolated browser. A cryptographic suffix
+contains 16 hexadecimal characters, without UUID hyphens. No checkpoint
+evidence is deleted or silently overwritten, and a previously reserved
+but unstarted attempt ID is reused. This prevents old completed navigation
+from leaving a new browser at `about:blank` and reporting `Browser origin
+not admitted`, while also preventing repeated owner-approved actions.
 
 The canonical owner runner (merged PR #73) now combines its independent local
 random challenge with the real GitHub CLI host identity check. Manual
