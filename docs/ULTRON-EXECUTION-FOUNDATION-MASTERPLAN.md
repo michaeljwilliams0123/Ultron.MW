@@ -183,3 +183,36 @@ G. Existing issue #32 remains canonical for real authenticated PR-brain/live rel
 Use GitHub main as the authoritative source. Begin with this document and the draft framework PR. Inspect current main SHA and all open PR/issue heads before editing. Read src/computer and all tests. Fix real defects, do not broaden permissions to make tests green. Keep a single coherent foundation PR, add exact-head regression evidence, and complete review comments. Treat plugin connections, hosted browser installation, cost approval, account creation, OAuth consent and production deployment as separate observed platform operations needing appropriate authorization. Do not invent account availability or provider readiness. Keep existing verified GitHub Pages, PR, Verify and GitLab mirror workflows functioning. Add actual local/browser execution only after a test session can observe, act, re-observe, and persist a verified receipt. Use one small adapter per distinct external provider behind a versioned capability contract rather than new overarching orchestrator stacks. Record non-trivial blockers in the linked issues and never claim finished AGI/SGI/SI functionality.
 
 **Required report**: current/main/head SHA, files changed, test run links and counts, which checks are actually live, which credentials and platforms are available or declined, outstanding security/privacy/cost decisions, acceptance video/screenshots if permitted, rollback and next actionable PR/issue. Keep all claims tied to real evidence.
+
+## 13. Open follow-ups and exact file handoff
+
+**Single foundation PR:** https://github.com/michaeljwilliams0123/Ultron.MW/pull/64 (draft; do not merge by implication).
+
+- P0 real browser/desktop control and end-user acceptance: https://github.com/michaeljwilliams0123/Ultron.MW/issues/65
+- P0 single persistent computer runtime, budget and provider decision: https://github.com/michaeljwilliams0123/Ultron.MW/issues/66
+- P1 separately authenticated universal capability bindings: https://github.com/michaeljwilliams0123/Ultron.MW/issues/67
+- P1/P2 validated memory, skills, models, forecasts and held-out learning: https://github.com/michaeljwilliams0123/Ultron.MW/issues/68
+- P2 measured route consolidation and safe legacy pruning: https://github.com/michaeljwilliams0123/Ultron.MW/issues/69
+- Existing release/PR-brain acceptance authority: https://github.com/michaeljwilliams0123/Ultron.MW/issues/32
+
+### Operator quick start — read-only, no connected accounts
+
+The repository includes docs/examples/computer-read-only.json. This exercises a public, read-only navigation path; it is not a production or browser/desktop acceptance receipt.
+
+1. On an owner-authorized isolated machine, install Playwright with a reviewed compatible package version and install the Chromium browser binary (this PR deliberately changes no production package lock or billing).
+2. Set ULTRON_COMPUTER_ALLOWED_ORIGINS to the JSON array ["https://example.com"] in the local process environment. Keep provider credentials OUT of this variable, CLI output and repo.
+3. From the repository root run: node scripts/computer-runner.mjs docs/examples/computer-read-only.json.
+4. Observe browser launch and actual postcondition readback; the output contains digest receipts rather than full page contents.
+5. Active actions such as click/type/keypress require the operator's interactive TTY response APPROVE followed by the exact step ID. The model or imported page content cannot supply that response. In non-interactive environments active actions deny.
+6. Reuse of a completed objective returns its checkpoint without replay. If an attempt has uncertain outcome, reconcile the application manually rather than reusing its ID blindly.
+7. No existing Chrome profile, authenticated SaaS account, desktop control, cross-device session or paid hosted browser is connected by this script.
+
+**Live readiness remains pending:** Playwright and its browser binaries are optional and not provisioned by the PR, the owner PC was offline at implementation time, and a real end-user click/type test has not passed. Do not mark issue #65 complete from mock CI alone.
+
+### Further hardening before any broad app binding
+
+- Browser navigation must enforce redirects, frame origins and DNS/IP egress beyond simple requested URL checks. The initial source contract checks admitted URL origins before and after actions, not every network request.
+- File checkpoint persistence supports a single writer and has no multi-instance lease. A hosted worker requires transactional uniqueness, encryption, concurrency and TTL.
+- Observe receipts contain hashes and origins, not remote write confirmations for every app. For a destructive or high-impact action use application-specific independent readback or refusal.
+- Uploaded data, login/CAPTCHA/MFA screens, private files, screenshot bytes and browser session storage need dedicated authenticated storage and safe user takeover before enablement.
+- Do not add unlimited evaluator prompts, generated secrets, powerful commands or new control-plane UIs without a feature-parity and abuse-case evaluation.
