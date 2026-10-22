@@ -97,10 +97,16 @@ export async function installNetworkPolicy(context, allowedOrigins) {
 export async function launchIsolatedBrowser(options = {}) {
   if (options.headless !== true)
     throw Error('Headed browser requires a separately approved runtime');
+  // A supported local Chrome installation can replace a separate downloaded
+  // Playwright Chromium binary. Never pass arbitrary executables or channels.
+  if (options.channel !== undefined && options.channel !== 'chrome')
+    throw Error('Unsupported browser channel');
   let pw;
   try { pw = await import('playwright'); }
   catch { throw Error('Playwright not installed in this execution environment'); }
-  const browser = await pw.chromium.launch({ headless: true });
+  const browser = await pw.chromium.launch({
+    headless: true, ...(options.channel ? { channel: options.channel } : {}),
+  });
   try {
     const context = await browser.newContext({
       acceptDownloads: false, serviceWorkers: 'block',
