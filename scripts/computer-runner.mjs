@@ -34,13 +34,15 @@ async function main() {
     const executor = createBoundComputerExecutor({
       binding, driver: instance.driver,
       store: createFileComputerStore(resolve('.local', 'computer-checkpoints')),
-      authorize: async ({ stepId, action, currentOrigin, selector, valueLength, expectedState, planFingerprint }) => {
+      authorize: async ({ stepId, action, currentOrigin, selector, valueLength,
+        key, expectedState, planFingerprint }) => {
         if (!process.stdin.isTTY) return false;
         const challenge = 'APPROVE ' + stepId;
         const reply = await input.question(
           'Authorize ' + action + ' on ' + currentOrigin +
           ' for step ' + stepId + ' (target=' + selector +
           ', valueLength=' + (valueLength ?? 'n/a') +
+          ', key=' + (key ?? 'n/a') +
           ', expected=' + JSON.stringify(expectedState) +
           ', plan=' + planFingerprint.slice(0, 12) +
           ')? Enter "' + challenge + '": ');

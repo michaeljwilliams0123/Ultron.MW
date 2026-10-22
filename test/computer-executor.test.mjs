@@ -22,7 +22,7 @@ function harness({ authorization = async () => false, fail = false } = {}) {
       if (step.action === 'navigate') state.url = step.url;
       if (step.action === 'type') state.text = 'Stored result';
       if (step.action === 'click') state.text = 'Submitted';
-      return null;
+      return step.action === 'type' ? { fieldValueVerified: true } : null;
     }
   };
   return { driver, get count() { return count; },
@@ -222,7 +222,7 @@ test('unchanged interactive screen never counts as a successful click', async ()
   let calls = 0;
   const h = createComputerExecutor({
     driver: {
-      observe: async () => ({ url: 'https://example.test', title: 'Same', text: 'Done' }),
+      observe: async () => ({ url: 'https://example.test', title: 'Same', text: 'Ready' }),
       perform: async () => { calls++; },
     },
     allowedOrigins, store: createMemoryComputerStore(),
@@ -233,6 +233,36 @@ test('unchanged interactive screen never counts as a successful click', async ()
   assert.equal((await h.run(p)).status, 'reconcile-required');
   assert.equal((await h.run(p)).status, 'reconcile-required');
   assert.equal(calls, 1);
+});
+test('pre-existing postcondition cannot certify an unrelated page change', async () => {
+  let calls = 0;
+  const h = createComputerExecutor({
+    driver: {
+      observe: async () => ({ url: 'https://example.test',
+        title: calls ? 'Clock 2' : 'Clock 1', text: 'Submitted' }),
+      perform: async () => { calls++; },
+    },
+    allowedOrigins, store: createMemoryComputerStore(),
+    authorize: async () => true,
+  });
+  await assert.rejects(h.run(plan([{ action: 'click', selector: 'button',
+    expect: { textIncludes: 'Submitted' } }])), /already satisfied/);
+  assert.equal(calls, 0);
+});
+test('keypress authorization discloses the requested key', async () => {
+  let requested;
+  const h = createComputerExecutor({
+    driver: {
+      observe: async () => ({ url: 'https://example.test', title: 'Form', text: 'Ready' }),
+      perform: async () => { throw Error('must not dispatch'); },
+    },
+    allowedOrigins, store: createMemoryComputerStore(),
+    authorize: async context => { requested = context; return false; },
+  });
+  const result = await h.run(plan([{ action: 'keypress', selector: 'input',
+    key: 'Enter', expect: { textIncludes: 'Submitted' } }]));
+  assert.equal(result.status, 'approval-required');
+  assert.equal(requested.key, 'Enter');
 });
 test('browser startup fails closed when WebSocket interception is unavailable', async () => {
   await assert.rejects(installNetworkPolicy({ route: async () => {} },

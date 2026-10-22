@@ -6,6 +6,9 @@ const ACTIONS = new Set(COMPUTER_ACTIONS);
 const VALID_ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const bounded = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
+const matchesExpectation = (observation, expectation) =>
+  (!expectation?.urlIncludes || String(observation?.url || '').includes(expectation.urlIncludes)) &&
+  (!expectation?.textIncludes || String(observation?.text || '').includes(expectation.textIncludes));
 const safeUrl = (url, origins) => {
   let parsed;
   try { parsed = new URL(url); } catch { throw Error('Invalid browser URL'); }
@@ -123,10 +126,14 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       // Only first-step navigation may begin from that browser-native state.
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
         safeUrl(before.url, allowedOrigins);
+      if (ACTIVE.has(step.action) && step.action !== 'type' &&
+          matchesExpectation(before, step.expect))
+        throw Error('Interactive postcondition already satisfied before action');
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
         selector: step.selector, valueLength: step.action === 'type' ? step.value.length : undefined,
+        key: step.action === 'keypress' ? step.key : undefined,
         expectedState: step.expect
       }) !== true) {
         state.status = 'approval-required';
@@ -146,11 +153,11 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         // the Playwright driver reading back the specific field value.
         const changed = before.url !== after.url || before.title !== after.title ||
           before.text !== after.text;
-        if (ACTIVE.has(step.action) && !changed &&
-            !(step.action === 'type' && result?.fieldValueVerified === true))
+        if (step.action === 'type' && result?.fieldValueVerified !== true)
+          throw Error('Typed field value was not independently verified');
+        if (ACTIVE.has(step.action) && step.action !== 'type' && !changed)
           throw Error('Interactive action has no independently observable effect');
-        if (step.expect?.urlIncludes && !after.url.includes(step.expect.urlIncludes) ||
-            step.expect?.textIncludes && !String(after.text || '').includes(step.expect.textIncludes))
+        if (!matchesExpectation(after, step.expect))
           throw Error('Expected post-action state not observed');
         const receipt = {
           stepId: step.id, action: step.action, status: 'verified', observedAt: clock(),

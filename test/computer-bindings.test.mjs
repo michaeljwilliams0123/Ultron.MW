@@ -45,7 +45,7 @@ test('manifest enablement never grants click without trusted callback', async ()
   });
   const result = await runner.run({
     id: 'click-1', steps: [{ action: 'click', selector: 'button',
-      expect: { textIncludes: 'Visible' } }],
+      expect: { textIncludes: 'Submitted' } }],
   });
   assert.equal(result.status, 'approval-required');
 });
