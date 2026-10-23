@@ -16,7 +16,8 @@ const success = (data, status = 200) => ({
 const tokenResponse = (token = 'ghs_test_scoped_only_dummy_0123456789', overrides = {}) =>
   success({ token, expires_at: new Date(now + 3600000).toISOString(),
     repositories: [{ id: ID, full_name: REPO }], permissions, ...overrides });
-function harness({ mutate = () => {}, first401 = false } = {}) {
+function harness({ mutate = () => {}, first401 = false,
+  writeFailure = false } = {}) {
   const calls = []; let issued = 0; let apiCalls = 0;
   const transport = async (url, options) => {
     calls.push({ url, options });
@@ -27,6 +28,7 @@ function harness({ mutate = () => {}, first401 = false } = {}) {
       return response;
     }
     apiCalls++;
+    if (writeFailure && options.method !== 'GET') throw Error('socket reset');
     if (first401 && apiCalls === 1) return success(null, 401);
     return success({ id: ID, full_name: REPO, observed: true });
   };
@@ -106,6 +108,13 @@ test('allowed write uses token but refuses replay after 401', async () => {
     permission: 'contents:write', body: { title: 'test' } }), /reconcile before retry/);
   assert.equal(calls.filter(c => c.options.method === 'POST' &&
     c.url.includes('/repos/')).length, 1);
+});
+test('write transport failure is an unknown outcome and is never replayed', async () => {
+  const { auth, counters } = harness({ writeFailure: true });
+  await assert.rejects(() => auth.request({ method: 'POST', path: '/issues',
+    permission: 'contents:write', body: { title: 'test' } }),
+  /write outcome unknown; reconcile before retry/);
+  assert.deepEqual(counters(), { issued: 1, apiCalls: 1 });
 });
 test('GET may refresh once after a 401 response', async () => {
   const { auth, counters } = harness({ first401: true });

@@ -141,7 +141,15 @@ export function createGitHubAppOperator({
         ...(method !== 'GET' ? { 'Content-Type': 'application/json' } : {}) },
       ...(method !== 'GET' ? { body: JSON.stringify(body) } : {}),
     });
-    let response = await execute(grant);
+    let response;
+    try { response = await execute(grant); }
+    catch (error) {
+      // A write may have reached GitHub before the response was lost. Surface
+      // the ambiguity explicitly so callers reconcile instead of replaying it.
+      if (method !== 'GET') throw Error(
+        'GitHub write outcome unknown; reconcile before retry', { cause: error });
+      throw error;
+    }
     if (response?.status === 401) {
       current = null;
       // Safe GETs can obtain a fresh token; writes may have an uncertain effect.
