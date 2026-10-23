@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
-export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait']);
-const ACTIVE = new Set(['click','type','keypress']);
+export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait','tab-open','tab-switch','tab-close','window-open','window-switch','window-close','upload','download']);
+const ACTIVE = new Set(['click','type','keypress','upload','download']);
 const ACTIONS = new Set(COMPUTER_ACTIONS);
 const VALID_ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -28,10 +28,18 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
   const steps = raw.steps.map((s, index) => {
     if (!s || s.id !== undefined && !VALID_ID.test(s.id) || !ACTIONS.has(s.action))
       throw Error('Unknown or unbounded computer action');
-    const keys = { navigate: ['id','action','url','expect'], click: ['id','action','selector','expect'],
+    const keys = { navigate: ['id','action','url','expect'], click: ['id','action','selector','expect','sendToOrigin'],
       type: ['id','action','selector','value','expect'], keypress: ['id','action','selector','key','expect'],
       scroll: ['id','action','pixels','expect'], observe: ['id','action','expect'],
-      extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'] };
+      extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'],
+      'tab-open': ['id','action','tabId','url','expect'],
+      'tab-switch': ['id','action','tabId','expect'],
+      'tab-close': ['id','action','tabId','expect'],
+      'window-open': ['id','action','windowId','url','expect'],
+      'window-switch': ['id','action','windowId','expect'],
+      'window-close': ['id','action','windowId','expect'],
+      upload: ['id','action','selector','filePath','expect'],
+      download: ['id','action','selector','outputName','expect'] };
     if (Object.keys(s).some(k => !keys[s.action].includes(k)))
       throw Error('Unexpected computer action property');
     if (ACTIVE.has(s.action) &&
@@ -40,14 +48,42 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
       throw Error('Interactive computer action requires a verifiable postcondition');
     const id = s.id || 'step-' + (index + 1);
     const entry = { id, action: s.action };
-    if (s.action === 'navigate') {
+    if (['tab-open','tab-switch','tab-close'].includes(s.action)) {
+      if (!['secondary','tertiary'].includes(s.tabId) &&
+          !(s.action === 'tab-switch' && s.tabId === 'primary'))
+        throw Error('Invalid bounded tab identity');
+      entry.tabId = s.tabId;
+    }
+    if (['window-open','window-switch','window-close'].includes(s.action)) {
+      if (s.windowId !== 'window-secondary' &&
+          !(s.action === 'window-switch' && s.windowId === 'primary'))
+        throw Error('Invalid bounded window identity');
+      entry.windowId = s.windowId;
+    }
+    if (['navigate','tab-open','window-open'].includes(s.action)) {
       if (!bounded(s.url, 2048)) throw Error('Navigation URL required');
       safeUrl(s.url, allowedOrigins);
       entry.url = s.url;
-    } else if (['click','type','keypress','extract','wait'].includes(s.action)) {
+    } else if (['click','type','keypress','extract','wait','upload','download'].includes(s.action)) {
       if (!bounded(s.selector, 240) || /[\u0000-\u001f]/.test(s.selector))
         throw Error('Bounded selector required');
       entry.selector = s.selector;
+    }
+    if (s.action === 'click' && s.sendToOrigin !== undefined) {
+      if (!allowedOrigins.includes(s.sendToOrigin) ||
+          new URL(s.sendToOrigin).origin !== s.sendToOrigin)
+        throw Error('Upload destination must be an explicitly allowed canonical origin');
+      entry.sendToOrigin = s.sendToOrigin;
+    }
+    if (s.action === 'upload') {
+      if (!bounded(s.filePath, 2048) || /[\u0000-\u001f]/.test(s.filePath))
+        throw Error('Upload requires an absolute owner-approved local path');
+      entry.filePath = s.filePath;
+    }
+    if (s.action === 'download') {
+      if (!bounded(s.outputName, 80) || !/^[a-z0-9][a-z0-9_.-]*$/i.test(s.outputName) ||
+          s.outputName.includes('..')) throw Error('Unsafe download output filename');
+      entry.outputName = s.outputName;
     }
     if (s.action === 'type') {
       if (typeof s.value !== 'string' || s.value.length > 2048)
@@ -165,7 +201,7 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       // Only first-step navigation may begin from that browser-native state.
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
         safeUrl(before.url, allowedOrigins);
-      if (ACTIVE.has(step.action) && step.action !== 'type' &&
+      if (ACTIVE.has(step.action) && !['type','upload','download'].includes(step.action) &&
           matchesExpectation(before, step.expect))
         throw Error('Interactive postcondition already satisfied before action');
       // Validate actionability before asking the owner for permission or
@@ -176,7 +212,10 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
-        selector: step.selector, valueLength: step.action === 'type' ? step.value.length : undefined,
+        selector: step.selector, uploadDestination: step.sendToOrigin,
+        valueLength: step.action === 'type' ? step.value.length : undefined,
+        fileName: step.action === 'upload' ? step.filePath.replaceAll('\\','/').split('/').at(-1) :
+          step.action === 'download' ? step.outputName : undefined,
         key: step.action === 'keypress' ? step.key : undefined,
         expectedState: step.expect
       }) !== true) {
@@ -210,6 +249,20 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         after = await driver.observe();
         failurePhase = 'post-action-origin-check';
         safeUrl(after.url, allowedOrigins);
+        // Application writes may finish after Playwright's click returns.
+        // Re-observe only; never repeat the action. Bounded polling fixes a
+        // transient UI race without converting browser text into proof of
+        // durable external persistence (provider readback remains separate).
+        if (step.action === 'click') {
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const changed = before.url !== after.url ||
+              before.title !== after.title || before.text !== after.text;
+            if (changed && matchesExpectation(after, step.expect)) break;
+            await new Promise(resolve => setTimeout(resolve, 200));
+            after = await driver.observe();
+            safeUrl(after.url, allowedOrigins);
+          }
+        }
         // An expectation matching the PRE-action screen is not evidence
         // of successful execution. Input fills may instead be confirmed by
         // the Playwright driver reading back the specific field value.
@@ -218,7 +271,8 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           before.text !== after.text;
         if (step.action === 'type' && result?.fieldValueVerified !== true)
           throw Error('Typed field value was not independently verified');
-        if (ACTIVE.has(step.action) && step.action !== 'type' && !changed)
+        if (ACTIVE.has(step.action) && step.action !== 'type' && !changed &&
+            result?.verifiedEffect !== true)
           throw Error('Interactive action has no independently observable effect');
         if (!matchesExpectation(after, step.expect))
           throw Error('Expected post-action state not observed');
