@@ -300,7 +300,7 @@ test('organization-owned repositories admit independent named human request owne
   const data={
     policy, mainSha:MAIN,bindingFingerprint:custom.bindingFingerprint,proposalText,
     issue:{number:7,state:'open',user:{login:'trusted-maintainer'},
-      title:policy.issueTitle,body:policy.issueMarker+'\\n'+custom.request},
+      title:policy.issueTitle,body:policy.issueMarker+'\n'+custom.request},
     pr:{number:8,state:'open',user:{login:'github-actions[bot]'},
       title:policy.prTitlePrefix+'agent-codex · issue 7',body:proposalText,
       head:{ref:policy.branchPrefix+'7',sha:HEAD,repo:{full_name:policy.repository}},
