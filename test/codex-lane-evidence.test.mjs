@@ -264,3 +264,20 @@ test('duplicate owner triggers require reconciliation, not another trigger',()=>
   assert.equal(result.githubOwnerTriggerCount,2);
   assert.equal(result.nextAction,'investigate-duplicate-owner-triggers-without-replay');
 });
+
+test('execution can update product source after claim with verified first-parent ancestry',()=>{
+  const testedHead='e'.repeat(40);
+  const base={...original(),claim,
+    receipt:{...receipt,headSha:testedHead},
+    ...provenance(),
+    executionHistory:[{sha:testedHead,parents:[{sha:CLAIM_COMMIT}]}]};
+  base.receiptCommit={...base.receiptCommit,parents:[{sha:testedHead}]};
+  assert.equal(assessCodexLane(base).replayDisposition,'already-completed');
+  assert.throws(()=>assessCodexLane({...base,executionHistory:undefined}));
+  assert.throws(()=>assessCodexLane({...base,
+    executionHistory:[{sha:testedHead,parents:[{sha:HEAD}]}]}));
+  assert.throws(()=>assessCodexLane({...base,
+    executionHistory:[{sha:testedHead,parents:[{sha:CLAIM_COMMIT},{sha:HEAD}]}]}));
+  assert.throws(()=>assessCodexLane({...base,receiptCommit:{
+    ...base.receiptCommit,parents:[{sha:CLAIM_COMMIT}]}}));
+});
