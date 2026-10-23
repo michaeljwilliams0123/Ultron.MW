@@ -182,3 +182,85 @@ test('dispatch without source provenance and fake run URLs do not become evidenc
   assert.equal(result.checkRunUrl,null);
   assert.equal(result.mergeAccepted,false);
 });
+
+// Universal policy and linear ancestry regression cases. Added before implementation.
+import { createCodexPolicy } from '../src/codex-call.mjs';
+
+const portableAuthor = {
+  id: 'agent-codex', name: 'Agent Codex', aliases: ['agent'],
+  fingerprint: '8'.repeat(64),
+  binding: {status:'enrolled', fingerprint:'9'.repeat(64)},
+};
+const portableConfig = {
+  repository: 'sample-org/portable-repo', owner: 'sample-org',
+  baseBranch: 'release', branchPrefix: 'agent/task-',
+  prTitlePrefix: '[Portable Codex] ', issueTitle: '[Portable] Request',
+  issueMarker: 'PORTABLE_REQUEST_V1',
+  trustedPrActors: ['sample-org','github-actions[bot]'],
+  workflowName: 'Cross-repo verify', jobName: 'integration',
+  authors: [portableAuthor],
+};
+
+test('portable policy admits a separately registered author and different repository', () => {
+  const policy = createCodexPolicy(portableConfig);
+  const custom = buildCodexCall({issueNumber:7,sourceSha:MAIN,
+    objective:'/codex agent-codex Read public docs',policy});
+  const proposalText = formatCodexCall(custom,policy);
+  const data = {
+    policy, mainSha:MAIN, bindingFingerprint:custom.bindingFingerprint,
+    proposalText,
+    issue: {number:7,state:'open',user:{login:'sample-org'},
+      title:'[Portable] Request',body:'PORTABLE_REQUEST_V1\\n'+custom.request},
+    pr: {number:8,state:'open',user:{login:'github-actions[bot]'},
+      title:'[Portable Codex] agent-codex · issue 7',body:proposalText,
+      head:{ref:'agent/task-7',sha:HEAD,repo:{full_name:'sample-org/portable-repo'}},
+      base:{ref:'release',repo:{full_name:'sample-org/portable-repo'}}},
+    pullRequestRuns:[{event:'pull_request',name:'Cross-repo verify',
+      head_sha:HEAD,status:'completed',conclusion:'success',
+      created_at:'2026-10-23T12:00:00Z',
+      html_url:'https://github.com/sample-org/portable-repo/actions/runs/123',
+      jobs:[{name:'integration',status:'completed',conclusion:'success',head_sha:HEAD}]}],
+    ownerComments:[{body:'/codex run agent-codex',user:{login:'sample-org'}}],
+  };
+  const result=assessCodexLane(data);
+  assert.equal(result.githubPrCheck,'passed');
+  assert.equal(result.githubOwnerTriggerCount,1);
+  assert.equal(result.sourceAdmission,'current');
+  assert.equal(result.signedWorkAccountAttested,false);
+  assert.equal(result.mergeAccepted,false);
+  assert.equal(result.checkRunUrl,'https://github.com/sample-org/portable-repo/actions/runs/123');
+  assert.throws(()=>assessCodexLane({...data,policy:undefined}));
+});
+
+test('portable policy rejects ambiguous author registries and unbounded identities', () => {
+  for (const change of [
+    {unknown: true},
+    {repository:'../unsafe'},
+    {baseBranch:'../main'},
+    {workflowName:'x\\nspoof'},
+    {trustedPrActors:['sample-org','sample-org']},
+    {authors:[portableAuthor,{...portableAuthor,id:'second-agent'}]},
+    {authors:[portableAuthor,{...portableAuthor,id:'second-agent',
+      fingerprint:'a'.repeat(64),binding:{status:'enrolled',fingerprint:'b'.repeat(64)},
+      aliases:['agent']}]},
+  ]) assert.throws(()=>createCodexPolicy({...portableConfig,...change}));
+});
+
+test('receipt Git creation must linearly follow claim creation',()=>{
+  const good={...original(),claim,receipt:{...receipt,headSha:CLAIM_COMMIT},
+    ...provenance()};
+  good.receiptCommit={...good.receiptCommit,parents:[{sha:CLAIM_COMMIT}]};
+  assert.equal(assessCodexLane(good).replayDisposition,'already-completed');
+  for(const forged of [
+    {receiptCommit:{...good.receiptCommit,parents:[{sha:HEAD}]}},
+    {receipt:{...good.receipt,headSha:HEAD}},
+    {receiptCommit:{...good.receiptCommit,parents:[{sha:HEAD},{sha:CLAIM_COMMIT}]}},
+  ]) assert.throws(()=>assessCodexLane({...good,...forged}));
+});
+
+test('duplicate owner triggers require reconciliation, not another trigger',()=>{
+  const result=assessCodexLane({...original(),pullRequestRuns:[pass()],
+    ownerComments:[trigger,trigger]});
+  assert.equal(result.githubOwnerTriggerCount,2);
+  assert.equal(result.nextAction,'investigate-duplicate-owner-triggers-without-replay');
+});
