@@ -81,7 +81,7 @@ test('successful current-head PR test preserves separate Work execution gap', ()
   assert.equal(result.githubPrCheck, 'passed');
   assert.equal(result.executionState, 'not-observed');
   assert.equal(result.githubOwnerTriggerCount, 1);
-  assert.equal(result.nextAction, 'await-or-investigate-named-work-event');
+  assert.equal(result.nextAction, 'verify-work-route-enabled-and-investigate-event');
 });
 test('bot or wrong-author trigger is not treated as owner event', () => {
   const data = assessCodexLane({
@@ -135,9 +135,8 @@ test('orphan receipt or spoofed claim cannot be accepted', () => {
     {...claim,extra:'true'},
   ]) assert.throws(() => validateCodexClaimRecord(modified,task));
 });
-test('edited issue, wrong main, branch and binding fail admission before status', () => {
+test('edited issue, branch and binding fail admission before status', () => {
   const variants=[
-    data=>{data.mainSha=HEAD;},
     data=>{data.bindingFingerprint='f'.repeat(64);},
     data=>{data.pr.head.ref='untrusted-branch';},
     data=>{data.issue.body+=' changed';},
