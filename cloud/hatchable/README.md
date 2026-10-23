@@ -118,6 +118,21 @@ Hatchable v2 tick returned HTTP 503 at 07:40:09 UTC; the observed
 1/3 with a 15-minute retry interval. The upstream 403 cause is **unknown**;
 a scheduler HTTP 503 does not independently establish that cause.
 
+**One-task production recovery confirmed (read-only, October 23, 2026):**
+Hatchable project `proj_A6GCXRSKizko` still reports **live v2**. A fresh
+SELECT of `brain_tasks` independently found the same task **37**
+(`repo.inspect`) at `done`, attempts **2/3**, with `lease_until=NULL`
+and `updated_at=2026-10-23T08:40:09.433068Z`. Its event ledger contains
+`#64 claimed` (attempt 1, 07:40:09 UTC), `#65 failed`
+(`github-status-403`), `#66 claimed` (attempt 2, 08:40:09 UTC), and
+`#67 observed` (`source=github-api`, 08:40:09 UTC). The independently
+reported hourly tick returned **200** at 08:40:09 UTC after **503** at
+07:40:09 UTC. This is evidence that **one read-only retry completed and
+persisted an observation**, not proof that the original GitHub 403 was
+diagnosed, that every scheduler fire succeeds, or that injected database
+failures and crash recovery are safe. No production task was created or
+modified to obtain this readback.
+
 The PR's isolated regression driver now exercises the actual GitHub-read
 objective through the runner with a synthetic 403, asserts **no observed
 receipt**, verifies a lease-fenced failure receipt and that an early retry
