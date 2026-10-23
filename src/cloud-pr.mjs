@@ -1,4 +1,6 @@
 import { launchCodePr, CODE_PR_TITLE, CODE_PR_MARKER } from './code-pr.mjs';
+import { parseCodexObjective } from '../docs/core/codex-authors.mjs';
+import { buildCodexCall, formatCodexCall, parseCodexCall } from './codex-call.mjs';
 import { createHash } from 'node:crypto';
 import { readFile, appendFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -24,17 +26,28 @@ export function parsePrRequest(event, actor, repository) {
   if (!objective.trim() || objective !== objective.trim() ||
       objective.length > PR_BODY_LIMIT || /[\r\n\u0000-\u001f]/.test(objective))
     throw Error('PR request must contain one line of 1–1000 public characters');
+  const codex = parseCodexObjective(objective);
   return {
+    codex,
     issueNumber: issue.number, objective, eventIssue: issue,
     branch: 'ultron/issue-' + issue.number,
     filePath: 'docs/proposals/issue-' + issue.number + '.md',
-    title: 'ultron: ' + objective.slice(0, 76),
+    title: codex ? '[Ultron Codex] ' + codex.author.id + ' · issue ' + issue.number :
+      'ultron: ' + objective.slice(0, 76),
     requestedDigest: createHash('sha256').update(objective).digest('hex'),
   };
 }
 
 export function proposalContent(request, mainSha) {
   if (!SHA.test(mainSha)) throw Error('Unverified main SHA');
+  if (request.codex) return [
+    '# ' + request.codex.author.name + ' task #' + request.issueNumber, '',
+    'Owner request: https://github.com/' + PR_REPOSITORY + '/issues/' + request.issueNumber,
+    'Request digest: ' + request.requestedDigest, '',
+    'A named Work executor must validate this request and persist its own completion receipt.',
+    'Enrollment is not execution proof. No automatic merge is authorized.', '',
+    formatCodexCall(buildCodexCall({ ...request, sourceSha: mainSha })), '',
+  ].join('\n');
   return [
     '# Ultron implementation proposal #' + request.issueNumber, '',
     'Source task: https://github.com/' + PR_REPOSITORY + '/issues/' + request.issueNumber,
@@ -80,6 +93,7 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
   if (ref?.object?.sha !== executorSha)
     throw Error('PR creation rejected: runner is not current main');
   const expectedFile = proposalContent(request, executorSha);
+  const codexCall = request.codex ? buildCodexCall({ ...request, sourceSha: executorSha }) : null;
   const query = '?state=all&head=' + encodeURIComponent(PR_OWNER + ':' + request.branch) +
     '&per_page=100';
   const existing = await get(apiPath('/pulls' + query));
@@ -94,9 +108,13 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
     if (existingFile?.encoding !== 'base64' ||
         !contents.includes('Request digest: ' + request.requestedDigest))
       throw Error('Existing PR proposal content does not match original owner request');
+    if (codexCall && (parseCodexCall(verified.body).digest !== codexCall.digest ||
+        parseCodexCall(contents).digest !== codexCall.digest || verified.title !== request.title))
+      throw Error('Existing Codex request envelope changed');
     return { status: 'already-created', issueNumber: request.issueNumber,
       prNumber: verified.number, prUrl: verified.html_url, branch: request.branch,
-      base: 'main', executorSha, contentVerified: true, created: false };
+      base: 'main', executorSha, contentVerified: true, created: false,
+      ...(codexCall ? { codexAuthor: codexCall.authorId, codexTaskId: codexCall.taskId } : {}) };
   }
 
   const branchRefPath = apiPath('/git/ref/heads/' + request.branch);
@@ -144,10 +162,12 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
       '## Ultron issue #' + request.issueNumber,
       '', 'Requested change: ' + request.objective,
       '', 'This PR adds a reviewable documentation proposal under ' + request.filePath + '.',
-      'Implementation code is not yet generated.',
+      codexCall ? 'Named Work task; execution awaits an independent executor receipt.' :
+        'Implementation code is not yet generated.',
       'Base: main @ ' + executorSha + '.',
       'Owner confirmed submission through a GitHub Issue.',
       'No automatic merge or deployment is requested.',
+      ...(codexCall ? ['', formatCodexCall(codexCall)] : []),
     ].join('\n');
     pr = await post(apiPath('/pulls'), {
       title: request.title, head: request.branch, base: 'main', body,
@@ -163,6 +183,9 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
       !/^https:\/\/github\.com\/michaeljwilliams0123\/Ultron\.MW\/pull\/\d+$/.test(
         verifiedPr.html_url || ''))
     throw Error('Created PR failed GitHub read-back verification');
+  if (codexCall && (verifiedPr.title !== request.title ||
+      parseCodexCall(verifiedPr.body).digest !== codexCall.digest))
+    throw Error('Created Codex PR envelope failed read-back');
 
   // The workflow token is allowed to dispatch the existing exact-head
   // verification job even though a GITHUB_TOKEN-created PR may not emit
@@ -181,7 +204,11 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
     'Verified proposal file: ' + request.filePath,
     'Exact-head verification: requested through GitHub Actions',
     '',
-    'This PR proposes documentation; it does not implement arbitrary code or merge automatically.',
+    codexCall ? 'Named executor requested: ' + request.codex.author.name +
+      '. Enrollment is not execution proof. Inspect the Work receipt on the PR branch.' :
+      'This PR proposes documentation; it does not implement arbitrary code or merge automatically.',
+    ...(codexCall ? ['If no Work run appears, the owner can comment exactly: /codex run ' +
+      codexCall.authorId] : []),
   ].join('\n');
   const issued = await post(apiPath('/issues/' + request.issueNumber + '/comments'),
     {body:note});
@@ -195,7 +222,8 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
     prNumber: verifiedPr.number, prUrl: verifiedPr.html_url,
     branch: request.branch, base: 'main', executorSha,
     contentVerified: true, verificationDispatched: true,
-    receiptCommentId: issued.id, created };
+    receiptCommentId: issued.id, created,
+    ...(codexCall ? { codexAuthor: codexCall.authorId, codexTaskId: codexCall.taskId } : {}) };
 }
 
 export async function githubRequest(path, { method = 'GET', body, optional = false } = {}) {

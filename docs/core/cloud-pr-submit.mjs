@@ -1,5 +1,6 @@
 // Pages never receives GitHub credentials. The signed-in owner confirms a
 // native GitHub Issue, and GitHub Actions publishes the source PR to main.
+import { parseCodexObjective } from './codex-authors.mjs';
 export const CLOUD_PR_ISSUES = 'https://github.com/michaeljwilliams0123/Ultron.MW/issues/new';
 export function createCloudPrUrl(objective) {
   if (typeof objective !== 'string' || !objective.trim())
@@ -23,5 +24,6 @@ export function createCloudPrUrl(objective) {
     /[\r\n\u0000-\u001f]/.test(objective)) {
     throw Error('Enter one public PR objective line (1–1000 characters).');
   }
+  if (!objective.trim().startsWith('{')) parseCodexObjective(objective);
   return CLOUD_PR_ISSUES + '?' + new URLSearchParams({title,body}).toString();
 }

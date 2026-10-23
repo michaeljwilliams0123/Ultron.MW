@@ -129,6 +129,30 @@ test('repeated owner issue is idempotent and never writes a second proposal',asy
   assert.ok(mock.calls.slice(before).every(x=>x.startsWith('GET ')));
 });
 
+test('named call publishes the same identity-bound envelope in proposal and task PR', async () => {
+  const mock = mockGitHub(event(105, '/codex destiny-codex Inspect README.md'));
+  const result = await launchCloudPr(params(mock));
+  assert.equal(result.codexAuthor, 'destiny-codex');
+  assert.equal(mock.state.pr.title, '[Ultron Codex] destiny-codex · issue 105');
+  assert.match(mock.state.pr.body, /ULTRON_CODEX_CALL_V1/);
+  assert.match(mock.state.fileText, /ULTRON_CODEX_CALL_V1/);
+  assert.match(mock.state.pr.body, /"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/);
+  assert.match(mock.state.note.body, /enrollment is not execution proof/i);
+  const before = mock.calls.length;
+  const replay = await launchCloudPr(params(mock));
+  assert.equal(replay.status, 'already-created');
+  assert.ok(mock.calls.slice(before).every(call => call.startsWith('GET ')));
+});
+
+test('existing named PR with altered call envelope is rejected without replay', async () => {
+  const mock = mockGitHub(event(106, '/codex destiny-codex Inspect README.md'));
+  await launchCloudPr(params(mock));
+  mock.state.pr.body = mock.state.pr.body.replaceAll('Inspect README.md', 'Inspect SECURITY.md');
+  const before = mock.calls.length;
+  await assert.rejects(() => launchCloudPr(params(mock)), /Codex|envelope|request/i);
+  assert.ok(mock.calls.slice(before).every(call => call.startsWith('GET ')));
+});
+
 test('unauthorized, malformed or edited public issue is rejected before a write',async()=>{
   for(const invalid of [
     {actor:'outsider'},
