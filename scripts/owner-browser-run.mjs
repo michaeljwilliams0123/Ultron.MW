@@ -65,6 +65,7 @@ async function main() {
       headless: !headed, ownerApproval: headed,
       allowedOrigins: plan.allowedOrigins,
       enableTabs: process.env.ULTRON_BROWSER_MULTITAB === '1',
+      enableWindows: process.env.ULTRON_BROWSER_MULTIWINDOW === '1',
       uploadRoot: process.env.ULTRON_BROWSER_UPLOAD_ROOT,
       downloadRoot: process.env.ULTRON_BROWSER_DOWNLOAD_ROOT,
       ...(channel ? { channel } : {}),

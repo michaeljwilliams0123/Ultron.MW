@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait','tab-open','tab-switch','tab-close','upload','download']);
+export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait','tab-open','tab-switch','tab-close','window-open','window-switch','window-close','upload','download']);
 const ACTIVE = new Set(['click','type','keypress','upload','download']);
 const ACTIONS = new Set(COMPUTER_ACTIONS);
 const VALID_ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
@@ -28,13 +28,16 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
   const steps = raw.steps.map((s, index) => {
     if (!s || s.id !== undefined && !VALID_ID.test(s.id) || !ACTIONS.has(s.action))
       throw Error('Unknown or unbounded computer action');
-    const keys = { navigate: ['id','action','url','expect'], click: ['id','action','selector','expect'],
+    const keys = { navigate: ['id','action','url','expect'], click: ['id','action','selector','expect','sendToOrigin'],
       type: ['id','action','selector','value','expect'], keypress: ['id','action','selector','key','expect'],
       scroll: ['id','action','pixels','expect'], observe: ['id','action','expect'],
       extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'],
       'tab-open': ['id','action','tabId','url','expect'],
       'tab-switch': ['id','action','tabId','expect'],
       'tab-close': ['id','action','tabId','expect'],
+      'window-open': ['id','action','windowId','url','expect'],
+      'window-switch': ['id','action','windowId','expect'],
+      'window-close': ['id','action','windowId','expect'],
       upload: ['id','action','selector','filePath','expect'],
       download: ['id','action','selector','outputName','expect'] };
     if (Object.keys(s).some(k => !keys[s.action].includes(k)))
@@ -51,7 +54,13 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
         throw Error('Invalid bounded tab identity');
       entry.tabId = s.tabId;
     }
-    if (['navigate','tab-open'].includes(s.action)) {
+    if (['window-open','window-switch','window-close'].includes(s.action)) {
+      if (s.windowId !== 'window-secondary' &&
+          !(s.action === 'window-switch' && s.windowId === 'primary'))
+        throw Error('Invalid bounded window identity');
+      entry.windowId = s.windowId;
+    }
+    if (['navigate','tab-open','window-open'].includes(s.action)) {
       if (!bounded(s.url, 2048)) throw Error('Navigation URL required');
       safeUrl(s.url, allowedOrigins);
       entry.url = s.url;
@@ -59,6 +68,12 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
       if (!bounded(s.selector, 240) || /[\u0000-\u001f]/.test(s.selector))
         throw Error('Bounded selector required');
       entry.selector = s.selector;
+    }
+    if (s.action === 'click' && s.sendToOrigin !== undefined) {
+      if (!allowedOrigins.includes(s.sendToOrigin) ||
+          new URL(s.sendToOrigin).origin !== s.sendToOrigin)
+        throw Error('Upload destination must be an explicitly allowed canonical origin');
+      entry.sendToOrigin = s.sendToOrigin;
     }
     if (s.action === 'upload') {
       if (!bounded(s.filePath, 2048) || /[\u0000-\u001f]/.test(s.filePath))
@@ -197,7 +212,8 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
-        selector: step.selector, valueLength: step.action === 'type' ? step.value.length : undefined,
+        selector: step.selector, uploadDestination: step.sendToOrigin,
+        valueLength: step.action === 'type' ? step.value.length : undefined,
         fileName: step.action === 'upload' ? step.filePath.replaceAll('\\','/').split('/').at(-1) :
           step.action === 'download' ? step.outputName : undefined,
         key: step.action === 'keypress' ? step.key : undefined,

@@ -31,6 +31,13 @@ export function summarizeComputerApproval(context) {
         .map(key => [key, '[redacted]']),
     ) : null,
   };
+  if (context.action === 'click' && context.uploadDestination !== undefined) {
+    const url = new URL(context.uploadDestination);
+    if (url.origin !== context.uploadDestination || url.protocol !== 'https:' &&
+        !(url.protocol === 'http:' && ['localhost','127.0.0.1'].includes(url.hostname)))
+      throw Error('Unapproved upload destination origin');
+    summary.uploadDestination = url.origin;
+  }
   if (context.action === 'type') summary.valueLength = context.valueLength;
   if (['upload','download'].includes(context.action)) {
     if (typeof context.fileName !== 'string' || context.fileName.length > 80)
