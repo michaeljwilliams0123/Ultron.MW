@@ -104,7 +104,10 @@ and unbounded metadata are rejected. **Only the trusted deployment or account
 configuration may supply this policy.** Never load a security policy from the
 untrusted PR being evaluated.
 
-The shipped CLI remains an Ultron-specific, read-only wrapper. Configurable
+The repository namespace may be a GitHub organization; `owner` is the
+independently trusted GitHub user authorized to submit the owner Issue and
+comment trigger, not necessarily the repository namespace. The shipped CLI
+remains an Ultron-specific, read-only wrapper. Configurable
 core behavior is not permission for cross-repository GitHub access, a new
 credential, independent ChatGPT Work identity, or a bypass of CI/merge gates.
 
