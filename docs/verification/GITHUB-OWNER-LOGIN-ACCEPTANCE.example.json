@@ -22,11 +22,19 @@
         }
       },
       {
+        "id": "open-repository",
+        "action": "navigate",
+        "url": "https://github.com/michaeljwilliams0123/Ultron.MW",
+        "expect": {
+          "urlIncludes": "/michaeljwilliams0123/Ultron.MW"
+        }
+      },
+      {
         "id": "owner-approves-readonly-click",
         "action": "click",
-        "selector": "a[href=\"/settings/emails\"]",
+        "selector": "a[href=\"/michaeljwilliams0123/Ultron.MW/pulls\"]",
         "expect": {
-          "urlIncludes": "/settings/emails"
+          "urlIncludes": "/michaeljwilliams0123/Ultron.MW/pulls"
         }
       },
       {
