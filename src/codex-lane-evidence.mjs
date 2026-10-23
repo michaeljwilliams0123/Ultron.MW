@@ -13,6 +13,26 @@ const freeze = value => Object.freeze(value);
 
 export const validateCodexClaimRecord = validateCodexClaim;
 
+/** Prove a bounded, unmerged, first-parent chain from claim to tested head. */
+function verifyExecutionChain(claimSha, testedHead, history) {
+  if (testedHead === claimSha) {
+    if (history !== undefined && (!Array.isArray(history) || history.length))
+      throw Error('Unexpected Codex execution history for unchanged head');
+    return;
+  }
+  if (!Array.isArray(history) || history.length < 1 || history.length > 100)
+    throw Error('Codex execution ancestry incomplete');
+  let parent = claimSha;
+  for (const step of history) {
+    if (!SHA.test(step?.sha || '') || !Array.isArray(step.parents) ||
+        step.parents.length !== 1 || step.parents[0]?.sha !== parent ||
+        step.sha === parent)
+      throw Error('Codex execution ancestry has a fork, merge, or gap');
+    parent = step.sha;
+  }
+  if (parent !== testedHead) throw Error('Codex execution ancestry omits tested head');
+}
+
 /** Validate exact-head Git history. Records must each be created once in their own commit. */
 function requireSingleCreation(path, expectedParent, history, commit) {
   if (!Array.isArray(history) || history.length !== 1 ||
@@ -28,7 +48,8 @@ function requireSingleCreation(path, expectedParent, history, commit) {
 }
 
 export function verifyCodexRecordHistory(call, { claim, receipt, claimHistory,
-  claimCommit, receiptHistory, receiptCommit } = {}, policy = DEFAULT_CODEX_POLICY) {
+  claimCommit, receiptHistory, receiptCommit, executionHistory } = {},
+  policy = DEFAULT_CODEX_POLICY) {
   if (claim === undefined) {
     if (receipt !== undefined) throw Error('Orphan Codex receipt');
     return;
@@ -38,11 +59,12 @@ export function verifyCodexRecordHistory(call, { claim, receipt, claimHistory,
   const claimSha = requireSingleCreation(paths.claim, claim.headSha,
     claimHistory, claimCommit);
   if (receipt !== undefined) {
-    if (receipt.claimHeadSha !== claimSha || receipt.headSha !== claimSha)
+    if (receipt.claimHeadSha !== claimSha)
       throw Error('Codex receipt is not anchored to the claim creation commit');
+    verifyExecutionChain(claimSha, receipt.headSha, executionHistory);
     if (Date.parse(receipt.completedAt) < Date.parse(claim.claimedAt))
       throw Error('Codex receipt predates the claim');
-    requireSingleCreation(paths.receipt, claimSha,
+    requireSingleCreation(paths.receipt, receipt.headSha,
       receiptHistory, receiptCommit);
   }
 }
@@ -91,7 +113,7 @@ export function assessCodexLane({
   pr, issue, proposalText, mainSha, bindingFingerprint,
   pullRequestRuns = [], workflowDispatchRuns = [],
   ownerComments = [], claim, receipt,
-  claimHistory, claimCommit, receiptHistory, receiptCommit,
+  claimHistory, claimCommit, receiptHistory, receiptCommit, executionHistory,
   policy = DEFAULT_CODEX_POLICY,
 } = {}) {
   policy = createCodexPolicy(policy);
@@ -107,6 +129,7 @@ export function assessCodexLane({
   const paths = codexRecordPaths(call, policy);
   if (claim !== undefined) verifyCodexRecordHistory(call, {
     claim, receipt, claimHistory, claimCommit, receiptHistory, receiptCommit,
+    executionHistory,
   }, policy);
   if (receipt !== undefined && claim === undefined)
     throw Error('Completion receipt without earlier claim is not sufficient');
