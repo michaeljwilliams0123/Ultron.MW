@@ -108,10 +108,32 @@ export function validateCodexReceipt(receipt, call) {
   return expected;
 }
 
+/** Schema and identity only; Git ancestry must be verified separately. */
+export function validateCodexClaim(claim, call) {
+  validateCall(call);
+  const keys='attempts,authorId,bindingFingerprint,claimedAt,headSha,schema,sourceSha,status,taskDigest,taskId';
+  if (!claim || typeof claim !== 'object' || Array.isArray(claim) ||
+      Object.keys(claim).sort().join(',') !== keys ||
+      claim.schema !== 'ultron.codex.claim.v1' ||
+      claim.taskId !== call.taskId || claim.taskDigest !== call.digest ||
+      claim.authorId !== call.authorId ||
+      claim.bindingFingerprint !== call.bindingFingerprint ||
+      claim.sourceSha !== call.sourceSha ||
+      !SHA.test(claim.headSha || '') || !validTime(claim.claimedAt) ||
+      claim.status !== 'claimed' || claim.attempts !== 1)
+    throw Error('Invalid or conflicting Codex claim; reconcile before replay');
+  return Object.freeze({ ...claim });
+}
+
 export function codexReplayDisposition(call, records = {}) {
   validateCall(call);
   if (Object.hasOwn(records, 'receipt')) {
     validateCodexReceipt(records.receipt, call);
+    if (!Object.hasOwn(records, 'claim'))
+      throw Error('Completion receipt without earlier claim is not sufficient');
+    const claim = validateCodexClaim(records.claim, call);
+    if (Date.parse(records.receipt.completedAt) < Date.parse(claim.claimedAt))
+      throw Error('Completion receipt predates its claim');
     return 'already-completed';
   }
   return Object.hasOwn(records, 'claim') ? 'reconcile-required' : 'unclaimed';
