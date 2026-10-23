@@ -59,14 +59,17 @@ test('injected CPU model can propose a real patch for exact PR head without paid
   assert.equal(result.commitSha,COMMIT);
   assert.equal(result.generatedBy,'public-CPU-ONNX-inference');
 });
-test('public CPU inference on owner request only, with no paid API credentials',async()=>{
+test('public CPU inference remains default; paid provider requires an explicit variable',async()=>{
   const flow=await readFile(new URL('../.github/workflows/pr-brain.yml',import.meta.url),'utf8');
   assert.match(flow,/github.event.repository.private == false/);
   assert.match(flow,/needsPrModelRuntime/);
   assert.match(flow,/npm ci --ignore-scripts --no-audit --no-fund/);
   assert.doesNotMatch(flow,/npm install|package-lock=false/);
   assert.match(flow,/ULTRON_PUBLIC_CPU_INFERENCE/);
-  assert.doesNotMatch(flow,/HF_TOKEN|OPENAI_API_KEY|models: read/);
+  assert.match(flow,/vars\.ULTRON_MODEL_PROVIDER != 'openai'/);
+  assert.match(flow,/ULTRON_MODEL_PROVIDER: \$\{\{ vars\.ULTRON_MODEL_PROVIDER \|\| 'local-cpu' \}\}/);
+  assert.match(flow,/OPENAI_API_KEY: \$\{\{ secrets\.ULTRON_OPENAI_API_KEY \}\}/);
+  assert.doesNotMatch(flow,/HF_TOKEN|models: read/);
 });
 
 test('source-selected single-line output works without model JSON formatting',()=>{
