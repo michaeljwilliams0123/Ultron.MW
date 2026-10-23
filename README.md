@@ -4,6 +4,13 @@ Ultron is an independent, single-owner execution platform with a GitHub-hosted r
 
 **Console:** https://michaeljwilliams0123.github.io/Ultron.MW/
 
+**Named Codex authors:** The console displays **Mike's Codex** and **Destiny's
+Codex**, stable author fingerprints and separate route status. Use
+`/codex destiny-codex <public task>` to request the enrolled Work lane through
+an owner-confirmed Issue and task PR. Mike's route remains explicitly unbound
+until enrolled from his account. Registration is not account attestation or
+live execution proof; inspect each task's receipt. See [callable Codex authors](docs/CODEX-AUTHORS.md).
+
 ## Current capabilities
 
 | Capability | Environment | Implemented behavior | Evidence boundary |
@@ -90,7 +97,7 @@ bash scripts/lint-workflows.sh
 
 Verification performs a script-disabled clean install, requires the production dependency graph to match the graph that reported zero vulnerabilities in [exact-head Verify run 39706366720](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/39706366720), imports the pinned Transformers runtime, syntax-checks every JavaScript module in `src`, `docs`, `scripts` and `test`, and runs the regression suite. Dependency changes fail closed until a fresh audit deliberately updates the baseline; this deterministic gate does not claim to detect advisories published after that audit. Workflow lint uses an official actionlint release with a committed SHA-256 digest. Every PR and every push to `main` runs verification without path filters; checkout uses the exact PR head, pinned action SHAs and no persisted Git credentials. PR checks validate the head, not a simulated merge result, so reverify after base-branch changes.
 
-**Repository settings remain separate:** GitHub branch read-back on 2026-10-20 reports `main` protected with the Actions `test` check required for non-admins. The connected GitHub App cannot read the full admin-only protection response, so strict-up-to-date behavior, force-push/deletion rules, review requirements, and administrator bypass remain unverified. See [`docs/verification/BASELINE-2026-10-19.md`](docs/verification/BASELINE-2026-10-19.md) for the historical baseline and [issue #32](https://github.com/michaeljwilliams0123/Ultron.MW/issues/32) for the remaining live acceptance evidence.
+**Repository settings remain separate:** an owner-authenticated GitHub API read-back on 2026-10-22 confirms that `main` requires the Actions `test` context with strict up-to-date branches, enforces administrators and linear history, and disables force pushes and deletions. It reports zero required approving reviews, no required conversation resolution or signed commits, and no actor restrictions; the repository currently has no additional rulesets. This is a point-in-time settings receipt, not a substitute for re-reading protection immediately before a protected merge. See [`docs/verification/BASELINE-2026-10-19.md`](docs/verification/BASELINE-2026-10-19.md) for the historical baseline and [issue #32](https://github.com/michaeljwilliams0123/Ultron.MW/issues/32) for the remaining live acceptance evidence.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for current architecture and [`SECURITY.md`](SECURITY.md) for data boundaries and reporting. No license grant is declared pending the owner's license decision.
 
