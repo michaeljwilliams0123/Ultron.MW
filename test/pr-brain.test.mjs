@@ -162,6 +162,24 @@ test('owner-authored natural language implement delegates to source-grounded mod
   assert.ok(m.state.posts.some(p=>p.path===ROOT+'/actions/workflows/verify.yml/dispatches'));
 });
 
+test('configured provider is passed to implementation and reported in PR reply',async()=>{
+  const m=fixture(),ev=event('@ultron implement fix src/example.mjs to reject stale routes',false,156);
+  m.add(ev);
+  let observed='';
+  const result=await handlePrConversation({event:ev,eventName:'issue_comment',
+    actor:OWNER,repository:REPO,get:m.get,post:m.post,patch:async()=>({}),
+    selectInference:()=>({provider:'openai',model:'gpt-6.1-sol',
+      generatedBy:'OpenAI-Responses-API',run:async()=> 'const route="safe";'}),
+    generate:async({model})=>{observed=await model([
+      {role:'system',content:'Edit source.'},{role:'user',content:'Fix the route.'}]);
+      return {commitSha:OTHER,paths:['src/example.mjs']};},
+    observeVerify:async()=>({state:'pending',conclusion:null})});
+  assert.equal(result.intent,'implement');
+  assert.equal(observed,'const route="safe";');
+  assert.match(m.state.comments.at(-1).body,/Provider: OpenAI-Responses-API/);
+  assert.match(m.state.comments.at(-1).body,/Model: gpt-6\.1-sol/);
+});
+
 test('failed model-generated code is independently observed, reverted once, and retested',async()=>{
   const m=fixture();
   const ev=event('@ultron implement fix docs/core/capabilities.mjs evidence',false,477);
