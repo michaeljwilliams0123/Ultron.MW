@@ -46,8 +46,7 @@ export function createCodexPolicy(options = {}) {
   if (!Array.isArray(p.trustedPrActors) || p.trustedPrActors.length < 1 ||
       p.trustedPrActors.length > 8 ||
       p.trustedPrActors.some(x => !clean(x) || x.length > 50) ||
-      new Set(p.trustedPrActors).size !== p.trustedPrActors.length ||
-      !p.trustedPrActors.includes(p.owner))
+      new Set(p.trustedPrActors).size !== p.trustedPrActors.length)
     throw Error('Invalid trusted Codex PR actors');
   if (!Array.isArray(p.authors) || p.authors.length < 1 || p.authors.length > 16)
     throw Error('Invalid Codex author registry');
@@ -75,6 +74,8 @@ export function createCodexPolicy(options = {}) {
     }
     const binding = author.binding;
     if (binding !== null && binding !== undefined) {
+      const hasFingerprint = binding.fingerprint !== undefined &&
+        binding.fingerprint !== null;
       if (typeof binding !== 'object' || Array.isArray(binding) ||
           Object.keys(binding).some(k => !['kind','fingerprint','status',
             'enrolledAt','liveExecution'].includes(k)) ||
@@ -82,9 +83,10 @@ export function createCodexPolicy(options = {}) {
           (binding.kind !== undefined && !clean(binding.kind)) ||
           (binding.enrolledAt !== undefined && !clean(binding.enrolledAt)) ||
           (binding.liveExecution !== undefined && !clean(binding.liveExecution)) ||
-          (binding.status === 'enrolled' && !/^[a-f0-9]{64}$/.test(binding.fingerprint || '')))
+          (hasFingerprint && !/^[a-f0-9]{64}$/.test(binding.fingerprint)) ||
+          (binding.status === 'enrolled' && !hasFingerprint))
         throw Error('Invalid Codex author binding');
-      if (binding.status === 'enrolled') {
+      if (hasFingerprint) {
         if (bindings.has(binding.fingerprint)) throw Error('Duplicate Codex route binding');
         bindings.add(binding.fingerprint);
       }

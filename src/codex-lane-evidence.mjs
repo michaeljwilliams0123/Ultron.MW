@@ -13,6 +13,34 @@ const freeze = value => Object.freeze(value);
 
 export const validateCodexClaimRecord = validateCodexClaim;
 
+/** Reject truncated GitHub run inventories before selecting any green run. */
+export function validateCodexWorkflowInventory(list) {
+  if (!Array.isArray(list?.workflow_runs) ||
+      !Number.isSafeInteger(list?.total_count) || list.total_count < 0 ||
+      list.total_count !== list.workflow_runs.length || list.total_count >= 100)
+    throw Error('Workflow audit window incomplete');
+  return list.workflow_runs;
+}
+
+/** Re-run full admission after the read-only audit and reject source drift. */
+export function validateCodexLaneReadback({ beforePr, afterPr, beforeIssue,
+  afterIssue, beforeMainSha, afterMainSha, proposalText, bindingFingerprint,
+  policy = DEFAULT_CODEX_POLICY,
+} = {}) {
+  policy = createCodexPolicy(policy);
+  if (!SHA.test(beforeMainSha || '') || beforeMainSha !== afterMainSha ||
+      beforePr?.head?.sha !== afterPr?.head?.sha || beforePr?.body !== afterPr?.body)
+    throw Error('Codex PR, Issue or main changed during audit');
+  const envelope = parseCodexCall(beforePr.body, policy);
+  const before = validateCodexAdmission({ pr: beforePr, issue: beforeIssue,
+    mainSha: envelope.sourceSha, bindingFingerprint, proposalText, policy });
+  const after = validateCodexAdmission({ pr: afterPr, issue: afterIssue,
+    mainSha: envelope.sourceSha, bindingFingerprint, proposalText, policy });
+  if (before.digest !== after.digest)
+    throw Error('Codex PR, Issue or main changed during audit');
+  return after;
+}
+
 /** Prove a bounded, unmerged, first-parent chain from claim to tested head. */
 function verifyExecutionChain(claimSha, testedHead, history) {
   if (testedHead === claimSha) {
@@ -73,30 +101,35 @@ function verifyPrWorkflow(prHead, runs = [], policy = DEFAULT_CODEX_POLICY) {
   if (!Array.isArray(runs)) throw Error('Workflow observations must be an array');
   const applicable = runs.filter(x => x?.event === 'pull_request' &&
     x.head_sha === prHead && x.name === policy.workflowName);
+  if (applicable.some(x => !Number.isSafeInteger(x?.id) || x.id <= 0 ||
+      typeof x.created_at !== 'string' || !Number.isFinite(Date.parse(x.created_at))))
+    throw Error('Workflow run identity or creation time invalid');
   const latest = [...applicable].sort((a,b) =>
-    (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0))[0];
+    Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id)[0];
   if (!latest) return freeze({ state: 'unobserved', workflowRunUrl: null });
   if (latest.conclusion === APPROVAL_EVENT)
     return freeze({ state: 'owner-approval-required',
-      workflowRunUrl: safeRunUrl(latest.html_url, policy) });
+      workflowRunUrl: safeRunUrl(latest.html_url, policy, latest.id) });
   if (latest.status !== 'completed')
-    return freeze({ state: 'pending', workflowRunUrl: safeRunUrl(latest.html_url, policy) });
+    return freeze({ state: 'pending',
+      workflowRunUrl: safeRunUrl(latest.html_url, policy, latest.id) });
   if (latest.conclusion !== 'success')
-    return freeze({ state: 'failed', workflowRunUrl: safeRunUrl(latest.html_url, policy) });
-  const verifiedUrl = safeRunUrl(latest.html_url, policy);
+    return freeze({ state: 'failed',
+      workflowRunUrl: safeRunUrl(latest.html_url, policy, latest.id) });
+  const verifiedUrl = safeRunUrl(latest.html_url, policy, latest.id);
   if (!verifiedUrl) return freeze({ state: 'run-proof-missing', workflowRunUrl: null });
   const jobs = latest.jobs;
   if (!Array.isArray(jobs) || jobs.length < 1 ||
       !jobs.some(x => x?.name === policy.jobName && x.status === 'completed' &&
         x.conclusion === 'success' && x.head_sha === prHead))
     return freeze({ state: 'job-proof-missing',
-      workflowRunUrl: safeRunUrl(latest.html_url, policy) });
-  return freeze({ state: 'passed', workflowRunUrl: safeRunUrl(latest.html_url, policy) });
+      workflowRunUrl: verifiedUrl });
+  return freeze({ state: 'passed', workflowRunUrl: verifiedUrl });
 }
-function safeRunUrl(url, policy = DEFAULT_CODEX_POLICY) {
+function safeRunUrl(url, policy = DEFAULT_CODEX_POLICY, runId) {
   const prefix = 'https://github.com/' + policy.repository + '/actions/runs/';
-  return typeof url === 'string' && url.startsWith(prefix) &&
-    /^[0-9]+$/.test(url.slice(prefix.length)) ? url : null;
+  return Number.isSafeInteger(runId) && runId > 0 &&
+    url === prefix + runId ? url : null;
 }
 function countOwnerTriggers(comments, author, policy = DEFAULT_CODEX_POLICY) {
   if (!Array.isArray(comments)) throw Error('Comments must be an array');

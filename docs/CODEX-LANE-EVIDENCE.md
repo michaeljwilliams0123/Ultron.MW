@@ -42,7 +42,9 @@ observed exact PR-head commit, exact current main SHA, actual PR-event workflow 
 owner-authored trigger comments, and optional branch claim/completion receipt.
 For present claim/receipt files, it also validates create-only Git history,
 record creation commits and their parents, the receipt's claim-commit link,
-and timestamp order. It rechecks the owner Issue, main, and PR head afterward. Missing/incomplete data never
+and timestamp order. Before publishing, it re-runs full admission against the
+final PR and Issue snapshots and rechecks exact main and PR-head identity.
+Missing/incomplete data never
 becomes a passing result. No secrets, transcript, API tokens, prompt bodies,
 or credentials are emitted in the status output.
 
@@ -107,7 +109,9 @@ untrusted PR being evaluated.
 The repository namespace may be a GitHub organization; `owner` is the
 independently trusted GitHub user authorized to submit the owner Issue and
 comment trigger, not necessarily the repository namespace. The shipped CLI
-remains an Ultron-specific, read-only wrapper. Configurable
+remains an Ultron-specific, read-only wrapper. The request owner need not be a
+trusted PR publisher; a deployment may admit only its builder bot in
+`trustedPrActors`. Configurable
 core behavior is not permission for cross-repository GitHub access, a new
 credential, independent ChatGPT Work identity, or a bypass of CI/merge gates.
 
@@ -119,6 +123,8 @@ compare chain from the claim commit to tested head is required; merge commits,
 forks and missing ancestry fail closed. The GitHub CLI collects this chain
 read-only and verifies it with `src/codex-lane-evidence.mjs`. Invalid or
 cross-repository workflow run links do not count as proof of a green check.
+Workflow inventories must be complete, and each applicable run needs a valid
+ID and creation time. The reported URL must carry that same selected run ID.
 Multiple owner triggers are investigated, never retried automatically.
 
 ## PR #87 identity-canary disposition (2026-10-23)

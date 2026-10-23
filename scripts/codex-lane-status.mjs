@@ -3,7 +3,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { parseCodexCall, codexRecordPaths } from '../src/codex-call.mjs';
-import { assessCodexLane } from '../src/codex-lane-evidence.mjs';
+import { assessCodexLane, validateCodexLaneReadback,
+  validateCodexWorkflowInventory } from '../src/codex-lane-evidence.mjs';
 import { resolveCodexAuthor } from '../docs/core/codex-authors.mjs';
 const exec = promisify(execFile);
 const REPO = 'michaeljwilliams0123/Ultron.MW';
@@ -64,11 +65,7 @@ async function runs(event, sha) {
   const query = '?event=' + encodeURIComponent(event) +
     '&head_sha=' + sha + '&per_page=100';
   const list = await get(ROOT + '/actions/runs' + query);
-  if (!Array.isArray(list?.workflow_runs) ||
-      !Number.isSafeInteger(list?.total_count) ||
-      list?.total_count >= 100)
-    throw Error('Workflow audit window incomplete');
-  return list.workflow_runs.filter(run => run.head_sha === sha &&
+  return validateCodexWorkflowInventory(list).filter(run => run.head_sha === sha &&
     run.event === event);
 }
 async function pullRuns(sha) {
@@ -114,11 +111,12 @@ async function main() {
   ]);
   const executionHistory = claim && receipt ?
     await executionChain(claimProvenance.commit.sha, receipt.headSha) : undefined;
+  const bindingFingerprint = resolveCodexAuthor(call.authorId,{ requireBinding:true })
+    .binding.fingerprint;
   const report = assessCodexLane({
     pr, issue, proposalText: source,
     mainSha: main.object.sha,
-    bindingFingerprint: resolveCodexAuthor(call.authorId,{ requireBinding:true })
-      .binding.fingerprint,
+    bindingFingerprint,
     pullRequestRuns: pulls, workflowDispatchRuns: dispatched,
     ownerComments,
     ...(executionHistory === undefined ? {} : {executionHistory}),
@@ -132,10 +130,10 @@ async function main() {
   const after = await get(ROOT + '/pulls/' + number);
   const end = await get(ROOT + '/git/ref/heads/main');
   const issueAfter = await get(ROOT + '/issues/' + call.issueNumber);
-  if (after?.head?.sha !== pr.head.sha || after?.body !== pr.body ||
-      end?.object?.sha !== main.object.sha ||
-      issueAfter?.body !== issue.body || issueAfter?.state !== issue.state)
-    throw Error('PR/main changed during audit; retry read-only from new SHA');
+  validateCodexLaneReadback({ beforePr:pr, afterPr:after,
+    beforeIssue:issue, afterIssue:issueAfter,
+    beforeMainSha:main.object.sha, afterMainSha:end?.object?.sha,
+    proposalText:source, bindingFingerprint });
   console.log(JSON.stringify(report, null, 2));
 }
 main().catch(() => {

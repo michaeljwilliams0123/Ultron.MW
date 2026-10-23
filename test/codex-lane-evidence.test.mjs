@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCodexCall, formatCodexCall, validateCodexAdmission,
   buildCodexClaim, buildCodexReceipt } from '../src/codex-call.mjs';
-import { assessCodexLane, validateCodexClaimRecord } from '../src/codex-lane-evidence.mjs';
+import { assessCodexLane, validateCodexClaimRecord,
+  validateCodexLaneReadback,
+  validateCodexWorkflowInventory } from '../src/codex-lane-evidence.mjs';
 
 const MAIN = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
@@ -24,7 +26,7 @@ const original = () => ({
 });
 const url = 'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/39829603706';
 const run = (event, conclusion, options={}) => ({
-  event, conclusion, status: 'completed', head_sha: HEAD,
+  id:39829603706,event, conclusion, status: 'completed', head_sha: HEAD,
   name: 'Ultron core verification', created_at: '2026-10-22T18:14:30Z',
   html_url: url, jobs: [], ...options,
 });
@@ -187,16 +189,16 @@ test('dispatch without source provenance and fake run URLs do not become evidenc
 import { createCodexPolicy } from '../src/codex-call.mjs';
 
 const portableAuthor = {
-  id: 'agent-codex', name: 'Agent Codex', aliases: ['agent'],
+  id: 'agent2-codex', name: 'Agent Codex', aliases: ['AgentAlias'],
   fingerprint: '8'.repeat(64),
   binding: {status:'enrolled', fingerprint:'9'.repeat(64)},
 };
 const portableConfig = {
-  repository: 'sample-org/portable-repo', owner: 'sample-org',
+  repository: 'sample-org/portable-repo', owner: 'trusted-maintainer',
   baseBranch: 'release', branchPrefix: 'agent/task-',
   prTitlePrefix: '[Portable Codex] ', issueTitle: '[Portable] Request',
   issueMarker: 'PORTABLE_REQUEST_V1',
-  trustedPrActors: ['sample-org','github-actions[bot]'],
+  trustedPrActors: ['github-actions[bot]'],
   workflowName: 'Cross-repo verify', jobName: 'integration',
   authors: [portableAuthor],
 };
@@ -204,23 +206,27 @@ const portableConfig = {
 test('portable policy admits a separately registered author and different repository', () => {
   const policy = createCodexPolicy(portableConfig);
   const custom = buildCodexCall({issueNumber:7,sourceSha:MAIN,
-    objective:'/codex agent-codex Read public docs',policy});
+    objective:'/codex agent2-codex Read public docs',policy});
+  const aliasCall = buildCodexCall({issueNumber:9,sourceSha:MAIN,
+    objective:'/codex AgentAlias Read public docs',policy});
+  assert.equal(aliasCall.authorId,'agent2-codex');
   const proposalText = formatCodexCall(custom,policy);
   const data = {
     policy, mainSha:MAIN, bindingFingerprint:custom.bindingFingerprint,
     proposalText,
-    issue: {number:7,state:'open',user:{login:'sample-org'},
+    issue: {number:7,state:'open',user:{login:'trusted-maintainer'},
       title:'[Portable] Request',body:'PORTABLE_REQUEST_V1\n'+custom.request},
     pr: {number:8,state:'open',user:{login:'github-actions[bot]'},
-      title:'[Portable Codex] agent-codex · issue 7',body:proposalText,
+      title:'[Portable Codex] agent2-codex · issue 7',body:proposalText,
       head:{ref:'agent/task-7',sha:HEAD,repo:{full_name:'sample-org/portable-repo'}},
       base:{ref:'release',repo:{full_name:'sample-org/portable-repo'}}},
-    pullRequestRuns:[{event:'pull_request',name:'Cross-repo verify',
+    pullRequestRuns:[{id:123,event:'pull_request',name:'Cross-repo verify',
       head_sha:HEAD,status:'completed',conclusion:'success',
       created_at:'2026-10-23T12:00:00Z',
       html_url:'https://github.com/sample-org/portable-repo/actions/runs/123',
       jobs:[{name:'integration',status:'completed',conclusion:'success',head_sha:HEAD}]}],
-    ownerComments:[{body:'/codex run agent-codex',user:{login:'sample-org'}}],
+    ownerComments:[{body:'/codex run agent2-codex',
+      user:{login:'trusted-maintainer'}}],
   };
   const result=assessCodexLane(data);
   assert.equal(result.githubPrCheck,'passed');
@@ -251,6 +257,8 @@ test('portable policy rejects ambiguous author registries and unbounded identiti
     {authors:[{...portableAuthor,sessionObservation:{
       kind:'work-session-observation',accountAuthenticated:true,
       unexpected:'untrusted'}}]},
+    {authors:[{...portableAuthor,binding:{status:'not-enrolled',
+      fingerprint:{nested:'secret'}}}]},
 
   ]) assert.throws(()=>createCodexPolicy({...portableConfig,...change}));
 });
@@ -293,16 +301,16 @@ test('execution can update product source after claim with verified first-parent
 
 test('organization-owned repositories admit independent named human request owners',()=>{
   const policy=createCodexPolicy({...portableConfig,owner:'trusted-maintainer',
-    trustedPrActors:['trusted-maintainer','github-actions[bot]']});
+    trustedPrActors:['github-actions[bot]']});
   const custom=buildCodexCall({issueNumber:7,sourceSha:MAIN,
-    objective:'/codex agent-codex Read public docs',policy});
+    objective:'/codex agent2-codex Read public docs',policy});
   const proposalText=formatCodexCall(custom,policy);
   const data={
     policy, mainSha:MAIN,bindingFingerprint:custom.bindingFingerprint,proposalText,
     issue:{number:7,state:'open',user:{login:'trusted-maintainer'},
       title:policy.issueTitle,body:policy.issueMarker+'\n'+custom.request},
     pr:{number:8,state:'open',user:{login:'github-actions[bot]'},
-      title:policy.prTitlePrefix+'agent-codex · issue 7',body:proposalText,
+      title:policy.prTitlePrefix+'agent2-codex · issue 7',body:proposalText,
       head:{ref:policy.branchPrefix+'7',sha:HEAD,repo:{full_name:policy.repository}},
       base:{ref:policy.baseBranch,repo:{full_name:policy.repository}}},
   };
@@ -310,4 +318,40 @@ test('organization-owned repositories admit independent named human request owne
   assert.throws(()=>validateCodexAdmission({...data,issue:{...data.issue,
     user:{login:'sample-org'}}}));
   assert.throws(()=>createCodexPolicy({...portableConfig,repository:'sample-org/..'}));
+});
+
+test('workflow proof rejects malformed ordering, mismatched URL and truncated inventory',()=>{
+  assert.throws(()=>assessCodexLane({...original(),pullRequestRuns:[
+    pass(),run('pull_request','failure',{id:39829603707,created_at:'not-a-time'})]}),
+  /workflow run identity/i);
+  const mismatch=assessCodexLane({...original(),pullRequestRuns:[
+    {...pass(),id:123}]});
+  assert.equal(mismatch.githubPrCheck,'run-proof-missing');
+  assert.throws(()=>validateCodexWorkflowInventory({total_count:2,
+    workflow_runs:[pass()]}),/incomplete/i);
+  assert.equal(validateCodexWorkflowInventory({total_count:1,
+    workflow_runs:[pass()]}).length,1);
+});
+
+test('final readback revalidates every admitted PR, Issue and source field',()=>{
+  const before=original();
+  const input={beforePr:before.pr,afterPr:structuredClone(before.pr),
+    beforeIssue:before.issue,afterIssue:structuredClone(before.issue),
+    beforeMainSha:MAIN,afterMainSha:MAIN,proposalText:before.proposalText,
+    bindingFingerprint:before.bindingFingerprint};
+  assert.equal(validateCodexLaneReadback(input).digest,task.digest);
+  const edits=[
+    value=>{value.afterPr.title='changed';},
+    value=>{value.afterPr.state='closed';},
+    value=>{value.afterPr.base.ref='other';},
+    value=>{value.afterPr.head.ref='other';},
+    value=>{value.afterPr.user.login='outsider';},
+    value=>{value.afterIssue.title='changed';},
+    value=>{value.afterIssue.user.login='outsider';},
+    value=>{value.afterMainSha=HEAD;},
+  ];
+  for(const edit of edits){
+    const value=structuredClone(input);edit(value);
+    assert.throws(()=>validateCodexLaneReadback(value));
+  }
 });

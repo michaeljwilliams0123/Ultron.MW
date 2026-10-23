@@ -41,6 +41,11 @@ are not published. A thread is a conversation identifier, not a remote account
 endpoint. These hashes are correlation metadata, not cryptographic proof of
 the human or OpenAI account operating the executor.
 
+Portable registries apply the same route normalization to registered IDs,
+display names, and aliases, including digit-bearing IDs. Binding fingerprints,
+when present for any enrollment state, must be bounded 64-character hashes;
+nested or unbounded values are rejected before the registry is frozen.
+
 ## Executor contract
 
 Read these instructions and `src/codex-call.mjs` from trusted current `main`,
