@@ -53,17 +53,30 @@ tabs**, not independent operating-system windows or accounts.
 ## Acceptance and evidence
 
 Run `node --test test/computer-tabs.test.mjs
-test/computer-file-transfer.test.mjs` and `node scripts/verify.mjs`.
+test/computer-file-transfer.test.mjs`, `node scripts/verify.mjs`, and on an
+isolated local machine with optional Playwright plus installed system Chrome,
+`node scripts/computer-file-window-acceptance.mjs --synthetic`.
 These tests cover action normalization, tab isolation/selection/close,
 out-of-root files, bounded filenames, byte/digest checks, file-input dispatch,
 exclusive download creation and refusal to overwrite.
 
-**Not established by unit tests:** Chrome-backed actual upload/download,
-real external authenticated write and independent application readback,
+**Real Chrome synthetic acceptance (SD009WC7):** eight actual Playwright
+receipts on ephemeral 127.0.0.1, browser file-input selection, streamed local
+download with independent disk readback, one download event after checkpoint
+replay, and unauthorized popup isolation; eight screenshot digests recorded.
+This is explicitly a local synthetic fixture, NOT owner-external acceptance.
+
+**Still unproven:** owner-approved real external authenticated write and
+independent application source-of-truth readback,
 automatic recovery after a real interrupted download, or the full multi-window
 desktop lifecycle. An input's selected-file receipt does not prove that a
 remote server received or durably stored those bytes. Keep #65 open for these
 acceptance operations.
+
+The host's project-scoped npm installation rejected optional Playwright
+installation with EALLOWSCRIPTS. Real Chrome synthetic acceptance therefore
+reused the already-installed optional package via a workspace-local junction;
+no npm policy or production dependencies were changed.
 
 Windows on SD009WC7 does not permit creating symbolic links without an
 elevated privilege. The symlink-negative test exercises the rejection where
