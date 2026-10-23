@@ -1,7 +1,41 @@
 (async () => {
   const { createCloudTaskUrl } = await import('./core/cloud-submit.mjs');
   const { createCloudPrUrl } = await import('./core/cloud-pr-submit.mjs');
+  const { CODEX_AUTHORS } = await import('./core/codex-authors.mjs');
   const $ = id => document.getElementById(id);
+  for (const author of CODEX_AUTHORS) {
+    const card = document.createElement('article');
+    card.className = 'codex-author-card';
+    const name = document.createElement('strong');
+    name.textContent = author.name;
+    const alias = document.createElement('p');
+    alias.textContent = 'Callable name: ' + author.id;
+    const fingerprint = document.createElement('code');
+    fingerprint.textContent = 'Author fingerprint: ' + author.fingerprint;
+    const status = document.createElement('p');
+    status.className = 'muted';
+    status.textContent = author.binding ? 'Work route enrolled · check each task receipt for execution' :
+      'Not bound · enrollment needed from Mike’s account';
+    card.append(name, alias, fingerprint, status);
+    if (author.binding) {
+      const binding = document.createElement('code');
+      binding.textContent = 'Route fingerprint: ' + author.binding.fingerprint;
+      card.append(binding);
+    }
+    if (author.sessionObservation) {
+      const observation = document.createElement('p');
+      observation.className = 'muted';
+      observation.textContent = 'Setup session fingerprint: ' + author.sessionObservation.threadFingerprint +
+        ' · observation only; not account authentication';
+      card.append(observation);
+    }
+    $('codex-author-cards').append(card);
+    const option = document.createElement('option');
+    option.value = author.id;
+    option.textContent = author.name + (author.binding ? '' : ' (not bound)');
+    option.selected = Boolean(author.binding);
+    $('codex-author').append(option);
+  }
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
   if (local) document.getElementById('optional-local-actions')?.classList.remove('hidden');
   let connected = false;
@@ -317,7 +351,9 @@
     try {
       const url = createCloudPrUrl(objective);
       window.open(url, '_blank', 'noopener,noreferrer');
-      line('Ultron · Create PR to main',
+      line(/^\/codex(?:\s|$)/i.test(objective) ? 'Ultron · named Codex call' : 'Ultron · Create PR to main',
+        /^\/codex(?:\s|$)/i.test(objective) ?
+        'Confirm the public Issue in GitHub. Ultron will create a PR addressed to the named Work executor. Inspect its completion receipt to verify execution. An enrolled route alone is not proof that a task ran.' :
         'Confirm the prefilled Issue in GitHub. A plain objective creates a documentation proposal; a JSON code-change manifest with baseSha and exact source edits creates a real implementation commit and PR targeting main. Both use the same owner-only hosted routing and return a verified PR link. No auto-merge or local PC is required.');
     } catch (error) {
       line('Ultron · PR request rejected', error.message);
@@ -325,6 +361,12 @@
   }
   $('cloud-pr').addEventListener('click', () => {
     routePrToGitHub($('code-manifest').value.trim() || $('message').value.trim());
+  });
+  $('codex-call').addEventListener('click', () => {
+    const objective = $('message').value.trim();
+    if (!objective) { line('Ultron · Codex call', 'Enter a public task first.'); return; }
+    routePrToGitHub(/^\/codex(?:\s|$)/i.test(objective) ? objective :
+      '/codex ' + $('codex-author').value + ' ' + objective);
   });
   $('self-scan').addEventListener('click', () => {
     try {
@@ -725,6 +767,7 @@
     const input = $('message');
     const text = input.value.trim();
     if (!text) return;
+    if (/^\/codex(?:\s|$)/i.test(text)) { routePrToGitHub(text); return; }
     // Owner-intended PR requests route to GitHub Actions rather than a
     // browser LLM that cannot execute repository tools.
     if (/^(?:please\s+)?(?:create|open|launch|draft|make)\b.*\b(?:pr|pull request)\b/i.test(text)) {

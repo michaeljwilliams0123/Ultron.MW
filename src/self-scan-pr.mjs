@@ -137,18 +137,29 @@ export async function publishSelfScanPr({
   const scanPRs = listing.filter(validatePull);
   if (scanPRs.length > 1) throw Error('Multiple active scan PRs require reconciliation');
   const active = scanPRs[0] ?? null;
-  const branch = active?.head.ref || BRANCH_PREFIX + signature.slice(0,16);
-  const branchPath = REPO_API + '/git/ref/heads/' + branch;
+  let branch = active?.head.ref || BRANCH_PREFIX + signature.slice(0,16);
+  let branchPath = REPO_API + '/git/ref/heads/' + branch;
   // A successful ref creation can precede a rejected/unfinished file write.
-  // Recover only an orphan that still points to the exact observed main.
-  const orphan = !active ? await getOptional(branchPath) : null;
+  // Reuse an orphan only at exact main. Never reset an advanced orphan.
+  let orphan = !active ? await getOptional(branchPath) : null;
   if (active) {
     const confirmed = await get(REPO_API + '/pulls/' + active.number);
     if (!validatePull(confirmed) || confirmed.head.ref !== branch)
       throw Error('Active scan PR no longer matches verified routing');
-  } else if (orphan?.object?.sha !== undefined &&
-    orphan.object.sha !== executorSha) {
-    throw Error('Orphan scan branch advanced; cannot safely reuse it');
+  } else if (orphan) {
+    if (!SHA.test(orphan.object?.sha || ''))
+      throw Error('Orphan scan branch has invalid GitHub ref evidence');
+    if (orphan.object.sha !== executorSha) {
+      // The signature may persist across main changes. A previous published
+      // report can leave this deterministic branch occupied without an open PR.
+      // Preserve its history and use a main-bound fallback exactly once.
+      branch = BRANCH_PREFIX + signature.slice(0,16) + '-' + executorSha.slice(0,12);
+      branchPath = REPO_API + '/git/ref/heads/' + branch;
+      orphan = await getOptional(branchPath);
+      if (orphan && (!SHA.test(orphan.object?.sha || '') ||
+        orphan.object.sha !== executorSha))
+        throw Error('Source-bound fallback scan branch is occupied; refusing overwrite');
+    }
   }
 
   // New branches inherit main's report. PUT requires its blob SHA when the
