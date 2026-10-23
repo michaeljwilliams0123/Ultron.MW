@@ -21,6 +21,15 @@ async function get(path, { optional = false } = {}) {
     throw Error('GitHub evidence fetch failed; no positive status inferred');
   }
 }
+async function recordHistory(path, head) {
+  const history = await get(ROOT + '/commits?sha=' +
+    encodeURIComponent(head) + '&path=' + encodeURIComponent(path) +
+    '&per_page=2');
+  if (!Array.isArray(history) || history.length !== 1)
+    throw Error('Codex record history unavailable or not create-only');
+  const commit = await get(ROOT + '/commits/' + history[0].sha);
+  return { history: history.map(({sha}) => ({sha})), commit };
+}
 async function atBranch(path, head) {
   const raw = await get(ROOT + '/contents/' + path +
     '?ref=' + encodeURIComponent(head));
@@ -74,16 +83,20 @@ async function main() {
   if (!SHA.test(main?.object?.sha || '') || !SHA.test(pr.head?.sha || ''))
     throw Error('Source identity could not be established');
   const source = await atBranch('docs/proposals/issue-' + call.issueNumber +
-    '.md', pr.head.ref);
+    '.md', pr.head.sha);
   const paths = codexRecordPaths(call);
   const [claim, receipt, pulls, dispatched, ownerComments] = await Promise.all([
-    optionalRecord(paths.claim, pr.head.ref),
-    optionalRecord(paths.receipt, pr.head.ref),
+    optionalRecord(paths.claim, pr.head.sha),
+    optionalRecord(paths.receipt, pr.head.sha),
     pullRuns(pr.head.sha), runs('workflow_dispatch', pr.head.sha),
     get(ROOT + '/issues/' + pr.number + '/comments?per_page=100'),
   ]);
   if (!Array.isArray(ownerComments) || ownerComments.length >= 100)
     throw Error('Owner comment audit incomplete');
+  const [claimProvenance, receiptProvenance] = await Promise.all([
+    claim === undefined ? undefined : recordHistory(paths.claim, pr.head.sha),
+    receipt === undefined ? undefined : recordHistory(paths.receipt, pr.head.sha),
+  ]);
   const report = assessCodexLane({
     pr, issue, proposalText: source,
     mainSha: main.object.sha,
@@ -91,13 +104,19 @@ async function main() {
       .binding.fingerprint,
     pullRequestRuns: pulls, workflowDispatchRuns: dispatched,
     ownerComments,
+    ...(claimProvenance === undefined ? {} : {
+      claimHistory: claimProvenance.history, claimCommit: claimProvenance.commit }),
+    ...(receiptProvenance === undefined ? {} : {
+      receiptHistory: receiptProvenance.history, receiptCommit: receiptProvenance.commit }),
     ...(claim === undefined ? {} : { claim }),
     ...(receipt === undefined ? {} : { receipt }),
   });
   const after = await get(ROOT + '/pulls/' + number);
   const end = await get(ROOT + '/git/ref/heads/main');
+  const issueAfter = await get(ROOT + '/issues/' + call.issueNumber);
   if (after?.head?.sha !== pr.head.sha || after?.body !== pr.body ||
-      end?.object?.sha !== main.object.sha)
+      end?.object?.sha !== main.object.sha ||
+      issueAfter?.body !== issue.body || issueAfter?.state !== issue.state)
     throw Error('PR/main changed during audit; retry read-only from new SHA');
   console.log(JSON.stringify(report, null, 2));
 }
