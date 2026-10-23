@@ -30,6 +30,21 @@ async function recordHistory(path, head) {
   const commit = await get(ROOT + '/commits/' + history[0].sha);
   return { history: history.map(({sha}) => ({sha})), commit };
 }
+/** Read-only, complete and bounded first-parent proof for intervening code commits. */
+async function executionChain(claimSha, testedHead) {
+  if (testedHead === claimSha) return undefined;
+  if (!SHA.test(claimSha || '') || !SHA.test(testedHead || ''))
+    throw Error('Cannot verify Codex execution ancestry');
+  const compare = await get(ROOT + '/compare/' + claimSha + '...' + testedHead + '?per_page=100');
+  if (compare?.status !== 'ahead' || compare?.merge_base_commit?.sha !== claimSha ||
+      !Number.isSafeInteger(compare.ahead_by) || compare.ahead_by < 1 ||
+      compare.ahead_by > 100 || compare.total_commits !== compare.ahead_by ||
+      !Array.isArray(compare.commits) || compare.commits.length !== compare.ahead_by)
+    throw Error('Codex execution comparison incomplete or diverged');
+  return compare.commits.map(c => ({
+    sha: c.sha, parents: (c.parents || []).map(p => ({sha:p.sha})),
+  }));
+}
 async function atBranch(path, head) {
   const raw = await get(ROOT + '/contents/' + path +
     '?ref=' + encodeURIComponent(head));
@@ -97,6 +112,8 @@ async function main() {
     claim === undefined ? undefined : recordHistory(paths.claim, pr.head.sha),
     receipt === undefined ? undefined : recordHistory(paths.receipt, pr.head.sha),
   ]);
+  const executionHistory = claim && receipt ?
+    await executionChain(claimProvenance.commit.sha, receipt.headSha) : undefined;
   const report = assessCodexLane({
     pr, issue, proposalText: source,
     mainSha: main.object.sha,
@@ -104,6 +121,7 @@ async function main() {
       .binding.fingerprint,
     pullRequestRuns: pulls, workflowDispatchRuns: dispatched,
     ownerComments,
+    ...(executionHistory === undefined ? {} : {executionHistory}),
     ...(claimProvenance === undefined ? {} : {
       claimHistory: claimProvenance.history, claimCommit: claimProvenance.commit }),
     ...(receiptProvenance === undefined ? {} : {
