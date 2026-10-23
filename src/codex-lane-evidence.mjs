@@ -7,7 +7,6 @@
 import { validateCodexAdmission, parseCodexCall, codexReplayDisposition,
   validateCodexClaim, codexRecordPaths, DEFAULT_CODEX_POLICY,
   createCodexPolicy } from './codex-call.mjs';
-const MAIN_WORKFLOW = 'Ultron core verification';
 const APPROVAL_EVENT = 'action_required';
 const SHA = /^[a-f0-9]{40}$/;
 const freeze = value => Object.freeze(value);
@@ -59,16 +58,18 @@ function verifyPrWorkflow(prHead, runs = [], policy = DEFAULT_CODEX_POLICY) {
     return freeze({ state: 'owner-approval-required',
       workflowRunUrl: safeRunUrl(latest.html_url, policy) });
   if (latest.status !== 'completed')
-    return freeze({ state: 'pending', workflowRunUrl: safeRunUrl(latest.html_url) });
+    return freeze({ state: 'pending', workflowRunUrl: safeRunUrl(latest.html_url, policy) });
   if (latest.conclusion !== 'success')
-    return freeze({ state: 'failed', workflowRunUrl: safeRunUrl(latest.html_url) });
+    return freeze({ state: 'failed', workflowRunUrl: safeRunUrl(latest.html_url, policy) });
+  const verifiedUrl = safeRunUrl(latest.html_url, policy);
+  if (!verifiedUrl) return freeze({ state: 'run-proof-missing', workflowRunUrl: null });
   const jobs = latest.jobs;
   if (!Array.isArray(jobs) || jobs.length < 1 ||
       !jobs.some(x => x?.name === policy.jobName && x.status === 'completed' &&
         x.conclusion === 'success' && x.head_sha === prHead))
     return freeze({ state: 'job-proof-missing',
-      workflowRunUrl: safeRunUrl(latest.html_url) });
-  return freeze({ state: 'passed', workflowRunUrl: safeRunUrl(latest.html_url) });
+      workflowRunUrl: safeRunUrl(latest.html_url, policy) });
+  return freeze({ state: 'passed', workflowRunUrl: safeRunUrl(latest.html_url, policy) });
 }
 function safeRunUrl(url, policy = DEFAULT_CODEX_POLICY) {
   const prefix = 'https://github.com/' + policy.repository + '/actions/runs/';
