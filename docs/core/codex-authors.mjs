@@ -16,10 +16,11 @@ export const CODEX_AUTHORS = Object.freeze([
   binding: author.binding && Object.freeze(author.binding),
   sessionObservation: author.sessionObservation && Object.freeze(author.sessionObservation) })));
 
-export function resolveCodexAuthor(name, { requireBinding = false } = {}) {
+export function resolveCodexAuthor(name, { requireBinding = false,
+  authors = CODEX_AUTHORS } = {}) {
   if (typeof name !== 'string') throw Error('Unknown Codex author');
   const normalized = name.trim().toLowerCase().replaceAll('\u2019', "'");
-  const matches = CODEX_AUTHORS.filter(author => author.id === normalized || author.aliases.includes(normalized));
+  const matches = authors.filter(author => author.id === normalized || author.aliases.includes(normalized));
   if (matches.length !== 1) throw Error('Unknown Codex author; use mike-codex or destiny-codex');
   const author = matches[0];
   if (requireBinding && author.binding?.status !== 'enrolled')
@@ -27,14 +28,14 @@ export function resolveCodexAuthor(name, { requireBinding = false } = {}) {
   return author;
 }
 
-export function parseCodexObjective(text) {
+export function parseCodexObjective(text, { authors = CODEX_AUTHORS } = {}) {
   if (typeof text !== 'string') throw Error('Invalid Codex objective');
   // Exact command prefix prevents accidental dispatch from ordinary prose.
   if (!/^\/codex(?:\s|$)/i.test(text)) return null;
   const match = /^\/codex ([a-z-]+) (.+)$/i.exec(text);
   if (!match || /[\u0000-\u001f\u007f]/.test(text) || text.length > 1000 || text !== text.trim())
     throw Error('Use /codex <mike-codex|destiny-codex> <one public task>');
-  const author = resolveCodexAuthor(match[1], { requireBinding: true });
+  const author = resolveCodexAuthor(match[1], { requireBinding: true, authors });
   if (match[2] !== match[2].trim()) throw Error('Invalid Codex task spacing');
   return Object.freeze({ author, objective: match[2] });
 }
