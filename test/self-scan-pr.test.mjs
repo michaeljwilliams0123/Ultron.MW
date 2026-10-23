@@ -266,3 +266,102 @@ test('occupied fallback never overwrites old branch or publishes a PR',async()=>
   assert.equal(mock.state.postCalls.length,0);
   assert.equal(mock.state.putCalls.length,0);
 });
+
+// The committed report is a historical observation. Validate its own metadata,
+// rather than comparing its inventory or authority to a later working tree.
+const committedReport=await readFile(new URL('../'+SELF_SCAN_PATH,import.meta.url),'utf8');
+function reportField(label,text=committedReport){
+  const values=text.split('\n').filter(line=>line.startsWith(label+': '));
+  assert.equal(values.length,1,'Expected one '+label+' field');
+  return values[0].slice(label.length+2);
+}
+
+test('committed self-scan has a readable signature and complete source authority',()=>{
+  const signature=reportField('Finding signature');
+  assert.match(signature,/^[0-9a-f]{64}$/);
+  assert.equal(reportSignature(committedReport),signature);
+  for(const label of ['Observed GitHub main SHA','Observed source tree SHA']){
+    assert.match(reportField(label),/^[0-9a-f]{40}$/);
+  }
+  const observedAt=reportField('Observed at');
+  assert.match(observedAt,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  assert.equal(new Date(observedAt).toISOString(),observedAt);
+  assert.equal(reportField('Authority'),
+    'exact GitHub main, not a deployed production runtime');
+});
+
+test('committed self-scan inventory contains consistent bounded integer counts',()=>{
+  const counts=['Files inventoried','Source files','Test files','Workflow files']
+    .map(label=>{
+      const value=reportField('- '+label);
+      assert.match(value,/^(0|[1-9][0-9]*)$/);
+      const count=Number(value);
+      assert.ok(Number.isSafeInteger(count)&&count>=0&&count<=4096,label);
+      return count;
+    });
+  const [allFiles,source,tests,workflows]=counts;
+  assert.ok(allFiles>0,'The observation must inventory source files');
+  assert.ok(source+tests+workflows<=allFiles,
+    'Disjoint source, test and workflow counts must fit within the inventory');
+});
+
+test('committed CI observation has a known conclusion and canonical evidence link',()=>{
+  const conclusion=reportField('- Observed current-main CI');
+  assert.ok(['success','failure','cancelled','timed_out','action_required',
+    'neutral','skipped','not-probed'].includes(conclusion));
+  const runUrl=reportField('- GitHub CI evidence run');
+  if(conclusion==='not-probed'){
+    assert.equal(runUrl,'unavailable');
+    return;
+  }
+  const url=new URL(runUrl);
+  assert.equal(url.origin,'https://github.com');
+  assert.equal(url.username,'');
+  assert.equal(url.password,'');
+  assert.equal(url.search,'');
+  assert.equal(url.hash,'');
+  const match=url.pathname.match(/^\/michaeljwilliams0123\/Ultron\.MW\/actions\/runs\/([1-9][0-9]*)$/);
+  assert.ok(match,'CI evidence must identify an Actions run in the scanned repository');
+  assert.ok(Number.isSafeInteger(Number(match[1])));
+  assert.equal(runUrl,url.href);
+});
+
+test('committed static coverage agrees with the reported wiring checks',()=>{
+  const coverage=Number(reportField('- Static evidence coverage'));
+  assert.ok(Number.isFinite(coverage)&&coverage>=0&&coverage<=1);
+  const match=committedReport.match(/^## Static wiring checks\n\n([\s\S]*?)\n\n## /m);
+  assert.ok(match,'Expected a static wiring evidence section');
+  const checks=match[1].split('\n');
+  assert.ok(checks.length>0);
+  for(const check of checks){
+    assert.match(check,/^- [^\s:]+: (observed|missing)$/);
+    if(coverage===1)assert.match(check,/: observed$/);
+  }
+  assert.equal(new Set(checks).size,checks.length,'Wiring checks must not be duplicated');
+});
+
+test('committed CI success and larger inventory do not attest live capabilities',()=>{
+  for(const capability of ['Runtime','Provider','Production convergence']){
+    assert.equal(reportField('- '+capability),'not-probed');
+  }
+  assert.equal(reportField('- Independent learning gain'),'not-established');
+  assert.match(committedReport,/^\| high \| live-execution-unobserved \|/m);
+  assert.match(committedReport,/^\| medium \| learning-effect-unobserved \|/m);
+  assert.match(committedReport,/^This PR is a source scan, not a verified code fix\.$/m);
+  assert.match(committedReport,/^Proposed repairs require separate tested implementation before closure\.$/m);
+});
+
+test('committed report signature is rejected when its envelope or digest is corrupted',async t=>{
+  const signature=reportField('Finding signature');
+  const cases=[
+    ['missing marker',committedReport.replace(/^.*\n/,'')],
+    ['unsupported marker',committedReport.replace('ULTRON_SELF_SCAN_REPORT_V1','ULTRON_SELF_SCAN_REPORT_V2')],
+    ['short digest',committedReport.replace(signature,signature.slice(1))],
+    ['long digest',committedReport.replace(signature,signature+'0')],
+    ['non-hex digest',committedReport.replace(signature,'g'+signature.slice(1))],
+    ['missing digest',committedReport.replace(/^Finding signature: .*\n/m,'')],
+  ];
+  for(const [name,text] of cases){
+    await t.test(name,()=>assert.equal(reportSignature(text),null));
+  }
+});
