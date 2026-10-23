@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
-export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait']);
-const ACTIVE = new Set(['click','type','keypress']);
+export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait','tab-open','tab-switch','tab-close','upload','download']);
+const ACTIVE = new Set(['click','type','keypress','upload','download']);
 const ACTIONS = new Set(COMPUTER_ACTIONS);
 const VALID_ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -31,7 +31,12 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
     const keys = { navigate: ['id','action','url','expect'], click: ['id','action','selector','expect'],
       type: ['id','action','selector','value','expect'], keypress: ['id','action','selector','key','expect'],
       scroll: ['id','action','pixels','expect'], observe: ['id','action','expect'],
-      extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'] };
+      extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'],
+      'tab-open': ['id','action','tabId','url','expect'],
+      'tab-switch': ['id','action','tabId','expect'],
+      'tab-close': ['id','action','tabId','expect'],
+      upload: ['id','action','selector','filePath','expect'],
+      download: ['id','action','selector','outputName','expect'] };
     if (Object.keys(s).some(k => !keys[s.action].includes(k)))
       throw Error('Unexpected computer action property');
     if (ACTIVE.has(s.action) &&
@@ -40,14 +45,30 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
       throw Error('Interactive computer action requires a verifiable postcondition');
     const id = s.id || 'step-' + (index + 1);
     const entry = { id, action: s.action };
-    if (s.action === 'navigate') {
+    if (['tab-open','tab-switch','tab-close'].includes(s.action)) {
+      if (!['secondary','tertiary'].includes(s.tabId) &&
+          !(s.action === 'tab-switch' && s.tabId === 'primary'))
+        throw Error('Invalid bounded tab identity');
+      entry.tabId = s.tabId;
+    }
+    if (['navigate','tab-open'].includes(s.action)) {
       if (!bounded(s.url, 2048)) throw Error('Navigation URL required');
       safeUrl(s.url, allowedOrigins);
       entry.url = s.url;
-    } else if (['click','type','keypress','extract','wait'].includes(s.action)) {
+    } else if (['click','type','keypress','extract','wait','upload','download'].includes(s.action)) {
       if (!bounded(s.selector, 240) || /[\u0000-\u001f]/.test(s.selector))
         throw Error('Bounded selector required');
       entry.selector = s.selector;
+    }
+    if (s.action === 'upload') {
+      if (!bounded(s.filePath, 2048) || /[\u0000-\u001f]/.test(s.filePath))
+        throw Error('Upload requires an absolute owner-approved local path');
+      entry.filePath = s.filePath;
+    }
+    if (s.action === 'download') {
+      if (!bounded(s.outputName, 80) || !/^[a-z0-9][a-z0-9_.-]*$/i.test(s.outputName) ||
+          s.outputName.includes('..')) throw Error('Unsafe download output filename');
+      entry.outputName = s.outputName;
     }
     if (s.action === 'type') {
       if (typeof s.value !== 'string' || s.value.length > 2048)
@@ -165,7 +186,7 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       // Only first-step navigation may begin from that browser-native state.
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
         safeUrl(before.url, allowedOrigins);
-      if (ACTIVE.has(step.action) && step.action !== 'type' &&
+      if (ACTIVE.has(step.action) && !['type','upload','download'].includes(step.action) &&
           matchesExpectation(before, step.expect))
         throw Error('Interactive postcondition already satisfied before action');
       // Validate actionability before asking the owner for permission or
@@ -177,6 +198,8 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
         selector: step.selector, valueLength: step.action === 'type' ? step.value.length : undefined,
+        fileName: step.action === 'upload' ? step.filePath.replaceAll('\\','/').split('/').at(-1) :
+          step.action === 'download' ? step.outputName : undefined,
         key: step.action === 'keypress' ? step.key : undefined,
         expectedState: step.expect
       }) !== true) {
@@ -218,7 +241,8 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           before.text !== after.text;
         if (step.action === 'type' && result?.fieldValueVerified !== true)
           throw Error('Typed field value was not independently verified');
-        if (ACTIVE.has(step.action) && step.action !== 'type' && !changed)
+        if (ACTIVE.has(step.action) && step.action !== 'type' && !changed &&
+            result?.verifiedEffect !== true)
           throw Error('Interactive action has no independently observable effect');
         if (!matchesExpectation(after, step.expect))
           throw Error('Expected post-action state not observed');
