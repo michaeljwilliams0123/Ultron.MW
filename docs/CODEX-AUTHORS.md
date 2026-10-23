@@ -77,8 +77,12 @@ An unavailable automation ID is a blocker; do not infer it from the task.
 6. After actual verified execution, create the receipt path once using
    `buildCodexReceipt(call, {headSha: testedHead, claimHeadSha, completedAt, result})`.
    `result` is one public line of at most 2,000 characters. Read it back and run
-   `validateCodexReceipt(receipt, call)`. Do not manufacture a receipt in the
-   interactive setup session to claim webhook delivery.
+   `validateCodexReceipt(receipt, call)`. If source commits occurred after
+   the claim, verify a complete first-parent ancestry chain from the claim
+   creation commit to `testedHead` before treating the completion record as
+   verified; neither a shared GitHub actor nor a record alone attests a Work
+   account. Do not manufacture a receipt in the interactive setup session to
+   claim webhook delivery.
 
 A task pinned to an obsolete main SHA cannot execute. Keep the original audit
 trail and create a fresh owner Issue and PR instead of rebasing the task or
