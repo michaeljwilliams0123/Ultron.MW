@@ -35,7 +35,7 @@ const trigger = { body: '/codex run destiny-codex',
   user: { login: 'michaeljwilliams0123' } };
 const claim = buildCodexClaim(task, { headSha: HEAD,
   claimedAt: '2026-10-22T18:18:00.000Z' });
-const receipt = buildCodexReceipt(task, { headSha: HEAD,
+const receipt = buildCodexReceipt(task, { headSha: CLAIM_COMMIT,
   claimHeadSha: CLAIM_COMMIT, completedAt: '2026-10-22T18:19:00.000Z',
   result: 'Inspected public registry' });
 const paths = {claim: 'docs/codex/claims/' + task.taskId + '.json',
@@ -45,7 +45,7 @@ const provenance = () => ({
   claimCommit: {sha: CLAIM_COMMIT, parents: [{sha: HEAD}],
     files: [{filename: paths.claim, status: 'added'}]},
   receiptHistory: [{sha: RECEIPT_COMMIT}],
-  receiptCommit: {sha: RECEIPT_COMMIT, parents: [{sha: HEAD}],
+  receiptCommit: {sha: RECEIPT_COMMIT, parents: [{sha: CLAIM_COMMIT}],
     files: [{filename: paths.receipt, status: 'added'}]},
 });
 
@@ -178,7 +178,7 @@ test('reject forged creation ancestry, altered claim link and overwritten record
 test('dispatch without source provenance and fake run URLs do not become evidence',()=>{
   const result=assessCodexLane({ ...original(),pullRequestRuns:[
     run('pull_request','success',{html_url:'https://example.com/fake',jobs:pass().jobs})] });
-  assert.equal(result.githubPrCheck,'passed');
+  assert.equal(result.githubPrCheck,'run-proof-missing');
   assert.equal(result.checkRunUrl,null);
   assert.equal(result.mergeAccepted,false);
 });
@@ -210,7 +210,7 @@ test('portable policy admits a separately registered author and different reposi
     policy, mainSha:MAIN, bindingFingerprint:custom.bindingFingerprint,
     proposalText,
     issue: {number:7,state:'open',user:{login:'sample-org'},
-      title:'[Portable] Request',body:'PORTABLE_REQUEST_V1\\n'+custom.request},
+      title:'[Portable] Request',body:'PORTABLE_REQUEST_V1\n'+custom.request},
     pr: {number:8,state:'open',user:{login:'github-actions[bot]'},
       title:'[Portable Codex] agent-codex · issue 7',body:proposalText,
       head:{ref:'agent/task-7',sha:HEAD,repo:{full_name:'sample-org/portable-repo'}},
