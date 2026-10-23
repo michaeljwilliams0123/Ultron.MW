@@ -1,3 +1,58 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
 reviews:
+  # Keep deliberate reviews focused on the most important findings.
+  profile: quiet
+
+  # GitHub Verify remains the required automated gate. CodeRabbit is opt-in via
+  # the `coderabbit-review` label or an explicit `@coderabbitai review` comment.
   auto_review:
-    drafts: true
+    enabled: false
+    auto_incremental_review: false
+    drafts: false
+    labels:
+      - coderabbit-review
+
+  # Avoid generated PR-description edits and walkthrough/status chatter.
+  high_level_summary: false
+  review_status: false
+  review_info: false
+  review_details: false
+  review_progress: false
+  commit_status: false
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  enable_prompt_for_ai_agents: false
+
+  # Keep an opted-in review analytical: no generated fix/test/docstring panels
+  # and no duplicate merge checklist beside the required GitHub Verify gate.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"

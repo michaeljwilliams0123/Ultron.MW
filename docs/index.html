@@ -13,6 +13,7 @@
 .experience-buttons{display:flex;gap:10px;flex-wrap:wrap}.experience-buttons button,.owner-suggest{border:1px solid #477e98;background:#153a51;color:#def4ff;border-radius:9px;padding:10px 12px;font-size:12px;cursor:pointer}.experience-buttons button:disabled,.owner-suggest:disabled{opacity:.5;cursor:not-allowed}
 .cloud-route{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;background:#11293b;border:1px solid #36627a;border-radius:13px;padding:14px;margin-bottom:16px}.cloud-route strong{color:#d9f3ff;font-size:13px}.cloud-route .muted{margin:6px 0 0}.cloud-route>div:first-child{flex:2;min-width:220px}.cloud-actions{display:flex;flex-direction:column;gap:10px;justify-content:center}.cloud-actions button{border:1px solid #89d5e8;background:#1e6179;color:#eafaff;border-radius:9px;padding:12px;font-weight:700;font-size:12px}.cloud-actions a{color:#a5def1;font-size:12px;text-align:center}@media(max-width:730px){.cloud-actions{width:100%}}
  .code-manifest{margin-top:10px;max-width:480px;font-size:12px;color:#c5e2ec}.code-manifest summary{cursor:pointer}.code-manifest label{display:block;margin:8px 0}.code-manifest textarea{display:block;width:100%;min-height:90px;background:#0b1926;color:#e8f5ff;border:1px solid #355976;border-radius:9px;padding:9px;resize:vertical;font-family:monospace;font-size:12px}
+.codex-authors{border:1px solid #36627a;border-radius:13px;padding:14px;margin-bottom:16px}.codex-authors summary{cursor:pointer;font-weight:700}.codex-author-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}.codex-author-card{background:#0b1926;border-radius:9px;padding:12px;min-width:0}.codex-author-card p{margin:8px 0;overflow-wrap:anywhere}.codex-author-card code{font-size:11px;overflow-wrap:anywhere}.codex-call-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.codex-call-row select,.codex-call-row button{font:inherit;background:#174360;color:#e6f8ff;border:1px solid #5590b0;border-radius:9px;padding:10px}.codex-call-row select:focus-visible{outline:2px solid #8bd9f4;outline-offset:3px}@media(max-width:730px){.codex-author-cards{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -23,6 +24,14 @@
   <section class="hero" aria-label="Ultron neural core visualization"><div class="orb"></div><div class="hero-label" id="hero-sub">GitHub-hosted tasks · no fixed PC</div></section>
   <section class="metrics"><div class="metric"><div class="k">Runtime</div><div class="v" id="runtime">GitHub</div></div><div class="metric"><div class="k">Objectives</div><div class="v" id="objectives">0</div></div><div class="metric"><div class="k">Learning release</div><div class="v version" id="release">seed-v1</div></div></section>
   <section class="panel" id="pane-brain"><h2>Objective console</h2>
+  <details class="codex-authors" open>
+    <summary>Callable Codex authors</summary>
+    <div id="codex-author-cards" class="codex-author-cards"></div>
+    <div class="codex-call-row"><label for="codex-author">Call author</label>
+      <select id="codex-author" aria-describedby="codex-call-help"></select>
+      <button type="button" id="codex-call">Call selected Codex</button></div>
+    <p class="muted" id="codex-call-help">Enter a public task below, then call the selected author. You can also type /codex destiny-codex followed by your task. GitHub confirms the request; execution is confirmed by a receipt.</p>
+  </details>
   <div class="cloud-route">
     <div><strong>GitHub Actions — inspect or create a PR targeting main</strong>
       <p class="muted">Runs in GitHub's cloud. Enter an objective below. Read-only commands use Run in GitHub cloud; Create PR to main opens an owner-confirmed GitHub request. Plain objectives create proposal PRs; optional source manifests create real code implementation PRs. Self scan turns material source findings into a PR targeting main through GitHub Actions, not an Issue. No local PC or port is required. Repository, task Issues, and receipts are public.</p>
