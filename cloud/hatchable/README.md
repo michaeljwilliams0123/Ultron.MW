@@ -111,10 +111,10 @@ of its one PR-branch commit; do not alter the Hatchable deployment.
 
 ### October 23 read-failure and recovery evidence (source-only)
 
-WorkId: \`pr76-v2-release-acceptance-matrix-699abf0f\`. The existing live
+WorkId: `pr76-v2-release-acceptance-matrix-699abf0f`. The existing live
 Hatchable v2 tick returned HTTP 503 at 07:40:09 UTC; the observed
-\`repo.inspect\` task 37 failed a GitHub metadata read with
-\`github-status-403\`, recorded a failed receipt, and was queued at attempt
+`repo.inspect` task 37 failed a GitHub metadata read with
+`github-status-403`, recorded a failed receipt, and was queued at attempt
 1/3 with a 15-minute retry interval. The upstream 403 cause is **unknown**;
 a scheduler HTTP 503 does not independently establish that cause.
 
