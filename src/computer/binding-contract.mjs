@@ -44,12 +44,12 @@ export function validateComputerBinding(input) {
 }
 
 export function createBoundComputerExecutor({ binding, driver, store,
-  authorize, clock } = {}) {
+  authorize, canContinue, clock } = {}) {
   const manifest = validateComputerBinding(binding);
   if (!manifest.enabled) throw Error('Computer binding disabled');
   const admitted = new Set(manifest.operations);
   const executor = createComputerExecutor({
-    driver, store, clock, allowedOrigins: manifest.allowedOrigins,
+    driver, store, clock, canContinue, allowedOrigins: manifest.allowedOrigins,
     authorize: async context => admitted.has(context.action) &&
       typeof authorize === 'function' && await authorize(context) === true,
   });

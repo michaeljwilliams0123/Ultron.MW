@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
-export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait']);
-const ACTIVE = new Set(['click','type','keypress']);
+export const COMPUTER_ACTIONS = Object.freeze(['navigate','click','type','keypress','scroll','observe','extract','wait','tab-open','tab-switch','tab-close','window-open','window-switch','window-close','upload','download']);
+const ACTIVE = new Set(['click','type','keypress','upload','download']);
 const ACTIONS = new Set(COMPUTER_ACTIONS);
 const VALID_ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -28,24 +28,62 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
   const steps = raw.steps.map((s, index) => {
     if (!s || s.id !== undefined && !VALID_ID.test(s.id) || !ACTIONS.has(s.action))
       throw Error('Unknown or unbounded computer action');
-    const keys = { navigate: ['id','action','url','expect'], click: ['id','action','selector','expect'],
+    const keys = { navigate: ['id','action','url','expect'], click: ['id','action','selector','expect','sendToOrigin'],
       type: ['id','action','selector','value','expect'], keypress: ['id','action','selector','key','expect'],
       scroll: ['id','action','pixels','expect'], observe: ['id','action','expect'],
-      extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'] };
+      extract: ['id','action','selector','expect'], wait: ['id','action','selector','timeoutMs','expect'],
+      'tab-open': ['id','action','tabId','url','expect'],
+      'tab-switch': ['id','action','tabId','expect'],
+      'tab-close': ['id','action','tabId','expect'],
+      'window-open': ['id','action','windowId','url','expect'],
+      'window-switch': ['id','action','windowId','expect'],
+      'window-close': ['id','action','windowId','expect'],
+      upload: ['id','action','selector','filePath','expect'],
+      download: ['id','action','selector','outputName','expect'] };
     if (Object.keys(s).some(k => !keys[s.action].includes(k)))
       throw Error('Unexpected computer action property');
-    if (ACTIVE.has(s.action) && !s.expect)
+    if (ACTIVE.has(s.action) &&
+        (!s.expect || typeof s.expect !== 'object' ||
+         Object.keys(s.expect).length === 0))
       throw Error('Interactive computer action requires a verifiable postcondition');
     const id = s.id || 'step-' + (index + 1);
     const entry = { id, action: s.action };
-    if (s.action === 'navigate') {
+    if (['tab-open','tab-switch','tab-close'].includes(s.action)) {
+      if (!['secondary','tertiary'].includes(s.tabId) &&
+          !(s.action === 'tab-switch' && s.tabId === 'primary'))
+        throw Error('Invalid bounded tab identity');
+      entry.tabId = s.tabId;
+    }
+    if (['window-open','window-switch','window-close'].includes(s.action)) {
+      if (s.windowId !== 'window-secondary' &&
+          !(s.action === 'window-switch' && s.windowId === 'primary'))
+        throw Error('Invalid bounded window identity');
+      entry.windowId = s.windowId;
+    }
+    if (['navigate','tab-open','window-open'].includes(s.action)) {
       if (!bounded(s.url, 2048)) throw Error('Navigation URL required');
       safeUrl(s.url, allowedOrigins);
       entry.url = s.url;
-    } else if (['click','type','keypress','extract','wait'].includes(s.action)) {
+    } else if (['click','type','keypress','extract','wait','upload','download'].includes(s.action)) {
       if (!bounded(s.selector, 240) || /[\u0000-\u001f]/.test(s.selector))
         throw Error('Bounded selector required');
       entry.selector = s.selector;
+    }
+    if (s.action === 'click' && s.sendToOrigin !== undefined) {
+      if (!allowedOrigins.includes(s.sendToOrigin) ||
+          new URL(s.sendToOrigin).origin !== s.sendToOrigin)
+        throw Error('Upload destination must be an explicitly allowed canonical origin');
+      entry.sendToOrigin = s.sendToOrigin;
+    }
+    if (s.action === 'upload') {
+      if (!bounded(s.filePath, 2048) || /[\u0000-\u001f]/.test(s.filePath))
+        throw Error('Upload requires an absolute owner-approved local path');
+      entry.filePath = s.filePath;
+    }
+    if (s.action === 'download') {
+      if (!bounded(s.outputName, 80) || !/^[a-z0-9][a-z0-9_.-]*$/i.test(s.outputName) ||
+          s.outputName.includes('..')) throw Error('Unsafe download output filename');
+      entry.outputName = s.outputName;
     }
     if (s.action === 'type') {
       if (typeof s.value !== 'string' || s.value.length > 2048)
@@ -88,10 +126,11 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
  * State is persisted BEFORE dispatch; an ambiguous write never replays.
  */
 export function createComputerExecutor({ driver, store, authorize = async () => false,
-  allowedOrigins, clock = () => new Date().toISOString() } = {}) {
+  canContinue = async () => true, allowedOrigins,
+  clock = () => new Date().toISOString() } = {}) {
   if (!driver || typeof driver.observe !== 'function' || !store ||
       typeof store.read !== 'function' || typeof store.write !== 'function' ||
-      typeof authorize !== 'function')
+      typeof authorize !== 'function' || typeof canContinue !== 'function')
     throw Error('Executor requires driver, durable store and authority callback');
 
   async function run(raw) {
@@ -119,20 +158,64 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
     if (state.status === 'completed')
       return { status: 'completed', id: plan.id, receipts: [...state.receipts], resumed: true };
 
+    async function sessionGate(step) {
+      if (await canContinue({ planId: plan.id, stepId: step.id,
+        action: step.action }) === true) return null;
+      state.status = 'approval-required';
+      await store.write(plan.id, state);
+      return { status: 'approval-required', id: plan.id, stepId: step.id,
+        reason: 'Owner session expired or revoked', receipts: [...state.receipts] };
+    }
+
+    async function preflightAction(step) {
+      if (!ACTIVE.has(step.action) || typeof driver.preflight !== 'function')
+        return true;
+      try { return await driver.preflight(step) === true; }
+      catch { return false; }
+    }
+
+    async function actionNotReady(step, reason) {
+      state.status = 'approval-required';
+      await store.write(plan.id, state);
+      return {
+        status: 'action-not-ready', id: plan.id, stepId: step.id,
+        reason, receipts: [...state.receipts],
+      };
+    }
+
     for (const step of plan.steps) {
       if (state.completed.includes(step.id)) continue;
+      const blocked = await sessionGate(step);
+      if (blocked) return blocked;
       const before = await driver.observe(step.expect);
+      const blockedAfterObservation = await sessionGate(step);
+      if (blockedAfterObservation) return blockedAfterObservation;
+      if (before.requiresOwnerTakeover && step.action !== 'observe') {
+        state.status = 'approval-required';
+        await store.write(plan.id, state);
+        return { status: 'owner-takeover-required', id: plan.id,
+          stepId: step.id, reason: 'Credential or MFA form needs owner takeover',
+          receipts: [...state.receipts] };
+      }
       // A newly launched isolated browser starts at about:blank.
       // Only first-step navigation may begin from that browser-native state.
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
         safeUrl(before.url, allowedOrigins);
-      if (ACTIVE.has(step.action) && step.action !== 'type' &&
+      if (ACTIVE.has(step.action) && !['type','upload','download'].includes(step.action) &&
           matchesExpectation(before, step.expect))
         throw Error('Interactive postcondition already satisfied before action');
+      // Validate actionability before asking the owner for permission or
+      // recording an uncertain pending action. Trial clicks never activate UI.
+      if (!await preflightAction(step))
+        return actionNotReady(step,
+          'Target not actionable; no interaction dispatched');
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
-        selector: step.selector, valueLength: step.action === 'type' ? step.value.length : undefined,
+        selector: step.selector, uploadDestination: step.sendToOrigin,
+        valueLength: step.action === 'type' ? step.value.length : undefined,
+        fileName: step.action === 'upload' ? step.filePath.replaceAll('\\','/').split('/').at(-1) :
+          step.action === 'download' ? step.outputName : undefined,
         key: step.action === 'keypress' ? step.key : undefined,
         expectedState: step.expect
       }) !== true) {
@@ -141,16 +224,49 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         return { status: 'approval-required', id: plan.id, stepId: step.id,
           receipts: [...state.receipts] };
       }
+      // Approval can take long enough for a script or navigation to replace
+      // the target. Revalidate after consent and before the durable pending
+      // checkpoint so a stale approval never dispatches a different element.
+      if (!await preflightAction(step))
+        return actionNotReady(step,
+          'Target changed or became unavailable after owner approval');
+      const blockedBeforeCheckpoint = await sessionGate(step);
+      if (blockedBeforeCheckpoint) return blockedBeforeCheckpoint;
       state.status = 'running';
       state.pending = step.id;
       await store.write(plan.id, state);
+      let failurePhase = 'before-dispatch';
+      let after = null;
       try {
+        // If the session ends during checkpoint persistence, preserve the
+        // pending action for explicit reconciliation rather than dispatching.
+        if (await canContinue({ planId: plan.id, stepId: step.id,
+          action: step.action }) !== true)
+          throw Error('Owner session ended before action dispatch');
+        failurePhase = 'action-dispatch';
         const result = await driver.perform(step);
-        const after = await driver.observe(step.expect);
+        failurePhase = 'post-action-observation';
+        after = await driver.observe(step.expect);
+        failurePhase = 'post-action-origin-check';
         safeUrl(after.url, allowedOrigins);
+        // Application writes may finish after Playwright's click returns.
+        // Re-observe only; never repeat the action. Bounded polling fixes a
+        // transient UI race without converting browser text into proof of
+        // durable external persistence (provider readback remains separate).
+        if (step.action === 'click') {
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const changed = before.url !== after.url ||
+              before.title !== after.title || before.text !== after.text;
+            if (changed && matchesExpectation(after, step.expect)) break;
+            await new Promise(resolve => setTimeout(resolve, 200));
+            after = await driver.observe(step.expect);
+            safeUrl(after.url, allowedOrigins);
+          }
+        }
         // An expectation matching the PRE-action screen is not evidence
         // of successful execution. Input fills may instead be confirmed by
         // the Playwright driver reading back the specific field value.
+        failurePhase = 'postcondition-verification';
         const changed = before.url !== after.url || before.title !== after.title ||
           before.text !== after.text ||
           (typeof before.textDigest === 'string' &&
@@ -158,7 +274,8 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
            before.textDigest !== after.textDigest);
         if (step.action === 'type' && result?.fieldValueVerified !== true)
           throw Error('Typed field value was not independently verified');
-        if (ACTIVE.has(step.action) && step.action !== 'type' && !changed)
+        if (ACTIVE.has(step.action) && step.action !== 'type' && !changed &&
+            result?.verifiedEffect !== true)
           throw Error('Interactive action has no independently observable effect');
         if (!matchesExpectation(after, step.expect))
           throw Error('Expected post-action state not observed');
@@ -167,26 +284,57 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           origin: new URL(after.url).origin, observationDigest: digest({
             url: after.url, text: String(after.text || '').slice(0, 10000),
             title: after.title || '',
-            ...(typeof after.textDigest === 'string' ? { textDigest: after.textDigest } : {})
+            ...(typeof after.textDigest === 'string' ? { textDigest: after.textDigest } : {}),
+            screenshotDigest: after.screenshotDigest || null,
+            accessibilityDigest: after.accessibilityDigest || null,
           }),
           resultDigest: digest(result ?? null),
+          visualDigest: after.screenshotDigest || null,
+          accessibilityDigest: after.accessibilityDigest || null,
         };
         // Do not mutate the in-memory last durable checkpoint until the
         // complete next checkpoint has been committed. Failed post-action
         // persistence MUST leave the last durable pending step in place.
         const next = { ...state, completed: [...state.completed, step.id],
           receipts: [...state.receipts, receipt], pending: null };
+        failurePhase = 'receipt-persistence';
         await store.write(plan.id, next);
         state = next;
       } catch (error) {
-        // The interaction may already have occurred. It is never replayed
-        // or labeled failed-without-side-effects by the executor.
+        // An action may already have fired even if Playwright times out.
+        // Capture a SECOND, strictly read-only observation when possible,
+        // without re-running the click or persisting DOM text/screenshot data.
+        if (!after) {
+          try { after = await driver.observe(); }
+          catch { /* Browser may have closed or navigated. */ }
+        }
+        let observedPath = null;
+        let observedOrigin = null;
+        if (after?.url) {
+          try {
+            const parsed = new URL(after.url);
+            if (['https:', 'http:'].includes(parsed.protocol)) {
+              observedOrigin = parsed.origin;
+              observedPath = parsed.pathname.slice(0, 160);
+            }
+          } catch { /* Unknown browser location remains unverified. */ }
+        }
+        const failureKind = error?.name === 'TimeoutError' ?
+          'browser-timeout' : error?.name === 'TargetClosedError' ?
+            'browser-closed' : 'execution-or-verification-error';
+        const diagnostics = {
+          failurePhase, failureKind, observedOrigin, observedPath,
+          observedVisualDigest: typeof after?.screenshotDigest === 'string' ?
+            after.screenshotDigest : null,
+        };
+        // Keep the uncertain write pending, regardless of the observed path.
+        // An observed URL alone never certifies a completed interaction.
         state = { ...state, pending: step.id, status: 'reconcile-required',
-          errorCode: 'outcome-unverified' };
+          errorCode: 'outcome-unverified', ...diagnostics };
         await store.write(plan.id, state);
         return { status: 'reconcile-required', id: plan.id, pending: step.id,
           reason: 'Outcome unverified; inspect the application before retrying',
-          receipts: [...state.receipts] };
+          ...diagnostics, receipts: [...state.receipts] };
       }
     }
     state.status = 'completed';
