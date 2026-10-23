@@ -243,6 +243,15 @@ test('portable policy rejects ambiguous author registries and unbounded identiti
     {authors:[portableAuthor,{...portableAuthor,id:'second-agent',
       fingerprint:'a'.repeat(64),binding:{status:'enrolled',fingerprint:'b'.repeat(64)},
       aliases:['agent']}]},
+    {authors:[portableAuthor,{...portableAuthor,id:'second-agent',
+      name:'Another Agent', aliases:['another-agent'],
+      binding:{status:'enrolled',fingerprint:'b'.repeat(64)}}]},
+    {authors:[{...portableAuthor,binding:{status:'enrolled',
+      fingerprint:'9'.repeat(64),unexpected:{nested:'unbounded'}}}]},
+    {authors:[{...portableAuthor,sessionObservation:{
+      kind:'work-session-observation',accountAuthenticated:true,
+      unexpected:'untrusted'}}]},
+
   ]) assert.throws(()=>createCodexPolicy({...portableConfig,...change}));
 });
 
