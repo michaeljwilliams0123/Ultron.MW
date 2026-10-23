@@ -5,7 +5,8 @@
  * as a separate authenticated Mike/Destiny Work execution.
  */
 import { validateCodexAdmission, parseCodexCall, codexReplayDisposition,
-  validateCodexClaim, codexRecordPaths } from './codex-call.mjs';
+  validateCodexClaim, codexRecordPaths, DEFAULT_CODEX_POLICY,
+  createCodexPolicy } from './codex-call.mjs';
 const MAIN_WORKFLOW = 'Ultron core verification';
 const APPROVAL_EVENT = 'action_required';
 const SHA = /^[a-f0-9]{40}$/;
@@ -28,56 +29,55 @@ function requireSingleCreation(path, expectedParent, history, commit) {
 }
 
 export function verifyCodexRecordHistory(call, { claim, receipt, claimHistory,
-  claimCommit, receiptHistory, receiptCommit } = {}) {
+  claimCommit, receiptHistory, receiptCommit } = {}, policy = DEFAULT_CODEX_POLICY) {
   if (claim === undefined) {
     if (receipt !== undefined) throw Error('Orphan Codex receipt');
     return;
   }
-  validateCodexClaim(claim, call);
-  const paths = codexRecordPaths(call);
+  validateCodexClaim(claim, call, policy);
+  const paths = codexRecordPaths(call, policy);
   const claimSha = requireSingleCreation(paths.claim, claim.headSha,
     claimHistory, claimCommit);
   if (receipt !== undefined) {
-    if (receipt.claimHeadSha !== claimSha)
-      throw Error('Codex receipt does not reference the claim creation commit');
+    if (receipt.claimHeadSha !== claimSha || receipt.headSha !== claimSha)
+      throw Error('Codex receipt is not anchored to the claim creation commit');
     if (Date.parse(receipt.completedAt) < Date.parse(claim.claimedAt))
       throw Error('Codex receipt predates the claim');
-    requireSingleCreation(paths.receipt, receipt.headSha,
+    requireSingleCreation(paths.receipt, claimSha,
       receiptHistory, receiptCommit);
   }
 }
 
-function verifyPrWorkflow(prHead, runs = []) {
+function verifyPrWorkflow(prHead, runs = [], policy = DEFAULT_CODEX_POLICY) {
   if (!Array.isArray(runs)) throw Error('Workflow observations must be an array');
   const applicable = runs.filter(x => x?.event === 'pull_request' &&
-    x.head_sha === prHead && x.name === MAIN_WORKFLOW);
+    x.head_sha === prHead && x.name === policy.workflowName);
   const latest = [...applicable].sort((a,b) =>
     (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0))[0];
   if (!latest) return freeze({ state: 'unobserved', workflowRunUrl: null });
   if (latest.conclusion === APPROVAL_EVENT)
     return freeze({ state: 'owner-approval-required',
-      workflowRunUrl: safeRunUrl(latest.html_url) });
+      workflowRunUrl: safeRunUrl(latest.html_url, policy) });
   if (latest.status !== 'completed')
     return freeze({ state: 'pending', workflowRunUrl: safeRunUrl(latest.html_url) });
   if (latest.conclusion !== 'success')
     return freeze({ state: 'failed', workflowRunUrl: safeRunUrl(latest.html_url) });
   const jobs = latest.jobs;
   if (!Array.isArray(jobs) || jobs.length < 1 ||
-      !jobs.some(x => x?.name === 'test' && x.status === 'completed' &&
-        x.conclusion === 'success' && (!x.head_sha || x.head_sha === prHead)))
+      !jobs.some(x => x?.name === policy.jobName && x.status === 'completed' &&
+        x.conclusion === 'success' && x.head_sha === prHead))
     return freeze({ state: 'job-proof-missing',
       workflowRunUrl: safeRunUrl(latest.html_url) });
   return freeze({ state: 'passed', workflowRunUrl: safeRunUrl(latest.html_url) });
 }
-function safeRunUrl(url) {
-  if (typeof url !== 'string' ||
-      !/^https:\/\/github\.com\/michaeljwilliams0123\/Ultron\.MW\/actions\/runs\/[0-9]+$/.test(url))
-    return null;
-  return url;
+function safeRunUrl(url, policy = DEFAULT_CODEX_POLICY) {
+  const prefix = 'https://github.com/' + policy.repository + '/actions/runs/';
+  return typeof url === 'string' && url.startsWith(prefix) &&
+    /^[0-9]+$/.test(url.slice(prefix.length)) ? url : null;
 }
-function countOwnerTriggers(comments, author) {
+function countOwnerTriggers(comments, author, policy = DEFAULT_CODEX_POLICY) {
   if (!Array.isArray(comments)) throw Error('Comments must be an array');
-  return comments.filter(x => x?.user?.login === 'michaeljwilliams0123' &&
+  return comments.filter(x => x?.user?.login === policy.owner &&
     x?.body === '/codex run ' + author).length;
 }
 
@@ -91,33 +91,35 @@ export function assessCodexLane({
   pullRequestRuns = [], workflowDispatchRuns = [],
   ownerComments = [], claim, receipt,
   claimHistory, claimCommit, receiptHistory, receiptCommit,
+  policy = DEFAULT_CODEX_POLICY,
 } = {}) {
+  policy = createCodexPolicy(policy);
   if (!SHA.test(mainSha || '')) throw Error('Current main SHA was not verified');
-  const envelope = parseCodexCall(pr?.body);
+  const envelope = parseCodexCall(pr?.body, policy);
   const sourceStale = mainSha !== envelope.sourceSha;
   // Read-only classification only. The real executor MUST require actual mainSha.
   const call = validateCodexAdmission({
     pr, issue, proposalText,
     mainSha: sourceStale ? envelope.sourceSha : mainSha,
-    bindingFingerprint,
+    bindingFingerprint, policy,
   });
-  const paths = codexRecordPaths(call);
+  const paths = codexRecordPaths(call, policy);
   if (claim !== undefined) verifyCodexRecordHistory(call, {
     claim, receipt, claimHistory, claimCommit, receiptHistory, receiptCommit,
-  });
+  }, policy);
   if (receipt !== undefined && claim === undefined)
     throw Error('Completion receipt without earlier claim is not sufficient');
   const replay = codexReplayDisposition(call, {
     ...(claim === undefined ? {} : { claim }),
     ...(receipt === undefined ? {} : { receipt }),
-  });
-  const checks = verifyPrWorkflow(pr.head.sha, pullRequestRuns);
+  }, policy);
+  const checks = verifyPrWorkflow(pr.head.sha, pullRequestRuns, policy);
   if (!Array.isArray(workflowDispatchRuns)) throw Error('Dispatch evidence invalid');
   const dispatchedGreen = workflowDispatchRuns.some(x =>
     x?.event === 'workflow_dispatch' && x.head_sha === pr.head.sha &&
-    x.name === MAIN_WORKFLOW && x.status === 'completed' &&
+    x.name === policy.workflowName && x.status === 'completed' &&
     x.conclusion === 'success');
-  const triggerCount = countOwnerTriggers(ownerComments, call.authorId);
+  const triggerCount = countOwnerTriggers(ownerComments, call.authorId, policy);
   const executionState = replay === 'already-completed'
     ? 'completion-receipt-unattributed'
     : replay === 'reconcile-required'
@@ -133,8 +135,10 @@ export function assessCodexLane({
         ? 'independently-attest-work-account-and-review'
         : replay === 'reconcile-required'
           ? 'reconcile-claimed-task-with-actual-executor'
-          : triggerCount
-            ? 'verify-work-route-enabled-and-investigate-event'
+          : triggerCount > 1
+            ? 'investigate-duplicate-owner-triggers-without-replay'
+            : triggerCount
+              ? 'verify-work-route-enabled-and-investigate-event'
             : 'request-once-through-owner-comment-if-authorized';
   return freeze({
     kind: 'ultron.codex.lane-evidence.v1',
