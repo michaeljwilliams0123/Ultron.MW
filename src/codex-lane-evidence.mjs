@@ -4,29 +4,47 @@
  * Never treat a public GitHub actor, workflow dispatch, or stable fingerprint
  * as a separate authenticated Mike/Destiny Work execution.
  */
-import { validateCodexAdmission, codexReplayDisposition,
-  validateCodexReceipt, codexRecordPaths } from './codex-call.mjs';
+import { validateCodexAdmission, parseCodexCall, codexReplayDisposition,
+  validateCodexClaim, codexRecordPaths } from './codex-call.mjs';
 const MAIN_WORKFLOW = 'Ultron core verification';
 const APPROVAL_EVENT = 'action_required';
 const SHA = /^[a-f0-9]{40}$/;
-const ISO_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
 const freeze = value => Object.freeze(value);
-const same = (a, b) => a === b;
 
-/** Verify task claims on the branch without treating a claim as completed work. */
-export function validateCodexClaimRecord(claim, call) {
-  if (!claim || typeof claim !== 'object' || Array.isArray(claim) ||
-      Object.keys(claim).sort().join(',') !==
-        'attempts,authorId,bindingFingerprint,claimedAt,headSha,schema,sourceSha,status,taskDigest,taskId' ||
-      claim.schema !== 'ultron.codex.claim.v1' || claim.taskId !== call.taskId ||
-      claim.taskDigest !== call.digest || claim.authorId !== call.authorId ||
-      claim.bindingFingerprint !== call.bindingFingerprint ||
-      claim.sourceSha !== call.sourceSha || !SHA.test(claim.headSha || '') ||
-      !ISO_TIME.test(claim.claimedAt || '') ||
-      !Number.isFinite(Date.parse(claim.claimedAt)) ||
-      claim.status !== 'claimed' || claim.attempts !== 1)
-    throw Error('Invalid or conflicting Codex claim; reconcile before replay');
-  return freeze({ ...claim });
+export const validateCodexClaimRecord = validateCodexClaim;
+
+/** Validate exact-head Git history. Records must each be created once in their own commit. */
+function requireSingleCreation(path, expectedParent, history, commit) {
+  if (!Array.isArray(history) || history.length !== 1 ||
+      !SHA.test(history[0]?.sha || '') ||
+      commit?.sha !== history[0].sha ||
+      !Array.isArray(commit?.parents) || commit.parents.length !== 1 ||
+      commit.parents[0]?.sha !== expectedParent ||
+      !Array.isArray(commit?.files) || commit.files.length !== 1 ||
+      commit.files[0]?.filename !== path ||
+      commit.files[0]?.status !== 'added')
+    throw Error('Codex record Git history is missing, overwritten or inconsistent');
+  return commit.sha;
+}
+
+export function verifyCodexRecordHistory(call, { claim, receipt, claimHistory,
+  claimCommit, receiptHistory, receiptCommit } = {}) {
+  if (claim === undefined) {
+    if (receipt !== undefined) throw Error('Orphan Codex receipt');
+    return;
+  }
+  validateCodexClaim(claim, call);
+  const paths = codexRecordPaths(call);
+  const claimSha = requireSingleCreation(paths.claim, claim.headSha,
+    claimHistory, claimCommit);
+  if (receipt !== undefined) {
+    if (receipt.claimHeadSha !== claimSha)
+      throw Error('Codex receipt does not reference the claim creation commit');
+    if (Date.parse(receipt.completedAt) < Date.parse(claim.claimedAt))
+      throw Error('Codex receipt predates the claim');
+    requireSingleCreation(paths.receipt, receipt.headSha,
+      receiptHistory, receiptCommit);
+  }
 }
 
 function verifyPrWorkflow(prHead, runs = []) {
@@ -72,17 +90,23 @@ export function assessCodexLane({
   pr, issue, proposalText, mainSha, bindingFingerprint,
   pullRequestRuns = [], workflowDispatchRuns = [],
   ownerComments = [], claim, receipt,
+  claimHistory, claimCommit, receiptHistory, receiptCommit,
 } = {}) {
+  if (!SHA.test(mainSha || '')) throw Error('Current main SHA was not verified');
+  const envelope = parseCodexCall(pr?.body);
+  const sourceStale = mainSha !== envelope.sourceSha;
+  // Read-only classification only. The real executor MUST require actual mainSha.
   const call = validateCodexAdmission({
-    pr, issue, proposalText, mainSha, bindingFingerprint,
+    pr, issue, proposalText,
+    mainSha: sourceStale ? envelope.sourceSha : mainSha,
+    bindingFingerprint,
   });
   const paths = codexRecordPaths(call);
-  if (claim !== undefined) validateCodexClaimRecord(claim, call);
-  if (receipt !== undefined) {
-    validateCodexReceipt(receipt, call);
-    if (claim === undefined)
-      throw Error('Completion receipt without earlier claim is not sufficient');
-  }
+  if (claim !== undefined) verifyCodexRecordHistory(call, {
+    claim, receipt, claimHistory, claimCommit, receiptHistory, receiptCommit,
+  });
+  if (receipt !== undefined && claim === undefined)
+    throw Error('Completion receipt without earlier claim is not sufficient');
   const replay = codexReplayDisposition(call, {
     ...(claim === undefined ? {} : { claim }),
     ...(receipt === undefined ? {} : { receipt }),
@@ -99,7 +123,9 @@ export function assessCodexLane({
     : replay === 'reconcile-required'
       ? 'claim-requires-reconciliation'
       : 'not-observed';
-  const nextAction = checks.state === 'owner-approval-required'
+  const nextAction = sourceStale
+    ? 'supersede-stale-task-with-new-owner-issue-from-current-main'
+    : checks.state === 'owner-approval-required'
     ? 'approve-trusted-pr-run-through-github'
     : checks.state !== 'passed'
       ? 'obtain-current-head-pr-check'
@@ -108,18 +134,20 @@ export function assessCodexLane({
         : replay === 'reconcile-required'
           ? 'reconcile-claimed-task-with-actual-executor'
           : triggerCount
-            ? 'await-or-investigate-named-work-event'
+            ? 'verify-work-route-enabled-and-investigate-event'
             : 'request-once-through-owner-comment-if-authorized';
   return freeze({
     kind: 'ultron.codex.lane-evidence.v1',
     taskId: call.taskId, issueNumber: call.issueNumber, prNumber: pr.number,
     authorId: call.authorId, authorFingerprint: call.authorFingerprint,
     bindingFingerprint: call.bindingFingerprint,
-    sourceSha: call.sourceSha, prHeadSha: pr.head.sha,
+    sourceSha: call.sourceSha, observedMainSha: mainSha, prHeadSha: pr.head.sha,
+    sourceAdmission: sourceStale ? 'stale-current-main' : 'current',
     githubPrCheck: checks.state, checkRunUrl: checks.workflowRunUrl,
     githubExplicitDispatchPassed: dispatchedGreen,
     githubOwnerTriggerCount: triggerCount,
     replayDisposition: replay, executionState,
+    workRouteAvailability: 'not-observable-from-github',
     signedWorkAccountAttested: false,
     completedOnDistinctAuthenticatedWorkAccount: false,
     workReceiptPaths: paths, nextAction, mergeAccepted: false,
