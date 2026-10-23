@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { verifyHatchableParity } from '../scripts/verify-hatchable-parity.mjs';
 
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
@@ -102,4 +103,46 @@ test('a mismatched declared file size fails parity', async t => {
   const result = await check();
   assert.equal(result.parity, false);
   assert.equal(result.differences[0].type, 'changed-file');
+});
+
+test('repository mode compares immutable Git blobs rather than transformed working-tree bytes', async t => {
+  const repoRoot = await mkdtemp(join(tmpdir(), 'ultron-parity-git-'));
+  t.after(() => rm(repoRoot, { recursive: true, force: true }));
+  const sourceRoot = join(repoRoot, 'cloud', 'hatchable');
+  const inputs = {
+    'api/brain/run.js': 'export const run = 1;\n',
+    'lib/brain-runner.js': 'export const worker = 2;\n',
+    'mcp/ultron_status.js': 'export const status = 3;\n',
+    'migrations/0001.sql': 'SELECT 1;\n',
+    'hatchable.toml': '[project]\nname = "ultron"\n'
+  };
+  for (const [path, content] of Object.entries(inputs)) {
+    await mkdir(dirname(join(sourceRoot, path)), { recursive: true });
+    await writeFile(join(sourceRoot, path), content);
+  }
+  execFileSync('git', ['init', '-q'], { cwd: repoRoot });
+  execFileSync('git', ['add', '.'], { cwd: repoRoot });
+  execFileSync('git', [
+    '-c', 'user.name=Ultron Test', '-c', 'user.email=ultron@example.invalid',
+    'commit', '-q', '-m', 'fixture'
+  ], { cwd: repoRoot });
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: repoRoot, encoding: 'utf8'
+  }).trim();
+  const snapshot = {
+    version: 2,
+    status: 'live',
+    file_manifest: Object.entries(inputs).map(([path, content]) => ({
+      path,
+      hash: createHash('sha256').update(content).digest('hex'),
+      size: Buffer.byteLength(content)
+    }))
+  };
+  await writeFile(join(sourceRoot, 'api/brain/run.js'), 'export const run = 1;\r\n');
+  const result = await verifyHatchableParity({
+    snapshot, sourceRoot, repoRoot, expectedVersion: 2,
+    expectedHead: head, actualHead: head
+  });
+  assert.equal(result.parity, true);
+  assert.deepEqual(result.differences, []);
 });
