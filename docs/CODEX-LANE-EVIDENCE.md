@@ -89,6 +89,47 @@ completion receipt or borrowing another account's identity. Diagnose the
 event subscription from the actual Work account and preserve incomplete
 claims instead of blind re-execution.
 
+
+## Portable policy core (PR #84)
+
+The evaluator is policy-driven without changing Ultron's deployed defaults.
+Trusted callers can use `createCodexPolicy({ repository, owner, baseBranch,
+branchPrefix, prTitlePrefix, issueTitle, issueMarker, trustedPrActors,
+workflowName, jobName, authors })` and pass its result to
+`buildCodexCall`, `formatCodexCall`, `validateCodexAdmission`, and
+`assessCodexLane`. Non-default registries must carry their own registered,
+enrolled callable authors. Ambiguous aliases, duplicate author fingerprints or
+route bindings, malformed repository names/branches, duplicate trusted actors,
+and unbounded metadata are rejected. **Only the trusted deployment or account
+configuration may supply this policy.** Never load a security policy from the
+untrusted PR being evaluated.
+
+The shipped CLI remains an Ultron-specific, read-only wrapper. Configurable
+core behavior is not permission for cross-repository GitHub access, a new
+credential, independent ChatGPT Work identity, or a bypass of CI/merge gates.
+
+Durable claim and completion files must be create-only with distinct commits.
+The receipt's `claimHeadSha` must equal the claim-creation commit. Its
+`headSha` is the tested head immediately before receipt creation. If source
+work was committed after claiming, a complete, bounded, first-parent GitHub
+compare chain from the claim commit to tested head is required; merge commits,
+forks and missing ancestry fail closed. The GitHub CLI collects this chain
+read-only and verifies it with `src/codex-lane-evidence.mjs`. Invalid or
+cross-repository workflow run links do not count as proof of a green check.
+Multiple owner triggers are investigated, never retried automatically.
+
+## PR #87 identity-canary disposition (2026-10-23)
+
+PR #87 is a single-proposal task from owner Issue #86. The real PR-triggered
+Verify run completed successfully at original head
+`8d1c1c1c4f2902800616437ad363c0b6b19e04cd`.
+The owner posted the one-time trigger, but no independent Work-authored
+claim or completion receipt has been verified. The task is now stale against
+the newer `main` tip, so **do not rewrite its canonical envelope, forge an
+execution receipt, replay the trigger, or merge #87 as identity evidence**.
+PR #84 must likewise remain subject to real executor and review gates
+rather than claiming that a green source test attests a separate Work account.
+
 ## Verification and non-overlap
 
     node --test test/codex-lane-evidence.test.mjs
