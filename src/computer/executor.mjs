@@ -187,7 +187,7 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       if (state.completed.includes(step.id)) continue;
       const blocked = await sessionGate(step);
       if (blocked) return blocked;
-      const before = await driver.observe();
+      const before = await driver.observe(step.expect);
       const blockedAfterObservation = await sessionGate(step);
       if (blockedAfterObservation) return blockedAfterObservation;
       if (before.requiresOwnerTakeover && step.action !== 'observe') {
@@ -246,7 +246,7 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         failurePhase = 'action-dispatch';
         const result = await driver.perform(step);
         failurePhase = 'post-action-observation';
-        after = await driver.observe();
+        after = await driver.observe(step.expect);
         failurePhase = 'post-action-origin-check';
         safeUrl(after.url, allowedOrigins);
         // Application writes may finish after Playwright's click returns.
@@ -259,7 +259,7 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
               before.title !== after.title || before.text !== after.text;
             if (changed && matchesExpectation(after, step.expect)) break;
             await new Promise(resolve => setTimeout(resolve, 200));
-            after = await driver.observe();
+            after = await driver.observe(step.expect);
             safeUrl(after.url, allowedOrigins);
           }
         }
@@ -268,7 +268,10 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         // the Playwright driver reading back the specific field value.
         failurePhase = 'postcondition-verification';
         const changed = before.url !== after.url || before.title !== after.title ||
-          before.text !== after.text;
+          before.text !== after.text ||
+          (typeof before.textDigest === 'string' &&
+           typeof after.textDigest === 'string' &&
+           before.textDigest !== after.textDigest);
         if (step.action === 'type' && result?.fieldValueVerified !== true)
           throw Error('Typed field value was not independently verified');
         if (ACTIVE.has(step.action) && step.action !== 'type' && !changed &&
@@ -280,7 +283,9 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           stepId: step.id, action: step.action, status: 'verified', observedAt: clock(),
           origin: new URL(after.url).origin, observationDigest: digest({
             url: after.url, text: String(after.text || '').slice(0, 10000),
-            title: after.title || '', screenshotDigest: after.screenshotDigest || null,
+            title: after.title || '',
+            ...(typeof after.textDigest === 'string' ? { textDigest: after.textDigest } : {}),
+            screenshotDigest: after.screenshotDigest || null,
             accessibilityDigest: after.accessibilityDigest || null,
           }),
           resultDigest: digest(result ?? null),

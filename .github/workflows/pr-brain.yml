@@ -41,6 +41,7 @@ jobs:
           node --check src/pr-brain.mjs
           node --check src/pr-brain-patch.mjs
           node --check src/pr-brain-model.mjs
+          node --check src/pr-brain-inference.mjs
           node --check src/pr-brain-multifile.mjs
           node --check src/observability.mjs
           node --check src/provider-authority.mjs
@@ -59,12 +60,16 @@ jobs:
       - name: Install locked CPU inference runtime for explicit owner implementation requests
         if: >-
           github.event.repository.private == false &&
+          vars.ULTRON_MODEL_PROVIDER != 'openai' &&
           steps.model-request.outputs.needed == 'true'
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Route PR comment through Ultron brain
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ULTRON_PUBLIC_CPU_INFERENCE: ${{ github.event.repository.private == false && 'enabled' || 'disabled' }}
+          ULTRON_MODEL_PROVIDER: ${{ vars.ULTRON_MODEL_PROVIDER || 'local-cpu' }}
+          ULTRON_MODEL: ${{ vars.ULTRON_MODEL || 'gpt-6.1-sol' }}
+          OPENAI_API_KEY: ${{ secrets.ULTRON_OPENAI_API_KEY }}
           ULTRON_CAPACITY: ${{ vars.ULTRON_CAPACITY || 'standard' }}
           ULTRON_ENABLE_DATADOG: ${{ vars.ULTRON_ENABLE_DATADOG || '0' }}
           ULTRON_DATADOG_SITE: ${{ vars.ULTRON_DATADOG_SITE || 'datadoghq.com' }}

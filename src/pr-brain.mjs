@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { githubRequest } from './cloud-pr.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
 import { generateAndApply } from './pr-brain-model.mjs';
+import { selectPrInference } from './pr-brain-inference.mjs';
 import { parseMultiFileRequest, generateAndApplyMulti } from './pr-brain-multifile.mjs';
 import { dispatchAndObserveVerify } from './pr-brain-verify.mjs';
 import { buildFrameworkOnPr } from './framework-builder.mjs';
@@ -108,7 +109,7 @@ function verifyLine(action){
   return 'Verify requested but its terminal conclusion was not yet independently observed.';
 }
 /**
- * Shared, bounded inverse-patch recovery for owner-authored and CPU-model edits.
+ * Shared, bounded inverse-patch recovery for owner-authored and model edits.
  * A real failure must be read back at the exact candidate SHA. Unknown, blocked,
  * cancelled or pending runs are not evidence of a source defect.
  */
@@ -208,11 +209,12 @@ function answer({turn,pr,intent,findings,history,action}){
   case 'rescan':lines.push('Self-scan workflow dispatched on main.',
     'Material changes update the existing findings PR; no Issue is created.');break;
   case 'implement':case 'implement-multi':
-    if(action.error)lines.push('CPU model implementation did not produce an accepted source change.',
+    if(action.error)lines.push('Model implementation did not produce an accepted source change.',
       'Reason: '+short(action.error,240),
       'No code commit, test pass or deployment is claimed. Try a smaller objective naming one file.');
-    else lines.push('Public CPU model proposed '+(intent.kind==='implement-multi'?'coordinated source changes':'a source change')+', validated and committed on this PR branch.',
-      'Model: '+action.model+' (pinned model files)',
+    else lines.push('Model proposed '+(intent.kind==='implement-multi'?'coordinated source changes':'a source change')+', validated and committed on this PR branch.',
+      'Provider: '+(action.generatedBy||'injected model'),
+      'Model: '+action.model,
       'New source SHA: '+action.commitSha,
       'Changed: '+action.paths.join(', '),
       'Semantic objective: '+(action.goalAssurance?.mode==='explicit-substitution'?
@@ -251,6 +253,7 @@ function answer({turn,pr,intent,findings,history,action}){
 }
 export async function handlePrConversation({event,eventName,actor,repository,get,post,patch,
   generate=generateAndApply,generateMulti=generateAndApplyMulti,
+  selectInference=selectPrInference,
   observeVerify=dispatchAndObserveVerify,
   buildFramework=buildFrameworkOnPr}={}){
   const turn=admitPrTurn(event,eventName,actor,repository);
@@ -297,9 +300,12 @@ export async function handlePrConversation({event,eventName,actor,repository,get
     action={requested:true};
   }else if(intent.kind==='implement'||intent.kind==='implement-multi'){
     try{
+      const inference=selectInference();
       action=intent.kind==='implement-multi'?
-        await generateMulti({pr,paths:intent.paths,objective:intent.objective,get,post}):
-        await generate({pr,objective:intent.objective,get,post});
+        await generateMulti({pr,paths:intent.paths,objective:intent.objective,get,post,
+          model:inference.run}):
+        await generate({pr,objective:intent.objective,get,post,model:inference.run});
+      action={...action,model:inference.model,generatedBy:inference.generatedBy};
     }catch(error){action={error:error instanceof Error?error.message:'Model inference failed'};}
     if(!action.error&&SHA.test(action.commitSha||'')){
       pr.head.sha=action.commitSha;
