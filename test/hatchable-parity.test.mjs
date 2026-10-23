@@ -35,6 +35,72 @@ async function fixture(t) {
   });
   return { root, snapshot, check };
 }
+
+const V2_RUNTIME_FILES = [
+  'api/brain/command.js', 'api/brain/run.js', 'api/brain/tasks.js',
+  'api/brain/tick.js', 'lib/brain-core.js', 'lib/brain-owner.js',
+  'lib/brain-runner.js', 'mcp/ultron_control.js', 'mcp/ultron_queue.js',
+  'mcp/ultron_remember.js', 'mcp/ultron_status.js',
+  'migrations/0001_tasks.sql', 'migrations/0002_events.sql',
+  'migrations/0003_native_commands.sql', 'hatchable.toml'
+];
+const V2_DIVERGENT = [
+  'api/brain/run.js', 'api/brain/tick.js',
+  'lib/brain-owner.js', 'lib/brain-runner.js'
+];
+async function v2ReleaseFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'ultron-v2-release-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file_manifest = [];
+  for (const path of V2_RUNTIME_FILES) {
+    const content = 'synthetic release fixture: ' + path + '\n';
+    await mkdir(dirname(join(root, path)), { recursive: true });
+    await writeFile(join(root, path), content);
+    file_manifest.push({
+      path, hash: createHash('sha256').update(content).digest('hex'),
+      size: Buffer.byteLength(content)
+    });
+  }
+  const snapshot = { version: 2, status: 'live', file_manifest };
+  const check = (overrides = {}) => verifyHatchableParity({
+    snapshot, sourceRoot: root, expectedVersion: 2,
+    expectedHead: HEAD, actualHead: HEAD, ...overrides
+  });
+  return { root, snapshot, check };
+}
+
+test('v2 release matrix gates all 15 runtime files and identifies four divergent files', async t => {
+  const { root, check } = await v2ReleaseFixture(t);
+  const matching = await check();
+  assert.equal(matching.parity, true);
+  assert.equal(matching.filesCompared, 15);
+  for (const path of V2_DIVERGENT) {
+    await writeFile(join(root, path), 'synthetic source-only change: ' + path + '\n');
+  }
+  const drift = await check();
+  assert.equal(drift.parity, false);
+  assert.equal(drift.filesCompared, 15);
+  assert.deepEqual(drift.differences.map(d => d.type), Array(4).fill('changed-file'));
+  assert.deepEqual(drift.differences.map(d => d.path).sort(), [...V2_DIVERGENT].sort());
+});
+
+test('v2 release matrix rejects stale heads, incomplete manifests and unsafe evidence', async t => {
+  const { snapshot, check } = await v2ReleaseFixture(t);
+  const stale = await check({ actualHead: OTHER });
+  assert.equal(stale.parity, false);
+  assert.ok(stale.differences.some(d => d.type === 'stale-head'));
+  const removed = snapshot.file_manifest.pop();
+  const incomplete = await check();
+  assert.equal(incomplete.parity, false);
+  assert.deepEqual(incomplete.differences.map(d => d.type), ['missing-deployment-file']);
+  snapshot.file_manifest.push(removed);
+  snapshot.file_manifest[0].path = '../private';
+  await assert.rejects(check(), /Malformed, duplicate, or unsafe/);
+  snapshot.file_manifest[0].path = V2_RUNTIME_FILES[0];
+  snapshot.status = 'superseded';
+  await assert.rejects(check(), /Invalid, stale, or non-live/);
+});
+
 test('identical deployed manifest and source pass', async t => {
   const { check } = await fixture(t);
   const result = await check();

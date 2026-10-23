@@ -52,3 +52,58 @@ To compare the source checked out at an exact PR head with a known live Hatchabl
 4. Immediately re-read Hatchable's **current** deployment version and the GitHub PR head after the comparison. An unchanged version and head are prerequisites for interpreting this snapshot as current. This local verifier does **not** query Hatchable on its own or prove production traffic, owner authentication, receipt integrity, crash recovery, or end-to-end acceptance.
 
 Tests: `node --test test/hatchable-parity.test.mjs` (also included in `node scripts/verify.mjs`). Run against the existing private project only; do not deploy draft source to force matching hashes. A mismatch is an expected **PRODUCTION_HOLD** until a separately approved source-merge and deliberate deployment/rollback sequence has been verified.
+
+## V2 release-acceptance matrix — source-only gate (PR #76)
+
+**WorkId:** pr76-v2-release-acceptance-matrix-699abf0f. This checklist is a
+release **gate**, not deployment approval or evidence production was updated.
+At the Stage 2 handoff (October 23, 2026), Hatchable project
+proj_A6GCXRSKizko reported **live version 2**, with 15 runtime files.
+The last independently compared PR source snapshot found **four differences**;
+do not promote that historical result to a fresh production readback.
+
+| Runtime source group | Files | Stage 2 source vs. live v2 |
+| --- | --- | --- |
+| API | api/brain/command.js, api/brain/tasks.js | 2 matched |
+| API scheduler | api/brain/run.js, api/brain/tick.js | **2 differed** |
+| Libraries | lib/brain-core.js | 1 matched |
+| Libraries / state | lib/brain-owner.js, lib/brain-runner.js | **2 differed** |
+| MCP | mcp/ultron_control.js, mcp/ultron_queue.js, mcp/ultron_remember.js, mcp/ultron_status.js | 4 matched |
+| Migrations | migrations/0001_tasks.sql, migrations/0002_events.sql, migrations/0003_native_commands.sql | 3 matched |
+| Configuration | hatchable.toml | 1 matched |
+| **Total** | **15 files** | **11 matched, 4 differed — PRODUCTION_HOLD** |
+
+The four divergent paths require independent functional acceptance, not just
+matching bytes:
+
+| Runtime path | Required acceptance evidence |
+| --- | --- |
+| api/brain/run.js | Authenticated scheduler dispatch, bounded processing/continuation, duplicate suppression, and task/event readback |
+| api/brain/tick.js | Hourly tick remains dispatch-only, does not run browser objectives inline, and dispatches expired-lease recovery within the scheduler budget |
+| lib/brain-owner.js | Owner-only admission, idempotency conflict, cancel/retry eligibility and atomic matching event receipts |
+| lib/brain-runner.js | Lease-fenced claim/complete/fail, atomic result/event, recovery after expired lease, and completion-write uncertainty without false failure or unsafe immediate replay |
+
+**Before any separately authorized deployment:** Re-read the exact GitHub PR
+head, required PR-head CI jobs, Hatchable project identity, current live
+deployment version/status and complete file manifest. Obtain an independent
+versioned manifest readback; use the immutable-Git-blob verifier above against
+that version and the exact current PR SHA. A stale head, missing/extra file,
+invalid/unsafe/duplicate manifest entry, non-live deployment or changed hash
+must fail closed. Preserve the previous live version and a documented rollback
+target. Never include credentials, private notes or tokens in the manifest.
+
+**After an explicitly authorized deployment:** Independently re-read the
+current deployed version and its 15-file manifest, verify all hashes/sizes
+against the reviewed Git SHA, then repeat the project/version/head readback to
+exclude races. Separately validate owner authentication, scheduler budget,
+durable receipt correlation, failed event-insert rollback, expired-lease
+recovery, completion-persistence uncertainty, and a bounded read-only replay
+scenario using isolated test data. A green GitHub unit test or synthetic
+manifest is **not** proof of live database or end-user behavior.
+
+**Release decision:** Keep **PRODUCTION_HOLD** and PR draft until the
+independent live evidence, rollback readiness, required CI and owner release
+authorization all pass. On any failure, stop promotion; if a deployment was
+performed, revert to the independently recorded prior live version and verify
+its status/readback. For this Stage 3 source-only change, rollback is a revert
+of its one PR-branch commit; do not alter the Hatchable deployment.

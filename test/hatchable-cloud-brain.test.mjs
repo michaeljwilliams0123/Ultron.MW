@@ -52,6 +52,23 @@ test('cloud: completion persistence rejection remains uncertain, not an objectiv
  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,1);
  assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,0);
 });
+test('cloud: uncertain completion does not immediately replay an already claimed objective',async()=>{
+ const db=fakeRunnerDb({completionReject:true});
+ const query=db.query.bind(db);
+ let claims=0;
+ db.query=async(sql,params)=>{
+  if(sql.includes("'claimed'")&&++claims>1)return {rows:[]};
+  return query(sql,params);
+ };
+ const uncertain=await runOne({db,browser:{}});
+ assert.equal(uncertain.status,'completion-uncertain');
+ const next=await runOne({db,browser:{}});
+ assert.equal(next.status,'idle');
+ assert.equal(claims,2);
+ assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,1);
+ assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,0);
+});
+
 test('cloud: real objective execution failure remains lease-fenced and journaled',async()=>{
  const throwingCore=`export const ALLOWED=new Set(['repo.inspect']);
 export const CAPABILITIES=[{id:'repo.inspect'}];
