@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCodexCall, formatCodexCall,
+import { buildCodexCall, formatCodexCall, validateCodexAdmission,
   buildCodexClaim, buildCodexReceipt } from '../src/codex-call.mjs';
 import { assessCodexLane, validateCodexClaimRecord } from '../src/codex-lane-evidence.mjs';
 
@@ -289,4 +289,25 @@ test('execution can update product source after claim with verified first-parent
     executionHistory:[{sha:testedHead,parents:[{sha:CLAIM_COMMIT},{sha:HEAD}]}]}));
   assert.throws(()=>assessCodexLane({...base,receiptCommit:{
     ...base.receiptCommit,parents:[{sha:CLAIM_COMMIT}]}}));
+});
+
+test('organization-owned repositories admit independent named human request owners',()=>{
+  const policy=createCodexPolicy({...portableConfig,owner:'trusted-maintainer',
+    trustedPrActors:['trusted-maintainer','github-actions[bot]']});
+  const custom=buildCodexCall({issueNumber:7,sourceSha:MAIN,
+    objective:'/codex agent-codex Read public docs',policy});
+  const proposalText=formatCodexCall(custom,policy);
+  const data={
+    policy, mainSha:MAIN,bindingFingerprint:custom.bindingFingerprint,proposalText,
+    issue:{number:7,state:'open',user:{login:'trusted-maintainer'},
+      title:policy.issueTitle,body:policy.issueMarker+'\\n'+custom.request},
+    pr:{number:8,state:'open',user:{login:'github-actions[bot]'},
+      title:policy.prTitlePrefix+'agent-codex · issue 7',body:proposalText,
+      head:{ref:policy.branchPrefix+'7',sha:HEAD,repo:{full_name:policy.repository}},
+      base:{ref:policy.baseBranch,repo:{full_name:policy.repository}}},
+  };
+  assert.deepEqual(validateCodexAdmission(data),custom);
+  assert.throws(()=>validateCodexAdmission({...data,issue:{...data.issue,
+    user:{login:'sample-org'}}}));
+  assert.throws(()=>createCodexPolicy({...portableConfig,repository:'sample-org/..'}));
 });
