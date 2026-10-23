@@ -50,7 +50,8 @@ export function createCodexPolicy(options = {}) {
     throw Error('Invalid trusted Codex PR actors');
   if (!Array.isArray(p.authors) || p.authors.length < 1 || p.authors.length > 16)
     throw Error('Invalid Codex author registry');
-  const ids = new Set(), aliases = new Map(), bindings = new Set();
+  const ids = new Set(), aliases = new Map(), bindings = new Set(),
+    fingerprints = new Set();
   const authors = p.authors.map(author => {
     if (!author || typeof author !== 'object' || Array.isArray(author) ||
         Object.keys(author).some(k=>!['id','name','aliases','fingerprint',
@@ -59,8 +60,10 @@ export function createCodexPolicy(options = {}) {
         !clean(author.name) || !/^[a-f0-9]{64}$/.test(author.fingerprint || '') ||
         !Array.isArray(author.aliases) || author.aliases.length > 12)
       throw Error('Invalid Codex author policy');
-    if (ids.has(author.id)) throw Error('Duplicate Codex author');
+    if (ids.has(author.id) || fingerprints.has(author.fingerprint))
+      throw Error('Duplicate Codex author identity or fingerprint');
     ids.add(author.id);
+    fingerprints.add(author.fingerprint);
     const labels = [author.id, author.name, ...author.aliases];
     for (const label of labels) {
       if (!clean(label)) throw Error('Invalid Codex author alias');
@@ -72,7 +75,12 @@ export function createCodexPolicy(options = {}) {
     const binding = author.binding;
     if (binding !== null && binding !== undefined) {
       if (typeof binding !== 'object' || Array.isArray(binding) ||
+          Object.keys(binding).some(k => !['kind','fingerprint','status',
+            'enrolledAt','liveExecution'].includes(k)) ||
           !['enrolled','not-enrolled'].includes(binding.status) ||
+          (binding.kind !== undefined && !clean(binding.kind)) ||
+          (binding.enrolledAt !== undefined && !clean(binding.enrolledAt)) ||
+          (binding.liveExecution !== undefined && !clean(binding.liveExecution)) ||
           (binding.status === 'enrolled' && !/^[a-f0-9]{64}$/.test(binding.fingerprint || '')))
         throw Error('Invalid Codex author binding');
       if (binding.status === 'enrolled') {
@@ -80,9 +88,24 @@ export function createCodexPolicy(options = {}) {
         bindings.add(binding.fingerprint);
       }
     }
+    const session = author.sessionObservation;
+    if (session !== null && session !== undefined &&
+        (typeof session !== 'object' || Array.isArray(session) ||
+          Object.keys(session).some(k => !['kind','observedAt',
+            'environmentFingerprint','threadFingerprint','accountAuthenticated'].includes(k)) ||
+          (session.kind !== undefined && !clean(session.kind)) ||
+          (session.observedAt !== undefined && !clean(session.observedAt)) ||
+          (session.accountAuthenticated !== undefined &&
+            typeof session.accountAuthenticated !== 'boolean') ||
+          (session.environmentFingerprint !== undefined &&
+            !/^[a-f0-9]{64}$/.test(session.environmentFingerprint)) ||
+          (session.threadFingerprint !== undefined &&
+            !/^[a-f0-9]{64}$/.test(session.threadFingerprint))))
+      throw Error('Invalid Codex session observation');
     return Object.freeze({...author,
       aliases:Object.freeze([...author.aliases]),
-      binding:binding && Object.freeze({...binding})});
+      binding:binding && Object.freeze({...binding}),
+      sessionObservation:session && Object.freeze({...session})});
   });
   return Object.freeze({...p,
     trustedPrActors:Object.freeze([...p.trustedPrActors]),
