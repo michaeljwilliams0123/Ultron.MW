@@ -37,10 +37,12 @@ With authenticated GitHub CLI configured, run:
 
     node scripts/codex-lane-status.mjs 83
 
-This retrieves the owner Issue, canonical PR, source proposal, exact current
-main SHA, actual PR-event workflow and test jobs, separate workflow_dispatch,
+This retrieves the owner Issue, canonical PR, source proposal pinned to the
+observed exact PR-head commit, exact current main SHA, actual PR-event workflow and test jobs, separate workflow_dispatch,
 owner-authored trigger comments, and optional branch claim/completion receipt.
-It rechecks main and PR head after reading. Missing/incomplete data never
+For present claim/receipt files, it also validates create-only Git history,
+record creation commits and their parents, the receipt's claim-commit link,
+and timestamp order. It rechecks the owner Issue, main, and PR head afterward. Missing/incomplete data never
 becomes a passing result. No secrets, transcript, API tokens, prompt bodies,
 or credentials are emitted in the status output.
 
@@ -74,6 +76,12 @@ credential must stay in its own protected runtime, never in public GitHub.
 
 `mergeAccepted` remains false in this evaluator by design: a read-only status
 check cannot authorize a merge or attest a cloud deployment.
+
+A stale task pinned to an old main SHA is reported as stale, not executable.
+Supersede it with a fresh owner Issue and task PR against current main; do not
+rewrite the original request or weaken admission. GitHub cannot know whether
+the separate Work event route is paused. Verify this within the enrolled Work
+account before claiming successful event delivery.
 
 A suspended PR workflow must not be presented as green because another
 dispatch succeeded. A missed Work event cannot be repaired by fabricating a
