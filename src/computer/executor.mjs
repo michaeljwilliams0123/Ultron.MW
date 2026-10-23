@@ -233,6 +233,20 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         after = await driver.observe();
         failurePhase = 'post-action-origin-check';
         safeUrl(after.url, allowedOrigins);
+        // Application writes may finish after Playwright's click returns.
+        // Re-observe only; never repeat the action. Bounded polling fixes a
+        // transient UI race without converting browser text into proof of
+        // durable external persistence (provider readback remains separate).
+        if (step.action === 'click') {
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const changed = before.url !== after.url ||
+              before.title !== after.title || before.text !== after.text;
+            if (changed && matchesExpectation(after, step.expect)) break;
+            await new Promise(resolve => setTimeout(resolve, 200));
+            after = await driver.observe();
+            safeUrl(after.url, allowedOrigins);
+          }
+        }
         // An expectation matching the PRE-action screen is not evidence
         // of successful execution. Input fills may instead be confirmed by
         // the Playwright driver reading back the specific field value.
