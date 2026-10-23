@@ -146,10 +146,12 @@ export async function installNetworkPolicy(context, allowedOrigins) {
       await route.abort('blockedbyclient');
       return;
     }
-    // Chromium can follow 3xx after route.fulfill without another route callback.
-    // Manually resolving hops and fulfilling the final response leaves the
-    // browser-visible URL at the original request (including POST).
-    // Fail closed on ALL redirects until the browser can preserve safe URL history.
+    // Chromium can follow a fulfilled 3xx without another route callback.
+    // Fetch one hop without following it. A safe GET/POST navigation redirect
+    // is converted into a tiny same-origin interstitial whose new navigation
+    // re-enters this route policy. Cross-origin, subresource and method-
+    // preserving redirects remain blocked. Preserve response cookies so a
+    // successful owner-completed login can establish its isolated session.
     if (typeof route.fetch !== 'function' || typeof route.fulfill !== 'function') {
       await route.abort('blockedbyclient').catch(() => {});
       return;
@@ -157,9 +159,37 @@ export async function installNetworkPolicy(context, allowedOrigins) {
     try {
       const response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
       if (response.status() >= 300 && response.status() < 400) {
-        // The original request may already have changed server state.
-        // Executor checkpoint reconciliation must refuse blind replay.
-        await route.abort('blockedbyclient');
+        const request = route.request();
+        const method = typeof request.method === 'function' ? request.method() : '';
+        const isNavigation = typeof request.isNavigationRequest === 'function' &&
+          request.isNavigationRequest();
+        const headers = typeof response.headers === 'function' ? response.headers() : {};
+        const location = Object.entries(headers).find(([name]) =>
+          name.toLowerCase() === 'location')?.[1];
+        let target = null;
+        try { target = location ? new URL(location, request.url()) : null; }
+        catch { /* Invalid redirect target remains blocked. */ }
+        if (![301, 302, 303].includes(response.status()) || !isNavigation ||
+            !['GET', 'POST'].includes(method) || !target ||
+            target.username || target.password || !allowed.has(target.origin)) {
+          // The original request may already have changed server state.
+          // Executor reconciliation must refuse blind replay.
+          await route.abort('blockedbyclient');
+          return;
+        }
+        const forwarded = { ...headers };
+        for (const name of Object.keys(forwarded)) {
+          if (['location','content-length','content-encoding','content-type',
+            'content-security-policy'].includes(name.toLowerCase())) delete forwarded[name];
+        }
+        forwarded['content-type'] = 'text/html; charset=utf-8';
+        forwarded['cache-control'] = 'no-store';
+        forwarded['content-security-policy'] =
+          "default-src 'none'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+        const serialized = JSON.stringify(target.href).replace(/</g, '\\u003c');
+        await route.fulfill({ status: 200, headers: forwarded,
+          body: '<!doctype html><meta charset="utf-8"><title>Redirecting</title>' +
+            '<script>location.replace(' + serialized + ')</script>' });
         return;
       }
       await route.fulfill({ response });

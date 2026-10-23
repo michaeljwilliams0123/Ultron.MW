@@ -344,27 +344,62 @@ test('network interception aborts failed fetch and missing runtime fetch capabil
   assert.deepEqual(aborted, ['failed', 'blockedbyclient']);
 });
 
-test('network interception blocks all redirects with no invisible follow-up', async () => {
-  let handler, followups = 0, fulfilled = 0, aborted = 0;
+test('network interception safely re-enters policy for same-origin login redirects', async () => {
+  let handler, fulfilled = [], aborted = 0;
   await installNetworkPolicy({
     route: async (_, cb) => { handler = cb; },
     routeWebSocket: async () => {},
-    request: { fetch: async () => { followups++; throw Error('unexpected hop'); } },
   }, ['https://example.test']);
-  for (const status of [301, 302, 303, 307, 308]) {
+  for (const status of [301, 302, 303]) {
     await handler({
-      request: () => ({ url: () => 'https://example.test/submit', method: () => 'POST' }),
+      request: () => ({ url: () => 'https://example.test/session',
+        method: () => 'POST', isNavigationRequest: () => true }),
       fetch: async opts => {
         assert.equal(opts.maxRedirects, 0);
-        return { status: () => status, headers: () => ({ location: '/receipt' }) };
+        return { status: () => status, headers: () => ({
+          location: '/receipt', 'set-cookie': 'session=opaque; HttpOnly; Secure',
+          'content-length': '4', 'content-security-policy': "default-src 'self'"
+        }) };
       },
+      fulfill: async value => { fulfilled.push(value); },
+      abort: async reason => { assert.equal(reason, 'blockedbyclient'); aborted++; },
+    });
+  }
+  assert.equal(fulfilled.length, 3);
+  assert.equal(aborted, 0);
+  for (const result of fulfilled) {
+    assert.equal(result.status, 200);
+    assert.equal(result.headers['set-cookie'], 'session=opaque; HttpOnly; Secure');
+    assert.equal(result.headers['content-length'], undefined);
+    assert.match(result.headers['content-security-policy'], /unsafe-inline/);
+    assert.match(result.body, /https:\/\/example\.test\/receipt/);
+  }
+});
+
+test('network interception blocks unsafe or method-preserving redirects', async () => {
+  let handler, fulfilled = 0, aborted = 0;
+  await installNetworkPolicy({
+    route: async (_, cb) => { handler = cb; },
+    routeWebSocket: async () => {},
+  }, ['https://example.test']);
+  const cases = [
+    { status: 307, location: '/receipt', navigation: true, method: 'POST' },
+    { status: 308, location: '/receipt', navigation: true, method: 'POST' },
+    { status: 302, location: 'https://example.evil/private', navigation: true, method: 'POST' },
+    { status: 302, location: '/asset.js', navigation: false, method: 'GET' },
+  ];
+  for (const item of cases) {
+    await handler({
+      request: () => ({ url: () => 'https://example.test/submit',
+        method: () => item.method, isNavigationRequest: () => item.navigation }),
+      fetch: async () => ({ status: () => item.status,
+        headers: () => ({ location: item.location }) }),
       fulfill: async () => { fulfilled++; },
       abort: async reason => { assert.equal(reason, 'blockedbyclient'); aborted++; },
     });
   }
   assert.equal(fulfilled, 0);
-  assert.equal(followups, 0);
-  assert.equal(aborted, 5);
+  assert.equal(aborted, cases.length);
 });
 
 test('non-redirect responses retain normal fulfillment', async () => {
