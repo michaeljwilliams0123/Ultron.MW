@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * Adapter to a provided Playwright Page. Not connected to an external
  * account or browser until the owner supplies a separate authenticated
@@ -7,42 +9,104 @@ export function createPlaywrightComputerDriver(page) {
   if (!page || typeof page.goto !== 'function' ||
       typeof page.locator !== 'function' || typeof page.url !== 'function')
     throw TypeError('An actual Playwright Page is required');
+  // Keep the exact Playwright ElementHandle that passed the first trial.
+  // A second preflight after owner consent checks that same node, and perform
+  // never resolves the selector again to a replacement element.
+  const preparedTargets = new Map();
   return Object.freeze({
+    // A read-only actionability trial checks the intended target BEFORE
+    // a human is asked to approve. It does not click, type or press a key.
+    async preflight(step) {
+      const locator = page.locator(step.selector);
+      let target = preparedTargets.get(step.id);
+      if (!target && typeof locator.elementHandle === 'function') {
+        target = await locator.elementHandle({ timeout: 4000 });
+        if (!target) throw Error('Browser target is unavailable');
+        preparedTargets.set(step.id, target);
+      }
+      target ||= locator;
+      if (step.action === 'click') {
+        await target.click({ trial: true, timeout: 4000 });
+      } else if (step.action === 'type' || step.action === 'keypress') {
+        if (typeof target.waitForElementState === 'function')
+          await target.waitForElementState('visible', { timeout: 4000 });
+        else await target.waitFor({ state: 'visible', timeout: 4000 });
+      }
+      return true;
+    },
     async observe() {
+      const body = page.locator('body');
+      const text = String(await body.innerText({ timeout: 10000 })).slice(0, 10000);
+      // Visual and accessibility evidence stay in process memory only. Never
+      // save screenshots, page HTML or account contents to GitHub/checkpoints.
+      const screenshotDigest = typeof page.screenshot === 'function'
+        ? createHash('sha256').update(await page.screenshot({
+            type: 'png', animations: 'disabled', timeout: 10000,
+          })).digest('hex') : null;
+      const accessibilityDigest = typeof body.ariaSnapshot === 'function'
+        ? createHash('sha256').update(String(await body.ariaSnapshot({
+            timeout: 10000,
+          })).slice(0, 10000)).digest('hex') : null;
+      // Credential / MFA controls are never automation targets. A challenge
+      // is a mandatory handoff to the owner, not a prompt for the model.
+      let requiresOwnerTakeover = false;
+      for (const selector of [
+        'input[type="password"]:visible',
+        'input[autocomplete="one-time-code"]:visible',
+        'input[name="otp"]:visible',
+      ]) {
+        const credentialField = page.locator(selector);
+        if (typeof credentialField.count === 'function' &&
+            await credentialField.count() > 0) {
+          requiresOwnerTakeover = true;
+          break;
+        }
+      }
+      // Push-based MFA and security-key prompts may have no input fields.
+      // Page text can ONLY pause automation; it can never grant permission.
+      if (/two.factor authentication|multi.factor authentication|one.time code|passkey|security key|verify it.s you|authenticator app/i.test(text))
+        requiresOwnerTakeover = true;
       return {
-        url: page.url(),
-        title: String(await page.title()).slice(0, 240),
-        text: String(await page.locator('body').innerText({ timeout: 10000 })).slice(0, 10000),
+        url: page.url(), title: String(await page.title()).slice(0, 240),
+        text, screenshotDigest, accessibilityDigest, requiresOwnerTakeover,
       };
     },
     async perform(step) {
-      switch (step.action) {
-        case 'navigate':
-          await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 20000 }); break;
-        case 'click':
-          await page.locator(step.selector).click({ timeout: 10000 }); break;
-        case 'type': {
-          const target = page.locator(step.selector);
-          await target.fill(step.value, { timeout: 10000 });
-          // Never return or persist the typed value itself.
-          return { fieldValueVerified: await target.inputValue({ timeout: 10000 }) === step.value };
+      const prepared = preparedTargets.get(step.id);
+      try {
+        switch (step.action) {
+          case 'navigate':
+            await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 20000 }); break;
+          case 'click':
+            await (prepared || page.locator(step.selector)).click({ timeout: 10000 }); break;
+          case 'type': {
+            const target = prepared || page.locator(step.selector);
+            await target.fill(step.value, { timeout: 10000 });
+            // Never return or persist the typed value itself.
+            return { fieldValueVerified: await target.inputValue({ timeout: 10000 }) === step.value };
+          }
+          case 'keypress':
+            await (prepared || page.locator(step.selector)).press(step.key, { timeout: 10000 }); break;
+          case 'scroll':
+            await page.mouse.wheel(0, step.pixels); break;
+          case 'wait':
+            await page.locator(step.selector).waitFor({ state: 'visible', timeout: step.timeoutMs }); break;
+          case 'extract':
+            return { text: String(await page.locator(step.selector).innerText({
+              timeout: 10000
+            })).slice(0, 10000) };
+          case 'observe':
+            return null;
+          default:
+            throw Error('Unrecognized browser action');
         }
-        case 'keypress':
-          await page.locator(step.selector).press(step.key, { timeout: 10000 }); break;
-        case 'scroll':
-          await page.mouse.wheel(0, step.pixels); break;
-        case 'wait':
-          await page.locator(step.selector).waitFor({ state: 'visible', timeout: step.timeoutMs }); break;
-        case 'extract':
-          return { text: String(await page.locator(step.selector).innerText({
-            timeout: 10000
-          })).slice(0, 10000) };
-        case 'observe':
-          return null;
-        default:
-          throw Error('Unrecognized browser action');
+        return null;
+      } finally {
+        if (prepared) {
+          preparedTargets.delete(step.id);
+          try { await prepared.dispose?.(); } catch {}
+        }
       }
-      return null;
     },
   });
 }
@@ -74,7 +138,7 @@ export async function installNetworkPolicy(context, allowedOrigins) {
     try {
       const target = new URL(route.request().url());
       if (!['https:', 'http:'].includes(target.protocol) ||
-          !allowed.has(target.origin)) {
+          target.username || target.password || !allowed.has(target.origin)) {
         await route.abort('blockedbyclient');
         return;
       }
@@ -82,7 +146,57 @@ export async function installNetworkPolicy(context, allowedOrigins) {
       await route.abort('blockedbyclient');
       return;
     }
-    await route.continue();
+    // Chromium can follow a fulfilled 3xx without another route callback.
+    // Fetch one hop without following it. A safe GET/POST navigation redirect
+    // is converted into a tiny same-origin interstitial whose new navigation
+    // re-enters this route policy. Cross-origin, subresource and method-
+    // preserving redirects remain blocked. Preserve response cookies so a
+    // successful owner-completed login can establish its isolated session.
+    if (typeof route.fetch !== 'function' || typeof route.fulfill !== 'function') {
+      await route.abort('blockedbyclient').catch(() => {});
+      return;
+    }
+    try {
+      const response = await route.fetch({ maxRedirects: 0, timeout: 10000 });
+      if (response.status() >= 300 && response.status() < 400) {
+        const request = route.request();
+        const method = typeof request.method === 'function' ? request.method() : '';
+        const isNavigation = typeof request.isNavigationRequest === 'function' &&
+          request.isNavigationRequest();
+        const headers = typeof response.headers === 'function' ? response.headers() : {};
+        const location = Object.entries(headers).find(([name]) =>
+          name.toLowerCase() === 'location')?.[1];
+        let target = null;
+        try { target = location ? new URL(location, request.url()) : null; }
+        catch { /* Invalid redirect target remains blocked. */ }
+        if (![301, 302, 303].includes(response.status()) || !isNavigation ||
+            !['GET', 'POST'].includes(method) || !target ||
+            target.username || target.password || !allowed.has(target.origin)) {
+          // The original request may already have changed server state.
+          // Executor reconciliation must refuse blind replay.
+          await route.abort('blockedbyclient');
+          return;
+        }
+        const forwarded = { ...headers };
+        for (const name of Object.keys(forwarded)) {
+          if (['location','content-length','content-encoding','content-type',
+            'content-security-policy'].includes(name.toLowerCase())) delete forwarded[name];
+        }
+        forwarded['content-type'] = 'text/html; charset=utf-8';
+        forwarded['cache-control'] = 'no-store';
+        forwarded['content-security-policy'] =
+          "default-src 'none'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+        const serialized = JSON.stringify(target.href).replace(/</g, '\\u003c');
+        await route.fulfill({ status: 200, headers: forwarded,
+          body: '<!doctype html><meta charset="utf-8"><title>Redirecting</title>' +
+            '<script>location.replace(' + serialized + ')</script>' });
+        return;
+      }
+      await route.fulfill({ response });
+    } catch {
+      // Unknown response or a closed page is not proof of a completed write.
+      await route.abort('failed').catch(() => {});
+    }
   });
   // WebSocket messages bypass HTTP route interception in some Playwright
   // versions. Refuse them entirely in the initial browser worker.
@@ -95,17 +209,19 @@ export async function installNetworkPolicy(context, allowedOrigins) {
  * runtime after installing Playwright and its browsers in that environment.
  */
 export async function launchIsolatedBrowser(options = {}) {
-  if (options.headless !== true)
-    throw Error('Headed browser requires a separately approved runtime');
-  // A supported local Chrome installation can replace a separate downloaded
-  // Playwright Chromium binary. Never pass arbitrary executables or channels.
+  if (options.headless !== true &&
+      !(options.headless === false && options.ownerApproval === true))
+    throw Error('Headed browser requires explicit local owner approval');
   if (options.channel !== undefined && options.channel !== 'chrome')
-    throw Error('Unsupported browser channel');
+    throw Error('Unsupported browser channel; only system Chrome is admitted');
+  // Validate policy BEFORE importing optional dependencies: a clean CI host
+  // without Playwright must still reject an unsafe channel deterministically.
   let pw;
   try { pw = await import('playwright'); }
   catch { throw Error('Playwright not installed in this execution environment'); }
   const browser = await pw.chromium.launch({
-    headless: true, ...(options.channel ? { channel: options.channel } : {}),
+    headless: options.headless === true,
+    ...(options.channel ? { channel: options.channel } : {}),
   });
   try {
     const context = await browser.newContext({

@@ -53,8 +53,10 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
        }
 
 4. From a **real interactive local terminal** (not CI, schedule, redirected
-   standard input or browser console), run:
+   standard input or browser console), set the matching GitHub CLI owner
+   identity and run:
 
+       set ULTRON_COMPUTER_GITHUB_OWNER=michaeljwilliams0123
        node scripts/owner-browser-run.mjs "C:\private\ultron-read-plan.json"
 
 5. Interactive click/type/keypress steps display plan ID, full fingerprint,
@@ -70,8 +72,14 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
 
 ## Security, limitations and rollback
 
-- A fresh isolated **headless** Playwright profile is launched. It does not
-  inherit authenticated Chrome tabs, log into owner accounts or handle MFA.
+- A fresh isolated **headless** Playwright profile is launched by default.
+  It never inherits Chrome cookies or tokens. To opt into manual GitHub login
+  and MFA takeover in a **real interactive terminal**, set
+  `ULTRON_COMPUTER_HEADED=1` (and `ULTRON_BROWSER_CHANNEL=chrome` if
+  selecting installed Chrome). The owner types secrets directly into the
+  isolated browser window; no agent or CLI receives credentials. The runner
+  pauses with `owner-takeover-required`, accepts human `RESUME`, and
+  requests a separate random per-step approval for any active action.
 - The allowlist admits only explicitly stated HTTPS origins and loopback HTTP.
   Cross-origin resources and WebSockets are rejected. Hosted deployment would
   need additional network egress protections; none is authorized here.
@@ -81,11 +89,21 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
 - CI indicators are denied before any approval, even when CI allocates a
   pseudo-terminal. Redirected input/output are also rejected. This is a
   fail-closed guard, not an unforgeable owner authentication mechanism.
-- The challenge demonstrates live local terminal interaction, NOT independent
-  identity proof, SSO, remote owner authentication, visual grounding, session
-  takeover or production browser execution. Do not mark issue #65 complete.
+- GitHub CLI `/user` proves the host's configured GitHub owner identity;
+  the random terminal challenge proves separate local interactive consent.
+  Neither alone proves a browser's external service sign-in. A real GitHub
+  login form causes an owner-takeover stop; the owner must manually complete
+  MFA before the browser can proceed. The actual user-authenticated takeover
+  run remains pending; do not mark issue #65 complete.
 - Press Ctrl+C, close the terminal, or decline the challenge to stop.
   If an effect is uncertain, inspect the destination before any retry.
+- **New Chrome session checkpoint handling:** A stopped run may leave a
+  checkpoint marking earlier navigation as complete even though a later
+  invocation opens Chrome at `about:blank`. The owner runner preserves the
+  old checkpoint and starts a fresh objective ID only when all previously
+  completed steps were passive and there is no pending action. It never
+  automatically restarts completed interactive actions or uncertain writes;
+  those require owner reconciliation first.
 - The owner's PC must stay on to execute this runner. PC-offline continuity is
   not available, and no zero-cost always-on hosting is claimed.
 - Removing this draft PR/runner leaves Pages, GitLab recovery, protected main,

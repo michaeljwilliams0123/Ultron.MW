@@ -90,10 +90,11 @@ export function normalizeComputerPlan(raw, { allowedOrigins = [] } = {}) {
  * State is persisted BEFORE dispatch; an ambiguous write never replays.
  */
 export function createComputerExecutor({ driver, store, authorize = async () => false,
-  allowedOrigins, clock = () => new Date().toISOString() } = {}) {
+  canContinue = async () => true, allowedOrigins,
+  clock = () => new Date().toISOString() } = {}) {
   if (!driver || typeof driver.observe !== 'function' || !store ||
       typeof store.read !== 'function' || typeof store.write !== 'function' ||
-      typeof authorize !== 'function')
+      typeof authorize !== 'function' || typeof canContinue !== 'function')
     throw Error('Executor requires driver, durable store and authority callback');
 
   async function run(raw) {
@@ -121,9 +122,45 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
     if (state.status === 'completed')
       return { status: 'completed', id: plan.id, receipts: [...state.receipts], resumed: true };
 
+    async function sessionGate(step) {
+      if (await canContinue({ planId: plan.id, stepId: step.id,
+        action: step.action }) === true) return null;
+      state.status = 'approval-required';
+      await store.write(plan.id, state);
+      return { status: 'approval-required', id: plan.id, stepId: step.id,
+        reason: 'Owner session expired or revoked', receipts: [...state.receipts] };
+    }
+
+    async function preflightAction(step) {
+      if (!ACTIVE.has(step.action) || typeof driver.preflight !== 'function')
+        return true;
+      try { return await driver.preflight(step) === true; }
+      catch { return false; }
+    }
+
+    async function actionNotReady(step, reason) {
+      state.status = 'approval-required';
+      await store.write(plan.id, state);
+      return {
+        status: 'action-not-ready', id: plan.id, stepId: step.id,
+        reason, receipts: [...state.receipts],
+      };
+    }
+
     for (const step of plan.steps) {
       if (state.completed.includes(step.id)) continue;
+      const blocked = await sessionGate(step);
+      if (blocked) return blocked;
       const before = await driver.observe();
+      const blockedAfterObservation = await sessionGate(step);
+      if (blockedAfterObservation) return blockedAfterObservation;
+      if (before.requiresOwnerTakeover && step.action !== 'observe') {
+        state.status = 'approval-required';
+        await store.write(plan.id, state);
+        return { status: 'owner-takeover-required', id: plan.id,
+          stepId: step.id, reason: 'Credential or MFA form needs owner takeover',
+          receipts: [...state.receipts] };
+      }
       // A newly launched isolated browser starts at about:blank.
       // Only first-step navigation may begin from that browser-native state.
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
@@ -131,6 +168,11 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       if (ACTIVE.has(step.action) && step.action !== 'type' &&
           matchesExpectation(before, step.expect))
         throw Error('Interactive postcondition already satisfied before action');
+      // Validate actionability before asking the owner for permission or
+      // recording an uncertain pending action. Trial clicks never activate UI.
+      if (!await preflightAction(step))
+        return actionNotReady(step,
+          'Target not actionable; no interaction dispatched');
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
@@ -143,16 +185,35 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
         return { status: 'approval-required', id: plan.id, stepId: step.id,
           receipts: [...state.receipts] };
       }
+      // Approval can take long enough for a script or navigation to replace
+      // the target. Revalidate after consent and before the durable pending
+      // checkpoint so a stale approval never dispatches a different element.
+      if (!await preflightAction(step))
+        return actionNotReady(step,
+          'Target changed or became unavailable after owner approval');
+      const blockedBeforeCheckpoint = await sessionGate(step);
+      if (blockedBeforeCheckpoint) return blockedBeforeCheckpoint;
       state.status = 'running';
       state.pending = step.id;
       await store.write(plan.id, state);
+      let failurePhase = 'before-dispatch';
+      let after = null;
       try {
+        // If the session ends during checkpoint persistence, preserve the
+        // pending action for explicit reconciliation rather than dispatching.
+        if (await canContinue({ planId: plan.id, stepId: step.id,
+          action: step.action }) !== true)
+          throw Error('Owner session ended before action dispatch');
+        failurePhase = 'action-dispatch';
         const result = await driver.perform(step);
-        const after = await driver.observe();
+        failurePhase = 'post-action-observation';
+        after = await driver.observe();
+        failurePhase = 'post-action-origin-check';
         safeUrl(after.url, allowedOrigins);
         // An expectation matching the PRE-action screen is not evidence
         // of successful execution. Input fills may instead be confirmed by
         // the Playwright driver reading back the specific field value.
+        failurePhase = 'postcondition-verification';
         const changed = before.url !== after.url || before.title !== after.title ||
           before.text !== after.text;
         if (step.action === 'type' && result?.fieldValueVerified !== true)
@@ -165,26 +226,56 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           stepId: step.id, action: step.action, status: 'verified', observedAt: clock(),
           origin: new URL(after.url).origin, observationDigest: digest({
             url: after.url, text: String(after.text || '').slice(0, 10000),
-            title: after.title || ''
+            title: after.title || '', screenshotDigest: after.screenshotDigest || null,
+            accessibilityDigest: after.accessibilityDigest || null,
           }),
           resultDigest: digest(result ?? null),
+          visualDigest: after.screenshotDigest || null,
+          accessibilityDigest: after.accessibilityDigest || null,
         };
         // Do not mutate the in-memory last durable checkpoint until the
         // complete next checkpoint has been committed. Failed post-action
         // persistence MUST leave the last durable pending step in place.
         const next = { ...state, completed: [...state.completed, step.id],
           receipts: [...state.receipts, receipt], pending: null };
+        failurePhase = 'receipt-persistence';
         await store.write(plan.id, next);
         state = next;
       } catch (error) {
-        // The interaction may already have occurred. It is never replayed
-        // or labeled failed-without-side-effects by the executor.
+        // An action may already have fired even if Playwright times out.
+        // Capture a SECOND, strictly read-only observation when possible,
+        // without re-running the click or persisting DOM text/screenshot data.
+        if (!after) {
+          try { after = await driver.observe(); }
+          catch { /* Browser may have closed or navigated. */ }
+        }
+        let observedPath = null;
+        let observedOrigin = null;
+        if (after?.url) {
+          try {
+            const parsed = new URL(after.url);
+            if (['https:', 'http:'].includes(parsed.protocol)) {
+              observedOrigin = parsed.origin;
+              observedPath = parsed.pathname.slice(0, 160);
+            }
+          } catch { /* Unknown browser location remains unverified. */ }
+        }
+        const failureKind = error?.name === 'TimeoutError' ?
+          'browser-timeout' : error?.name === 'TargetClosedError' ?
+            'browser-closed' : 'execution-or-verification-error';
+        const diagnostics = {
+          failurePhase, failureKind, observedOrigin, observedPath,
+          observedVisualDigest: typeof after?.screenshotDigest === 'string' ?
+            after.screenshotDigest : null,
+        };
+        // Keep the uncertain write pending, regardless of the observed path.
+        // An observed URL alone never certifies a completed interaction.
         state = { ...state, pending: step.id, status: 'reconcile-required',
-          errorCode: 'outcome-unverified' };
+          errorCode: 'outcome-unverified', ...diagnostics };
         await store.write(plan.id, state);
         return { status: 'reconcile-required', id: plan.id, pending: step.id,
           reason: 'Outcome unverified; inspect the application before retrying',
-          receipts: [...state.receipts] };
+          ...diagnostics, receipts: [...state.receipts] };
       }
     }
     state.status = 'completed';
