@@ -35,8 +35,9 @@ export function createCodexPolicy(options = {}) {
     value.length <= 120 && ![...value].some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127 || ch === '\\');
   if (!clean(p.owner) || !login.test(p.owner) ||
       typeof p.repository !== 'string' || p.repository.split('/').length !== 2 ||
-      p.repository.split('/')[0] !== p.owner ||
+      !login.test(p.repository.split('/')[0]) ||
       !path.test(p.repository.split('/')[1]) ||
+      ['.','..'].includes(p.repository.split('/')[1]) ||
       !branch.test(p.baseBranch) || !branch.test(p.branchPrefix) ||
       p.baseBranch.includes('..') || p.branchPrefix.includes('..') ||
       !clean(p.prTitlePrefix) || !clean(p.issueTitle) || !clean(p.issueMarker) ||
