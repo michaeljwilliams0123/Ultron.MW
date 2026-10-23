@@ -32,7 +32,7 @@ export function createCodexPolicy(options = {}) {
   const path = /^[A-Za-z0-9_.-]{1,100}$/;
   const branch = /^[a-zA-Z0-9][a-zA-Z0-9/_-]{0,80}$/;
   const clean = value => typeof value === 'string' && value.length > 0 &&
-    value.length <= 120 && !/[\\u0000-\\u001f\\u007f]/.test(value);
+    value.length <= 120 && ![...value].some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127);
   if (!clean(p.owner) || !login.test(p.owner) ||
       typeof p.repository !== 'string' || p.repository.split('/').length !== 2 ||
       p.repository.split('/')[0] !== p.owner ||
@@ -50,7 +50,7 @@ export function createCodexPolicy(options = {}) {
     throw Error('Invalid trusted Codex PR actors');
   if (!Array.isArray(p.authors) || p.authors.length < 1 || p.authors.length > 16)
     throw Error('Invalid Codex author registry');
-  const ids = new Set(), aliases = new Set(), bindings = new Set();
+  const ids = new Set(), aliases = new Map(), bindings = new Set();
   const authors = p.authors.map(author => {
     if (!author || typeof author !== 'object' || Array.isArray(author) ||
         Object.keys(author).some(k=>!['id','name','aliases','fingerprint',
@@ -65,8 +65,9 @@ export function createCodexPolicy(options = {}) {
     for (const label of labels) {
       if (!clean(label)) throw Error('Invalid Codex author alias');
       const normalized = label.trim().toLowerCase().replaceAll('’', "'");
-      if (aliases.has(normalized)) throw Error('Ambiguous Codex author alias');
-      aliases.add(normalized);
+      if (aliases.has(normalized) && aliases.get(normalized) !== author.id)
+        throw Error('Ambiguous Codex author alias');
+      aliases.set(normalized, author.id);
     }
     const binding = author.binding;
     if (binding !== null && binding !== undefined) {
