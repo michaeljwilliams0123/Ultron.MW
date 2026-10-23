@@ -7,6 +7,7 @@ import { assessCodexLane, validateCodexClaimRecord } from '../src/codex-lane-evi
 const MAIN = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
 const CLAIM_COMMIT = 'c'.repeat(40);
+const RECEIPT_COMMIT = 'd'.repeat(40);
 const task = buildCodexCall({ issueNumber: 82, sourceSha: MAIN,
   objective: '/codex destiny-codex Inspect public author registry' });
 const original = () => ({
@@ -37,6 +38,16 @@ const claim = buildCodexClaim(task, { headSha: HEAD,
 const receipt = buildCodexReceipt(task, { headSha: HEAD,
   claimHeadSha: CLAIM_COMMIT, completedAt: '2026-10-22T18:19:00.000Z',
   result: 'Inspected public registry' });
+const paths = {claim: 'docs/codex/claims/' + task.taskId + '.json',
+  receipt: 'docs/codex/receipts/' + task.taskId + '.json'};
+const provenance = () => ({
+  claimHistory: [{sha: CLAIM_COMMIT}],
+  claimCommit: {sha: CLAIM_COMMIT, parents: [{sha: HEAD}],
+    files: [{filename: paths.claim, status: 'added'}]},
+  receiptHistory: [{sha: RECEIPT_COMMIT}],
+  receiptCommit: {sha: RECEIPT_COMMIT, parents: [{sha: HEAD}],
+    files: [{filename: paths.receipt, status: 'added'}]},
+});
 
 test('GitHub bot PR, verified proposal, route enrollment are not executor proof', () => {
   const result = assessCodexLane(original());
@@ -98,6 +109,7 @@ test('wrong head and wrong event never yield current-head acceptance', () => {
 test('incomplete claim always requires reconciliation rather than retry', () => {
   const result=assessCodexLane({
     ...original(),pullRequestRuns:[pass()],ownerComments:[trigger],claim,
+    ...provenance(),
   });
   assert.equal(result.replayDisposition,'reconcile-required');
   assert.equal(result.executionState,'claim-requires-reconciliation');
@@ -106,6 +118,7 @@ test('incomplete claim always requires reconciliation rather than retry', () => 
 test('existing v1 completion receipt remains transport-level, not account authentication', () => {
   const result=assessCodexLane({
     ...original(),pullRequestRuns:[pass()],claim,receipt,
+    ...provenance(),
   });
   assert.equal(result.replayDisposition,'already-completed');
   assert.equal(result.executionState,'completion-receipt-unattributed');
@@ -134,6 +147,35 @@ test('edited issue, wrong main, branch and binding fail admission before status'
     assert.throws(()=>assessCodexLane(data));
   }
 });
+test('stale main is reported as a blocked request rather than executed', () => {
+  const result = assessCodexLane({...original(), mainSha: 'e'.repeat(40),
+    pullRequestRuns: [pass()], ownerComments: [trigger]});
+  assert.equal(result.sourceAdmission, 'stale-current-main');
+  assert.equal(result.githubPrCheck, 'passed');
+  assert.equal(result.nextAction,
+    'supersede-stale-task-with-new-owner-issue-from-current-main');
+  assert.equal(result.mergeAccepted, false);
+});
+test('reject forged creation ancestry, altered claim link and overwritten records', () => {
+  const good = {...original(),claim,receipt,...provenance()};
+  const cases = [
+    {claimHistory:[{sha:'e'.repeat(40)}]},
+    {claimHistory:[]},
+    {claimCommit:{...good.claimCommit,parents:[{sha:MAIN}]}},
+    {claimCommit:{...good.claimCommit,files:[{filename:paths.claim,status:'modified'}]}},
+    {claimCommit:{...good.claimCommit,files:[{filename:paths.claim,status:'added'},
+      {filename:'src/other.mjs',status:'modified'}]}},
+    {receiptCommit:{...good.receiptCommit,parents:[{sha:MAIN}]}},
+    {receiptHistory:[{sha:RECEIPT_COMMIT},{sha:CLAIM_COMMIT}]},
+    {receipt:{...receipt,claimHeadSha:'e'.repeat(40)}},
+    {receipt:{...receipt,completedAt:'2026-10-22T18:17:00.000Z'}},
+  ];
+  for (const delta of cases)
+    assert.throws(()=>assessCodexLane({...good,...delta}));
+  assert.throws(()=>assessCodexLane({...original(),claim}),/Git history/);
+  assert.throws(()=>assessCodexLane({...original(),claim,receipt}),/Git history/);
+});
+
 test('dispatch without source provenance and fake run URLs do not become evidence',()=>{
   const result=assessCodexLane({ ...original(),pullRequestRuns:[
     run('pull_request','success',{html_url:'https://example.com/fake',jobs:pass().jobs})] });
