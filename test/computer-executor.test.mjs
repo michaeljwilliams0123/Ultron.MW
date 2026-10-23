@@ -245,13 +245,24 @@ test('origin interception rejects disallowed browser requests and WebSockets', a
   const events = [];
   const route = url => ({
     request: () => ({ url: () => url }),
-    continue: async () => events.push('continued'),
+    fetch: async options => {
+      assert.equal(options.maxRedirects, 0);
+      return {
+        status: () => url.includes('redirect') ? 302 : 200,
+        headers: () => url.includes('redirect') ?
+          { location: url.includes('allowed') ? '/safe' :
+            'https://example.evil/private' } : {},
+      };
+    },
+    fulfill: async () => events.push('continued'),
     abort: async () => events.push('blocked'),
   });
   await intercept(route('https://example.test/resource.js'));
+  await intercept(route('https://example.test/redirect'));
+  await intercept(route('https://example.test/allowed-redirect'));
   await intercept(route('https://example.evil/resource.js'));
   await intercept(route('http://127.0.0.1/admin'));
-  assert.deepEqual(events, ['continued', 'blocked', 'blocked']);
+  assert.deepEqual(events, ['continued', 'blocked', 'blocked', 'blocked', 'blocked']);
   await socketRule({ close: () => { closed = true; } });
   assert.equal(closed, true);
 });
@@ -314,6 +325,100 @@ test('invalid action properties and noncanonical origins are rejected', () => {
   ]), { allowedOrigins: ['https://example.test/secret'] }), /allowlist/);
 });
 
+test('network interception aborts failed fetch and missing runtime fetch capabilities', async () => {
+  let handler;
+  await installNetworkPolicy({
+    route: async (_, callback) => { handler = callback; },
+    routeWebSocket: async () => {},
+  }, ['https://example.test']);
+  const aborted = [];
+  const route = {
+    request: () => ({ url: () => 'https://example.test/ok' }),
+    fetch: async () => { throw Error('connection reset'); },
+    abort: async reason => { aborted.push(reason); },
+    fulfill: async () => { throw Error('must not fulfill'); },
+  };
+  await handler(route);
+  assert.deepEqual(aborted, ['failed']);
+  await handler({ ...route, fetch: undefined });
+  assert.deepEqual(aborted, ['failed', 'blockedbyclient']);
+});
+
+test('network interception safely re-enters policy for same-origin login redirects', async () => {
+  let handler, fulfilled = [], aborted = 0;
+  await installNetworkPolicy({
+    route: async (_, cb) => { handler = cb; },
+    routeWebSocket: async () => {},
+  }, ['https://example.test']);
+  for (const status of [301, 302, 303]) {
+    await handler({
+      request: () => ({ url: () => 'https://example.test/session',
+        method: () => 'POST', isNavigationRequest: () => true }),
+      fetch: async opts => {
+        assert.equal(opts.maxRedirects, 0);
+        return { status: () => status, headers: () => ({
+          location: '/receipt', 'set-cookie': 'session=opaque; HttpOnly; Secure',
+          'content-length': '4', 'content-security-policy': "default-src 'self'"
+        }) };
+      },
+      fulfill: async value => { fulfilled.push(value); },
+      abort: async reason => { assert.equal(reason, 'blockedbyclient'); aborted++; },
+    });
+  }
+  assert.equal(fulfilled.length, 3);
+  assert.equal(aborted, 0);
+  for (const result of fulfilled) {
+    assert.equal(result.status, 200);
+    assert.equal(result.headers['set-cookie'], 'session=opaque; HttpOnly; Secure');
+    assert.equal(result.headers['content-length'], undefined);
+    assert.match(result.headers['content-security-policy'], /unsafe-inline/);
+    assert.match(result.body, /https:\/\/example\.test\/receipt/);
+  }
+});
+
+test('network interception blocks unsafe or method-preserving redirects', async () => {
+  let handler, fulfilled = 0, aborted = 0;
+  await installNetworkPolicy({
+    route: async (_, cb) => { handler = cb; },
+    routeWebSocket: async () => {},
+  }, ['https://example.test']);
+  const cases = [
+    { status: 307, location: '/receipt', navigation: true, method: 'POST' },
+    { status: 308, location: '/receipt', navigation: true, method: 'POST' },
+    { status: 302, location: 'https://example.evil/private', navigation: true, method: 'POST' },
+    { status: 302, location: '/asset.js', navigation: false, method: 'GET' },
+  ];
+  for (const item of cases) {
+    await handler({
+      request: () => ({ url: () => 'https://example.test/submit',
+        method: () => item.method, isNavigationRequest: () => item.navigation }),
+      fetch: async () => ({ status: () => item.status,
+        headers: () => ({ location: item.location }) }),
+      fulfill: async () => { fulfilled++; },
+      abort: async reason => { assert.equal(reason, 'blockedbyclient'); aborted++; },
+    });
+  }
+  assert.equal(fulfilled, 0);
+  assert.equal(aborted, cases.length);
+});
+
+test('non-redirect responses retain normal fulfillment', async () => {
+  let handler, fulfilled = 0, aborted = 0;
+  await installNetworkPolicy({
+    route: async (_, cb) => { handler = cb; },
+    routeWebSocket: async () => {},
+  }, ['https://example.test']);
+  const response = { status: () => 200, headers: () => ({}) };
+  await handler({
+    request: () => ({ url: () => 'https://example.test/state', method: () => 'GET' }),
+    fetch: async opts => { assert.equal(opts.maxRedirects, 0); return response; },
+    fulfill: async result => { assert.equal(result.response, response); fulfilled++; },
+    abort: async () => { aborted++; },
+  });
+  assert.equal(fulfilled, 1);
+  assert.equal(aborted, 0);
+});
+
 test('interactive plans reject empty postconditions before requesting approval', () => {
   for (const action of ['click', 'type', 'keypress']) {
     for (const expect of [{}, []]) {
@@ -332,11 +437,177 @@ test('interactive plans reject empty postconditions before requesting approval',
       expect: { textIncludes: 'Saved' } }]), { allowedOrigins },
   ));
 });
-
 test('isolated browser refuses arbitrary browser channels before launch', async () => {
   await assert.rejects(
     launchIsolatedBrowser({ headless: true, channel: 'arbitrary-browser',
       allowedOrigins: ['http://127.0.0.1:8753'] }),
     /Unsupported browser channel/,
   );
+});
+
+test('missing click target is rejected by trial before requesting owner approval', async () => {
+  let approvals = 0, dispatches = 0, trialChecks = 0;
+  const state = { url: 'https://example.test/settings/profile', title: 'Profile',
+    text: 'Profile' };
+  const driver = {
+    observe: async () => ({ ...state }),
+    preflight: async () => { trialChecks++; return false; },
+    perform: async () => { dispatches++; },
+  };
+  const store = createMemoryComputerStore();
+  const p = { id: 'missing-github-selector', steps: [{
+    id: 'email-click', action: 'click', selector: 'a[href="/settings/emails"]',
+    expect: { urlIncludes: '/settings/emails' },
+  }] };
+  const executor = createComputerExecutor({
+    driver, store, allowedOrigins,
+    authorize: async () => { approvals++; return true; },
+  });
+  const result = await executor.run(p);
+  assert.equal(result.status, 'action-not-ready');
+  assert.equal(result.stepId, 'email-click');
+  assert.equal(trialChecks, 1);
+  assert.equal(approvals, 0);
+  assert.equal(dispatches, 0);
+  assert.equal((await store.read(p.id)).pending, null);
+});
+
+test('approved target is revalidated before checkpoint and dispatch', async () => {
+  let trials = 0, dispatches = 0;
+  const store = createMemoryComputerStore();
+  const p = { id: 'stale-approved-target', steps: [{
+    id: 'save-click', action: 'click', selector: '#save',
+    expect: { textIncludes: 'Saved' },
+  }] };
+  const executor = createComputerExecutor({
+    driver: {
+      observe: async () => ({ url: 'https://example.test/form',
+        title: 'Form', text: 'Ready' }),
+      preflight: async () => ++trials === 1,
+      perform: async () => { dispatches++; },
+    },
+    store, allowedOrigins, authorize: async () => true,
+  });
+  const result = await executor.run(p);
+  assert.equal(result.status, 'action-not-ready');
+  assert.match(result.reason, /after owner approval/);
+  assert.equal(trials, 2);
+  assert.equal(dispatches, 0);
+  assert.equal((await store.read(p.id)).pending, null);
+});
+
+test('Playwright actionability trial never sends an actual click', async () => {
+  const calls = [];
+  const page = {
+    url: () => 'https://example.test/settings/profile',
+    goto: async () => {},
+    locator: selector => ({
+      click: async opts => { calls.push({ selector, ...opts }); },
+    }),
+  };
+  const driver = createPlaywrightComputerDriver(page);
+  assert.equal(await driver.preflight({
+    action: 'click', selector: 'a[href="/settings/emails"]',
+  }), true);
+  assert.deepEqual(calls, [{
+    selector: 'a[href="/settings/emails"]', trial: true, timeout: 4000,
+  }]);
+});
+
+test('Playwright revalidation and dispatch stay bound to the prepared element', async () => {
+  const calls = [];
+  let elementLookups = 0, liveLocatorClicks = 0, disposed = 0;
+  const handle = {
+    click: async opts => { calls.push(opts); },
+    dispose: async () => { disposed++; },
+  };
+  const page = {
+    url: () => 'https://example.test/settings/profile',
+    goto: async () => {},
+    locator: () => ({
+      elementHandle: async () => { elementLookups++; return handle; },
+      click: async () => { liveLocatorClicks++; },
+    }),
+  };
+  const driver = createPlaywrightComputerDriver(page);
+  const step = { id: 'email-link', action: 'click',
+    selector: 'a[href="/settings/emails"]' };
+  assert.equal(await driver.preflight(step), true);
+  assert.equal(await driver.preflight(step), true);
+  await driver.perform(step);
+  assert.equal(elementLookups, 1);
+  assert.equal(liveLocatorClicks, 0);
+  assert.deepEqual(calls, [
+    { trial: true, timeout: 4000 },
+    { trial: true, timeout: 4000 },
+    { timeout: 10000 },
+  ]);
+  assert.equal(disposed, 1);
+});
+
+test('post-click timeout records sanitized diagnostic without ever replaying', async () => {
+  let count = 0, observes = 0;
+  const token = 'privateQueryStringNeverPersisted';
+  const driver = {
+    async observe() {
+      observes++;
+      const url = observes === 1 ? 'https://example.test/settings/profile' :
+        'https://example.test/settings/emails?token=' + token;
+      return { url, title: 'Settings', text: 'UI data not persisted',
+        screenshotDigest: 'f'.repeat(64) };
+    },
+    async preflight() { return true; },
+    async perform() {
+      count++;
+      const e = Error('User email and secret should not be persisted: ' + token);
+      e.name = 'TimeoutError';
+      throw e;
+    },
+  };
+  const store = createMemoryComputerStore();
+  const p = { id: 'click-timeout-observation', steps: [{
+    action: 'click', selector: '#emails',
+    expect: { urlIncludes: '/settings/emails' },
+  }] };
+  const executor = createComputerExecutor({
+    driver, store, authorize: async () => true, allowedOrigins,
+  });
+  const first = await executor.run(p);
+  assert.equal(first.status, 'reconcile-required');
+  assert.equal(first.failurePhase, 'action-dispatch');
+  assert.equal(first.failureKind, 'browser-timeout');
+  assert.equal(first.observedPath, '/settings/emails');
+  assert.equal(first.observedOrigin, 'https://example.test');
+  assert.equal(first.observedVisualDigest, 'f'.repeat(64));
+  assert.equal(first.receipts.length, 0);
+  const checkpoint = await store.read(p.id);
+  assert.equal(checkpoint.pending, 'step-1');
+  assert.equal(JSON.stringify(checkpoint).includes(token), false);
+  assert.equal((await executor.run(p)).status, 'reconcile-required');
+  assert.equal(count, 1);
+});
+
+test('click with unchanged screen remains uncertain but gives failure phase', async () => {
+  let actions = 0;
+  const driver = {
+    observe: async () => ({
+      url: 'https://example.test/settings/profile',
+      title: 'Profile', text: 'Unchanged',
+    }),
+    preflight: async () => true,
+    perform: async () => { actions++; },
+  };
+  const store = createMemoryComputerStore();
+  const p = { id: 'click-unverified', steps: [{
+    action: 'click', selector: '#emails',
+    expect: { urlIncludes: '/settings/emails' },
+  }] };
+  const out = await createComputerExecutor({
+    driver, store, authorize: async () => true, allowedOrigins,
+  }).run(p);
+  assert.equal(out.status, 'reconcile-required');
+  assert.equal(out.failurePhase, 'postcondition-verification');
+  assert.equal(out.observedPath, '/settings/profile');
+  assert.equal((await store.read(p.id)).pending, 'step-1');
+  assert.equal(actions, 1);
 });

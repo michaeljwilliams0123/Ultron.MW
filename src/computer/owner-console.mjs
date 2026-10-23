@@ -11,7 +11,7 @@ import { createInterface } from 'node:readline/promises';
  */
 export function summarizeComputerApproval(context) {
   if (!context || !/^[a-f0-9]{64}$/.test(context.planFingerprint || '') ||
-      !['click', 'type', 'keypress'].includes(context.action) ||
+      !['click', 'type', 'keypress', 'upload', 'download'].includes(context.action) ||
       typeof context.planId !== 'string' || typeof context.stepId !== 'string' ||
       typeof context.selector !== 'string' || typeof context.currentOrigin !== 'string')
     throw Error('Invalid owner approval request');
@@ -31,7 +31,20 @@ export function summarizeComputerApproval(context) {
         .map(key => [key, '[redacted]']),
     ) : null,
   };
+  if (context.action === 'click' && context.uploadDestination !== undefined) {
+    const url = new URL(context.uploadDestination);
+    if (url.origin !== context.uploadDestination || url.protocol !== 'https:' &&
+        !(url.protocol === 'http:' && ['localhost','127.0.0.1'].includes(url.hostname)))
+      throw Error('Unapproved upload destination origin');
+    summary.uploadDestination = url.origin;
+  }
   if (context.action === 'type') summary.valueLength = context.valueLength;
+  if (['upload','download'].includes(context.action)) {
+    if (typeof context.fileName !== 'string' || context.fileName.length > 80)
+      throw Error('File action requires a bounded filename preview');
+    summary.fileName = context.fileName;
+    summary.risk = context.action === 'upload' ? 'send-owner-approved-file' : 'write-owner-approved-local-file';
+  }
   if (context.action === 'keypress') summary.key = context.key;
   return Object.freeze(summary);
 }
