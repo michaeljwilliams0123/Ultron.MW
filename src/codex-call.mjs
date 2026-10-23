@@ -32,7 +32,7 @@ export function createCodexPolicy(options = {}) {
   const path = /^[A-Za-z0-9_.-]{1,100}$/;
   const branch = /^[a-zA-Z0-9][a-zA-Z0-9/_-]{0,80}$/;
   const clean = value => typeof value === 'string' && value.length > 0 &&
-    value.length <= 120 && ![...value].some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127);
+    value.length <= 120 && ![...value].some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127 || ch === '\\');
   if (!clean(p.owner) || !login.test(p.owner) ||
       typeof p.repository !== 'string' || p.repository.split('/').length !== 2 ||
       p.repository.split('/')[0] !== p.owner ||
