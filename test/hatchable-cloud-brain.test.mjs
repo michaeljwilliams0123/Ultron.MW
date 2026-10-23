@@ -153,3 +153,100 @@ test('cloud: short hourly tick dispatches slow objective work instead of running
  assert.doesNotMatch(tick,/import.*browser.*from 'hatchable'/);
  assert.match(tick,/processed:0/);
 });
+
+function fakeGithubRetryDb(){
+ // A deterministic SQL-driver fixture: models only the status, lease and
+ // backoff predicates that the runner must enforce, not a real Postgres server.
+ const state={status:'queued',attempts:0,maxAttempts:3,now:0,leaseUntil:0,token:null};
+ const events=[],statements=[];
+ const db={state,events,statements,advance(ms){state.now+=ms;},
+  async query(sql,params=[]){
+   statements.push({sql,params});
+   if(sql.includes("'lease-recovered'")||sql.includes("'attempt-limit'"))return {rows:[]};
+   if(sql.includes("'claimed'")){
+    assert.match(sql,/attempts < max_attempts/);
+    assert.match(sql,/lease_until IS NULL OR lease_until <= now\(\)/);
+    if(state.status!=='queued'||state.attempts>=state.maxAttempts||
+       state.leaseUntil>state.now)return {rows:[]};
+    state.status='leased';state.attempts++;state.token=params[0];
+    state.leaseUntil=state.now+3*60*1000;events.push('claimed');
+    return {rows:[{id:37,objective:'repo.inspect',attempts:state.attempts}]};
+   }
+   if(sql.includes("'failed'")){
+    assert.match(sql,/owner_token=\$2 AND status='leased' AND lease_until>now\(\)/);
+    assert.match(sql,/interval '15 minutes'/);
+    if(state.status!=='leased'||state.token!==params[1]||
+       state.leaseUntil<=state.now)return {rows:[]};
+    state.status='queued';state.token=null;state.leaseUntil=state.now+15*60*1000;
+    events.push('failed');return {rows:[{id:37,status:'queued'}]};
+   }
+   if(sql.includes("'observed'")){
+    assert.match(sql,/owner_token=\$3 AND status='leased' AND lease_until>now\(\)/);
+    if(state.status!=='leased'||state.token!==params[2]||
+       state.leaseUntil<=state.now)return {rows:[]};
+    state.status='done';state.token=null;state.leaseUntil=0;
+    events.push('observed');return {rows:[{id:37}]};
+   }
+   throw Error('unexpected-sql:'+sql.slice(0,80));
+  }};
+ return db;
+}
+
+async function realGithubRunner(){
+ const source=await readFile(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8');
+ const core='data:text/javascript;base64,'+Buffer.from(source).toString('base64');
+ return moduleUnderTest('brain-runner.js',core);
+}
+
+test('cloud: GitHub 403 is a lease-fenced failure with bounded retry and later success',async()=>{
+ const {runOne:runGithub}=await realGithubRunner();
+ const db=fakeGithubRetryDb();
+ const originalFetch=globalThis.fetch;
+ let calls=0;
+ globalThis.fetch=async(url,options)=>{
+  calls++;
+  assert.match(String(url),/\/git\/ref\/heads\/main$/);
+  assert.equal(options?.signal?.aborted,false);
+  if(calls===1)return {ok:false,status:403};
+  return {ok:true,json:async()=>({object:{sha:'a'.repeat(40)}})};
+ };
+ try{
+  const failed=await runGithub({db,browser:{}});
+  assert.equal(failed.status,'failed');
+  assert.equal(failed.reason,'github-status-403');
+  assert.equal(failed.next_status,'queued');
+  assert.equal(db.state.attempts,1);
+  assert.deepEqual(db.events,['claimed','failed']);
+  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,0);
+  db.advance(15*60*1000-1);
+  const early=await runGithub({db,browser:{}});
+  assert.equal(early.status,'idle','must not re-claim during 15-minute backoff');
+  assert.equal(calls,1,'must not repeat the failed external read early');
+  db.advance(1);
+  const recovered=await runGithub({db,browser:{}});
+  assert.equal(recovered.status,'done');
+  assert.equal(recovered.summary.sha,'a'.repeat(40));
+  assert.equal(db.state.attempts,2);
+  assert.equal(calls,2);
+  assert.deepEqual(db.events,['claimed','failed','claimed','observed']);
+ }finally{globalThis.fetch=originalFetch;}
+});
+
+test('cloud: GitHub 403 after lease expiry cannot forge a failed or observed receipt',async()=>{
+ const {runOne:runGithub}=await realGithubRunner();
+ const db=fakeGithubRetryDb();
+ const originalFetch=globalThis.fetch;
+ globalThis.fetch=async()=>{
+  db.advance(3*60*1000+1);
+  return {ok:false,status:403};
+ };
+ try{
+  const result=await runGithub({db,browser:{}});
+  assert.equal(result.status,'lost-lease');
+  assert.equal(db.state.attempts,1);
+  assert.deepEqual(db.events,['claimed']);
+  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,0);
+  assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,1,
+   'the fenced failure statement may execute but cannot insert a receipt');
+ }finally{globalThis.fetch=originalFetch;}
+});

@@ -107,3 +107,28 @@ authorization all pass. On any failure, stop promotion; if a deployment was
 performed, revert to the independently recorded prior live version and verify
 its status/readback. For this Stage 3 source-only change, rollback is a revert
 of its one PR-branch commit; do not alter the Hatchable deployment.
+
+
+### October 23 read-failure and recovery evidence (source-only)
+
+WorkId: \`pr76-v2-release-acceptance-matrix-699abf0f\`. The existing live
+Hatchable v2 tick returned HTTP 503 at 07:40:09 UTC; the observed
+\`repo.inspect\` task 37 failed a GitHub metadata read with
+\`github-status-403\`, recorded a failed receipt, and was queued at attempt
+1/3 with a 15-minute retry interval. The upstream 403 cause is **unknown**;
+a scheduler HTTP 503 does not independently establish that cause.
+
+The PR's isolated regression driver now exercises the actual GitHub-read
+objective through the runner with a synthetic 403, asserts **no observed
+receipt**, verifies a lease-fenced failure receipt and that an early retry
+cannot reclaim work, then accepts a valid SHA read after the configured
+15-minute interval. An expired-lease variant refuses a stale worker's
+failure receipt. These tests model database transitions and network replies;
+they are **not** live PostgreSQL fault injection or production recovery
+proof. No credentials, API billing, or production changes are involved.
+
+**PRODUCTION_HOLD remains:** obtain independently authenticated GitHub
+403 diagnostics and live task/event correlation, prove bounded recovery
+under the deployed scheduler, and reconcile all 15 deployed runtime hashes
+(especially the four divergent files) before any separately approved
+deployment/merge or rollback decision.
