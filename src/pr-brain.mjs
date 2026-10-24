@@ -257,12 +257,22 @@ export async function handlePrConversation({event,eventName,actor,repository,get
   observeVerify=dispatchAndObserveVerify,
   buildFramework=buildFrameworkOnPr}={}){
   const turn=admitPrTurn(event,eventName,actor,repository);
+  // Third-party review commands target their own bots, not Ultron. They must
+  // not fail this workflow or consume provider/CI capacity.
+  const mention=turn.body.match(/^\s*@([a-z0-9][a-z0-9.-]*)\b/i);
+  if(mention&&!/^ultron(?:\.mw)?$/i.test(mention[1]))
+    return {status:'ignored-foreign-mention',prNumber:turn.number,created:false};
   if(typeof get!=='function'||typeof post!=='function'||typeof patch!=='function')
     throw Error('PR conversation GitHub adapter incomplete');
   const pr=await get(ROOT+'/pulls/'+turn.number);
   // Closed/superseded PR discussions are ordinary no-ops, not failed agents.
   if(pr?.number===turn.number && pr.state==='closed')
     return {status:'ignored-closed',prNumber:turn.number,created:false};
+  // Owner review comments on unrelated repository branches are not instructions
+  // to this special-purpose agent. Do not turn that expected no-op into red CI.
+  if(pr?.number===turn.number && pr.state==='open' &&
+    typeof pr.head?.ref==='string' && !pr.head.ref.startsWith('ultron/'))
+    return {status:'ignored-unmanaged',prNumber:turn.number,created:false};
   if(pr?.number!==turn.number||pr.state!=='open'||pr.base?.ref!=='main'||
     pr.base?.repo?.full_name!==REPO||pr.head?.repo?.full_name!==REPO||
     !pr.head?.ref?.startsWith('ultron/')||!SHA.test(pr.head?.sha||''))
@@ -375,7 +385,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
             (result.action.verify.conclusion==='success'?'succeeded':'failed'):
           result.action?.verify?'pending':
           result.status==='replied'?'responded':
-          result.status==='ignored'?'skipped':'unknown',
+          result.status?.startsWith('ignored')?'skipped':'unknown',
         intent:result.intent||'unknown',sha:result.action?.commitSha||process.env.GITHUB_SHA,
         prNumber:result.prNumber,runId:Number(process.env.GITHUB_RUN_ID),
         checksSucceeded:result.action?.verify?.conclusion==='success'?1:0,

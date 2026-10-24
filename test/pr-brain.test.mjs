@@ -370,3 +370,30 @@ test('credentials status provides policy, never literal owner keys',async()=>{
   assert.match(m.state.comments.at(-1).body,/short-lived workflow credential/);
   assert.doesNotMatch(m.state.comments.at(-1).body,/ghp_[a-zA-Z0-9]+/);
 });
+
+test('foreign review instructions and unmanaged PR branches are benign no-ops without GitHub writes',async()=>{
+ const m=fixture();
+ const external=event('@coderabbitai full review',false,700);
+ m.add(external);
+ const ignored=await m.invoke(external);
+ assert.equal(ignored.status,'ignored-foreign-mention');
+ assert.equal(m.state.posts.length,0);
+ assert.equal(m.state.history.length,0);
+ const ordinary=event('@ultron status',false,701);
+ m.add(ordinary);
+ m.pr.head.ref='framework/mahoraga-recovery-atlas';
+ const unmanaged=await m.invoke(ordinary);
+ assert.equal(unmanaged.status,'ignored-unmanaged');
+ assert.equal(m.state.posts.length,0);
+ assert.equal(m.state.models.length,0);
+});
+test('an explicit Ultron command on a controlled branch still posts a source-verified reply',async()=>{
+ const m=fixture(),ev=event('@ultron status',false,702);m.add(ev);
+ const response=await m.invoke(ev);
+ assert.equal(response.status,'replied');
+ assert.equal(m.state.posts.filter(x=>x.path===ROOT+'/issues/24/comments').length,1);
+});
+test('workflow prevents review bots from starting the owner PR brain job',async()=>{
+ const yaml=await readFile(new URL('../.github/workflows/pr-brain.yml',import.meta.url),'utf8');
+ assert.match(yaml,/!startsWith\(github\.event\.comment\.body, '@coderabbitai'\)/);
+});

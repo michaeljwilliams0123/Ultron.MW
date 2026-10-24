@@ -15,6 +15,7 @@ jobs:
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.event.comment.user.login == 'michaeljwilliams0123' &&
+      !startsWith(github.event.comment.body, '@coderabbitai') &&
       ((github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
         github.event.issue.state == 'open') ||
