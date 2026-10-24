@@ -147,3 +147,13 @@ proof. No credentials, API billing, or production changes are involved.
 under the deployed scheduler, and reconcile all 15 deployed runtime hashes
 (especially the four divergent files) before any separately approved
 deployment/merge or rollback decision.
+
+### October 24 scheduler recovery correction (source only)
+
+The hourly tick now dispatches the worker when an expired lease needs recovery,
+even if no task is currently queued. After a full four-task batch, the worker
+checks for ready work and schedules at most one additional bounded batch; that
+second batch cannot schedule another continuation. Focused tests exercise both
+paths, including the absence of inline work in the hourly tick. These source
+changes are not evidence that production v2 has been updated or that live
+PostgreSQL recovery has passed.

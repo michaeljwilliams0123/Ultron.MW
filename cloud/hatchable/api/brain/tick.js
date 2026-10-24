@@ -14,8 +14,9 @@ export default async function(req,res){
  // bounded multi-task processing belong to /api/brain/run, never this tick.
  // Continue once through the existing scheduler endpoint, without recursion.
  const remaining=await db.query(`SELECT count(*)::int AS n FROM brain_tasks
-  WHERE status='queued' AND attempts < max_attempts
-  AND (lease_until IS NULL OR lease_until <= now())`);
+  WHERE (status='queued' AND attempts < max_attempts
+   AND (lease_until IS NULL OR lease_until <= now()))
+   OR (status='leased' AND lease_until < now())`);
  const pending=Number(remaining.rows[0]?.n||0);
  let continuation_scheduled=false;
  if(pending>0){

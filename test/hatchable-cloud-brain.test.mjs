@@ -154,6 +154,47 @@ test('cloud: short hourly tick dispatches slow objective work instead of running
  assert.match(tick,/processed:0/);
 });
 
+async function endpointUnderTest(name){
+ const source=await readFile(new URL('../cloud/hatchable/api/brain/'+name+'.js',import.meta.url),'utf8');
+ const dependency=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64');
+ const platform=dependency('export const db=globalThis.__cloudEndpoint.db; export const browser={}; export const scheduler=globalThis.__cloudEndpoint.scheduler;');
+ const runner=dependency('export const runOne=(...args)=>globalThis.__cloudEndpoint.runOne(...args);');
+ const transformed=source.replace("from 'hatchable'","from '"+platform+"'")
+  .replace("from 'lib/brain-runner.js'","from '"+runner+"'");
+ return (await import(dependency(transformed))).default;
+}
+
+test('cloud: hourly dispatch recovers expired leases and a full worker batch schedules at most one continuation',async()=>{
+ const sql=[];const scheduled=[];let runs=0;
+ globalThis.__cloudEndpoint={
+  db:{async query(statement){sql.push(statement);return {rows:[{n:1}]};}},
+  scheduler:{async now(path,payload){scheduled.push({path,payload});}},
+  async runOne(){runs++;return {status:'done'};}
+ };
+ try{
+  const tick=await endpointUnderTest('tick');
+  const run=await endpointUnderTest('run');
+  const res={json:value=>value};
+  const hourly=await tick({},res);
+  assert.equal(hourly.continuation_scheduled,true);
+  assert.match(sql[1],/status='leased' AND lease_until < now\(\)/);
+  assert.equal(runs,0,'hourly tick must leave objective execution to the worker');
+
+  const first=await run({body:{via:'hourly-backlog'}},res);
+  assert.equal(first.results.length,4);
+  assert.equal(first.continuation_scheduled,true);
+  assert.equal(scheduled.length,2);
+  assert.deepEqual(scheduled[1],{path:'/api/brain/run',payload:{via:'bounded-continuation'}});
+
+  const queriesBefore=sql.length;
+  const second=await run({body:{via:'bounded-continuation'}},res);
+  assert.equal(second.results.length,4);
+  assert.equal(second.continuation_scheduled,false);
+  assert.equal(sql.length,queriesBefore);
+  assert.equal(scheduled.length,2);
+ }finally{delete globalThis.__cloudEndpoint;}
+});
+
 function fakeGithubRetryDb(){
  // A deterministic SQL-driver fixture: models only the status, lease and
  // backoff predicates that the runner must enforce, not a real Postgres server.
