@@ -10,7 +10,7 @@ Codex**, stable author fingerprints and separate route status. Use
 an owner-confirmed Issue and task PR. Mike's route remains explicitly unbound
 until enrolled from his account. Registration is not account attestation or
 live execution proof; inspect each task's receipt. See [callable Codex authors](docs/CODEX-AUTHORS.md).
-For independent GitHub and Work execution evidence, see [Codex lane evidence](docs/CODEX-LANE-EVIDENCE.md). Run node scripts/codex-lane-status.mjs 83 for the current public PR.
+For independent GitHub and Work execution evidence, see [Codex lane evidence](docs/CODEX-LANE-EVIDENCE.md). Run `node scripts/codex-lane-status.mjs <PR number>` for a current task PR; closed historical canaries do not prove a separate Work account.
 
 ## Current capabilities
 

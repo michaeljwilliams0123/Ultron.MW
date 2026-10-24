@@ -136,8 +136,8 @@ The owner posted the one-time trigger, but no independent Work-authored
 claim or completion receipt has been verified. The task is now stale against
 the newer `main` tip, so **do not rewrite its canonical envelope, forge an
 execution receipt, replay the trigger, or merge #87 as identity evidence**.
-PR #84 must likewise remain subject to real executor and review gates
-rather than claiming that a green source test attests a separate Work account.
+PR #84's source evaluator must not claim that a green source test attests a
+separate Work account. Its source merge is distinct from live lane acceptance.
 The October 24 read-only audit still found it unclaimed and stale against
 current main. PR #87 and Issue #86 were closed without replay; their history
 remains available for review.
@@ -154,12 +154,18 @@ exact-head GitHub Verify passed. The read-only lane audit reports
 The shared GitHub author of the record cannot prove which ChatGPT Work account
 executed it; an OpenAI API key or a Descope role would not prove that either.
 
-Owner Issue #92 created fresh canary PR #93 from the then-current main. Treat
-its proposal as pending until a genuine create-only claim, completion receipt,
-exact-head PR check, and independent Work-account provenance are observed.
+Owner Issue #92 created canary PR #93 from the then-current main. Its exact-head
+PR check passed and the owner posted `/codex run destiny-codex` once. No
+create-only Work claim or completion receipt appeared. The owner cannot
+currently access the separate Work account, and main advanced beyond the
+canary's admitted source SHA. PR #93 was closed without merge or replay;
+Issue #92 retains the objective for a fresh canary when that executor is
+available.
 Do not copy #90's records, silently rebase its task, or count event enrollment
-as account proof. PR #84 remains a source-only evidence evaluator while that
-identity gate is unresolved.
+as account proof. The source-only evaluator on PR #84 may be merged after
+normal exact-head verification; `signedWorkAccountAttested`,
+`completedOnDistinctAuthenticatedWorkAccount`, and `mergeAccepted` remain
+false for the observed canaries. Live Destiny execution remains unverified.
 
 ## Verification and non-overlap
 
