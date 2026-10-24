@@ -6,6 +6,7 @@ test('hourly recovery selects only existing admitted actions and preserves ident
  const seen=[],calls=[];
  const db={async query(sql,params){
    calls.push({sql,params});
+   if(sql.includes('SET last_scanned_at=now()'))return {rows:[]};
    return {rows:[
      {action_key:'ultron:issue95-canary-20261024',operation:'issue.create',
       request:{title:'Canary',body:'Acceptance',expectedMainSha:'a'.repeat(40)}},
@@ -23,8 +24,10 @@ test('hourly recovery selects only existing admitted actions and preserves ident
  assert.deepEqual(seen.map(x=>x.key),
    ['ultron:issue95-canary-20261024','ultron:dispatch-verify-20261024']);
  assert.match(calls[0].sql,/state IN \('prepared','sent','uncertain'\)/);
- assert.match(calls[0].sql,/ORDER BY id ASC LIMIT \$1/);
+ assert.match(calls[0].sql,/ORDER BY last_scanned_at ASC NULLS FIRST,id ASC LIMIT \$1/);
  assert.deepEqual(calls[0].params,[2]);
+ assert.deepEqual(calls.slice(1).map(x=>x.params[0]),seen.map(x=>x.key));
+ assert.ok(calls.slice(1).every(x=>x.sql.includes('SET last_scanned_at=now()')));
  assert.equal(JSON.stringify(result).includes('Acceptance'),false);
 });
 

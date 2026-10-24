@@ -212,3 +212,24 @@ test('repository mode compares immutable Git blobs rather than transformed worki
   assert.equal(result.parity, true);
   assert.deepEqual(result.differences, []);
 });
+
+test('production static landing participates in v6 manifest comparison', async t => {
+  const {root,snapshot,check}=await fixture(t);
+  const landing='<!doctype html><title>Ultron</title>\\n';
+  await mkdir(join(root,'public'),{recursive:true});
+  await writeFile(join(root,'public','index.html'),landing);
+  snapshot.file_manifest.push({
+    path:'public/index.html',
+    hash:createHash('sha256').update(landing).digest('hex'),
+    size:Buffer.byteLength(landing)
+  });
+  const matched=await check();
+  assert.equal(matched.parity,true);
+  assert.equal(matched.filesCompared,6);
+  await writeFile(join(root,'public','index.html'),'<title>changed</title>\\n');
+  const drift=await check();
+  assert.deepEqual(drift.differences,[{type:'changed-file',path:'public/index.html'}]);
+  snapshot.file_manifest.pop();
+  const missing=await check();
+  assert.ok(missing.differences.some(x=>x.type==='missing-deployment-file'&&x.path==='public/index.html'));
+});
