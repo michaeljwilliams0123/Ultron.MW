@@ -1,0 +1,12 @@
+{
+  "schema": "ultron.codex.claim.v1",
+  "taskId": "ucc-fb4dd4f0687794a1fb1b6866",
+  "taskDigest": "94bfcac1f431093a6d70779cf2364fdd47eefe953b719041ba86d086d53b1b3a",
+  "authorId": "destiny-codex",
+  "bindingFingerprint": "1278bdf842ec4108ae053fa3656cc38fde798c7eabb10f19834ee74969ebdfbd",
+  "sourceSha": "01dce408f107f17217cf2f52f7fdf5308beb90b2",
+  "headSha": "a7a373734637fcc694083a2956c160d1919df003",
+  "claimedAt": "2026-10-24T00:08:53.426Z",
+  "status": "claimed",
+  "attempts": 1
+}
