@@ -1,3 +1,7 @@
+import {
+ buildCouncilAssessmentReceipts,evaluateCouncilEvidence
+} from 'lib/council-evidence.js';
+
 const REPO = 'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const SITE = 'https://michaeljwilliams0123.github.io/Ultron.MW/';
 const SHA = /^[0-9a-f]{40}$/;
@@ -16,7 +20,7 @@ async function github(path){
  return response.json();
 }
 function safeString(v,max=150){return String(v??'').slice(0,max);}
-export async function executeObjective(objective, {db,browser}){
+export async function executeObjective(objective, {db,browser,task={}}){
  const at=new Date().toISOString();
  if(objective==='repo.inspect'){
   const p=await github('/git/ref/heads/main');
@@ -41,7 +45,11 @@ export async function executeObjective(objective, {db,browser}){
   return {objective,at,source:'hatchable-chromium',url:SITE,title:safeString(title),html_bytes:html.length,has_app_shell:rendered.includes('<body'),has_ultron:rendered.includes('ultron')};
  }
  if(objective==='council.review'){
-  const recent=(await db.query("SELECT objective,status,last_result,updated_at FROM brain_tasks WHERE status='done' AND objective <> 'council.review' ORDER BY updated_at DESC LIMIT 16")).rows;
+  const recent=(await db.query(`SELECT t.id,t.task_key,t.objective,t.status,t.last_result,t.updated_at,
+   (SELECT e.id FROM brain_events e WHERE e.task_id=t.id AND e.event_type='observed'
+    ORDER BY e.id DESC LIMIT 1) AS receipt_id
+   FROM brain_tasks t WHERE t.status='done' AND t.objective <> 'council.review'
+   ORDER BY t.updated_at DESC LIMIT 16`)).rows;
   const find=(type)=>recent.find(x=>x.objective===type)?.last_result;
   const latestCi=find('repo.ci'),latestPrs=find('repo.prs'),latestSite=find('site.render'),latestMain=find('repo.inspect');
   const failed=(latestCi?.runs||[]).filter(r=>r.conclusion==='failure');
@@ -51,7 +59,23 @@ export async function executeObjective(objective, {db,browser}){
    planner:{assessment:latestPrs?'pr-inventory-observed':'pr-inventory-missing',count:latestPrs?.count??null,next:'repo.prs'},
    skeptic:{assessment:latestSite?.has_app_shell?'site-render-observed':'site-render-unverified',next:'site.render'}
   };
-  return {objective,at,source:'local-evidence-only',evidence_count:recent.length,advisory,disposition:'proposals-only-no-write-or-model-inference'};
+  const sourceSha=SHA.test(latestMain?.sha||'')?latestMain.sha:null;
+  const objectiveId=typeof task.taskKey==='string'&&task.taskKey?task.taskKey:'council-review-unbound';
+  const observations=recent.map(row=>({
+   taskId:row.id,receiptId:row.receipt_id,objective:row.objective,
+   result:row.last_result,observedAt:new Date(row.updated_at).toISOString()
+  }));
+  const assessmentReceipts=sourceSha?buildCouncilAssessmentReceipts({
+   objectiveId,sourceSha,observations,assessedAt:at
+  }):[];
+  const promotionGate=evaluateCouncilEvidence({
+   objectiveId,sourceSha,receipts:assessmentReceipts,now:at,
+   lease:{state:'active',tokenMatches:true},provider:{required:false}
+  });
+  return {objective,at,source:'local-evidence-only',source_sha:sourceSha,
+   evidence_count:recent.length,advisory,assessment_receipts:assessmentReceipts,
+   promotion_gate:promotionGate,
+   disposition:'proposals-only-no-write-or-model-inference'};
  }
  throw Error('objective-not-allowed');
 }

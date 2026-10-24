@@ -48,6 +48,12 @@ Traits and epistemic postures are fixed in `src/grokbot-governor.mjs`. They do n
 
 Standby never executes tools, spends credits, or widens authority.
 
+## Hosted council evidence
+
+Hatchable's `council.review` is a separate four-profile source-evidence summary. Its verifier, sentinel, planner and skeptic are labeled `deterministic-role-profile`; they are not independent agents merely because their roles differ. Each available assessment is bound to the council objective ID, exact observed source SHA, underlying task and event receipt IDs, evidence freshness, material dissent and known unknowns. The assessment rows commit to the existing `brain_events` ledger atomically with the lease-fenced council-task completion.
+
+The hosted evidence gate never authorizes execution. Missing or duplicate receipts, contradictory positions, stale SHA or lease, denied required provider access, absent required token evidence, unobserved outcome claims, unresolved external-write results, held-out failures and postmerge source/runtime mismatch all hold selection. A fully admitted result means only `eligible-for-protected-pr`; owner approval, exact-head CI, protected merge, deployment and postdeployment acceptance remain distinct gates.
+
 ## Authority boundary (hard)
 
 - Advisory only. Cannot execute, merge, deploy, mint credentials, or expand the capability registry.

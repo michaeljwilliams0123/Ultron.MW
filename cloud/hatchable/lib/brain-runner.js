@@ -26,19 +26,21 @@ export async function runOne({db,browser}){
  ), moved AS (
    UPDATE brain_tasks SET status='leased',attempts=attempts+1,owner_token=$1,
      lease_until=now()+interval '3 minutes',updated_at=now()
-   WHERE id IN (SELECT id FROM selected) RETURNING id,objective,attempts
+   WHERE id IN (SELECT id FROM selected) RETURNING id,task_key,objective,attempts
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type,details)
    SELECT id,'claimed',jsonb_build_object('objective',objective,'attempt',attempts)
    FROM moved RETURNING task_id
- ) SELECT id,objective,attempts FROM moved`,[token]);
+ ) SELECT id,task_key,objective,attempts FROM moved`,[token]);
  const task=claim.rows[0];
  if(!task)return {status:'idle',recovered:recovered.rows.length,blocked:blocked.rows.length};
  let result;
  try{
   // In v2 these objectives are read-only/advisory. Any future write objective
   // requires a durable action checkpoint before it can use this retry policy.
-  result=await executeObjective(task.objective,{db,browser});
+  result=await executeObjective(task.objective,{db,browser,task:{
+   id:task.id,taskKey:task.task_key,attempt:task.attempts
+  }});
  }catch(e){
   const reason=String(e?.message||'execution-failed').replace(/[^a-z0-9-_]/gi,'-').slice(0,70);
   const failed=await db.query(`WITH moved AS (
@@ -66,7 +68,13 @@ export async function runOne({db,browser}){
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'observed',jsonb_build_object('objective',objective,'source',$4::text)
     FROM moved RETURNING task_id
-  ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown']);
+  ), assessments AS (
+    INSERT INTO brain_events(task_id,event_type,details)
+    SELECT moved.id,'council-assessment',item.value
+    FROM moved CROSS JOIN LATERAL jsonb_array_elements($5::jsonb) AS item
+    WHERE moved.objective='council.review' RETURNING task_id
+  ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown',
+   JSON.stringify(Array.isArray(result.assessment_receipts)?result.assessment_receipts:[])]);
   if(done.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};
   return {status:'done',task_id:task.id,objective:task.objective,summary:result};
  }catch(_error){

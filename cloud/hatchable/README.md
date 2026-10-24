@@ -38,6 +38,10 @@ must also be checked for allowed domains and owner-only enrollment in Descope.
 
 Five bounded native objectives: `repo.inspect`, `repo.prs`, `repo.ci`, `site.render` (managed browser), and `council.review` (deterministic advisory; **not an LLM**). They run in a persistent Postgres queue with leasing, retry/backoff, hourly recovery and auditable event receipts.
 
+`council.review` now has a source-level versioned evidence contract. Each available verifier, sentinel, planner and skeptic assessment names the council objective, exact observed GitHub source SHA, durable task/event receipt IDs, evidence time/freshness, dissent and known unknowns. The profiles are labeled `deterministic-role-profile`; four profiles from one algorithm never count as four independent reviewers. Assessment events are inserted into the existing `brain_events` ledger in the same lease-fenced PostgreSQL statement that completes the council task. A duplicate, malformed, stale, contradictory or source-mismatched receipt cannot become promotion evidence.
+
+The associated gate can mark evidence only `eligible-for-protected-pr`, never executable. It requires a genuinely independent reviewer, an active matching lease, any required provider/token readiness, frozen disjoint before/after evaluation, independently observed outcome readbacks, positive held-out gain, zero candidate failures/critical regressions, and matching postmerge runtime source. An uncertain external write is read back and never replayed automatically. See [the issue #68 verification contract](../../docs/verification/ISSUE68-COUNCIL-EVIDENCE-2026-10-24.md).
+
 Owner-only API: `GET/POST /api/brain/tasks`, `POST /api/brain/command`. Scheduler-only: `/api/brain/tick` (hourly) and `/api/brain/run` (asynchronous). Commands: `/help`, `/status`, `/repo inspect`, `/repo prs`, `/repo ci`, `/site render`, `/council review`, `/remember <note>`. Actions: queue, note, cancel, retry.
 
 MCP tools: `ultron_status`, `ultron_queue`, `ultron_remember`, `ultron_control`. These are **owner/admin-gated** and require an independent OAuth authorization before use by a connected AI client.
