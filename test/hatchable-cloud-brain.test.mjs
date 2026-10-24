@@ -39,6 +39,30 @@ test('cloud: successful outcome and its observed receipt form one lease-fenced S
  assert.match(commit.sql,/owner_token=\$3 AND status='leased' AND lease_until>now\(\)/);
  assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,0);
 });
+test('cloud: council assessments persist atomically with completion and never as a second write',async()=>{
+ const receipt={schema:'ultron.council-assessment.v1',role:'verifier'};
+ const councilCore=`export const ALLOWED=new Set(['council.review']);
+export const CAPABILITIES=[{id:'council.review'}];
+export async function executeObjective(){return {objective:'council.review',source:'local-evidence-only',assessment_receipts:[${JSON.stringify(receipt)}]};}`;
+ const url='data:text/javascript;base64,'+Buffer.from(councilCore).toString('base64');
+ const {runOne:runCouncil}=await moduleUnderTest('brain-runner.js',url);
+ const db=fakeRunnerDb();
+ db.query=async function(sql,params=[]){
+  this.statements.push({sql,params});
+  if(sql.includes("'lease-recovered'")||sql.includes("'attempt-limit'"))return {rows:[]};
+  if(sql.includes("'claimed'"))return {rows:[{id:7,task_key:'council-cycle-1',
+   objective:'council.review',attempts:1}]};
+  if(sql.includes("'observed'"))return {rows:[{id:7}]};
+  throw Error('unexpected-sql');
+ };
+ const result=await runCouncil({db,browser:{}});
+ assert.equal(result.status,'done');
+ const completion=db.statements.find(x=>x.sql.includes("'observed'"));
+ assert.match(completion.sql,/jsonb_array_elements\(\$5::jsonb\)/);
+ assert.match(completion.sql,/'council-assessment'/);
+ assert.deepEqual(JSON.parse(completion.params[4]),[receipt]);
+ assert.equal(db.statements.filter(x=>x.sql.includes("'council-assessment'")).length,1);
+});
 test('cloud: stale lease cannot produce a contradictory failure receipt',async()=>{
  const db=fakeRunnerDb({complete:false});
  const result=await runOne({db,browser:{}});
@@ -243,7 +267,10 @@ function fakeGithubRetryDb(){
 }
 
 async function realGithubRunner(){
- const source=await readFile(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8');
+ const evidenceSource=await readFile(new URL('../cloud/hatchable/lib/council-evidence.js',import.meta.url),'utf8');
+ const evidence='data:text/javascript;base64,'+Buffer.from(evidenceSource).toString('base64');
+ const source=(await readFile(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8'))
+  .replace("from 'lib/council-evidence.js'","from '"+evidence+"'");
  const core='data:text/javascript;base64,'+Buffer.from(source).toString('base64');
  return moduleUnderTest('brain-runner.js',core);
 }
