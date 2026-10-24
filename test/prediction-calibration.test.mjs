@@ -82,3 +82,40 @@ test('a four-case, unverifiable retrospective does not meet the evaluation floor
    forecasts:input.forecasts.slice(0,4),outcomes:input.outcomes.slice(0,4)}),
    /calibration-evidence-contract-invalid/);
 });
+
+test('independent callback cannot mutate validated snapshots or alter subsequent scores',async()=>{
+ const {forecasts,outcomes}=fixture();
+ const mutableForecasts=forecasts.map(x=>({...x}));
+ const mutableOutcomes=outcomes.map(x=>({...x}));
+ const report=await evaluateForecastCalibration({
+   forecasts:mutableForecasts,outcomes:mutableOutcomes,
+   verifyEvidence:async({forecast,outcome})=>{
+     assert.equal(Object.isFrozen(forecast),true);
+     assert.equal(Object.isFrozen(outcome),true);
+     mutableForecasts[0].probability=0;
+     mutableOutcomes[0].happened=false;
+     await Promise.resolve();
+     return {verified:true,registrationReceiptId:forecast.registrationReceiptId,
+       outcomeReceiptId:outcome.outcomeReceiptId,receiptDigest:'d'.repeat(64),
+       verifierId:'external-github-readback'};
+   }
+ });
+ assert.equal(report.brier,.07);
+ assert.equal(report.outcomes[0].actual,1);
+ assert.equal(report.outcomes[0].probability,.9);
+});
+test('audit lineage is deeply immutable after scoring',async()=>{
+ const report=await evaluateForecastCalibration(fixture());
+ assert.equal(Object.isFrozen(report.outcomes),true);
+ assert.equal(Object.isFrozen(report.outcomes[0]),true);
+ assert.throws(()=>{report.outcomes[0].actual=0;},TypeError);
+ assert.throws(()=>{report.outcomes.push({});},TypeError);
+});
+test('invalid calendar dates cannot be normalized to valid evidence times',()=>{
+ assert.throws(()=>registerForecast({
+   taskId:'task-impossible-date',sourceSha:SHA,questionSha256:HASH,
+   registrationReceiptId:'registration-impossible',
+   forecastAt:'2026-02-30T00:00:00Z',resolveAfter:'2026-03-02T00:00:00Z',
+   probability:.5
+ }),/forecast-time-invalid/);
+});

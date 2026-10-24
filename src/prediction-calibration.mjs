@@ -7,9 +7,13 @@ const RECEIPT=/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{7,160}$/;
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail=code=>{throw Object.assign(new TypeError(code),{code});};
 const time=(s,code)=>{
-  if(typeof s!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(s)||
-    !Number.isFinite(Date.parse(s)))fail(code);
-  return Date.parse(s);
+  if(typeof s!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(s))
+    fail(code);
+  const parsed=Date.parse(s);
+  const canonical=s.includes('.')?s:s.slice(0,-1)+'.000Z';
+  // Date.parse may normalize impossible dates such as February 30.
+  if(!Number.isFinite(parsed)||new Date(parsed).toISOString()!==canonical)fail(code);
+  return parsed;
 };
 function validForecast(f) {
   if(!f||f.schema!=='ultron.probabilistic-forecast.v1'||!ID.test(f.taskId||'')||
@@ -52,14 +56,18 @@ export async function evaluateForecastCalibration({
     typeof verifyEvidence!=='function')fail('calibration-evidence-contract-invalid');
   const prior=new Map(),results=new Map();
   for(const f of forecasts){
-    validForecast(f);
-    if(prior.has(f.taskId))fail('forecast-duplicate-task');
-    prior.set(f.taskId,f);
+    // Snapshot before validation and BEFORE any awaited verifier callback.
+    // External JSON objects may be mutable and must never affect scoring.
+    const stable=Object.freeze({...f});
+    validForecast(stable);
+    if(prior.has(stable.taskId))fail('forecast-duplicate-task');
+    prior.set(stable.taskId,stable);
   }
   for(const o of outcomes){
-    validOutcome(o);
-    if(results.has(o.taskId)||!prior.has(o.taskId))fail('outcome-duplicate-or-unexpected');
-    results.set(o.taskId,o);
+    const stable=Object.freeze({...o});
+    validOutcome(stable);
+    if(results.has(stable.taskId)||!prior.has(stable.taskId))fail('outcome-duplicate-or-unexpected');
+    results.set(stable.taskId,stable);
   }
   const cases=[];
   for(const id of [...prior.keys()].sort()){
@@ -76,9 +84,9 @@ export async function evaluateForecastCalibration({
        !HASH.test(proof.receiptDigest||'')||
        !ID.test(proof.verifierId||'')||proof.verifierId===f.taskId)
       fail('independent-evidence-unverified');
-    cases.push({taskId:id,probability:f.probability,actual:Number(o.happened),
+    cases.push(Object.freeze({taskId:id,probability:f.probability,actual:Number(o.happened),
       sourceSha:f.sourceSha,registrationReceiptId:f.registrationReceiptId,
-      outcomeReceiptId:o.outcomeReceiptId,proofDigest:proof.receiptDigest});
+      outcomeReceiptId:o.outcomeReceiptId,proofDigest:proof.receiptDigest}));
   }
   const count=cases.length;
   const brier=cases.reduce((n,c)=>n+(c.probability-c.actual)**2,0)/count;
@@ -93,7 +101,7 @@ export async function evaluateForecastCalibration({
     counted:count,baselineBrier:0.25,brier:Number(brier.toFixed(8)),
     skillVersusHalfChance:Number((0.25-brier).toFixed(8)),
     expectedCalibrationError:Number(calibrationError.toFixed(8)),
-    outcomes:cases};
+    outcomes:Object.freeze(cases)};
   // A calibration result is an audit artifact, not AGI, self-awareness,
   // independent certification, or permission for automatic promotion.
   return Object.freeze({...core,fingerprint:hash(core)});
