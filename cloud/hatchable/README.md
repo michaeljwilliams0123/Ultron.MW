@@ -47,7 +47,14 @@ action key is unique; the intent is
 persisted before an external call and the state changes to `sent` before a POST.
 After that transition, repeat calls perform GitHub readback and never repeat
 the POST. A missing or ambiguous readback remains `uncertain`. The ordinary
-hourly `brain_tasks` retry loop does not execute this write lane.
+`brain_tasks` retry loop never executes external writes. A separate bounded
+hourly recovery scans only previously admitted `mahoraga_actions` and queues the
+existing scheduler worker. At most two actions are visited per hourly run:
+`prepared` actions may make their first write after independent App credentials
+are configured and the original exact-SHA preflight passes; `sent` or `uncertain`
+actions are readback-only. Missing credentials remain `prepared` with no write.
+Neither ordinary owner-requested runs nor read-only backlog continuations can
+activate the external recovery path. Recovery never creates new Mahoraga goals.
 
 The project manifest declares three **optional, protected** values: the
 Mahoraga-scoped GitHub App client ID, installation ID, and private key. They

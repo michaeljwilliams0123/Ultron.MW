@@ -154,13 +154,17 @@ test('cloud: short hourly tick dispatches slow objective work instead of running
  assert.match(tick,/processed:0/);
 });
 
+let endpointImportSequence=0;
 async function endpointUnderTest(name){
  const source=await readFile(new URL('../cloud/hatchable/api/brain/'+name+'.js',import.meta.url),'utf8');
- const dependency=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64');
- const platform=dependency('export const db=globalThis.__cloudEndpoint.db; export const browser={}; export const scheduler=globalThis.__cloudEndpoint.scheduler;');
+ // Keep test fixture modules independent: Node caches identical data URLs.
+ const dependency=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64')+'#'+(++endpointImportSequence);
+ const platform=dependency('export const db=globalThis.__cloudEndpoint.db; export const browser={}; export const scheduler=globalThis.__cloudEndpoint.scheduler; export const config={};');
  const runner=dependency('export const runOne=(...args)=>globalThis.__cloudEndpoint.runOne(...args);');
+ const mahoraga=dependency('export const resumePendingMahoragaActions=(...args)=>globalThis.__cloudEndpoint.resumePendingMahoragaActions(...args);');
  const transformed=source.replace("from 'hatchable'","from '"+platform+"'")
-  .replace("from 'lib/brain-runner.js'","from '"+runner+"'");
+  .replace("from 'lib/brain-runner.js'","from '"+runner+"'")
+  .replace("from 'lib/mahoraga-actions.js'","from '"+mahoraga+"'");
  return (await import(dependency(transformed))).default;
 }
 
@@ -169,7 +173,8 @@ test('cloud: hourly dispatch recovers expired leases and a full worker batch sch
  globalThis.__cloudEndpoint={
   db:{async query(statement){sql.push(statement);return {rows:[{n:1}]};}},
   scheduler:{async now(path,payload){scheduled.push({path,payload});}},
-  async runOne(){runs++;return {status:'done'};}
+  async runOne(){runs++;return {status:'done'};},
+  async resumePendingMahoragaActions(){return {scanned:1,observed:0,pending:1,outcomes:[{state:'prepared',ok:false}]};}
  };
  try{
   const tick=await endpointUnderTest('tick');
@@ -177,11 +182,14 @@ test('cloud: hourly dispatch recovers expired leases and a full worker batch sch
   const res={json:value=>value};
   const hourly=await tick({},res);
   assert.equal(hourly.continuation_scheduled,true);
+  assert.equal(hourly.mahoraga_pending,1);
   assert.match(sql[1],/status='leased' AND lease_until < now\(\)/);
+  assert.match(sql[2],/mahoraga_actions/);
   assert.equal(runs,0,'hourly tick must leave objective execution to the worker');
 
   const first=await run({body:{via:'hourly-backlog'}},res);
   assert.equal(first.results.length,4);
+  assert.equal(first.mahoraga.scanned,1);
   assert.equal(first.continuation_scheduled,true);
   assert.equal(scheduled.length,2);
   assert.deepEqual(scheduled[1],{path:'/api/brain/run',payload:{via:'bounded-continuation'}});
@@ -190,6 +198,7 @@ test('cloud: hourly dispatch recovers expired leases and a full worker batch sch
   const second=await run({body:{via:'bounded-continuation'}},res);
   assert.equal(second.results.length,4);
   assert.equal(second.continuation_scheduled,false);
+  assert.equal(second.mahoraga.scanned,0);
   assert.equal(sql.length,queriesBefore);
   assert.equal(scheduled.length,2);
  }finally{delete globalThis.__cloudEndpoint;}
@@ -290,4 +299,27 @@ test('cloud: GitHub 403 after lease expiry cannot forge a failed or observed rec
   assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,1,
    'the fenced failure statement may execute but cannot insert a receipt');
  }finally{globalThis.fetch=originalFetch;}
+});
+
+test('cloud: hourly tick schedules recovery when only an external canary is pending',async()=>{
+ const sql=[],scheduled=[];
+ globalThis.__cloudEndpoint={
+  db:{async query(statement){
+    sql.push(statement);
+    if(statement.includes('FROM mahoraga_actions'))return {rows:[{n:1}]};
+    if(statement.includes('count(*)'))return {rows:[{n:0}]};
+    return {rows:[]};
+  }},
+  scheduler:{async now(path,payload){scheduled.push({path,payload});}},
+  async runOne(){throw Error('tick must not run worker inline');}
+ };
+ try{
+  const tick=await endpointUnderTest('tick');
+  const out=await tick({}, {json:x=>x});
+  assert.equal(out.pending,0);
+  assert.equal(out.mahoraga_pending,1);
+  assert.equal(out.continuation_scheduled,true);
+  assert.deepEqual(scheduled,[{path:'/api/brain/run',payload:{via:'hourly-backlog'}}]);
+  assert.equal(sql.filter(x=>x.includes('FROM mahoraga_actions')).length,1);
+ }finally{delete globalThis.__cloudEndpoint;}
 });
