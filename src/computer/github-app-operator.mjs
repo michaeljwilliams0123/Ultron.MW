@@ -16,7 +16,7 @@ const HEADERS = Object.freeze({
 const b64 = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 
 export function createGitHubAppJwt({ clientId, privateKey, now = Date.now() } = {}) {
-  if (typeof clientId !== 'string' || !/^[a-zA-Z0-9_-]{3,120}$/.test(clientId) ||
+  if (typeof clientId !== 'string' || !/^[a-zA-Z0-9._-]{3,120}$/.test(clientId) ||
       typeof privateKey !== 'string' || !privateKey.includes('PRIVATE KEY') ||
       !Number.isFinite(now)) throw Error('GitHub App signing configuration invalid');
   const current = Math.floor(now / 1000);

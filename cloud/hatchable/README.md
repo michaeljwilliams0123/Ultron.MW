@@ -36,6 +36,35 @@ No provider LLM inference/credits, GitHub writes, PR merges, execution of arbitr
 
 Never place API keys or private notes in this public repository.
 
+## Mahoraga control lane (issue #95)
+
+The `ultron_mahoraga` owner-only MCP tool and `/api/brain/mahoraga` admin API
+accept two bounded writes: create an issue at an expected Mahoraga `main` SHA,
+or dispatch the existing Verify workflow on a `mahoraga/*` branch at an expected
+head SHA. Admission creates one `brain_tasks` identity in `external` state and
+one linked `mahoraga_actions` record with a matching event receipt. The cloud
+action key is unique; the intent is
+persisted before an external call and the state changes to `sent` before a POST.
+After that transition, repeat calls perform GitHub readback and never repeat
+the POST. A missing or ambiguous readback remains `uncertain`. The ordinary
+hourly `brain_tasks` retry loop does not execute this write lane.
+
+The project manifest declares three **optional, protected** values: the
+Mahoraga-scoped GitHub App client ID, installation ID, and private key. They
+must be supplied in Hatchable Setup; no value belongs in Git or API requests.
+The app must be installed on only the private Mahoraga repository with
+`contents:read`, `issues:write`, and `actions:write`. Missing values leave the
+write lane unavailable while the read-only cloud brain continues to run.
+GitHub App identity is separate from the owner's human account and Destiny.
+
+The issue marker lets an uncertain issue creation reconcile exactly. GitHub's
+Verify dispatch API returns no run ID; readback accepts only one workflow run
+on the exact branch and SHA after the recorded attempt time. Concurrent matching
+runs remain uncertain rather than claiming a unique result. Do not manually
+reset a `sent` or `uncertain` action to `prepared`. Revoke the app installation
+to stop future calls. A source merge alone does not supply credentials, deploy
+this code, or prove a live Mahoraga write.
+
 
 ## October 22 source hardening (PR #76; deployed in v3 on October 24)
 

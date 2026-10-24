@@ -4,3 +4,18 @@ enabled = true
 [[cron]]
 path = "/api/brain/tick"
 schedule = "17 * * * *"
+
+[[secret]]
+name = "ULTRON_MAHORAGA_GITHUB_APP_CLIENT_ID"
+required = false
+description = "Client ID of the Mahoraga-scoped GitHub App installation."
+
+[[secret]]
+name = "ULTRON_MAHORAGA_GITHUB_APP_INSTALLATION_ID"
+required = false
+description = "Installation ID authorized only for the private Mahoraga repository."
+
+[[secret]]
+name = "ULTRON_MAHORAGA_GITHUB_APP_PRIVATE_KEY"
+required = false
+description = "Private signing key for the Mahoraga-scoped GitHub App."
