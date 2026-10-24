@@ -7,7 +7,9 @@ import { readFile, readdir, lstat } from 'node:fs/promises';
 import { resolve, join, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const SOURCE_DIRS = ['api', 'lib', 'mcp', 'migrations'];
+// Current production includes an owner landing under public/. Omitting that
+// directory would falsely report drift even for a byte-exact deployment.
+const SOURCE_DIRS = ['api', 'lib', 'mcp', 'migrations', 'public'];
 const HEX40 = /^[a-f0-9]{40}$/i;
 const HEX64 = /^[a-f0-9]{64}$/i;
 
@@ -59,7 +61,13 @@ async function localFiles(sourceRoot) {
       else throw Error('Unsupported file type under cloud source: ' + child);
     }
   }
-  for (const dir of SOURCE_DIRS) await visit(dir);
+  for (const dir of SOURCE_DIRS) {
+    try { await visit(dir); }
+    catch (error) {
+      // Older source snapshots legitimately predate the optional static root.
+      if (dir !== 'public' || error?.code !== 'ENOENT') throw error;
+    }
+  }
   await add('hatchable.toml');
   return result;
 }

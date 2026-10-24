@@ -38,6 +38,10 @@ The past implementation also showed a productive constraint: reviewable consolid
 3. Descope project `curly-mustard-nobel` currently advertises SSO/flows/roles/permissions but lacks access keys and tenants; its FGA schema is `{}`. Granting a blanket Super User/impersonation role would widen user/tenant management and does **not** by itself authorize an external Mahoraga GitHub App. A single-owner service identity must be bound at the protected backend, not merely at the static UI.
 4. SD009WC7 was online with a local `Ultron.MW` main checkout 59 commits behind origin when inspected; this change uses a **new clean worktree at GitHub main a06852a3**. Do not take historical local files as authoritative without comparing to protected GitHub.
 
+## Live 20-file Hatchable production parity (October 24)
+
+The v6 release artifact was retrieved directly from the authenticated Hatchable deployment API and compared with **immutable Git blobs** in a detached worktree of exact Ultron protected main `a06852a346453f53e0421ce31b9a787bfcdf171c`. The improved `scripts/verify-hatchable-parity.mjs` includes `public/index.html`, previously omitted despite being part of production. The read-only outcome was `parity: true`, `deploymentVersion: 6`, `filesCompared: 20`, `differences: []`. This proves **current deployed files match that one main commit**, not that an owner session has performed a live Mahoraga write or that either new PR has been deployed.
+
 ## Fix in this PR: live-action recovery fairness
 
 **Observed source defect:** `resumePendingMahoragaActions` previously selected `ORDER BY id ASC LIMIT 2`. An old `prepared` canary without credentials or `uncertain` readback without matching receipt could consume both slots every hour and indefinitely starve later actions, even though an always-on scheduler was healthy.
