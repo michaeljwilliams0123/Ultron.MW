@@ -36,14 +36,15 @@ function fixture({ scopes = ['repo.read', 'pr.write'], authorize = async () => f
   };
 }
 
-test('all seven requested plugin surfaces are declared, never presumed connected', () => {
+test('all seven requested plugin surfaces and Mahoraga are declared, never presumed connected', () => {
   assert.deepEqual(PLUGIN_PROVIDERS.map(x => x.id).sort(), [
     'browser-use', 'caveman', 'compound-engineering', 'descope',
-    'desktop-commander', 'github', 'hugging-face',
+    'desktop-commander', 'github', 'hugging-face', 'mahoraga',
   ]);
   const view = fixture().router().inventory();
   assert.equal(view.find(x => x.provider === 'github').readiness, 'not-probed');
   assert.equal(view.find(x => x.provider === 'caveman').readiness, 'skill-only');
+  assert.equal(view.find(x => x.provider === 'mahoraga').readiness, 'not-probed');
 });
 test('pure skills cannot impersonate authenticated execution adapters', async () => {
   const f = fixture();
