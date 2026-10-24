@@ -18,6 +18,22 @@ independent Destiny account proof is implied by this deployment.
 - Live isolated backend: https://ultron-mw-cloud.hatchable.site (personal/private)
 - Native MCP endpoint: https://ultron-mw-cloud.hatchable.site/mcp (requires independent OAuth client authorization)
 
+## Cloud landing and Descope identity UI (October 24)
+
+`public/index.html` now serves a real root page instead of a static 404. It links
+back to GitHub Pages as Ultron's canonical interface and to Hatchable Setup.
+An embedded, pinned Descope web component uses the **existing** project's
+`sign-in` flow for optional identity authentication. The connected Descope
+project ID is public client metadata, never a management credential.
+
+**Authority boundary:** This browser-only sign-in does not authorize any
+Hatchable backend route, replace Hatchable's personal-project access control,
+or configure missing Mahoraga GitHub App credentials. The admin and scheduler
+API routes remain server-side restricted. A future API route can accept Descope
+tokens only after proper server-side session signature, audience, expiry,
+and owner identity validation has been independently tested. The existing flow
+must also be checked for allowed domains and owner-only enrollment in Descope.
+
 ## Implemented tools
 
 Five bounded native objectives: `repo.inspect`, `repo.prs`, `repo.ci`, `site.render` (managed browser), and `council.review` (deterministic advisory; **not an LLM**). They run in a persistent Postgres queue with leasing, retry/backoff, hourly recovery and auditable event receipts.
