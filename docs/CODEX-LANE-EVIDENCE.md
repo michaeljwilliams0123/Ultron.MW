@@ -138,6 +138,28 @@ the newer `main` tip, so **do not rewrite its canonical envelope, forge an
 execution receipt, replay the trigger, or merge #87 as identity evidence**.
 PR #84 must likewise remain subject to real executor and review gates
 rather than claiming that a green source test attests a separate Work account.
+The October 24 read-only audit still found it unclaimed and stale against
+current main. PR #87 and Issue #86 were closed without replay; their history
+remains available for review.
+
+## PR #90 receipt and fresh canary (2026-10-24)
+
+Owner Issue #89 produced PR #90. Its claim and completion receipt are distinct,
+create-only commits linked by the recorded claim SHA. The receipt reports the
+two callable author names and Destiny's selected fingerprint, and the PR's
+exact-head GitHub Verify passed. The read-only lane audit reports
+`replayDisposition: already-completed`, but also
+`executionState: completion-receipt-unattributed` and
+`signedWorkAccountAttested: false`. The source SHA is now stale against main.
+The shared GitHub author of the record cannot prove which ChatGPT Work account
+executed it; an OpenAI API key or a Descope role would not prove that either.
+
+Owner Issue #92 created fresh canary PR #93 from the then-current main. Treat
+its proposal as pending until a genuine create-only claim, completion receipt,
+exact-head PR check, and independent Work-account provenance are observed.
+Do not copy #90's records, silently rebase its task, or count event enrollment
+as account proof. PR #84 remains a source-only evidence evaluator while that
+identity gate is unresolved.
 
 ## Verification and non-overlap
 
@@ -148,6 +170,6 @@ Negative coverage includes mismatched author, branch, source SHA, stale
 workflow run, bot-spoofed trigger, action_required, incomplete test job,
 uncertain claims, orphan receipts and false Destiny account proof.
 
-This work is deliberately on a separate source PR. PR #83 specifically
-prohibits product source changes and asks only for an executor's genuine
-claim and completion receipt; leave PR #83 open until that receipt exists.
+This work is deliberately on a separate source PR. PR #83 is closed as a
+historical stale task; its product-source prohibition and absent executor
+receipt must not be rewritten into a successful run.
