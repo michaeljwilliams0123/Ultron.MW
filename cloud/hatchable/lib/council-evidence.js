@@ -10,6 +10,9 @@ const MAX_EVIDENCE_AGE_MS=24*60*60*1000;
 const INDEPENDENT_IDENTITY_SOURCES=new Set([
  'github-review','provider-attestation','owner-observed-readback'
 ]);
+const INDEPENDENT_READBACK_KINDS=new Set([
+ 'github-review-readback','provider-attestation-readback','owner-observed-readback'
+]);
 
 function iso(value){
  const parsed=Date.parse(value);
@@ -134,6 +137,20 @@ function receiptProblem(receipt,{objectiveId,sourceSha,now,maxEvidenceAgeMs}){
  return null;
 }
 
+function attestationProblem(attestation,{objectiveId,sourceSha,now,maxEvidenceAgeMs}){
+ if(!attestation||!integer(attestation.eventId)||
+    attestation.eventType!=='independent-reviewer-attested'||
+    attestation.objectiveId!==objectiveId||attestation.sourceSha!==sourceSha||
+    !text(attestation.reviewerId,120)||
+    !INDEPENDENT_IDENTITY_SOURCES.has(attestation.identitySource)||
+    !iso(attestation.observedAt)||attestation.verified!==true||
+    !INDEPENDENT_READBACK_KINDS.has(attestation.verifiedBy?.kind)||
+    !text(attestation.verifiedBy?.id,120))return 'identity-attestation-evidence-invalid';
+ const age=now-Date.parse(attestation.observedAt);
+ if(age<0||age>maxEvidenceAgeMs)return 'identity-attestation-stale';
+ return null;
+}
+
 /**
  * Fail-closed selection gate. "eligibleForProtectedPromotion" means only that
  * evidence may enter the existing owner-approved GitHub PR path. Execution,
@@ -142,7 +159,7 @@ function receiptProblem(receipt,{objectiveId,sourceSha,now,maxEvidenceAgeMs}){
 export function evaluateCouncilEvidence({
  objectiveId,sourceSha,receipts=[],now,maxEvidenceAgeMs=MAX_EVIDENCE_AGE_MS,
  lease={state:'active',tokenMatches:true},provider={required:false},
- externalActions=[],evaluation=null
+ externalActions=[],evaluation=null,identityAttestations=[]
 }={}){
  const reasons=new Set(),reconciledExternalActions=[],replayExternalActions=[];
  const objective=text(objectiveId,160),at=iso(now);
@@ -150,7 +167,19 @@ export function evaluateCouncilEvidence({
     !Number.isFinite(maxEvidenceAgeMs)||maxEvidenceAgeMs<1){
   reasons.add('evaluation-contract-invalid');
  }
- const seen=new Set(),reviewers=new Set(),positions=new Map();
+ const seen=new Set(),reviewers=new Set(),positions=new Map(),attestations=new Map();
+ if(!Array.isArray(identityAttestations))reasons.add('identity-attestation-evidence-invalid');
+ else if(objective&&SHA40.test(sourceSha||'')&&at){
+  for(const attestation of identityAttestations){
+   const problem=attestationProblem(attestation,{objectiveId:objective,sourceSha,
+    now:Date.parse(at),maxEvidenceAgeMs});
+   if(problem){reasons.add(problem);continue;}
+   if(attestations.has(attestation.eventId)){
+    reasons.add('identity-attestation-duplicate');continue;
+   }
+   attestations.set(attestation.eventId,attestation);
+  }
+ }
  if(!receipts.length)reasons.add('council-receipts-missing');
  if(objective&&SHA40.test(sourceSha||'')&&at&&Array.isArray(receipts)){
   for(const receipt of receipts){
@@ -166,9 +195,15 @@ export function evaluateCouncilEvidence({
    if(earlier&&earlier!==position)reasons.add('contradictory-assessment');
    positions.set(receipt.role,position);
    if(receipt.dissent.length)reasons.add('material-dissent-unresolved');
-   if(receipt.reviewer.kind==='independent-reviewer')reviewers.add([
-    receipt.reviewer.id,receipt.reviewer.identitySource,receipt.reviewer.identityReceiptId
-   ].join(':'));
+   if(receipt.reviewer.kind==='independent-reviewer'){
+    const attestation=attestations.get(receipt.reviewer.identityReceiptId);
+    if(!attestation||attestation.reviewerId!==receipt.reviewer.id||
+       attestation.identitySource!==receipt.reviewer.identitySource){
+     reasons.add('independent-identity-unverified');
+    }else reviewers.add([
+     receipt.reviewer.id,receipt.reviewer.identitySource,receipt.reviewer.identityReceiptId
+    ].join(':'));
+   }
   }
  }
  if(reviewers.size<1)reasons.add('independent-reviewer-missing');

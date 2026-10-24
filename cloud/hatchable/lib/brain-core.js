@@ -50,6 +50,8 @@ export async function executeObjective(objective, {db,browser,task={}}){
     ORDER BY e.id DESC LIMIT 1) AS receipt_id
    FROM brain_tasks t WHERE t.status='done' AND t.objective <> 'council.review'
    ORDER BY t.updated_at DESC LIMIT 16`)).rows;
+  const identityRows=(await db.query(`SELECT id,details,created_at FROM brain_events
+   WHERE event_type='independent-reviewer-attested' ORDER BY id DESC LIMIT 16`)).rows;
   const find=(type)=>recent.find(x=>x.objective===type)?.last_result;
   const latestCi=find('repo.ci'),latestPrs=find('repo.prs'),latestSite=find('site.render'),latestMain=find('repo.inspect');
   const failed=(latestCi?.runs||[]).filter(r=>r.conclusion==='failure');
@@ -68,9 +70,17 @@ export async function executeObjective(objective, {db,browser,task={}}){
   const assessmentReceipts=sourceSha?buildCouncilAssessmentReceipts({
    objectiveId,sourceSha,observations,assessedAt:at
   }):[];
+  const identityAttestations=identityRows.map(row=>({
+   eventId:row.id,eventType:'independent-reviewer-attested',
+   objectiveId:row.details?.objectiveId,sourceSha:row.details?.sourceSha,
+   reviewerId:row.details?.reviewerId,identitySource:row.details?.identitySource,
+   observedAt:new Date(row.created_at).toISOString(),verified:row.details?.verified,
+   verifiedBy:row.details?.verifiedBy
+  }));
   const promotionGate=evaluateCouncilEvidence({
    objectiveId,sourceSha,receipts:assessmentReceipts,now:at,
-   lease:{state:'active',tokenMatches:true},provider:{required:false}
+   lease:{state:'active',tokenMatches:true},provider:{required:false},
+   identityAttestations
   });
   return {objective,at,source:'local-evidence-only',source_sha:sourceSha,
    evidence_count:recent.length,advisory,assessment_receipts:assessmentReceipts,

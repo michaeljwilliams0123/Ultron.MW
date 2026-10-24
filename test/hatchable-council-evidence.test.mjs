@@ -31,6 +31,12 @@ function independent(receipt,id='external-reviewer-1',identityReceiptId=901){
   identitySource:'github-review',identityReceiptId},
   taskIds:[9],taskReceiptIds:[identityReceiptId]};
 }
+function attestation(overrides={}){
+ return {eventId:901,eventType:'independent-reviewer-attested',objectiveId:OBJECTIVE,
+  sourceSha:SHA,reviewerId:'external-reviewer-1',identitySource:'github-review',
+  observedAt:OBSERVED,verified:true,
+  verifiedBy:{kind:'github-review-readback',id:'github-review-adapter'},...overrides};
+}
 function evaluation(overrides={}){
  return {frozen:true,setsDisjoint:true,sourceSha:SHA,runtimeSourceSha:SHA,
   independentlyObserved:true,outcomeReadbacksObserved:true,
@@ -40,7 +46,8 @@ function evaluation(overrides={}){
 function ready(overrides={}){
  const profiles=deterministicReceipts();
  return evaluateCouncilEvidence({objectiveId:OBJECTIVE,sourceSha:SHA,now:NOW,
-  receipts:[...profiles,independent(profiles[0])],evaluation:evaluation(),...overrides});
+  receipts:[...profiles,independent(profiles[0])],evaluation:evaluation(),
+  identityAttestations:[attestation()],...overrides});
 }
 
 test('cloud council emits versioned source-bound deterministic assessment receipts',()=>{
@@ -74,6 +81,11 @@ test('zero receipts and fixed profiles alone cannot become independent approval'
   receipts:[relabeled],now:NOW,evaluation:evaluation()});
  assert.ok(forged.reasons.includes('independent-identity-unverified'));
  assert.equal(forged.independentReviewerCount,0);
+ const claimed=independent(deterministicReceipts()[0]);
+ const noReadback=evaluateCouncilEvidence({objectiveId:OBJECTIVE,sourceSha:SHA,
+  receipts:[claimed],now:NOW,evaluation:evaluation()});
+ assert.ok(noReadback.reasons.includes('independent-identity-unverified'));
+ assert.equal(noReadback.independentReviewerCount,0);
 });
 
 test('duplicate replay and contradictory role assessments fail closed',()=>{
@@ -149,7 +161,8 @@ test('hosted council output binds SQL receipt ids and remains advisory-only',asy
   objective:item.objective,status:'done',last_result:item.result,
   updated_at:item.observedAt,receipt_id:item.receiptId}));
  const result=await executeObjective('council.review',{
-  db:{query:async()=>({rows})},browser:{},task:{taskKey:OBJECTIVE}
+  db:{query:async sql=>({rows:sql.includes('independent-reviewer-attested')?[]:rows})},
+  browser:{},task:{taskKey:OBJECTIVE}
  });
  assert.equal(result.assessment_receipts.length,4);
  assert.deepEqual(result.assessment_receipts.map(x=>x.taskReceiptIds[0]),

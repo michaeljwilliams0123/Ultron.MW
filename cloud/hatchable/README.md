@@ -40,7 +40,7 @@ Five bounded native objectives: `repo.inspect`, `repo.prs`, `repo.ci`, `site.ren
 
 `council.review` now has a source-level versioned evidence contract. Each available verifier, sentinel, planner and skeptic assessment names the council objective, exact observed GitHub source SHA, durable task/event receipt IDs, evidence time/freshness, dissent and known unknowns. The profiles are labeled `deterministic-role-profile`; four profiles from one algorithm never count as four independent reviewers. Assessment events are inserted into the existing `brain_events` ledger in the same lease-fenced PostgreSQL statement that completes the council task. A duplicate, malformed, stale, contradictory or source-mismatched receipt cannot become promotion evidence.
 
-The associated gate can mark evidence only `eligible-for-protected-pr`, never executable. It requires a genuinely independent reviewer, an active matching lease, any required provider/token readiness, frozen disjoint before/after evaluation, independently observed outcome readbacks, positive held-out gain, zero candidate failures/critical regressions, and matching postmerge runtime source. An uncertain external write is read back and never replayed automatically. See [the issue #68 verification contract](../../docs/verification/ISSUE68-COUNCIL-EVIDENCE-2026-10-24.md).
+The associated gate can mark evidence only `eligible-for-protected-pr`, never executable. It requires a genuinely independent reviewer whose referenced `independent-reviewer-attested` event is separately read from the SQL ledger and matches a trusted readback adapter, an active matching lease, any required provider/token readiness, frozen disjoint before/after evaluation, independently observed outcome readbacks, positive held-out gain, zero candidate failures/critical regressions, and matching postmerge runtime source. An uncertain external write is read back and never replayed automatically. See [the issue #68 verification contract](../../docs/verification/ISSUE68-COUNCIL-EVIDENCE-2026-10-24.md).
 
 Owner-only API: `GET/POST /api/brain/tasks`, `POST /api/brain/command`. Scheduler-only: `/api/brain/tick` (hourly) and `/api/brain/run` (asynchronous). Commands: `/help`, `/status`, `/repo inspect`, `/repo prs`, `/repo ci`, `/site render`, `/council review`, `/remember <note>`. Actions: queue, note, cancel, retry.
 
@@ -120,7 +120,7 @@ To compare the source checked out at an exact PR head with a known live Hatchabl
 
 Tests: `node --test test/hatchable-parity.test.mjs` (also included in `node scripts/verify.mjs`). Run against the existing private project only; do not deploy draft source to force matching hashes. A mismatch is an expected **PRODUCTION_HOLD** until a separately approved source-merge and deliberate deployment/rollback sequence has been verified.
 
-## V2 release-acceptance matrix — source-only gate (PR #76)
+## Historical V2 release-acceptance matrix — source-only gate (PR #76)
 
 **WorkId:** pr76-v2-release-acceptance-matrix-699abf0f. This checklist is a
 release **gate**, not deployment approval or evidence production was updated.
@@ -128,6 +128,9 @@ At the Stage 2 handoff (October 23, 2026), Hatchable project
 proj_A6GCXRSKizko reported **live version 2**, with 15 runtime files.
 The last independently compared PR source snapshot found **four differences**;
 do not promote that historical result to a fresh production readback.
+The current source adds `lib/council-evidence.js`; it is intentionally absent
+from this historical 15-file live-v2 snapshot and therefore increases the
+source/deployment parity hold until a separately authorized deployment proves it.
 
 | Runtime source group | Files | Stage 2 source vs. live v2 |
 | --- | --- | --- |
