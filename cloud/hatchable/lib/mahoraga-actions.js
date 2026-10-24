@@ -215,6 +215,36 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
    return {ok:true,state:'uncertain',id:row.id,taskId:row.task_id,key:action.key};
  }
 }
+/**
+ * Hourly recovery of previously owner-admitted external actions. This does not
+ * invent work: only actions already persisted with their original key qualify.
+ * runMahoragaAction has the exact-once CAS; sent/uncertain are readback only.
+ */
+export async function resumePendingMahoragaActions({
+ db,config,transport=fetch,execute=runMahoragaAction,limit=2
+}={}) {
+ if(!Number.isSafeInteger(limit)||limit<1||limit>4)
+   throw Error('invalid-mahoraga-resume-limit');
+ const selected=await db.query(`SELECT action_key,operation,request FROM mahoraga_actions
+   WHERE state IN ('prepared','sent','uncertain')
+   ORDER BY id ASC LIMIT $1`,[limit]);
+ if(!Array.isArray(selected?.rows)||selected.rows.length>limit)
+   throw Error('invalid-mahoraga-resume-snapshot');
+ const outcomes=[];
+ for(const row of selected.rows) {
+   let result;
+   try {
+     result=await execute({db,config,transport},{
+       key:row.action_key,operation:row.operation,input:row.request
+     });
+   } catch {result={ok:false,state:'unavailable'};}
+   outcomes.push({state:['observed','uncertain','prepared'].includes(result?.state)
+      ? result.state:'unavailable',ok:result?.ok===true});
+ }
+ return {scanned:outcomes.length,observed:outcomes.filter(x=>x.state==='observed').length,
+   pending:outcomes.filter(x=>x.state!=='observed').length,
+   outcomes};
+}
 export async function mahoragaActionStatus({db},key) {
  if(!KEY.test(key || '')) return {ok:false,error:'invalid-action-key'};
  const row=(await db.query(`SELECT id,task_id,action_key,operation,state,result,created_at,updated_at

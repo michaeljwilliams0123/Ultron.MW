@@ -1,5 +1,6 @@
-import { db,browser,scheduler } from 'hatchable';
+import { db,browser,scheduler,config } from 'hatchable';
 import { runOne } from 'lib/brain-runner.js';
+import { resumePendingMahoragaActions } from 'lib/mahoraga-actions.js';
 export const access='scheduler';
 export const methods=['POST'];
 export default async function(req,res){
@@ -8,6 +9,13 @@ export default async function(req,res){
   const result=await runOne({db,browser});
   results.push(result);
   if(result.status==='idle'||result.status==='lost-lease')break;
+ }
+ // Only the hourly scheduler can visit persisted Mahoraga actions. Owner
+ // commands and read-only queue continuations cannot activate this lane.
+ let mahoraga={scanned:0,observed:0,pending:0,outcomes:[]};
+ if(req?.body?.via==='hourly-backlog') {
+   try{mahoraga=await resumePendingMahoragaActions({db,config,limit:2});}
+   catch {mahoraga={status:'reconcile-unavailable',scanned:0};}
  }
  let continuation_scheduled=false;
  if(results.length===4 && req?.body?.via!=='bounded-continuation'){
@@ -21,5 +29,5 @@ export default async function(req,res){
   }
  }
  return res.json({trigger:'owner-requested',count:results.filter(r=>r.status==='done').length,
-  continuation_scheduled,results});
+  continuation_scheduled,mahoraga,results});
 }

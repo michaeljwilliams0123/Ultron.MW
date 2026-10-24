@@ -18,11 +18,16 @@ export default async function(req,res){
    AND (lease_until IS NULL OR lease_until <= now()))
    OR (status='leased' AND lease_until < now())`);
  const pending=Number(remaining.rows[0]?.n||0);
+ // Only already-admitted external actions qualify. Their durable, separate
+ // state machine forbids POST replay after the first sent transition.
+ const external=await db.query(`SELECT count(*)::int AS n FROM mahoraga_actions
+   WHERE state IN ('prepared','sent','uncertain')`);
+ const mahoraga_pending=Number(external.rows[0]?.n||0);
  let continuation_scheduled=false;
- if(pending>0){
+ if(pending>0||mahoraga_pending>0){
   try{await scheduler.now('/api/brain/run',{via:'hourly-backlog'});continuation_scheduled=true;}
   catch(_e){continuation_scheduled=false;}
  }
- return res.json({trigger:'hourly',processed:0,pending,continuation_scheduled,
-   mode:'dispatch-only'});
+ return res.json({trigger:'hourly',processed:0,pending,mahoraga_pending,
+   continuation_scheduled,mode:'dispatch-only'});
 }
