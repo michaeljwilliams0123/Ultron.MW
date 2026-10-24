@@ -7,6 +7,8 @@ const define = (id, surface, pairs) => Object.freeze({
 export const PLUGIN_PROVIDERS = Object.freeze([
   define('github', 'connector', [
     ['repo.read', 'read'], ['pr.review', 'write'], ['pr.write', 'write'], ['pr.merge', 'write']]),
+  define('mahoraga', 'connector', [
+    ['mahoraga.issue.create', 'write'], ['mahoraga.workflow.dispatch', 'write']]),
   define('desktop-commander', 'connector', [
     ['device.read', 'read'], ['files.read', 'read'], ['files.write', 'write'], ['process.run', 'write']]),
   define('descope', 'connector', [['identity.read', 'read'], ['identity.write', 'write']]),
