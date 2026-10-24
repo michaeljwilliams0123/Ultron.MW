@@ -74,11 +74,12 @@ export function createMahoragaControlAdapter({ operator, repositoryId } = {}) {
     throw Error('Mahoraga issue reconciliation exceeds bounded window');
   }
 
-  async function findDispatch(expectedHeadSha) {
+  async function findDispatch(ref, expectedHeadSha) {
     const runs = await get('/actions/workflows/verify.yml/runs?event=workflow_dispatch&head_sha=' +
       expectedHeadSha + '&per_page=100', 'actions:write');
     if (!Array.isArray(runs?.workflow_runs)) throw Error('Mahoraga run readback invalid');
     return runs.workflow_runs.find(run => run.head_sha === expectedHeadSha &&
+      run.head_branch === ref &&
       run.event === 'workflow_dispatch' && run.path === '.github/workflows/verify.yml') || null;
   }
 
@@ -118,7 +119,7 @@ export function createMahoragaControlAdapter({ operator, repositoryId } = {}) {
         title: proposal.title, bodyDigest: digest(proposal.body), adopted };
     } else if (operation === 'mahoraga.workflow.dispatch') {
       const proposal = dispatchInput(input);
-      let run = await findDispatch(proposal.expectedHeadSha);
+      let run = await findDispatch(proposal.ref, proposal.expectedHeadSha);
       const adopted = !!run;
       if (!run) {
         if (await head(proposal.ref) !== proposal.expectedHeadSha)
@@ -126,7 +127,7 @@ export function createMahoragaControlAdapter({ operator, repositoryId } = {}) {
         await post('/actions/workflows/verify.yml/dispatches', 'actions:write',
           { ref: proposal.ref });
         for (let attempt = 0; attempt < 3 && !run; attempt++)
-          run = await findDispatch(proposal.expectedHeadSha);
+          run = await findDispatch(proposal.ref, proposal.expectedHeadSha);
       }
       if (!Number.isSafeInteger(run?.id) || run.id < 1)
         throw Error('Mahoraga dispatch outcome requires reconciliation');
@@ -154,6 +155,7 @@ export function createMahoragaControlAdapter({ operator, repositoryId } = {}) {
       (query.expected.headSha === undefined ||
         query.expected.headSha === result.headSha) &&
       run?.id === result.runId &&
+      run?.head_branch === result.ref &&
       run?.head_sha === result.headSha && run?.event === 'workflow_dispatch' &&
       run?.path === '.github/workflows/verify.yml',
     kind: 'verify', runId: result.runId };

@@ -31,7 +31,7 @@ function fixture({ authorize = async () => true, main = MAIN,
       return { workflow_runs: runs };
     if (path === '/actions/workflows/verify.yml/dispatches') {
       if (uncertainDispatch) throw Error('write outcome unknown');
-      runs.push({ id: 91, head_sha: BRANCH,
+      runs.push({ id: 91, head_sha: BRANCH, head_branch: 'mahoraga/feature',
         event: 'workflow_dispatch', path: '.github/workflows/verify.yml' });
       return null;
     }
