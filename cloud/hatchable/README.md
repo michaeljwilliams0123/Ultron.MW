@@ -1,6 +1,17 @@
-# Ultron.MW — Hatchable cloud brain (v2 source snapshot)
+# Ultron.MW — Hatchable cloud brain (v2 design, deployment v3)
 
 Source snapshot of the **deployed private owner-only** `ultron-mw-cloud` Hatchable backend. This is a source-review PR, not a GitHub Pages/UI replacement.
+
+**Current release evidence (October 24, 2026):** Hatchable deployment v3 is
+live and all 15 runtime files match PR source commit
+`9fd3e3e9c2b8321c385b6775d15ad439888e8a68` by SHA-256 and size.
+GitHub Verify passed for that commit. The owner-only admission, duplicate-key
+suppression, public/member denial, scheduler-only edge denial, completed
+read-only task with matching receipts, and expired-lease recovery were checked
+against v3. The source-only holds described below are historical checkpoints.
+Post-commit database response loss remains covered by the local mock-driver
+test, not a live fault injection. No GitHub write authority, OpenAI key, or
+independent Destiny account proof is implied by this deployment.
 
 - Management: https://hatchable.com/console/projects/ultron-mw-cloud
 - GitHub Pages remains the sole primary interface: https://michaeljwilliams0123.github.io/Ultron.MW/
@@ -26,7 +37,7 @@ No provider LLM inference/credits, GitHub writes, PR merges, execution of arbitr
 Never place API keys or private notes in this public repository.
 
 
-## October 22 source hardening (PR #76, **not deployed**)
+## October 22 source hardening (PR #76; deployed in v3 on October 24)
 
 This PR now includes a lease-fenced, atomic task/event transition repair. Claim, completion, failure, expired-lease recovery, owner admission, cancellation/retry, note creation and hourly task admission write the matching audit receipt inside the **same PostgreSQL statement**. A worker that loses its lease returns `lost-lease` rather than inventing a `failed` receipt. The hourly handler only enqueues the read-only inspection task and schedules the separate bounded /api/brain/run worker when ready backlog exists; it does not execute slow site renders inside the short cron fire budget. This is not unlimited polling.
 
@@ -142,7 +153,7 @@ failure receipt. These tests model database transitions and network replies;
 they are **not** live PostgreSQL fault injection or production recovery
 proof. No credentials, API billing, or production changes are involved.
 
-**PRODUCTION_HOLD remains:** obtain independently authenticated GitHub
+**At the October 23 source-only checkpoint, PRODUCTION_HOLD remained:** obtain independently authenticated GitHub
 403 diagnostics and live task/event correlation, prove bounded recovery
 under the deployed scheduler, and reconcile all 15 deployed runtime hashes
 (especially the four divergent files) before any separately approved
