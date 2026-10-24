@@ -225,9 +225,12 @@ export async function resumePendingMahoragaActions({
 }={}) {
  if(!Number.isSafeInteger(limit)||limit<1||limit>4)
    throw Error('invalid-mahoraga-resume-limit');
+ // Oldest first by *last inspection*, not immutable creation ID: a blocked
+ // prepared action must not monopolize every hourly scan or prevent an
+ // ambiguous sent action from receiving its read-only reconciliation.
  const selected=await db.query(`SELECT action_key,operation,request FROM mahoraga_actions
    WHERE state IN ('prepared','sent','uncertain')
-   ORDER BY id ASC LIMIT $1`,[limit]);
+   ORDER BY last_scanned_at ASC NULLS FIRST,id ASC LIMIT $1`,[limit]);
  if(!Array.isArray(selected?.rows)||selected.rows.length>limit)
    throw Error('invalid-mahoraga-resume-snapshot');
  const outcomes=[];
@@ -238,6 +241,11 @@ export async function resumePendingMahoragaActions({
        key:row.action_key,operation:row.operation,input:row.request
      });
    } catch {result={ok:false,state:'unavailable'};}
+   // Mark the scan even after missing credentials or an inconclusive readback.
+   // The write updates scheduling metadata only; it cannot clear the durable
+   // sent/uncertain checkpoint or authorize another external POST.
+   await db.query(`UPDATE mahoraga_actions SET last_scanned_at=now()
+     WHERE action_key=$1 AND state IN ('prepared','sent','uncertain')`,[row.action_key]);
    outcomes.push({state:['observed','uncertain','prepared'].includes(result?.state)
       ? result.state:'unavailable',ok:result?.ok===true});
  }
