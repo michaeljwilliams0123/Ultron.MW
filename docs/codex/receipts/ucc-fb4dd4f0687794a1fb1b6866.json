@@ -1,0 +1,15 @@
+{
+  "schema": "ultron.codex.receipt.v1",
+  "taskId": "ucc-fb4dd4f0687794a1fb1b6866",
+  "taskDigest": "94bfcac1f431093a6d70779cf2364fdd47eefe953b719041ba86d086d53b1b3a",
+  "authorId": "destiny-codex",
+  "authorFingerprint": "550e01b316cfbd16729dd73a635cf6fc3343dcf682708b342d269e115fad14d9",
+  "bindingFingerprint": "1278bdf842ec4108ae053fa3656cc38fde798c7eabb10f19834ee74969ebdfbd",
+  "sourceSha": "01dce408f107f17217cf2f52f7fdf5308beb90b2",
+  "headSha": "6f75c4e07abaf9d61d13d88f821ab885f32bb10c",
+  "claimHeadSha": "6f75c4e07abaf9d61d13d88f821ab885f32bb10c",
+  "completedAt": "2026-10-24T00:09:15.983Z",
+  "status": "completed",
+  "result": "Callable authors (2): Mike's Codex (mike-codex) and Destiny's Codex (destiny-codex); selected Destiny author fingerprint: 550e01b316cfbd16729dd73a635cf6fc3343dcf682708b342d269e115fad14d9.",
+  "identityEvidence": "work-enrollment-not-account-attestation"
+}
