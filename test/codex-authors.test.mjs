@@ -92,6 +92,9 @@ test('claims stop replay and completion receipts remain bound to author, task an
     result: 'README.md inspected successfully.'});
   assert.deepEqual(validateCodexReceipt(receipt, task), receipt);
   assert.equal(codexReplayDisposition(task, {claim, receipt}), 'already-completed');
+  assert.throws(() => codexReplayDisposition(task, {receipt}), /without earlier claim/);
+  assert.throws(() => codexReplayDisposition(task,
+    {claim: {...claim, authorId:'mike-codex'}, receipt}), /Invalid or conflicting/);
   for (const edit of [{ authorId: 'mike-codex' }, { taskDigest: 'f'.repeat(64) },
     { sourceSha: HEAD }, { status: 'queued' }, { extra: true }, { completedAt: 'bad' }])
     assert.throws(() => validateCodexReceipt({...receipt, ...edit}, task));

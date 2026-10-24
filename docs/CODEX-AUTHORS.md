@@ -41,6 +41,11 @@ are not published. A thread is a conversation identifier, not a remote account
 endpoint. These hashes are correlation metadata, not cryptographic proof of
 the human or OpenAI account operating the executor.
 
+Portable registries apply the same route normalization to registered IDs,
+display names, and aliases, including digit-bearing IDs. Binding fingerprints,
+when present for any enrollment state, must be bounded 64-character hashes;
+nested or unbounded values are rejected before the registry is frozen.
+
 ## Executor contract
 
 Read these instructions and `src/codex-call.mjs` from trusted current `main`,
@@ -57,8 +62,10 @@ An unavailable automation ID is a blocker; do not infer it from the task.
    The validator checks the author, route, canonical digest, same-repository
    branch/base, owner Issue, unchanged request and source SHA.
 3. Use `codexRecordPaths(call)` to inspect claims and receipts on the task
-   branch. `codexReplayDisposition` returns `already-completed` for a matching
-   receipt, `reconcile-required` for any previous claim, or `unclaimed`.
+   branch. `codexReplayDisposition` returns `already-completed` only for
+   a valid matching claim and receipt, `reconcile-required` for a prior claim,
+   or `unclaimed`. Check record Git history at the exact PR-head commit and
+   validate create-only commits, parents, and the receipt-to-claim SHA link.
    Omit a property only when its file does not exist. A present JSON `null`,
    empty, malformed or conflicting record is never permission to retry.
 4. For an unclaimed task, create the claim path once with
@@ -75,8 +82,17 @@ An unavailable automation ID is a blocker; do not infer it from the task.
 6. After actual verified execution, create the receipt path once using
    `buildCodexReceipt(call, {headSha: testedHead, claimHeadSha, completedAt, result})`.
    `result` is one public line of at most 2,000 characters. Read it back and run
-   `validateCodexReceipt(receipt, call)`. Do not manufacture a receipt in the
-   interactive setup session to claim webhook delivery.
+   `validateCodexReceipt(receipt, call)`. If source commits occurred after
+   the claim, verify a complete first-parent ancestry chain from the claim
+   creation commit to `testedHead` before treating the completion record as
+   verified; neither a shared GitHub actor nor a record alone attests a Work
+   account. Do not manufacture a receipt in the interactive setup session to
+   claim webhook delivery.
+
+A task pinned to an obsolete main SHA cannot execute. Keep the original audit
+trail and create a fresh owner Issue and PR instead of rebasing the task or
+weakening source admission. If the Work event automation is paused, enable it
+in the separately enrolled Work account before triggering a new canary.
 
 There is one attempt per request. An incomplete claim survives a crash and
 requires explicit reconciliation. Close the Issue and PR to withdraw a queued
