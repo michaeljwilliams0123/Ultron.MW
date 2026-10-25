@@ -30,10 +30,11 @@ const OUTCOME_SCHEMA='ultron.held-out-outcome.v1';
 const HELD_OUT_OBJECTIVE='held-out.evaluate';
 
 function iso(value){
- const parsed=Date.parse(value);
- if(typeof value!=='string'||!Number.isFinite(parsed)||new Date(parsed).toISOString()!==value)
+ if(typeof value!=='string'||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value))
   return null;
- return value;
+ const parsed=Date.parse(value);
+ return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
 }
 function text(value,maximum=160){
  return typeof value==='string'&&value.trim()&&value.length<=maximum&&!value.includes('\0')
