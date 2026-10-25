@@ -8,7 +8,11 @@ export async function executeObjective(objective){return {objective,source:'fixt
 const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource).toString('base64');
 async function moduleUnderTest(path,core=coreUrl){
  const source=await readFile(new URL('../cloud/hatchable/lib/'+path,import.meta.url),'utf8');
- const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'");
+ const acceptance=`data:text/javascript;base64,${Buffer.from(
+  'export async function persistAcceptanceEvidence(){return {ok:true}};'
+ ).toString('base64')}`;
+ const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'")
+  .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'");
  assert.notEqual(transformed,source,'test import alias should be replaced');
  return import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 }
@@ -92,7 +96,6 @@ test('cloud: uncertain completion does not immediately replay an already claimed
  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,1);
  assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,0);
 });
-
 test('cloud: real objective execution failure remains lease-fenced and journaled',async()=>{
  const throwingCore=`export const ALLOWED=new Set(['repo.inspect']);
 export const CAPABILITIES=[{id:'repo.inspect'}];
@@ -269,8 +272,13 @@ function fakeGithubRetryDb(){
 async function realGithubRunner(){
  const evidenceSource=await readFile(new URL('../cloud/hatchable/lib/council-evidence.js',import.meta.url),'utf8');
  const evidence='data:text/javascript;base64,'+Buffer.from(evidenceSource).toString('base64');
+ const acceptanceSource=await readFile(new URL('../cloud/hatchable/lib/acceptance-evidence.js',
+  import.meta.url),'utf8');
+ const acceptance='data:text/javascript;base64,'+
+  Buffer.from(acceptanceSource).toString('base64');
  const source=(await readFile(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8'))
-  .replace("from 'lib/council-evidence.js'","from '"+evidence+"'");
+  .replace("from 'lib/council-evidence.js'","from '"+evidence+"'")
+  .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'");
  const core='data:text/javascript;base64,'+Buffer.from(source).toString('base64');
  return moduleUnderTest('brain-runner.js',core);
 }

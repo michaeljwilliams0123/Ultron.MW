@@ -1,6 +1,7 @@
 import {
  buildCouncilAssessmentReceipts,evaluateCouncilEvidence
 } from 'lib/council-evidence.js';
+import { verifyPersistedAcceptanceEvidence } from 'lib/acceptance-evidence.js';
 
 const REPO = 'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const SITE = 'https://michaeljwilliams0123.github.io/Ultron.MW/';
@@ -170,10 +171,16 @@ export async function executeObjective(objective, {db,browser,task={}}){
      observedAt:new Date(outcome.created_at).toISOString(),
      taskObjective:outcome.task_objective,result:outcome.last_result}))};
   }
+  let trustedAdapterEvidence={reviewer:false,evaluation:false};
+  if(identityRows.length===1&&independentRows.length===1&&evaluationRows.length===1){
+   trustedAdapterEvidence=await verifyPersistedAcceptanceEvidence({objectiveId,
+    sourceSha,identity:identityRows[0].details,
+    assessment:independentRows[0].details,evaluation:evaluationRows[0].details});
+  }
   const promotionGate=evaluateCouncilEvidence({
    objectiveId,sourceSha,receipts:[...assessmentReceipts,...independentReceipts],now:at,
    lease:{state:'active',tokenMatches:true},provider:{required:false},
-   identityAttestations,evaluation
+   identityAttestations,evaluation,trustedAdapterEvidence
   });
   if(await currentMainSha()!==sourceSha)throw Error('main-moved-during-council-evaluation');
   return {objective,at,source:'local-evidence-only',source_sha:sourceSha,

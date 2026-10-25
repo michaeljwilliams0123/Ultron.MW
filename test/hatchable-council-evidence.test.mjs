@@ -11,10 +11,15 @@ async function coreUnderTest(){
   import.meta.url),'utf8');
  const evidenceUrl='data:text/javascript;base64,'+
   Buffer.from(evidenceSource).toString('base64');
+ const acceptanceSource=await readFile(new URL('../cloud/hatchable/lib/acceptance-evidence.js',
+  import.meta.url),'utf8');
+ const acceptanceUrl='data:text/javascript;base64,'+
+  Buffer.from(acceptanceSource).toString('base64');
  const coreSource=await readFile(new URL('../cloud/hatchable/lib/brain-core.js',
   import.meta.url),'utf8');
  const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource.replace(
   "from 'lib/council-evidence.js'","from '"+evidenceUrl+"'"
+ ).replace("from 'lib/acceptance-evidence.js'","from '"+acceptanceUrl+"'"
  )).toString('base64');
  return import(coreUrl);
 }
@@ -415,4 +420,3 @@ test('hosted council rejects a main change during its evaluation',async()=>{
   }),/main-moved-during-council-evaluation/);
  }finally{globalThis.fetch=originalFetch;}
 });
-

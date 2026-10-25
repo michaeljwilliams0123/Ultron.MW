@@ -1,0 +1,272 @@
+const REPO='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+const OWNER='michaeljwilliams0123';
+const SHA40=/^[a-f0-9]{40}$/;
+const OBJECTIVE=/^[a-z0-9][a-z0-9-]{5,79}$/;
+const MANIFEST_SCHEMA='ultron.github-review-held-out-manifest.v1';
+const SET_SCHEMA='ultron.held-out-evaluation-set.v1';
+const OUTCOME_SCHEMA='ultron.held-out-outcome.v1';
+const MARKER=/<!-- ultron-held-out-manifest:v1\s*\n([\s\S]*?)\n-->/;
+const HEADERS={Accept:'application/vnd.github+json','User-Agent':'UltronMW-Acceptance-Adapter'};
+
+function integer(value){
+ const n=Number(value);
+ return Number.isSafeInteger(n)&&n>0?n:null;
+}
+function iso(value){
+ if(typeof value!=='string')return null;
+ const parsed=Date.parse(value);
+ return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
+}
+async function get(path,fetchImpl){
+ const response=await fetchImpl(REPO+path,{headers:HEADERS,signal:AbortSignal.timeout(10000)});
+ if(!response.ok)throw Error('github-status-'+response.status);
+ return response.json();
+}
+function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha}){
+ if(!Array.isArray(comments))throw Error('invalid-manifest-comments');
+ const matches=[];
+ for(const comment of comments){
+  const marker=typeof comment?.body==='string'?comment.body.match(MARKER):null;
+  if(!marker)continue;
+  let value;
+  try{value=JSON.parse(marker[1]);}catch{continue;}
+  if(value?.schema!==MANIFEST_SCHEMA||value.objectiveId!==objectiveId||
+     value.candidatePullNumber!==candidatePullNumber||
+     value.candidateHeadSha!==candidateHeadSha||
+     !integer(value.baselinePullNumber)||value.baselinePullNumber===candidatePullNumber||
+     value.frozen!==true||value.setsDisjoint!==true||
+     value.evaluator!=='github-review-actionable-findings-v1'||
+     value.scoring!=='1/(1+actionable-comments)'||
+     comment.user?.login!==OWNER||comment.author_association!=='OWNER'||
+     !integer(comment.id)||!iso(comment.created_at))continue;
+  matches.push({comment,value});
+ }
+ if(matches.length!==1)throw Error(matches.length?'ambiguous-held-out-manifest':'held-out-manifest-missing');
+ return matches[0];
+}
+function generatedReviews(reviews,{headSha=null,after=null}={}){
+ if(!Array.isArray(reviews))throw Error('invalid-review-response');
+ return reviews.filter(review=>{
+  const body=typeof review?.body==='string'?review.body:'';
+  const submitted=iso(review?.submitted_at);
+  return integer(review?.id)&&review.user?.login&&review.user.login!==OWNER&&
+   review.user?.id&&['COMMENTED','APPROVED','CHANGES_REQUESTED'].includes(review.state)&&
+   body.includes('<!-- coderabbit-ai-generated:v1 -->')&&
+   /Actionable comments posted:\s*\d+/.test(body)&&submitted&&
+   (!headSha||review.commit_id===headSha)&&(!after||Date.parse(submitted)>Date.parse(after));
+ });
+}
+function actionable(reviews){
+ return reviews.reduce((sum,review)=>sum+Number(
+  review.body.match(/Actionable comments posted:\s*(\d+)/)[1]),0);
+}
+function score(count){return 1/(1+count);}
+
+/** Read a frozen public manifest and independently submitted GitHub reviews. */
+export async function observeAcceptanceEvidence({
+ objectiveId,candidatePullNumber,sourceSha=null,fetchImpl=fetch
+}={}){
+ if(!OBJECTIVE.test(objectiveId||'')||!integer(candidatePullNumber)||
+    (sourceSha!==null&&!SHA40.test(sourceSha)))throw Error('invalid-acceptance-request');
+ const [ref,candidate,comments,candidateReviews]=await Promise.all([
+  get('/git/ref/heads/main',fetchImpl),
+  get('/pulls/'+candidatePullNumber,fetchImpl),
+  get('/issues/'+candidatePullNumber+'/comments?per_page=100',fetchImpl),
+  get('/pulls/'+candidatePullNumber+'/reviews?per_page=100',fetchImpl)
+ ]);
+ const currentSha=ref?.object?.sha;
+ if(!SHA40.test(currentSha||'')||(sourceSha&&sourceSha!==currentSha))
+  throw Error('source-sha-mismatch');
+ if(candidate?.number!==candidatePullNumber||!SHA40.test(candidate?.head?.sha||'')||
+    candidate.user?.login!==OWNER||candidate.merged!==true||
+    candidate.merge_commit_sha!==currentSha)throw Error('candidate-not-current-merged-pr');
+ const {comment:freezeComment,value:manifest}=manifestFrom(comments,{objectiveId,
+  candidatePullNumber,candidateHeadSha:candidate.head.sha});
+ const [currentCommit,headCommit,baseline,baselineReviews]=await Promise.all([
+  get('/commits/'+currentSha,fetchImpl),get('/commits/'+candidate.head.sha,fetchImpl),
+  get('/pulls/'+manifest.baselinePullNumber,fetchImpl),
+  get('/pulls/'+manifest.baselinePullNumber+'/reviews?per_page=100',fetchImpl)
+ ]);
+ if(!SHA40.test(currentCommit?.commit?.tree?.sha||'')||
+    currentCommit.commit.tree.sha!==headCommit?.commit?.tree?.sha)
+  throw Error('reviewed-tree-not-current-main');
+ if(baseline?.number!==manifest.baselinePullNumber||baseline.merged!==true||
+    !SHA40.test(baseline?.head?.sha||''))throw Error('baseline-invalid');
+ const before=generatedReviews(baselineReviews);
+ const after=generatedReviews(candidateReviews,{headSha:candidate.head.sha,
+  after:freezeComment.created_at});
+ if(!before.length)throw Error('baseline-review-missing');
+ if(after.length!==1)throw Error(after.length?'ambiguous-candidate-review':'candidate-review-missing');
+ const review=after[0],baselineActionable=actionable(before);
+ const candidateActionable=actionable(after);
+ const frozenAt=iso(freezeComment.created_at),reviewedAt=iso(review.submitted_at);
+ if(Date.parse(frozenAt)>=Date.parse(reviewedAt))throw Error('manifest-not-frozen-before-review');
+ const reviewerId='github:'+review.user.login+':'+review.user.id;
+ return Object.freeze({objectiveId,sourceSha:currentSha,candidatePullNumber,
+  candidateHeadSha:candidate.head.sha,baselinePullNumber:baseline.number,
+  reviewerId,reviewId:review.id,reviewState:review.state,reviewedAt,
+  freezeCommentId:freezeComment.id,frozenAt,
+  setId:'github-review-'+baseline.number+'-'+candidatePullNumber,
+  baselineActionable,candidateActionable,
+  baselineScore:score(baselineActionable),candidateScore:score(candidateActionable)});
+}
+
+function eventDetails(observed){
+ const key='acceptance:'+observed.objectiveId+':'+observed.sourceSha;
+ const baselineResult={schema:OUTCOME_SCHEMA,objectiveId:observed.objectiveId,
+  sourceSha:observed.sourceSha,setId:observed.setId,caseId:'github-review-findings',
+  variant:'baseline',score:observed.baselineScore,status:'passed',
+  criticalRegression:false,reviewPullNumber:observed.baselinePullNumber};
+ const candidateClear=observed.candidateActionable===0;
+ const candidateResult={schema:OUTCOME_SCHEMA,objectiveId:observed.objectiveId,
+  sourceSha:observed.sourceSha,setId:observed.setId,caseId:'github-review-findings',
+  variant:'candidate',score:observed.candidateScore,
+  status:candidateClear?'passed':'failed',criticalRegression:!candidateClear,
+  reviewPullNumber:observed.candidatePullNumber,reviewId:observed.reviewId,
+  reviewSubmittedAt:observed.reviewedAt};
+ const manifest={schema:SET_SCHEMA,objectiveId:observed.objectiveId,
+  sourceSha:observed.sourceSha,setId:observed.setId,frozen:true,setsDisjoint:true,
+  freezeCommentId:observed.freezeCommentId,frozenAt:observed.frozenAt,
+  candidateHeadSha:observed.candidateHeadSha,
+  adapterKey:key+':manifest'};
+ const identity={objectiveId:observed.objectiveId,sourceSha:observed.sourceSha,
+  reviewerId:observed.reviewerId,identitySource:'github-review',verified:true,
+  verifiedBy:{kind:'github-review-readback',id:'github-review-adapter'},
+  candidatePullNumber:observed.candidatePullNumber,reviewId:observed.reviewId,
+  adapterKey:key+':identity'};
+ const assessment={schema:'ultron.council-assessment.v1',
+  objectiveId:observed.objectiveId,sourceSha:observed.sourceSha,role:'independent',
+  reviewer:{kind:'independent-reviewer',id:observed.reviewerId,
+   identitySource:'github-review'},evidenceObservedAt:observed.reviewedAt,
+  evidenceFreshness:'fresh',assessment:candidateClear?'independent-review-clear':
+   'independent-review-findings',recommendation:candidateClear?'observe':'repair-findings',
+  dissent:candidateClear?[]:['independent-review-findings'],
+  knownUnknowns:['github-review-is-advisory'],
+  authority:{mode:'advisory-only',executable:false,releaseAuthority:'github-protected-pr'},
+  modelInvocations:0,creditCost:0,paidFallback:false,
+  candidatePullNumber:observed.candidatePullNumber,reviewId:observed.reviewId,
+  adapterKey:key+':assessment'};
+ const evaluation={objectiveId:observed.objectiveId,sourceSha:observed.sourceSha,
+  runtimeSourceSha:observed.sourceSha,frozen:true,setsDisjoint:true,
+  independentlyObserved:true,outcomeReadbacksObserved:true,
+  evaluator:{kind:'independent-evaluator',id:observed.reviewerId},
+  verifiedBy:{kind:'held-out-evaluation-readback',id:'held-out-evaluation-adapter'},
+  baselineScore:observed.baselineScore,candidateScore:observed.candidateScore,
+  candidateFailures:candidateClear?0:1,criticalRegressions:candidateClear?0:1,
+  candidatePullNumber:observed.candidatePullNumber,
+  baselinePullNumber:observed.baselinePullNumber,reviewId:observed.reviewId,
+  freezeCommentId:observed.freezeCommentId,adapterKey:key+':evaluation'};
+ return {key,baselineResult,candidateResult,manifest,identity,assessment,evaluation};
+}
+
+const PERSIST_SQL=`WITH baseline_task AS (
+ INSERT INTO brain_tasks(task_key,objective,status,attempts,max_attempts,last_result)
+ VALUES($1,'held-out.evaluate','done',1,1,$2::jsonb)
+ ON CONFLICT(task_key) DO UPDATE SET task_key=EXCLUDED.task_key
+ WHERE brain_tasks.objective=EXCLUDED.objective AND brain_tasks.last_result=EXCLUDED.last_result
+ RETURNING id
+), candidate_task AS (
+ INSERT INTO brain_tasks(task_key,objective,status,attempts,max_attempts,last_result)
+ VALUES($3,'held-out.evaluate','done',1,1,$4::jsonb)
+ ON CONFLICT(task_key) DO UPDATE SET task_key=EXCLUDED.task_key
+ WHERE brain_tasks.objective=EXCLUDED.objective AND brain_tasks.last_result=EXCLUDED.last_result
+ RETURNING id
+), manifest_insert AS (
+ INSERT INTO brain_events(event_type,details)
+ SELECT 'held-out-evaluation-frozen',$5::jsonb || jsonb_build_object('cases',
+  jsonb_build_array(jsonb_build_object('caseId','github-review-findings',
+   'baselineTaskId',baseline_task.id,'candidateTaskId',candidate_task.id)))
+ FROM baseline_task,candidate_task ON CONFLICT DO NOTHING RETURNING id
+), manifest AS (
+ SELECT id FROM manifest_insert UNION ALL SELECT id FROM brain_events
+ WHERE event_type='held-out-evaluation-frozen' AND details->>'adapterKey'=$6 LIMIT 1
+), identity_insert AS (
+ INSERT INTO brain_events(event_type,details) VALUES('independent-reviewer-attested',$7::jsonb)
+ ON CONFLICT DO NOTHING RETURNING id
+), identity AS (
+ SELECT id FROM identity_insert UNION ALL SELECT id FROM brain_events
+ WHERE event_type='independent-reviewer-attested' AND details->>'adapterKey'=$8 LIMIT 1
+), baseline_observed_insert AS (
+ INSERT INTO brain_events(task_id,event_type,details)
+ SELECT id,'observed',jsonb_build_object('source','github-review-readback','adapterKey',$9::text)
+ FROM baseline_task ON CONFLICT DO NOTHING RETURNING id
+), baseline_observed AS (
+ SELECT id FROM baseline_observed_insert UNION ALL SELECT id FROM brain_events
+ WHERE event_type='observed' AND details->>'adapterKey'=$9 LIMIT 1
+), candidate_observed_insert AS (
+ INSERT INTO brain_events(task_id,event_type,details)
+ SELECT id,'observed',jsonb_build_object('source','github-review-readback','adapterKey',$10::text)
+ FROM candidate_task ON CONFLICT DO NOTHING RETURNING id
+), candidate_observed AS (
+ SELECT id FROM candidate_observed_insert UNION ALL SELECT id FROM brain_events
+ WHERE event_type='observed' AND details->>'adapterKey'=$10 LIMIT 1
+), assessment_insert AS (
+ INSERT INTO brain_events(task_id,event_type,details)
+ SELECT candidate_task.id,'independent-reviewer-assessment',$11::jsonb ||
+  jsonb_build_object('reviewer',($11::jsonb->'reviewer') ||
+   jsonb_build_object('identityReceiptId',identity.id))
+ FROM candidate_task,identity ON CONFLICT DO NOTHING RETURNING id
+), assessment AS (
+ SELECT id FROM assessment_insert UNION ALL SELECT id FROM brain_events
+ WHERE event_type='independent-reviewer-assessment' AND details->>'adapterKey'=$12 LIMIT 1
+), evaluation_insert AS (
+ INSERT INTO brain_events(event_type,details)
+ SELECT 'held-out-evaluation-observed',$13::jsonb || jsonb_build_object(
+  'manifestReceiptId',manifest.id,
+  'taskIds',jsonb_build_array(baseline_task.id,candidate_task.id),
+  'outcomeReceiptIds',jsonb_build_array(baseline_observed.id,candidate_observed.id))
+ FROM manifest,baseline_task,candidate_task,baseline_observed,candidate_observed
+ ON CONFLICT DO NOTHING RETURNING id
+), evaluation AS (
+ SELECT id FROM evaluation_insert UNION ALL SELECT id FROM brain_events
+ WHERE event_type='held-out-evaluation-observed' AND details->>'adapterKey'=$14 LIMIT 1
+)
+SELECT identity.id AS identity_id,assessment.id AS assessment_id,
+ manifest.id AS manifest_id,evaluation.id AS evaluation_id,
+ baseline_task.id AS baseline_task_id,candidate_task.id AS candidate_task_id,
+ baseline_observed.id AS baseline_receipt_id,candidate_observed.id AS candidate_receipt_id
+FROM identity,assessment,manifest,evaluation,baseline_task,candidate_task,
+ baseline_observed,candidate_observed`;
+
+/** Persist the independently reread GitHub evidence in one idempotent SQL statement. */
+export async function persistAcceptanceEvidence({db,objectiveId,candidatePullNumber,
+ fetchImpl=fetch}={}){
+ const observed=await observeAcceptanceEvidence({objectiveId,candidatePullNumber,fetchImpl});
+ const details=eventDetails(observed),short=observed.sourceSha.slice(0,12);
+ const params=[
+  'heldout:'+objectiveId+':'+short+':baseline',JSON.stringify(details.baselineResult),
+  'heldout:'+objectiveId+':'+short+':candidate',JSON.stringify(details.candidateResult),
+  JSON.stringify(details.manifest),details.manifest.adapterKey,
+  JSON.stringify(details.identity),details.identity.adapterKey,
+  details.key+':baseline-observed',details.key+':candidate-observed',
+  JSON.stringify(details.assessment),details.assessment.adapterKey,
+  JSON.stringify(details.evaluation),details.evaluation.adapterKey
+ ];
+ const saved=await db.query(PERSIST_SQL,params);
+ if(saved.rows.length!==1)throw Error('acceptance-ledger-conflict');
+ return {ok:true,observed,receipts:saved.rows[0]};
+}
+
+/** Re-read GitHub so persisted adapter labels cannot make themselves trusted. */
+export async function verifyPersistedAcceptanceEvidence({
+ objectiveId,sourceSha,identity,assessment,evaluation,fetchImpl=fetch
+}={}){
+ const candidatePullNumber=integer(identity?.candidatePullNumber);
+ if(!candidatePullNumber||candidatePullNumber!==evaluation?.candidatePullNumber||
+    candidatePullNumber!==assessment?.candidatePullNumber)return {reviewer:false,evaluation:false};
+ try{
+  const observed=await observeAcceptanceEvidence({objectiveId,candidatePullNumber,
+   sourceSha,fetchImpl});
+  const reviewer=identity.reviewerId===observed.reviewerId&&
+   identity.reviewId===observed.reviewId&&assessment.reviewId===observed.reviewId&&
+   assessment.reviewer?.id===observed.reviewerId;
+  const evaluationMatches=evaluation.reviewId===observed.reviewId&&
+   evaluation.freezeCommentId===observed.freezeCommentId&&
+   evaluation.baselinePullNumber===observed.baselinePullNumber&&
+   evaluation.baselineScore===observed.baselineScore&&
+   evaluation.candidateScore===observed.candidateScore&&
+   evaluation.candidateFailures===(observed.candidateActionable===0?0:1)&&
+   evaluation.criticalRegressions===(observed.candidateActionable===0?0:1);
+  return {reviewer,evaluation:evaluationMatches};
+ }catch{return {reviewer:false,evaluation:false};}
+}
