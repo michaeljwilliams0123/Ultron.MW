@@ -346,3 +346,53 @@ test('PostgreSQL rollback guard maps conflicting keyed receipts to explicit admi
  await assert.rejects(persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
   candidatePullNumber:106,fetchImpl:fixtures()}),/acceptance-ledger-conflict/);
 });
+
+
+test('GitHub first-page saturation cannot silently truncate manifest or reviewer evidence',async()=>{
+ const base='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+ const seed=fixtures();
+ const comments=(await (await seed(base+'/issues/106/comments?per_page=100')).json());
+ const reviews=(await (await seed(base+'/pulls/106/reviews?per_page=100')).json());
+ const baseline=(await (await seed(base+'/pulls/103/reviews?per_page=100')).json());
+ await assert.rejects(observeAcceptanceEvidence({
+  objectiveId:OBJECTIVE,candidatePullNumber:106,
+  fetchImpl:fixtures({'/issues/106/comments?per_page=100':Array.from({length:100},()=>comments[0])})
+ }),/invalid-manifest-comments/);
+ await assert.rejects(observeAcceptanceEvidence({
+  objectiveId:OBJECTIVE,candidatePullNumber:106,
+  fetchImpl:fixtures({'/pulls/106/reviews?per_page=100':Array.from({length:100},()=>reviews[0])})
+ }),/invalid-review-response/);
+ await assert.rejects(observeAcceptanceEvidence({
+  objectiveId:OBJECTIVE,candidatePullNumber:106,
+  fetchImpl:fixtures({'/pulls/103/reviews?per_page=100':Array.from({length:100},()=>baseline[0])})
+ }),/invalid-review-response/);
+});
+
+test('tampering independent assessment dissent or authority invalidates reviewer trust',async()=>{
+ let recorded;
+ const db={query:async(_sql,params)=>{
+  recorded=params;
+  return {rows:[{identity_id:1,assessment_id:2,manifest_id:3,evaluation_id:4,
+   baseline_task_id:5,candidate_task_id:6,baseline_receipt_id:7,candidate_receipt_id:8}]};
+ }};
+ await persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures()});
+ const identity=JSON.parse(recorded[6]);
+ const assessment=JSON.parse(recorded[10]);
+ const evaluation=JSON.parse(recorded[12]);
+ const verify=async selected=>verifyPersistedAcceptanceEvidence({
+  objectiveId:OBJECTIVE,sourceSha:MAIN,identity,assessment:selected,
+  evaluation,fetchImpl:fixtures()
+ });
+ assert.deepEqual(await verify(assessment),{reviewer:true,evaluation:false});
+ for(const tamper of [
+  {...assessment,dissent:['dismiss-independent-warning']},
+  {...assessment,recommendation:'promote'},
+  {...assessment,evidenceFreshness:'stale'},
+  {...assessment,authority:{mode:'executable',releaseAuthority:'unrestricted'}},
+  {...assessment,reviewer:{...assessment.reviewer,kind:'self-review'}},
+  {...assessment,knownUnknowns:[]}
+ ]){
+  assert.deepEqual(await verify(tamper),{reviewer:false,evaluation:false});
+ }
+});
