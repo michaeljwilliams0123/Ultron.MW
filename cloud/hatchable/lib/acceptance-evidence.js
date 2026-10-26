@@ -57,15 +57,23 @@ function generatedReviews(reviews,{headSha=null,after=null}={}){
    review.user?.id===REVIEWER.id&&review.user?.type===REVIEWER.type&&
    ['COMMENTED','APPROVED','CHANGES_REQUESTED'].includes(review.state)&&
    body.includes('<!-- coderabbit-ai-generated:v1 -->')&&
-   /Actionable comments posted:\s*\d+/.test(body)&&submitted&&
+   submitted&&
    (!headSha||review.commit_id===headSha)&&(!after||Date.parse(submitted)>Date.parse(after));
  });
 }
 function actionable(reviews){
- return reviews.reduce((sum,review)=>sum+Number(
-  review.body.match(/Actionable comments posted:\s*(\d+)/)[1]),0);
+ const counts=reviews.map(review=>{
+  // Quiet-mode CodeRabbit submissions can omit the count. Identity and
+  // exact-head review evidence remain usable, but a missing count is unknown.
+  const matches=[...review.body.matchAll(/Actionable comments posted:\s*(\d+)\b/g)];
+  if(matches.length!==1)return null;
+  const count=Number(matches[0][1]);
+  return Number.isSafeInteger(count)?count:null;
+ });
+ return counts.every(count=>count!==null)?
+  counts.reduce((sum,count)=>sum+count,0):null;
 }
-function score(count){return 1/(1+count);}
+function score(count){return count===null?null:1/(1+count);}
 
 /** Read a frozen public manifest and independently submitted GitHub reviews. */
 export async function observeAcceptanceEvidence({
@@ -121,14 +129,18 @@ function eventDetails(observed){
  const key='acceptance:'+observed.objectiveId+':'+observed.sourceSha;
  const baselineResult={schema:OUTCOME_SCHEMA,objectiveId:observed.objectiveId,
   sourceSha:observed.sourceSha,setId:observed.setId,caseId:'github-review-findings',
-  variant:'baseline',score:observed.baselineScore,status:'observed',
+  variant:'baseline',score:observed.baselineScore,
+  status:observed.baselineActionable===null?'count-unavailable':'observed',
   evidenceClass:PROXY_CLASS,criticalRegression:null,
   reviewPullNumber:observed.baselinePullNumber};
  const candidateClear=observed.candidateActionable===0;
+ const candidateUnknown=observed.candidateActionable===null;
+ const countUnknown=candidateUnknown||observed.baselineActionable===null;
  const candidateResult={schema:OUTCOME_SCHEMA,objectiveId:observed.objectiveId,
   sourceSha:observed.sourceSha,setId:observed.setId,caseId:'github-review-findings',
   variant:'candidate',score:observed.candidateScore,
-  status:'observed',evidenceClass:PROXY_CLASS,criticalRegression:null,
+  status:observed.candidateActionable===null?'count-unavailable':'observed',
+  evidenceClass:PROXY_CLASS,criticalRegression:null,
   reviewPullNumber:observed.candidatePullNumber,reviewId:observed.reviewId,
   reviewSubmittedAt:observed.reviewedAt};
  const manifest={schema:SET_SCHEMA,objectiveId:observed.objectiveId,
@@ -146,10 +158,15 @@ function eventDetails(observed){
   objectiveId:observed.objectiveId,sourceSha:observed.sourceSha,role:'independent',
   reviewer:{kind:'independent-reviewer',id:observed.reviewerId,
    identitySource:'github-review'},evidenceObservedAt:observed.reviewedAt,
-  evidenceFreshness:'fresh',assessment:candidateClear?'independent-review-clear':
-   'independent-review-findings',recommendation:candidateClear?'observe':'repair-findings',
-  dissent:candidateClear?[]:['independent-review-findings'],
-  knownUnknowns:['github-review-is-advisory','review-count-not-held-out-evaluation'],
+  evidenceFreshness:'fresh',
+  assessment:candidateUnknown?'independent-review-unquantified':
+   candidateClear?'independent-review-clear':'independent-review-findings',
+  recommendation:candidateUnknown?'manual-review-required':
+   candidateClear?'observe':'repair-findings',
+  dissent:candidateUnknown?['review-actionable-count-unavailable']:
+   candidateClear?[]:['independent-review-findings'],
+  knownUnknowns:['github-review-is-advisory','review-count-not-held-out-evaluation',
+   ...(countUnknown?['review-actionable-count-unavailable']:[])],
   authority:{mode:'advisory-only',executable:false,releaseAuthority:'github-protected-pr'},
   modelInvocations:0,creditCost:0,paidFallback:false,
   candidatePullNumber:observed.candidatePullNumber,reviewId:observed.reviewId,
