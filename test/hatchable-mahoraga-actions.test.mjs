@@ -10,7 +10,7 @@ const PEM=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey
 const input={key:KEY,operation:'issue.create',
   input:{title:'Ultron control canary',body:'One bounded acceptance issue.',
     expectedMainSha:MAIN}};
-function fixture({uncertainWrite=false,main=MAIN,ready=true}={}){
+function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
  const config={async get(name){
    if(!ready)throw Error('setup_required');
@@ -18,6 +18,7 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true}={}){
      name.endsWith('INSTALLATION_ID')?'321':PEM;
  }};
  const db={async query(sql,params=[]){
+   if(sql.includes('SELECT paused FROM brain_runtime_control'))return {rows:[{paused}]};
    if(sql.includes('INSERT INTO mahoraga_actions')){
      if(rows.has(params[0]))return {rows:[]};
      const row={id:rows.size+1,task_id:rows.size+101,
@@ -122,4 +123,14 @@ test('exact-head Verify dispatch records one run and never dispatches twice',asy
  assert.equal(result.result.runId,99);
  assert.equal((await execute(f,request)).reused,true);
  assert.equal(f.calls.filter(x=>x.path.endsWith('/dispatches')).length,1);
+});
+
+test('owner stop keeps a prepared action unsubmitted even with valid GitHub credentials',async()=>{
+ const f=fixture({paused:true});
+ const result=await execute(f);
+ assert.equal(result.ok,false);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'owner-execution-paused');
+ assert.equal(f.calls.length,0,'no App token should even be requested');
+ assert.equal(f.rows.get(KEY).state,'prepared');
 });
