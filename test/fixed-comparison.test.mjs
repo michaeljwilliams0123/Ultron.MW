@@ -33,21 +33,21 @@ const sources=(sha,path)=>{
  return null;
 };
 
-test('base and candidate receive identical 8 cases with persisted per-case receipts',async()=>{
+test('base and candidate receive identical 10 cases with persisted per-case receipts',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'ultron-compare-'));
  try{
   const path=join(dir,'results.json');
   const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
    readSource:sources,outputPath:path});
-  assert.equal(report.summary.total,8);
+  assert.equal(report.summary.total,10);
   assert.equal(report.summary.baselinePassed,3);
-  assert.equal(report.summary.candidatePassed,8);
+  assert.equal(report.summary.candidatePassed,10);
   assert.equal(report.summary.candidateFailures,0);
   assert.equal(report.heldOutCertified,false);
   assert.match(report.evaluatorSourceSha256,/^[a-f0-9]{64}$/);
   assert.equal(report.independentlyObserved,false);
   assert.equal(report.eligibleForProtectedPromotion,false);
-  assert.equal(report.cases.length,8);
+  assert.equal(report.cases.length,10);
   assert.deepEqual(JSON.parse(await readFile(path,'utf8')),report);
   for(const row of report.cases){
    assert.equal(row.baseline.event.caseId,row.candidate.event.caseId);
@@ -81,11 +81,36 @@ test('execution errors produce failed candidate receipts rather than false impro
   readSource:(sha,path)=>path.endsWith('council-evidence.js')?council:
    sha===CANDIDATE?'export function broken () {':null});
  assert.equal(report.summary.candidatePassed,3);
- assert.equal(report.summary.candidateFailures,5);
+ assert.equal(report.summary.candidateFailures,7);
  assert.equal(report.heldOutCertified,false);
 });
 
 test('missing comparison source is an error rather than a passing result',async()=>{
  await assert.rejects(compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
   readSource:()=>null}),/required-council-source-missing/);
+});
+
+test('fixed comparison rejects a reviewer-false result even if evaluation is correctly false',async()=>{
+ const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
+  readSource:(sha,path)=>{
+   const source=sources(sha,path);
+   return sha===CANDIDATE&&path.endsWith('acceptance-evidence.js')?
+    source.replace('reviewer:true,evaluation:false','reviewer:false,evaluation:false'):source;
+  }});
+ const row=report.cases.find(c=>c.caseId==='review-proxy-never-certifies-heldout');
+ assert.equal(row.candidate.event.outcome,'failed');
+ assert.equal(report.summary.candidateFailures,1);
+ assert.equal(report.eligibleForProtectedPromotion,false);
+});
+
+test('comparison evaluates separately frozen identity spoofing cases',async()=>{
+ const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,readSource:sources});
+ const identities=report.cases.filter(c=>c.caseId.startsWith('forged-reviewer-'));
+ assert.deepEqual(identities.map(c=>c.caseId),[
+  'forged-reviewer-login-rejected',
+  'forged-reviewer-id-rejected',
+  'forged-reviewer-type-rejected'
+ ]);
+ assert.equal(identities.every(c=>c.candidate.event.outcome==='passed'),true);
+ assert.match(report.manifest.caseSetSha256,/^[a-f0-9]{64}$/);
 });
