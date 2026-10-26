@@ -114,3 +114,21 @@ test('comparison evaluates separately frozen identity spoofing cases',async()=>{
  assert.equal(identities.every(c=>c.candidate.event.outcome==='passed'),true);
  assert.match(report.manifest.caseSetSha256,/^[a-f0-9]{64}$/);
 });
+
+test('council module import failure yields case-level failed receipts and a durable report',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'ultron-council-load-'));
+ try{
+  const path=join(dir,'results.json');
+  const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
+   outputPath:path,readSource:(sha,file)=>sha===CANDIDATE&&
+    file.endsWith('council-evidence.js')?'export function broken () {':sources(sha,file)});
+  assert.equal(report.summary.candidatePassed,7);
+  assert.equal(report.summary.candidateFailures,3);
+  const failed=report.cases.filter(c=>c.candidate.event.reason.startsWith('module-load-error:'));
+  assert.equal(failed.length,3);
+  assert.deepEqual(failed.map(c=>c.caseId),[
+   'uncertain-action-never-replayed','stale-lease-held','duplicate-external-action-held'
+  ]);
+  assert.deepEqual(JSON.parse(await readFile(path,'utf8')),report);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});

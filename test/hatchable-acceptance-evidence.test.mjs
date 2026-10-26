@@ -344,9 +344,36 @@ test('acceptance keyed ledger readbacks require complete effective payload and t
 
 test('PostgreSQL rollback guard maps conflicting keyed receipts to explicit admission conflict',async()=>{
  const conflict=Object.assign(new Error('division by zero'),{code:'22012'});
- const db={query:async()=>{throw conflict;}};
+ let attempts=0;
+ const db={query:async()=>{attempts++;throw conflict;}};
  await assert.rejects(persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
   candidatePullNumber:106,fetchImpl:fixtures()}),/acceptance-ledger-conflict/);
+ assert.equal(attempts,2,'a real conflict is held after one bounded reread');
+});
+
+test('concurrent identical acceptance admission rechecks in a new SQL snapshot',async()=>{
+ const conflict=Object.assign(new Error('division by zero'),{code:'22012'});
+ let attempts=0;
+ const db={query:async()=>{attempts++;
+  if(attempts===1)throw conflict;
+  return {rows:[{identity_id:1,assessment_id:2,manifest_id:3,evaluation_id:4,
+   baseline_task_id:5,candidate_task_id:6,baseline_receipt_id:7,candidate_receipt_id:8}]};
+ }};
+ const saved=await persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures()});
+ assert.equal(attempts,2,'the second statement sees the concurrent winner');
+ assert.equal(saved.ok,true);
+ assert.equal(saved.receipts.identity_id,1);
+});
+
+test('unrelated PostgreSQL errors are not retried as idempotency conflicts',async()=>{
+ let attempts=0;
+ const db={query:async()=>{attempts++;
+  throw Object.assign(new Error('connection unavailable'),{code:'08006'});
+ }};
+ await assert.rejects(persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures()}),/connection unavailable/);
+ assert.equal(attempts,1);
 });
 
 

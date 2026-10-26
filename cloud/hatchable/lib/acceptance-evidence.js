@@ -298,11 +298,16 @@ export async function persistAcceptanceEvidence({db,objectiveId,candidatePullNum
   JSON.stringify(details.evaluation),details.evaluation.adapterKey
  ];
  let saved;
- try{saved=await db.query(PERSIST_SQL,params);}
- catch(error){
-  // SQLSTATE 22012 comes only from the consistency guard in this query.
-  if(error?.code==='22012')throw Error('acceptance-ledger-conflict');
-  throw error;
+ // A concurrent identical ON CONFLICT winner may be invisible to the first
+ // statement snapshot. Recheck once in a new statement snapshot; do not retry
+ // any external GitHub write or non-22012 database error.
+ for(let attempt=0;attempt<2&&!saved;attempt++){
+  try{saved=await db.query(PERSIST_SQL,params);}
+  catch(error){
+   // SQLSTATE 22012 comes only from the projection consistency guard.
+   if(error?.code!=='22012')throw error;
+   if(attempt===1)throw Error('acceptance-ledger-conflict');
+  }
  }
  if(saved.rows.length!==1)throw Error('acceptance-ledger-conflict');
  return {ok:true,observed,receipts:saved.rows[0]};

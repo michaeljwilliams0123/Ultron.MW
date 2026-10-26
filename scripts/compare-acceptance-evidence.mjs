@@ -142,10 +142,12 @@ async function loadVariant(sha,readSource){
   readSource(sha,'cloud/hatchable/lib/acceptance-evidence.js'),
   readSource(sha,'cloud/hatchable/lib/council-evidence.js')]);
  if(council===null)throw Error('required-council-source-missing:'+sha);
- let adapter;
+ let adapter,councilModule;
  try{adapter=await loadSource(acceptance);}
  catch(error){adapter={loadError:String(error.message)};}
- return {acceptance:adapter,council:await loadSource(council)};
+ try{councilModule=await loadSource(council);}
+ catch(error){councilModule={loadError:String(error.message)};}
+ return {acceptance:adapter,council:councilModule};
 }
 async function evaluateSource(sha,readSource){
  const modules=await loadVariant(sha,readSource);
