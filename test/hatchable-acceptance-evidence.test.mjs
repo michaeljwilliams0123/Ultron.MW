@@ -282,3 +282,25 @@ test('GitHub rate limit fails reviewer reread closed and logs sanitized category
  assert.equal(warnings.length,1);
  assert.match(warnings[0],/^acceptance-reread-failed:github-status-429$/);
 });
+
+test('persisted reviewer identity pull number must be a JSON number, not a coerced string',async()=>{
+ const identity={candidatePullNumber:106,reviewerId:'github:coderabbitai[bot]:136622811',reviewId:800};
+ const assessment={candidatePullNumber:106,reviewId:800,
+  reviewer:{id:identity.reviewerId}};
+ const evaluation={candidatePullNumber:106,baselinePullNumber:103,reviewId:800,
+  freezeCommentId:700,baselineScore:1/3,candidateScore:1,
+  evidenceClass:'advisory-review-count-proxy',setsDisjoint:false,
+  independentlyObserved:false,evaluator:{kind:'advisory-proxy'},
+  verifiedBy:{kind:'github-review-proxy'},
+  candidateFailures:null,criticalRegressions:null};
+ for(const disguised of ['106',' 106','1.06e2','0x6a',['106'],true]){
+  let networkCalls=0;
+  const fetchImpl=async()=>{networkCalls++;throw Error('unexpected-network-read');};
+  const result=await verifyPersistedAcceptanceEvidence({
+   objectiveId:OBJECTIVE,sourceSha:MAIN,
+   identity:{...identity,candidatePullNumber:disguised},
+   assessment,evaluation,fetchImpl:fixtures()});
+  assert.deepEqual(result,{reviewer:false,evaluation:false},
+   'Rejected coerced identity '+JSON.stringify(disguised));
+ }
+});
