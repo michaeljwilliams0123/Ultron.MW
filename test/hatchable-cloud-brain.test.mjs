@@ -6,6 +6,9 @@ const coreSource = `export const ALLOWED=new Set(['repo.inspect']);
 export const CAPABILITIES=[{id:'repo.inspect'}];
 export async function executeObjective(objective){return {objective,source:'fixture',sha:'fixed-test-sha'};}`;
 const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource).toString('base64');
+const stopUrl='data:text/javascript;base64,'+Buffer.from(
+ "export async function readExecutionControl(){return {paused:false,version:1};}"
+ ).toString('base64');
 async function moduleUnderTest(path,core=coreUrl){
  const source=await readFile(new URL('../cloud/hatchable/lib/'+path,import.meta.url),'utf8');
  const acceptance=`data:text/javascript;base64,${Buffer.from(
@@ -15,6 +18,7 @@ async function moduleUnderTest(path,core=coreUrl){
   'export async function persistHeldOutEvidence(){return {ok:true,receipts:{}}};'
  ).toString('base64')}`;
  const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'")
+  .replace("from 'lib/runtime-control.js'","from '"+stopUrl+"'")
   .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'")
   .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'");
  assert.notEqual(transformed,source,'test import alias should be replaced');

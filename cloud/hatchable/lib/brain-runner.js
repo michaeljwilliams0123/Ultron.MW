@@ -1,10 +1,14 @@
 import { executeObjective } from 'lib/brain-core.js';
+import { readExecutionControl } from 'lib/runtime-control.js';
 
 // Each transition and its authoritative receipt must commit in ONE SQL statement.
 // This prevents receipt/state divergence on interrupted database calls.
 export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
  if(!Number.isSafeInteger(heartbeatIntervalMs)||heartbeatIntervalMs<1||heartbeatIntervalMs>20_000)
   throw Error('invalid-heartbeat-interval');
+ // Fail closed if the independently persisted owner stop is unavailable.
+ const control=await readExecutionControl({db});
+ if(control.paused)return {status:'paused',controlVersion:control.version};
  const recovered=await db.query(`WITH moved AS (
    UPDATE brain_tasks SET status='queued',owner_token=NULL,lease_until=NULL,updated_at=now()
    WHERE status='leased' AND lease_until < now() AND attempts < max_attempts RETURNING id
@@ -20,9 +24,14 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
    SELECT id,'attempt-limit' FROM moved RETURNING task_id
  ) SELECT id FROM moved`);
  const token=crypto.randomUUID();
- const claim=await db.query(`WITH selected AS (
-   SELECT id FROM brain_tasks
+ // Lock the singleton for this statement. A pause either commits first and
+ // prevents the claim, or waits until this claim and receipt have committed.
+ const claim=await db.query(`WITH control AS MATERIALIZED (
+   SELECT paused FROM brain_runtime_control WHERE id=1 FOR SHARE
+ ), selected AS (
+   SELECT brain_tasks.id FROM brain_tasks CROSS JOIN control
    WHERE status='queued' AND attempts < max_attempts
+     AND NOT control.paused
      AND (lease_until IS NULL OR lease_until <= now())
    ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED
  ), moved AS (
