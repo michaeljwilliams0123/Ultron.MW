@@ -88,8 +88,8 @@ test('candidate-authored self-score and fabricated summary values never override
  f.candidate.reportedScore=9999;
  f.candidate.outcomes[0]={...f.candidate.outcomes[0],passed:false};
  const r=await evaluateSharedEvaluation(f);
- assert.ok(r.candidateScore<100);
- assert.notEqual(r.candidateScore,9999);
+ assert.equal(r.candidateScore,99);
+ assert.equal(r.improvementPoints,9);
 });
 test('score below 90 or gain below five points fails the shared performance threshold',async()=>{
  const f=fixture();
@@ -107,4 +107,23 @@ test('source identity is exact and cannot reuse a baseline source as the candida
  const f=fixture();
  await assert.rejects(evaluateSharedEvaluation({...f,candidate:{
   sourceSha:BASE,outcomes:results(f.cases,BASE)}}),/invalid-source-pair/);
+});
+
+test('baseline and candidate cannot share a single evidence receipt identity',async()=>{
+ const f=fixture();
+ f.candidate.outcomes[0]={...f.candidate.outcomes[0],receiptId:f.baseline.outcomes[0].receiptId};
+ await assert.rejects(evaluateSharedEvaluation(f),/duplicate-receipt-id/);
+});
+test('non-string case identity is rejected before any digest sort',async()=>{
+ const f=fixture();f.cases[0]={...f.cases[0],caseId:1234};
+ await assert.rejects(evaluateSharedEvaluation(f),/duplicate-case-id/);
+});
+test('case digest is identical under a hostile ambient locale collation',async()=>{
+ const f=fixture(),baseline=await evaluateSharedEvaluation(f);
+ const original=String.prototype.localeCompare;
+ String.prototype.localeCompare=function(other){return -original.call(this,other);};
+ try{
+  const changed=await evaluateSharedEvaluation(f);
+  assert.equal(changed.caseDigest,baseline.caseDigest);
+ }finally{String.prototype.localeCompare=original;}
 });
