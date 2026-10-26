@@ -132,3 +132,30 @@ test('council module import failure yields case-level failed receipts and a dura
   assert.deepEqual(JSON.parse(await readFile(path,'utf8')),report);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('non-Error acceptance import rejection creates failed case receipts',async()=>{
+ const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
+  readSource:(sha,path)=>sha===CANDIDATE&&path.endsWith('acceptance-evidence.js')?
+   'throw null;':sources(sha,path)});
+ assert.equal(report.summary.candidateFailures,7);
+ assert.equal(report.eligibleForProtectedPromotion,false);
+ assert.equal(report.cases.filter(row=>row.candidate.event.reason==='module-load-error:null').length,7);
+});
+
+test('non-Error council import rejection creates failed case receipts',async()=>{
+ const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
+  readSource:(sha,path)=>sha===CANDIDATE&&path.endsWith('council-evidence.js')?
+   'throw undefined;':sources(sha,path)});
+ assert.equal(report.summary.candidateFailures,3);
+ assert.equal(report.eligibleForProtectedPromotion,false);
+ assert.equal(report.cases.filter(row=>row.candidate.event.reason==='module-load-error:undefined').length,3);
+});
+
+test('non-Error case execution rejection is recorded without aborting report',async()=>{
+ const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
+  readSource:(sha,path)=>sha===CANDIDATE&&path.endsWith('council-evidence.js')?
+   'export function evaluateCouncilEvidence(){throw null;}':sources(sha,path)});
+ assert.equal(report.summary.candidateFailures,3);
+ assert.equal(report.eligibleForProtectedPromotion,false);
+ assert.equal(report.cases.filter(row=>row.candidate.event.reason==='execution-error:null').length,3);
+});
