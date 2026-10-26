@@ -86,7 +86,7 @@ const cases=[
    candidatePullNumber:106,sourceSha:'f'.repeat(40),fetchImpl:fixtures()}),
    'source-sha-mismatch')},
  {id:caseIds[6],needs:'acceptance',run:async({acceptance})=>{
-  const r=await acceptance.verifyPersistedAcceptanceEvidence({
+  const evidence={
    objectiveId:OBJECTIVE,sourceSha:MAIN,fetchImpl:fixtures(),
    identity:{candidatePullNumber:106,reviewId:800,reviewerId:'github:coderabbitai[bot]:136622811'},
    assessment:{
@@ -105,8 +105,13 @@ const cases=[
     evidenceClass:'advisory-review-count-proxy',setsDisjoint:false,
     independentlyObserved:false,evaluator:{kind:'advisory-proxy'},
     verifiedBy:{kind:'github-review-proxy'},
-    candidateFailures:null,criticalRegressions:null}});
-  return r?.reviewer===true&&r.evaluation===false;
+    candidateFailures:null,criticalRegressions:null}};
+  const r=await acceptance.verifyPersistedAcceptanceEvidence(evidence);
+  const tampered=await acceptance.verifyPersistedAcceptanceEvidence({
+   ...evidence,identity:{...evidence.identity,reviewerId:'github:untrusted:0'}
+  });
+  return r?.reviewer===true&&r.evaluation===false&&
+   tampered?.reviewer===false&&tampered?.evaluation===false;
  }},
  {id:caseIds[7],needs:'council',run:async({council})=>{
   const r=council.evaluateCouncilEvidence({objectiveId:OBJECTIVE,
