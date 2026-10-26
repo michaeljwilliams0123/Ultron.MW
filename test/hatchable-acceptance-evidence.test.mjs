@@ -425,3 +425,60 @@ test('tampering independent assessment dissent or authority invalidates reviewer
   assert.deepEqual(await verify(tamper),{reviewer:false,evaluation:false});
  }
 });
+
+
+test('quiet-mode CodeRabbit review attests identity without inventing an actionable count',async()=>{
+ const quiet='<!-- coderabbit-ai-generated:v1 -->\\n\\n> [!NOTE]\\n> Quiet mode is enabled.\\n<details><summary>Other comments: 2</summary></details>';
+ const reviews=[{id:800,user:{login:'coderabbitai[bot]',id:136622811,type:'Bot'},
+  state:'COMMENTED',commit_id:HEAD,submitted_at:'2026-10-25T10:05:00Z',body:quiet}];
+ const fetchImpl=fixtures({'/pulls/106/reviews?per_page=100':reviews});
+ const observed=await observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl});
+ assert.equal(observed.reviewId,800);
+ assert.equal(observed.candidateActionable,null);
+ assert.equal(observed.candidateScore,null);
+ let params;
+ const db={query:async(_sql,p)=>{params=p;return {rows:[{
+  identity_id:1,assessment_id:2,manifest_id:3,evaluation_id:4,
+  baseline_task_id:5,candidate_task_id:6,baseline_receipt_id:7,candidate_receipt_id:8
+ }]};}};
+ await persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl});
+ const assessment=JSON.parse(params[10]),evaluation=JSON.parse(params[12]);
+ assert.equal(assessment.assessment,'independent-review-unquantified');
+ assert.equal(assessment.recommendation,'manual-review-required');
+ assert.deepEqual(assessment.dissent,['review-actionable-count-unavailable']);
+ assert.equal(evaluation.candidateScore,null);
+ assert.equal(evaluation.setsDisjoint,false);
+ assert.deepEqual(await verifyPersistedAcceptanceEvidence({objectiveId:OBJECTIVE,
+  sourceSha:MAIN,identity:JSON.parse(params[6]),assessment,evaluation,fetchImpl}),
+  {reviewer:true,evaluation:false});
+});
+
+test('unknown baseline review counts cannot manufacture comparative improvement',async()=>{
+ const quiet='<!-- coderabbit-ai-generated:v1 -->\\n\\n> [!NOTE]\\n> Quiet mode is enabled.';
+ const baseline=[{id:600,user:{login:'coderabbitai[bot]',id:136622811,type:'Bot'},
+  state:'COMMENTED',commit_id:BASE,submitted_at:'2026-10-24T10:00:00Z',body:quiet}];
+ const observed=await observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures({'/pulls/103/reviews?per_page=100':baseline})});
+ assert.equal(observed.baselineActionable,null);
+ assert.equal(observed.baselineScore,null);
+ assert.equal(observed.candidateActionable,0);
+ assert.equal(observed.candidateScore,1);
+});
+
+test('quiet-mode evidence still rejects spoofed identity, stale head and duplicate reviews',async()=>{
+ const quiet='<!-- coderabbit-ai-generated:v1 -->\\n\\n> [!NOTE] Quiet mode enabled';
+ const base={id:800,user:{login:'coderabbitai[bot]',id:136622811,type:'Bot'},
+  state:'COMMENTED',commit_id:HEAD,submitted_at:'2026-10-25T10:05:00Z',body:quiet};
+ for(const candidate of [{...base,user:{login:'impostor',id:136622811,type:'Bot'}},
+  {...base,commit_id:BASE}]){
+  await assert.rejects(observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+   candidatePullNumber:106,fetchImpl:fixtures({'/pulls/106/reviews?per_page=100':[candidate]})}),
+   /candidate-review-missing/);
+ }
+ await assert.rejects(observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures({'/pulls/106/reviews?per_page=100':[
+   base,{...base,id:801,submitted_at:'2026-10-25T10:06:00Z'}]})}),
+  /ambiguous-candidate-review/);
+});
