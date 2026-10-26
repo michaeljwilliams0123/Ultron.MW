@@ -176,6 +176,17 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
    return {ok:false,error:'idempotency-key-conflict'};
  if(row.state==='observed')
    return {ok:true,state:'observed',id:row.id,taskId:row.task_id,key:action.key,result:row.result,reused:true};
+ // Stop prevents a new side effect but does not suppress post-send readback
+ // reconciliation of operations already in the 'sent' or 'uncertain' state.
+ if(row.state==='prepared'){
+   let stop;
+   try{stop=await db.query("SELECT paused FROM brain_runtime_control WHERE id=1");}
+   catch{return {ok:false,state:'prepared',error:'stop-control-unavailable'};}
+   if(stop?.rows?.length!==1||typeof stop.rows[0].paused!=='boolean')
+     return {ok:false,state:'prepared',error:'stop-control-unavailable'};
+   if(stop.rows[0].paused)
+     return {ok:false,state:'prepared',error:'owner-execution-paused'};
+ }
  let get;
  try { get=await appClient(config,transport); }
  catch(error) { return {ok:false,state:row.state,id:row.id,taskId:row.task_id,error:error.message}; }
