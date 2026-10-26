@@ -8,7 +8,7 @@ export default async function(req,res){
  for(let i=0;i<4;i++){
   const result=await runOne({db,browser});
   results.push(result);
-  if(result.status==='idle'||result.status==='lost-lease')break;
+  if(result.status==='idle'||result.status==='lost-lease'||result.status==='paused')break;
  }
  // Only the hourly scheduler can visit persisted Mahoraga actions. Owner
  // commands and read-only queue continuations cannot activate this lane.

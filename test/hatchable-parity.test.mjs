@@ -39,10 +39,13 @@ async function fixture(t) {
 const V2_RUNTIME_FILES = [
   'api/brain/command.js', 'api/brain/run.js', 'api/brain/tasks.js',
   'api/brain/tick.js', 'lib/brain-core.js', 'lib/brain-owner.js',
-  'lib/brain-runner.js', 'mcp/ultron_control.js', 'mcp/ultron_queue.js',
+  'lib/brain-runner.js', 'lib/acceptance-evidence.js',
+  'lib/heldout-cases.js', 'lib/heldout-evidence.js',
+  'mcp/ultron_control.js', 'mcp/ultron_queue.js',
   'mcp/ultron_remember.js', 'mcp/ultron_status.js',
   'migrations/0001_tasks.sql', 'migrations/0002_events.sql',
-  'migrations/0003_native_commands.sql', 'hatchable.toml'
+  'migrations/0003_native_commands.sql', 'migrations/0006_acceptance_evidence.sql',
+  'hatchable.toml'
 ];
 const V2_DIVERGENT = [
   'api/brain/run.js', 'api/brain/tick.js',
@@ -69,21 +72,20 @@ async function v2ReleaseFixture(t) {
   return { root, snapshot, check };
 }
 
-test('v2 release matrix gates all 15 runtime files and identifies four divergent files', async t => {
+test('v2 release matrix gates every runtime file and identifies four divergent files', async t => {
   const { root, check } = await v2ReleaseFixture(t);
   const matching = await check();
   assert.equal(matching.parity, true);
-  assert.equal(matching.filesCompared, 15);
+  assert.equal(matching.filesCompared, 19);
   for (const path of V2_DIVERGENT) {
     await writeFile(join(root, path), 'synthetic source-only change: ' + path + '\n');
   }
   const drift = await check();
   assert.equal(drift.parity, false);
-  assert.equal(drift.filesCompared, 15);
+  assert.equal(drift.filesCompared, 19);
   assert.deepEqual(drift.differences.map(d => d.type), Array(4).fill('changed-file'));
   assert.deepEqual(drift.differences.map(d => d.path).sort(), [...V2_DIVERGENT].sort());
 });
-
 test('v2 release matrix rejects stale heads, incomplete manifests and unsafe evidence', async t => {
   const { snapshot, check } = await v2ReleaseFixture(t);
   const stale = await check({ actualHead: OTHER });
