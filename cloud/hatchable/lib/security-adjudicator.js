@@ -18,7 +18,9 @@ function parseTime(value){
  if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(value))
   refuse('invalid-grant-time');
  const result=Date.parse(value);
- if(!Number.isFinite(result))refuse('invalid-grant-time');
+ if(!Number.isFinite(result)||
+  new Date(result).toISOString().slice(0,19)!==value.slice(0,19))
+  refuse('invalid-grant-time');
  return result;
 }
 function decodeSignature(encoded){
@@ -85,10 +87,13 @@ export async function consumeDelegatedGrant({db,verifiedGrant}={}){
  if(!db?.query||!VERIFIED.has(verifiedGrant))refuse('invalid-verified-grant');
  if(Date.parse(verifiedGrant.expiresAt)<=Date.now())
   return {ok:false,error:'grant-expired'};
- const sql=`WITH admitted AS (
+ const sql=`WITH gate AS MATERIALIZED (
+  SELECT $7::timestamptz > clock_timestamp() AS live
+ ), admitted AS (
   INSERT INTO brain_authority_grants(
    grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
-  VALUES($1,$2,$3,$4,$5,$6,$7::timestamptz)
+  SELECT $1,$2,$3,$4,$5,$6,$7::timestamptz
+  FROM gate WHERE live
   ON CONFLICT(grant_id) DO NOTHING RETURNING grant_id
  ), receipt AS (
   INSERT INTO brain_events(event_type,details)
@@ -96,11 +101,16 @@ export async function consumeDelegatedGrant({db,verifiedGrant}={}){
    jsonb_build_object('grantId',grant_id,'operation',$4::text,'policySha',$6::text)
   FROM admitted RETURNING id
  )
- SELECT admitted.grant_id,receipt.id AS receipt_id FROM admitted JOIN receipt ON true`;
+ SELECT admitted.grant_id,receipt.id AS receipt_id,false AS expired
+ FROM admitted JOIN receipt ON true
+ UNION ALL
+ SELECT NULL,NULL,NOT gate.live
+ FROM gate WHERE NOT EXISTS(SELECT 1 FROM admitted)`;
  const result=await db.query(sql,[verifiedGrant.grantId,verifiedGrant.objectiveId,
   verifiedGrant.actor,verifiedGrant.operation,verifiedGrant.resource,
   verifiedGrant.policySha,verifiedGrant.expiresAt]);
  const row=result?.rows?.[0];
- return row?{ok:true,grantId:row.grant_id,receiptId:row.receipt_id}:
+ if(row?.expired)return {ok:false,error:'grant-expired'};
+ return row?.grant_id?{ok:true,grantId:row.grant_id,receiptId:row.receipt_id}:
   {ok:false,error:'grant-replayed'};
 }
