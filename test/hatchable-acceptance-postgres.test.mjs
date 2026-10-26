@@ -150,6 +150,13 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   const staleCompletion=await sql("WITH moved AS (UPDATE brain_tasks SET status='done' WHERE task_key='fenced-takeover' AND owner_token='owner-a' AND fencing_generation=1 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'observed' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
   assert.equal(staleHeartbeat,'0|0');
   assert.equal(staleCompletion,'0|0');
+  // Negative control: owner B's token matches an active lease, so only a
+  // stale fencing generation can prevent these two transitions.
+  assert.equal(await sql("SELECT COUNT(*) FROM brain_tasks WHERE task_key='fenced-takeover' AND owner_token='owner-b' AND status='leased' AND lease_until>now()"),'1');
+  const staleGenerationHeartbeat=await sql("WITH moved AS (UPDATE brain_tasks SET lease_until=now()+interval '90 seconds' WHERE task_key='fenced-takeover' AND owner_token='owner-b' AND fencing_generation=1 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'lease-heartbeat' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
+  const staleGenerationCompletion=await sql("WITH moved AS (UPDATE brain_tasks SET status='done' WHERE task_key='fenced-takeover' AND owner_token='owner-b' AND fencing_generation=1 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'observed' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
+  assert.equal(staleGenerationHeartbeat,'0|0');
+  assert.equal(staleGenerationCompletion,'0|0');
   const activeCompletion=await sql("WITH moved AS (UPDATE brain_tasks SET status='done' WHERE task_key='fenced-takeover' AND owner_token='owner-b' AND fencing_generation=2 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'observed' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
   assert.equal(activeCompletion,'1|1');
   assert.equal(await sql("SELECT COUNT(*) FROM brain_events WHERE event_type='observed'"),'1');
