@@ -107,3 +107,19 @@ test('unverified plain objects cannot be consumed as execution authority',async(
   ...base,authorized:true}}),/invalid-verified-grant/);
  assert.equal(writes,0);
 });
+
+test('impossible calendar dates are rejected before SQL timestamp casting',async()=>{
+ await assert.rejects(check({...base,expiresAt:'2026-02-30T10:10:00.000Z'}),
+  /invalid-grant-time/);
+});
+test('database admission itself rejects expired grants if execution waits after verifier',async()=>{
+ const at=new Date(),live={...base,notBefore:new Date(at.getTime()-60_000).toISOString(),
+  expiresAt:new Date(at.getTime()+10*60_000).toISOString()};
+ const verified=await check(live,request,at.toISOString());
+ const db={query:async(sql)=>{
+  assert.match(sql,/clock_timestamp\(\)/);
+  return {rows:[{grant_id:null,receipt_id:null,expired:true}]};
+ }};
+ const result=await consumeDelegatedGrant({db,verifiedGrant:verified});
+ assert.deepEqual(result,{ok:false,error:'grant-expired'});
+});
