@@ -1,10 +1,14 @@
 import { executeObjective } from 'lib/brain-core.js';
+import { readExecutionControl } from 'lib/runtime-control.js';
 
 // Each transition and its authoritative receipt must commit in ONE SQL statement.
 // This prevents receipt/state divergence on interrupted database calls.
 export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
  if(!Number.isSafeInteger(heartbeatIntervalMs)||heartbeatIntervalMs<1||heartbeatIntervalMs>20_000)
   throw Error('invalid-heartbeat-interval');
+ // Fail closed if the independently persisted owner stop is unavailable.
+ const control=await readExecutionControl({db});
+ if(control.paused)return {status:'paused',controlVersion:control.version};
  const recovered=await db.query(`WITH moved AS (
    UPDATE brain_tasks SET status='queued',owner_token=NULL,lease_until=NULL,updated_at=now()
    WHERE status='leased' AND lease_until < now() AND attempts < max_attempts RETURNING id
