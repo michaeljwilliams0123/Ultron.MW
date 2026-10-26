@@ -57,7 +57,7 @@ function fixtures({edited=false,forged=null}={}){
  };
 }
 async function rejectsWith(promise,fragment){
- try{await promise;return false;}catch(e){return String(e.message).includes(fragment);}
+ try{await promise;return false;}catch(e){return String(e?.message ?? e).includes(fragment);}
 }
 const cases=[
  {id:caseIds[0],needs:'acceptance',run:async({acceptance})=>{
@@ -144,9 +144,9 @@ async function loadVariant(sha,readSource){
  if(council===null)throw Error('required-council-source-missing:'+sha);
  let adapter,councilModule;
  try{adapter=await loadSource(acceptance);}
- catch(error){adapter={loadError:String(error.message)};}
+ catch(error){adapter={loadError:String(error?.message ?? error)};}
  try{councilModule=await loadSource(council);}
- catch(error){councilModule={loadError:String(error.message)};}
+ catch(error){councilModule={loadError:String(error?.message ?? error)};}
  return {acceptance:adapter,council:councilModule};
 }
 async function evaluateSource(sha,readSource){
@@ -158,7 +158,7 @@ async function evaluateSource(sha,readSource){
   else if(modules[item.needs].loadError)reason='module-load-error:'+modules[item.needs].loadError;
   else try{passed=(await item.run(modules))===true;
    if(passed)reason='observed-pass';
-  }catch(e){reason='execution-error:'+String(e.message).slice(0,140);}
+  }catch(e){reason='execution-error:'+String(e?.message ?? e).slice(0,140);}
   outcomes.push({caseId:item.id,sourceSha:sha,passed,reason});
  }
  return outcomes;
