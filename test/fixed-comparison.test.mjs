@@ -42,6 +42,7 @@ test('base and candidate receive identical 8 cases with persisted per-case recei
   assert.equal(report.summary.candidatePassed,8);
   assert.equal(report.summary.candidateFailures,0);
   assert.equal(report.heldOutCertified,false);
+  assert.match(report.evaluatorSourceSha256,/^[a-f0-9]{64}$/);
   assert.equal(report.independentlyObserved,false);
   assert.equal(report.eligibleForProtectedPromotion,false);
   assert.equal(report.cases.length,8);
