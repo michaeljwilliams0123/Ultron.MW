@@ -29,8 +29,10 @@ function database({queueCount=0}={}){
    state.rows.set(key,params[3]);state.queued++;
    return {rows:[{id:99,task_id:43,task_key:params[2]}]};
   }
-  if(sql.includes('SELECT payload_sha256'))return {rows:[{
-   payload_sha256:state.rows.get(params[0]+':'+params[1])}]};
+  if(sql.includes('SELECT payload_sha256')){
+   const key=params[0]+':'+params[1];
+   return {rows:state.rows.has(key)?[{payload_sha256:state.rows.get(key)}]:[]};
+  }
   throw Error('unexpected statement');
  }};
 }
@@ -74,9 +76,11 @@ test('one verified delivery creates atomic inbox, objective and sanitized receip
  const result=await admitSignedEvent({db,event,scheduler:{now:async(...a)=>calls.push(a)}});
  assert.equal(result.ok,true);assert.equal(result.created,true);
  assert.equal(result.taskId,43);
- assert.match(db.state.sql[1].sql,/INSERT INTO brain_signed_inbox/);
- assert.match(db.state.sql[1].sql,/INSERT INTO brain_tasks/);
- assert.match(db.state.sql[1].sql,/INSERT INTO brain_events/);
+ const insert=db.state.sql.find(x=>x.sql.includes('INSERT INTO brain_signed_inbox'));
+ assert.ok(insert);
+ assert.match(insert.sql,/INSERT INTO brain_signed_inbox/);
+ assert.match(insert.sql,/INSERT INTO brain_tasks/);
+ assert.match(insert.sql,/INSERT INTO brain_events/);
  assert.equal(calls.length,1);
  assert.deepEqual(calls[0],['/api/brain/run',{via:'signed-event'}]);
  assert.equal(JSON.stringify(db.state.sql).includes(secret),false);
@@ -105,4 +109,22 @@ test('full queue is rejected before insertion, while scheduling failure leaves a
  const allowed=await admitSignedEvent({db,event,scheduler:{now:async()=>{throw Error('offline');}}});
  assert.equal(allowed.created,true);assert.equal(allowed.immediateScheduled,false);
  assert.equal(allowed.fallback,'hourly');
+});
+
+test('an array-valued signed delivery ID cannot become an ambiguous SQL identity',async()=>{
+ await assert.rejects(verified({...payload,deliveryId:['delivery-20261025-0001']}),
+  /event-payload-invalid/);
+});
+test('already-seen deliveries are reported as duplicates even when new work is at capacity',async()=>{
+ const db=database({queueCount:99}),scheduler={now:async()=>{}};
+ const e=await verified();
+ assert.equal((await admitSignedEvent({db,event:e,scheduler})).created,true);
+ const repeat=await admitSignedEvent({db,event:e,scheduler});
+ assert.deepEqual(repeat,{ok:true,created:false,reason:'duplicate-delivery'});
+});
+test('an unrelated existing objective key must not be suppressed as a successful admission',async()=>{
+ const db=database(),e=await verified();
+ await admitSignedEvent({db,event:e,scheduler:{now:async()=>{}}});
+ const insert=db.state.sql.find(x=>x.sql.includes('INSERT INTO brain_signed_inbox')).sql;
+ assert.doesNotMatch(insert,/ON CONFLICT\(task_key\) DO NOTHING/);
 });
