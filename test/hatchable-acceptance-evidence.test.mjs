@@ -213,3 +213,72 @@ test('legacy self-asserted disjoint held-out manifest cannot satisfy proxy admis
   candidatePullNumber:106,fetchImpl:fixtures({'/issues/106/comments?per_page=100':legacy})}),
   /review-proxy-manifest-missing/);
 });
+
+test('manifest baseline rejects ambiguous string and coercion values before network lookup',async()=>{
+ const seed=fixtures(),url='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+ const original=(await (await seed(url+'/issues/106/comments?per_page=100')).json())[0];
+ for(const value of ['103',' 103','1e2','0x67',null,true,0,-1]){
+  const body=original.body.replace('"baselinePullNumber":103',
+   '"baselinePullNumber":'+JSON.stringify(value));
+  const requests=[];
+  const fetchImpl=async request=>{
+   requests.push(String(request).replace(url,''));
+   if(String(request).includes('/pulls/103'))throw Error('unsafe-baseline-network-lookup');
+   const custom=fixtures({'/issues/106/comments?per_page=100':[{...original,body}]});
+   return custom(request);
+  };
+  await assert.rejects(observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+   candidatePullNumber:106,fetchImpl}),/review-proxy-manifest-missing/,
+   'Rejected ambiguous baseline value '+JSON.stringify(value));
+  assert.equal(requests.some(x=>x.startsWith('/pulls/103')),false);
+ }
+});
+
+test('reviewer GitHub login, numeric ID, Bot type and edited review evidence are distinct gates',async()=>{
+ const url='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+ const seed=fixtures();
+ const original=(await (await seed(url+'/pulls/106/reviews?per_page=100')).json())[0];
+ const cases=[
+  {login:'attacker'},
+  {id:999},
+  {id:'136622811'},
+  {type:'User'},
+  {type:'Botlike'}
+ ];
+ for(const changes of cases){
+  const review={...original,user:{...original.user,...changes}};
+  const fake=fixtures({'/pulls/106/reviews?per_page=100':[review]});
+  await assert.rejects(observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+   candidatePullNumber:106,fetchImpl:fake}),/candidate-review-missing/,
+   'Spoofed identity '+JSON.stringify(changes));
+ }
+});
+
+test('duplicate matching frozen manifests are rejected, never arbitrarily selected',async()=>{
+ const url='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+ const seed=fixtures();
+ const comments=(await (await seed(url+'/issues/106/comments?per_page=100')).json());
+ const fake=fixtures({'/issues/106/comments?per_page=100':[
+  comments[0],{...comments[0],id:701}
+ ]});
+ await assert.rejects(observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fake}),/ambiguous-review-proxy-manifest/);
+});
+
+test('GitHub rate limit fails reviewer reread closed and logs sanitized category',async()=>{
+ const warnings=[],originalWarn=console.warn;
+ const fetchImpl=async url=>{
+  if(String(url).includes('/git/ref/heads/main'))return {ok:false,status:429};
+  return fixtures()(url);
+ };
+ console.warn=value=>warnings.push(String(value));
+ try{
+  const result=await verifyPersistedAcceptanceEvidence({
+   objectiveId:OBJECTIVE,sourceSha:MAIN,
+   identity:{candidatePullNumber:106},assessment:{candidatePullNumber:106},
+   evaluation:{candidatePullNumber:106},fetchImpl});
+  assert.deepEqual(result,{reviewer:false,evaluation:false});
+ }finally{console.warn=originalWarn;}
+ assert.equal(warnings.length,1);
+ assert.match(warnings[0],/^acceptance-reread-failed:github-status-429$/);
+});
