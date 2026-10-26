@@ -11,10 +11,19 @@ async function coreUnderTest(){
   import.meta.url),'utf8');
  const evidenceUrl='data:text/javascript;base64,'+
   Buffer.from(evidenceSource).toString('base64');
+ const acceptanceSource=await readFile(new URL('../cloud/hatchable/lib/acceptance-evidence.js',
+  import.meta.url),'utf8');
+ const acceptanceUrl='data:text/javascript;base64,'+
+  Buffer.from(acceptanceSource).toString('base64');
+ const heldoutUrl='data:text/javascript;base64,'+Buffer.from(
+  'export async function verifyPersistedHeldOutEvidence(){return {evaluation:false}};'
+ ).toString('base64');
  const coreSource=await readFile(new URL('../cloud/hatchable/lib/brain-core.js',
   import.meta.url),'utf8');
  const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource.replace(
   "from 'lib/council-evidence.js'","from '"+evidenceUrl+"'"
+ ).replace("from 'lib/acceptance-evidence.js'","from '"+acceptanceUrl+"'"
+ ).replace("from 'lib/heldout-evidence.js'","from '"+heldoutUrl+"'"
  )).toString('base64');
  return import(coreUrl);
 }
@@ -152,8 +161,10 @@ test('stale evidence, stale source and a stale lease cannot pass the gate',()=>{
  assert.ok(staleGate.reasons.includes('stale-evidence'));
  const wrongSource=ready({evaluation:evaluation({sourceSha:OTHER_SHA})});
  assert.ok(wrongSource.reasons.includes('evaluation-source-mismatch'));
- const lostLease=ready({lease:{state:'expired',tokenMatches:false}});
+ const lostLease=ready({lease:{state:'expired',tokenMatches:true}});
  assert.ok(lostLease.reasons.includes('stale-or-mismatched-lease'));
+ const mismatchedLease=ready({lease:{state:'active',tokenMatches:false}});
+ assert.ok(mismatchedLease.reasons.includes('stale-or-mismatched-lease'));
 });
 
 test('role evidence must be bound to the exact source and successful current-head CI',()=>{
@@ -415,4 +426,3 @@ test('hosted council rejects a main change during its evaluation',async()=>{
   }),/main-moved-during-council-evaluation/);
  }finally{globalThis.fetch=originalFetch;}
 });
-
