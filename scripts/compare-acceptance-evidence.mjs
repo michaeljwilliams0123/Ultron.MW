@@ -89,8 +89,17 @@ const cases=[
   const r=await acceptance.verifyPersistedAcceptanceEvidence({
    objectiveId:OBJECTIVE,sourceSha:MAIN,fetchImpl:fixtures(),
    identity:{candidatePullNumber:106,reviewId:800,reviewerId:'github:coderabbitai[bot]:136622811'},
-   assessment:{candidatePullNumber:106,reviewId:800,
-    reviewer:{id:'github:coderabbitai[bot]:136622811'}},
+   assessment:{
+    schema:'ultron.council-assessment.v1',objectiveId:OBJECTIVE,sourceSha:MAIN,
+    role:'independent',reviewer:{kind:'independent-reviewer',
+      id:'github:coderabbitai[bot]:136622811',identitySource:'github-review'},
+    evidenceObservedAt:'2026-10-25T10:05:00.000Z',evidenceFreshness:'fresh',
+    assessment:'independent-review-clear',recommendation:'observe',
+    dissent:[],knownUnknowns:['github-review-is-advisory','review-count-not-held-out-evaluation'],
+    authority:{mode:'advisory-only',executable:false,releaseAuthority:'github-protected-pr'},
+    modelInvocations:0,creditCost:0,paidFallback:false,
+    candidatePullNumber:106,reviewId:800,adapterKey:'acceptance:'+OBJECTIVE+':'+MAIN+':assessment'
+   },
    evaluation:{candidatePullNumber:106,baselinePullNumber:103,reviewId:800,
     freezeCommentId:700,baselineScore:1,candidateScore:1,
     evidenceClass:'advisory-review-count-proxy',setsDisjoint:false,
