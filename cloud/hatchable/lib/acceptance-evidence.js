@@ -1,5 +1,6 @@
 const REPO='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const OWNER='michaeljwilliams0123';
+const REVIEWER={login:'coderabbitai[bot]',id:136622811,type:'Bot'};
 const SHA40=/^[a-f0-9]{40}$/;
 const OBJECTIVE=/^[a-z0-9][a-z0-9-]{5,79}$/;
 const MANIFEST_SCHEMA='ultron.github-review-held-out-manifest.v1';
@@ -38,7 +39,8 @@ function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha
      value.evaluator!=='github-review-actionable-findings-v1'||
      value.scoring!=='1/(1+actionable-comments)'||
      comment.user?.login!==OWNER||comment.author_association!=='OWNER'||
-     !integer(comment.id)||!iso(comment.created_at))continue;
+     !integer(comment.id)||!iso(comment.created_at)||
+     iso(comment.updated_at)!==iso(comment.created_at))continue;
   matches.push({comment,value});
  }
  if(matches.length!==1)throw Error(matches.length?'ambiguous-held-out-manifest':'held-out-manifest-missing');
@@ -49,8 +51,9 @@ function generatedReviews(reviews,{headSha=null,after=null}={}){
  return reviews.filter(review=>{
   const body=typeof review?.body==='string'?review.body:'';
   const submitted=iso(review?.submitted_at);
-  return integer(review?.id)&&review.user?.login&&review.user.login!==OWNER&&
-   review.user?.id&&['COMMENTED','APPROVED','CHANGES_REQUESTED'].includes(review.state)&&
+  return integer(review?.id)&&review.user?.login===REVIEWER.login&&
+   review.user?.id===REVIEWER.id&&review.user?.type===REVIEWER.type&&
+   ['COMMENTED','APPROVED','CHANGES_REQUESTED'].includes(review.state)&&
    body.includes('<!-- coderabbit-ai-generated:v1 -->')&&
    /Actionable comments posted:\s*\d+/.test(body)&&submitted&&
    (!headSha||review.commit_id===headSha)&&(!after||Date.parse(submitted)>Date.parse(after));
@@ -66,7 +69,8 @@ function score(count){return 1/(1+count);}
 export async function observeAcceptanceEvidence({
  objectiveId,candidatePullNumber,sourceSha=null,fetchImpl=fetch
 }={}){
- if(!OBJECTIVE.test(objectiveId||'')||!integer(candidatePullNumber)||
+ if(!OBJECTIVE.test(objectiveId||'')||
+    typeof candidatePullNumber!=='number'||!integer(candidatePullNumber)||
     (sourceSha!==null&&!SHA40.test(sourceSha)))throw Error('invalid-acceptance-request');
  const [ref,candidate,comments,candidateReviews]=await Promise.all([
   get('/git/ref/heads/main',fetchImpl),
@@ -172,10 +176,11 @@ const PERSIST_SQL=`WITH baseline_task AS (
  WHERE brain_tasks.objective=EXCLUDED.objective AND brain_tasks.last_result=EXCLUDED.last_result
  RETURNING id
 ), manifest_insert AS (
- INSERT INTO brain_events(event_type,details)
+ INSERT INTO brain_events(event_type,details,created_at)
  SELECT 'held-out-evaluation-frozen',$5::jsonb || jsonb_build_object('cases',
   jsonb_build_array(jsonb_build_object('caseId','github-review-findings',
-   'baselineTaskId',baseline_task.id,'candidateTaskId',candidate_task.id)))
+   'baselineTaskId',baseline_task.id,'candidateTaskId',candidate_task.id))),
+  ($5::jsonb->>'frozenAt')::timestamptz
  FROM baseline_task,candidate_task ON CONFLICT DO NOTHING RETURNING id
 ), manifest AS (
  SELECT id FROM manifest_insert UNION ALL SELECT id FROM brain_events
