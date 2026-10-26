@@ -98,6 +98,8 @@ test('seeded outcomes persist atomically with first-write-visible receipts',asyn
   candidatePullNumber:106,fetchImpl:fixtures()});
  assert.equal(saved.ok,true);
  assert.equal(JSON.parse(params[1]).length,20);
+ assert.match(sql,/\(item->>'caseId'\).*\(item->>'variant'\)/);
+ assert.match(sql,/\(last_result->>'caseId'\).*\(last_result->>'variant'\)/s);
  assert.match(sql,/SELECT id,task_id FROM observed_insert UNION ALL/);
  assert.match(sql,/held-out-evaluation-observed/);
  assert.match(sql,/consistency_guard/);

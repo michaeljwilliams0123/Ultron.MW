@@ -159,7 +159,7 @@ function projection(observed){
 
 const SQL=`WITH tasks AS (
  INSERT INTO brain_tasks(task_key,objective,status,attempts,max_attempts,last_result)
- SELECT $1 || ':' || item->>'caseId' || ':' || item->>'variant',
+ SELECT $1 || ':' || (item->>'caseId') || ':' || (item->>'variant'),
   'held-out.evaluate','done',1,1,item
  FROM jsonb_array_elements($2::jsonb) AS item
  ON CONFLICT(task_key) DO UPDATE SET task_key=EXCLUDED.task_key
@@ -187,14 +187,16 @@ const SQL=`WITH tasks AS (
 ), observed_insert AS (
  INSERT INTO brain_events(task_id,event_type,details)
  SELECT id,'observed',jsonb_build_object('source','github-actions-seeded-readback',
-  'adapterKey',$1 || ':observed:' || last_result->>'caseId' || ':' || last_result->>'variant')
+  'adapterKey',$1 || ':observed:' || (last_result->>'caseId') || ':' ||
+   (last_result->>'variant'))
  FROM tasks ON CONFLICT DO NOTHING RETURNING id,task_id,details
 ), observed AS (
  SELECT id,task_id FROM observed_insert UNION ALL
  SELECT e.id,e.task_id FROM brain_events e JOIN tasks t ON t.id=e.task_id
  WHERE e.event_type='observed' AND e.details=jsonb_build_object(
   'source','github-actions-seeded-readback','adapterKey',
-  $1 || ':observed:' || t.last_result->>'caseId' || ':' || t.last_result->>'variant')
+  $1 || ':observed:' || (t.last_result->>'caseId') || ':' ||
+   (t.last_result->>'variant'))
   AND NOT EXISTS (SELECT 1 FROM observed_insert i WHERE i.task_id=e.task_id)
 ), evaluation_details AS (
  SELECT $6::jsonb || jsonb_build_object('manifestReceiptId',manifest.id,
