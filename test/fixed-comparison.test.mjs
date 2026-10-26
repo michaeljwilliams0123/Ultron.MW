@@ -26,7 +26,12 @@ export async function observeAcceptanceEvidence({sourceSha,fetchImpl}){
     reviewer.type!=='Bot')throw Error('candidate-review-missing');
  return {sourceSha:ref.object.sha,reviewerId:'github:coderabbitai[bot]:136622811'};
 }
-export async function verifyPersistedAcceptanceEvidence(){return {reviewer:true,evaluation:false};}`;
+export async function verifyPersistedAcceptanceEvidence({identity,assessment}){
+ if(identity?.reviewerId!=='github:coderabbitai[bot]:136622811'||
+    assessment?.reviewer?.id!==identity.reviewerId||
+    assessment?.assessment!=='independent-review-clear')
+  return {reviewer:false,evaluation:false};
+ return {reviewer:true,evaluation:false};}`;
 const sources=(sha,path)=>{
  if(path.endsWith('council-evidence.js'))return council;
  if(sha===CANDIDATE)return acceptance;
@@ -158,4 +163,19 @@ test('non-Error case execution rejection is recorded without aborting report',as
  assert.equal(report.summary.candidateFailures,3);
  assert.equal(report.eligibleForProtectedPromotion,false);
  assert.equal(report.cases.filter(row=>row.candidate.event.reason==='execution-error:null').length,3);
+});
+
+test('fixed comparison rejects a permissive verifier that accepts tampered reviewer identity',async()=>{
+ const permissive=acceptance.replace(
+  'return {reviewer:false,evaluation:false};',
+  'return {reviewer:true,evaluation:false};');
+ assert.notEqual(permissive,acceptance,'mutation must actually disable the tamper guard');
+ const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
+  readSource:(sha,path)=>path.endsWith('council-evidence.js')?council:
+   sha===CANDIDATE?permissive:null});
+ const row=report.cases.find(c=>c.caseId==='review-proxy-never-certifies-heldout');
+ assert.equal(row.candidate.event.outcome,'failed');
+ assert.equal(report.summary.candidateFailures,1);
+ assert.equal(report.heldOutCertified,false);
+ assert.equal(report.eligibleForProtectedPromotion,false);
 });
