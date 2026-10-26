@@ -64,7 +64,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
     '-v','VERBOSITY=verbose','-c',command],{maxBuffer:1024*1024});
    return result.stdout.trim();
   }catch(error){
-   const code=String(error.stderr||'').match(/\b([0-9A-Z]{5}):/)?.[1]||null;
+   const code=String(error.stderr||'').match(/\b([0-9][0-9A-Z]{4})\s*:/)?.[1]||null;
    throw Object.assign(new Error('postgres-query-failed:'+(code||'unknown')),{code});
   }
  }
@@ -133,7 +133,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
    {sourceSha:'e'.repeat(40)},{reviewerId:42},{setsDisjoint:true}
   ]){
    await assert.rejects(admit(overrides),
-    /source-sha-mismatch|candidate-review-missing|review-proxy-manifest-missing/);
+    /source-sha-mismatch|candidate-not-current-merged-pr|candidate-review-missing|review-proxy-manifest-missing/);
   }
   assert.deepEqual(await counts(),[0,0]);
  });
