@@ -133,7 +133,10 @@ function eventDetails(observed){
   status:observed.baselineActionable===null?'count-unavailable':'observed',
   evidenceClass:PROXY_CLASS,criticalRegression:null,
   reviewPullNumber:observed.baselinePullNumber};
- const candidateClear=observed.candidateActionable===0;
+ // A GitHub CHANGES_REQUESTED review is a material hold even when a
+ // review bot's advisory actionable-comment count is zero or omitted.
+ const changesRequested=observed.reviewState==='CHANGES_REQUESTED';
+ const candidateClear=!changesRequested&&observed.candidateActionable===0;
  const candidateUnknown=observed.candidateActionable===null;
  const countUnknown=candidateUnknown||observed.baselineActionable===null;
  const candidateResult={schema:OUTCOME_SCHEMA,objectiveId:observed.objectiveId,
@@ -159,11 +162,15 @@ function eventDetails(observed){
   reviewer:{kind:'independent-reviewer',id:observed.reviewerId,
    identitySource:'github-review'},evidenceObservedAt:observed.reviewedAt,
   evidenceFreshness:'fresh',
-  assessment:candidateUnknown?'independent-review-unquantified':
+  assessment:changesRequested?'independent-review-findings':
+   candidateUnknown?'independent-review-unquantified':
    candidateClear?'independent-review-clear':'independent-review-findings',
-  recommendation:candidateUnknown?'manual-review-required':
+  recommendation:changesRequested?'repair-findings':
+   candidateUnknown?'manual-review-required':
    candidateClear?'observe':'repair-findings',
-  dissent:candidateUnknown?['review-actionable-count-unavailable']:
+  dissent:changesRequested?['independent-review-changes-requested',
+   ...(candidateUnknown?['review-actionable-count-unavailable']:[])]:
+   candidateUnknown?['review-actionable-count-unavailable']:
    candidateClear?[]:['independent-review-findings'],
   knownUnknowns:['github-review-is-advisory','review-count-not-held-out-evaluation',
    ...(countUnknown?['review-actionable-count-unavailable']:[])],
