@@ -137,4 +137,31 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   }
   assert.deepEqual(await counts(),[0,0]);
  });
+
+ test('real PostgreSQL: stale fence cannot heartbeat or complete after owner takeover',async()=>{
+  await reset();
+  await sql(readFileSync(new URL('../cloud/hatchable/migrations/0007_cooperative_fencing.sql',import.meta.url),'utf8'));
+  await sql("INSERT INTO brain_tasks(task_key,objective,status,owner_token,attempts,lease_until,fencing_generation) VALUES ('fenced-takeover','repo.inspect','leased','owner-a',1,now()+interval '90 seconds',1)");
+  const takeover=await sql("UPDATE brain_tasks SET owner_token='owner-b', fencing_generation=fencing_generation+1, lease_until=now()+interval '90 seconds' WHERE task_key='fenced-takeover' RETURNING fencing_generation");
+  assert.equal(takeover,'2');
+
+  // Assert the actual database rejects both stale-owner predicates and receipts.
+  const staleHeartbeat=await sql("WITH moved AS (UPDATE brain_tasks SET lease_until=now()+interval '90 seconds' WHERE task_key='fenced-takeover' AND owner_token='owner-a' AND fencing_generation=1 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'lease-heartbeat' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
+  const staleCompletion=await sql("WITH moved AS (UPDATE brain_tasks SET status='done' WHERE task_key='fenced-takeover' AND owner_token='owner-a' AND fencing_generation=1 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'observed' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
+  assert.equal(staleHeartbeat,'0|0');
+  assert.equal(staleCompletion,'0|0');
+  // Negative control: owner B's token matches an active lease, so only a
+  // stale fencing generation can prevent these two transitions.
+  assert.equal(await sql("SELECT COUNT(*) FROM brain_tasks WHERE task_key='fenced-takeover' AND owner_token='owner-b' AND status='leased' AND lease_until>now()"),'1');
+  const staleGenerationHeartbeat=await sql("WITH moved AS (UPDATE brain_tasks SET lease_until=now()+interval '90 seconds' WHERE task_key='fenced-takeover' AND owner_token='owner-b' AND fencing_generation=1 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'lease-heartbeat' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
+  const staleGenerationCompletion=await sql("WITH moved AS (UPDATE brain_tasks SET status='done' WHERE task_key='fenced-takeover' AND owner_token='owner-b' AND fencing_generation=1 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'observed' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
+  assert.equal(staleGenerationHeartbeat,'0|0');
+  assert.equal(staleGenerationCompletion,'0|0');
+  const activeCompletion=await sql("WITH moved AS (UPDATE brain_tasks SET status='done' WHERE task_key='fenced-takeover' AND owner_token='owner-b' AND fencing_generation=2 AND status='leased' AND lease_until>now() RETURNING id), receipt AS (INSERT INTO brain_events(task_id,event_type) SELECT id,'observed' FROM moved RETURNING id) SELECT (SELECT COUNT(*) FROM moved),(SELECT COUNT(*) FROM receipt)");
+  assert.equal(activeCompletion,'1|1');
+  assert.equal(await sql("SELECT COUNT(*) FROM brain_events WHERE event_type='observed'"),'1');
+  const runner=readFileSync(new URL('../cloud/hatchable/lib/brain-runner.js',import.meta.url),'utf8');
+  assert.ok(runner.includes('owner_token=$2 AND fencing_generation=$3'));
+  assert.ok(runner.includes('AND fencing_generation=$6'));
+ });
 }
