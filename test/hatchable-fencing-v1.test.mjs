@@ -7,8 +7,12 @@ const migrationFile=new URL('../cloud/hatchable/migrations/0007_cooperative_fenc
 async function loadRunner(core){
  const source=await readFile(runnerFile,'utf8');
  const encoded='data:text/javascript;base64,'+Buffer.from(core).toString('base64');
+ const stop='data:text/javascript;base64,'+Buffer.from(
+  "export async function readExecutionControl(){return {paused:false,version:1};}"
+ ).toString('base64');
  return import('data:text/javascript;base64,'+Buffer.from(
   source.replace("from 'lib/brain-core.js'","from '"+encoded+"'")
+   .replace("from 'lib/runtime-control.js'","from '"+stop+"'")
  ).toString('base64'));
 }
 const successfulCore=`export async function executeObjective(){return {source:'fixture',objective:'repo.inspect'};}`;
