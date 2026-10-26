@@ -3,10 +3,12 @@ const OWNER='michaeljwilliams0123';
 const REVIEWER={login:'coderabbitai[bot]',id:136622811,type:'Bot'};
 const SHA40=/^[a-f0-9]{40}$/;
 const OBJECTIVE=/^[a-z0-9][a-z0-9-]{5,79}$/;
-const MANIFEST_SCHEMA='ultron.github-review-held-out-manifest.v1';
-const SET_SCHEMA='ultron.held-out-evaluation-set.v1';
-const OUTCOME_SCHEMA='ultron.held-out-outcome.v1';
-const MARKER=/<!-- ultron-held-out-manifest:v1\s*\n([\s\S]*?)\n-->/;
+const MANIFEST_SCHEMA='ultron.github-review-proxy-manifest.v1';
+// GitHub review-count deltas are correlated advisory proxies, not held-out outcomes.
+const PROXY_CLASS='advisory-review-count-proxy';
+const SET_SCHEMA='ultron.github-review-proxy-set.v1';
+const OUTCOME_SCHEMA='ultron.github-review-proxy-outcome.v1';
+const MARKER=/<!-- ultron-review-proxy-manifest:v1\s*\n([\s\S]*?)\n-->/;
 const HEADERS={Accept:'application/vnd.github+json','User-Agent':'UltronMW-Acceptance-Adapter'};
 
 function integer(value){
@@ -35,7 +37,7 @@ function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha
      value.candidatePullNumber!==candidatePullNumber||
      value.candidateHeadSha!==candidateHeadSha||
      !integer(value.baselinePullNumber)||value.baselinePullNumber===candidatePullNumber||
-     value.frozen!==true||value.setsDisjoint!==true||
+     value.frozen!==true||value.setsDisjoint!==false||
      value.evaluator!=='github-review-actionable-findings-v1'||
      value.scoring!=='1/(1+actionable-comments)'||
      comment.user?.login!==OWNER||comment.author_association!=='OWNER'||
@@ -43,7 +45,7 @@ function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha
      iso(comment.updated_at)!==iso(comment.created_at))continue;
   matches.push({comment,value});
  }
- if(matches.length!==1)throw Error(matches.length?'ambiguous-held-out-manifest':'held-out-manifest-missing');
+ if(matches.length!==1)throw Error(matches.length?'ambiguous-review-proxy-manifest':'review-proxy-manifest-missing');
  return matches[0];
 }
 function generatedReviews(reviews,{headSha=null,after=null}={}){
@@ -119,18 +121,20 @@ function eventDetails(observed){
  const key='acceptance:'+observed.objectiveId+':'+observed.sourceSha;
  const baselineResult={schema:OUTCOME_SCHEMA,objectiveId:observed.objectiveId,
   sourceSha:observed.sourceSha,setId:observed.setId,caseId:'github-review-findings',
-  variant:'baseline',score:observed.baselineScore,status:'passed',
-  criticalRegression:false,reviewPullNumber:observed.baselinePullNumber};
+  variant:'baseline',score:observed.baselineScore,status:'observed',
+  evidenceClass:PROXY_CLASS,criticalRegression:null,
+  reviewPullNumber:observed.baselinePullNumber};
  const candidateClear=observed.candidateActionable===0;
  const candidateResult={schema:OUTCOME_SCHEMA,objectiveId:observed.objectiveId,
   sourceSha:observed.sourceSha,setId:observed.setId,caseId:'github-review-findings',
   variant:'candidate',score:observed.candidateScore,
-  status:candidateClear?'passed':'failed',criticalRegression:!candidateClear,
+  status:'observed',evidenceClass:PROXY_CLASS,criticalRegression:null,
   reviewPullNumber:observed.candidatePullNumber,reviewId:observed.reviewId,
   reviewSubmittedAt:observed.reviewedAt};
  const manifest={schema:SET_SCHEMA,objectiveId:observed.objectiveId,
-  sourceSha:observed.sourceSha,setId:observed.setId,frozen:true,setsDisjoint:true,
-  freezeCommentId:observed.freezeCommentId,frozenAt:observed.frozenAt,
+  sourceSha:observed.sourceSha,setId:observed.setId,frozen:true,setsDisjoint:false,
+  evidenceClass:PROXY_CLASS,freezeCommentId:observed.freezeCommentId,
+  frozenAt:observed.frozenAt,
   candidateHeadSha:observed.candidateHeadSha,
   adapterKey:key+':manifest'};
  const identity={objectiveId:observed.objectiveId,sourceSha:observed.sourceSha,
@@ -145,18 +149,18 @@ function eventDetails(observed){
   evidenceFreshness:'fresh',assessment:candidateClear?'independent-review-clear':
    'independent-review-findings',recommendation:candidateClear?'observe':'repair-findings',
   dissent:candidateClear?[]:['independent-review-findings'],
-  knownUnknowns:['github-review-is-advisory'],
+  knownUnknowns:['github-review-is-advisory','review-count-not-held-out-evaluation'],
   authority:{mode:'advisory-only',executable:false,releaseAuthority:'github-protected-pr'},
   modelInvocations:0,creditCost:0,paidFallback:false,
   candidatePullNumber:observed.candidatePullNumber,reviewId:observed.reviewId,
   adapterKey:key+':assessment'};
  const evaluation={objectiveId:observed.objectiveId,sourceSha:observed.sourceSha,
-  runtimeSourceSha:observed.sourceSha,frozen:true,setsDisjoint:true,
-  independentlyObserved:true,outcomeReadbacksObserved:true,
-  evaluator:{kind:'independent-evaluator',id:observed.reviewerId},
-  verifiedBy:{kind:'held-out-evaluation-readback',id:'held-out-evaluation-adapter'},
+  runtimeSourceSha:observed.sourceSha,frozen:true,setsDisjoint:false,
+  evidenceClass:PROXY_CLASS,independentlyObserved:false,outcomeReadbacksObserved:true,
+  evaluator:{kind:'advisory-proxy',id:'github-review-count-proxy'},
+  verifiedBy:{kind:'github-review-proxy',id:'github-review-count-proxy'},
   baselineScore:observed.baselineScore,candidateScore:observed.candidateScore,
-  candidateFailures:candidateClear?0:1,criticalRegressions:candidateClear?0:1,
+  candidateFailures:null,criticalRegressions:null,
   candidatePullNumber:observed.candidatePullNumber,
   baselinePullNumber:observed.baselinePullNumber,reviewId:observed.reviewId,
   freezeCommentId:observed.freezeCommentId,adapterKey:key+':evaluation'};
@@ -270,8 +274,12 @@ export async function verifyPersistedAcceptanceEvidence({
    evaluation.baselinePullNumber===observed.baselinePullNumber&&
    evaluation.baselineScore===observed.baselineScore&&
    evaluation.candidateScore===observed.candidateScore&&
-   evaluation.candidateFailures===(observed.candidateActionable===0?0:1)&&
-   evaluation.criticalRegressions===(observed.candidateActionable===0?0:1);
-  return {reviewer,evaluation:evaluationMatches};
+   evaluation.evidenceClass===PROXY_CLASS&&evaluation.setsDisjoint===false&&
+   evaluation.independentlyObserved===false&&
+   evaluation.evaluator?.kind==='advisory-proxy'&&
+   evaluation.verifiedBy?.kind==='github-review-proxy'&&
+   evaluation.candidateFailures===null&&evaluation.criticalRegressions===null;
+  // Same-reviewer comment-count deltas cannot certify disjoint held-out improvement.
+  return {reviewer:reviewer&&evaluationMatches,evaluation:false};
  }catch{return {reviewer:false,evaluation:false};}
 }
