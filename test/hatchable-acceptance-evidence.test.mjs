@@ -108,16 +108,17 @@ test('acceptance evidence persists the entire projection in one idempotent SQL s
 });
 
 test('council trust signal is granted only after a fresh external reread matches persisted claims',async()=>{
- const identity={candidatePullNumber:106,reviewerId:'github:coderabbitai[bot]:136622811',
-  reviewId:800};
- const assessment={candidatePullNumber:106,reviewId:800,
-  reviewer:{id:'github:coderabbitai[bot]:136622811'}};
- const evaluation={candidatePullNumber:106,baselinePullNumber:103,reviewId:800,
-  freezeCommentId:700,baselineScore:1/3,candidateScore:1,
-  evidenceClass:'advisory-review-count-proxy',setsDisjoint:false,
-  independentlyObserved:false,evaluator:{kind:'advisory-proxy'},
-  verifiedBy:{kind:'github-review-proxy'},
-  candidateFailures:null,criticalRegressions:null};
+ let recorded;
+ const db={query:async(_sql,params)=>{
+  recorded=params;
+  return {rows:[{identity_id:1,assessment_id:2,manifest_id:3,evaluation_id:4,
+   baseline_task_id:5,candidate_task_id:6,baseline_receipt_id:7,candidate_receipt_id:8}]};
+ }};
+ await persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures()});
+ const identity=JSON.parse(recorded[6]);
+ const assessment=JSON.parse(recorded[10]);
+ const evaluation=JSON.parse(recorded[12]);
  assert.deepEqual(await verifyPersistedAcceptanceEvidence({objectiveId:OBJECTIVE,
   sourceSha:MAIN,identity,assessment,evaluation,fetchImpl:fixtures()}),{
    reviewer:true,evaluation:false
@@ -299,9 +300,10 @@ test('persisted reviewer identity pull number must be a JSON number, not a coerc
   const result=await verifyPersistedAcceptanceEvidence({
    objectiveId:OBJECTIVE,sourceSha:MAIN,
    identity:{...identity,candidatePullNumber:disguised},
-   assessment,evaluation,fetchImpl:fixtures()});
+   assessment,evaluation,fetchImpl});
   assert.deepEqual(result,{reviewer:false,evaluation:false},
    'Rejected coerced identity '+JSON.stringify(disguised));
+  assert.equal(networkCalls,0,'No GitHub read for '+JSON.stringify(disguised));
  }
 });
 
