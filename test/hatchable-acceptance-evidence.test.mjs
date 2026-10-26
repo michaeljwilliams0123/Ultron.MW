@@ -482,3 +482,34 @@ test('quiet-mode evidence still rejects spoofed identity, stale head and duplica
    base,{...base,id:801,submitted_at:'2026-10-25T10:06:00Z'}]})}),
   /ambiguous-candidate-review/);
 });
+
+test('CHANGES_REQUESTED remains a material review hold even with zero or unknown actionable count',async()=>{
+ for(const body of [REVIEW_BODY(0),
+  '<!-- coderabbit-ai-generated:v1 -->\\n> Quiet mode omits actionable count']){
+  const review={id:800,user:{login:'coderabbitai[bot]',id:136622811,type:'Bot'},
+   state:'CHANGES_REQUESTED',commit_id:HEAD,
+   submitted_at:'2026-10-25T10:05:00Z',body};
+  const fetchImpl=fixtures({'/pulls/106/reviews?per_page=100':[review]});
+  let params;
+  const db={query:async(_sql,p)=>{params=p;return {rows:[{
+   identity_id:1,assessment_id:2,manifest_id:3,evaluation_id:4,
+   baseline_task_id:5,candidate_task_id:6,baseline_receipt_id:7,candidate_receipt_id:8
+  }]};}};
+  const persisted=await persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
+   candidatePullNumber:106,fetchImpl});
+  assert.equal(persisted.observed.reviewState,'CHANGES_REQUESTED');
+  const assessment=JSON.parse(params[10]);
+  assert.equal(assessment.assessment,'independent-review-findings');
+  assert.equal(assessment.recommendation,'repair-findings');
+  assert.ok(assessment.dissent.includes('independent-review-changes-requested'));
+  const identity=JSON.parse(params[6]),evaluation=JSON.parse(params[12]);
+  assert.deepEqual(await verifyPersistedAcceptanceEvidence({objectiveId:OBJECTIVE,
+   sourceSha:MAIN,identity,assessment,evaluation,fetchImpl}),
+   {reviewer:true,evaluation:false});
+  const forgedClear={...assessment,assessment:'independent-review-clear',
+   recommendation:'observe',dissent:[]};
+  assert.deepEqual(await verifyPersistedAcceptanceEvidence({objectiveId:OBJECTIVE,
+   sourceSha:MAIN,identity,assessment:forgedClear,evaluation,fetchImpl}),
+   {reviewer:false,evaluation:false});
+ }
+});
