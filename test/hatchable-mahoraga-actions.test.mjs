@@ -10,15 +10,18 @@ const PEM=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey
 const input={key:KEY,operation:'issue.create',
   input:{title:'Ultron control canary',body:'One bounded acceptance issue.',
     expectedMainSha:MAIN}};
-function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false}={}){
+function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
+ pauseDuringPreflight=false}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
+ let stopped=paused;
  const config={async get(name){
    if(!ready)throw Error('setup_required');
    return name.endsWith('CLIENT_ID')?'Iv1.testclient':
      name.endsWith('INSTALLATION_ID')?'321':PEM;
  }};
  const db={async query(sql,params=[]){
-   if(sql.includes('SELECT paused FROM brain_runtime_control'))return {rows:[{paused}]};
+   if(sql.includes('SELECT paused FROM brain_runtime_control')&&
+      !sql.includes("SET state='sent'"))return {rows:[{paused:stopped}]};
    if(sql.includes('INSERT INTO mahoraga_actions')){
      if(rows.has(params[0]))return {rows:[]};
      const row={id:rows.size+1,task_id:rows.size+101,
@@ -30,6 +33,9 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false}={}){
    const row=[...rows.values()].find(x=>x.id===params[0])||rows.get(params[0]);
    if(sql.includes("SET state='uncertain'")){if(row.state==='sent')row.state='uncertain';return {rows:[]};}
    if(sql.includes("SET state='sent'")){
+     assert.match(sql,/brain_runtime_control WHERE id=1 FOR SHARE/);
+     assert.match(sql,/AND NOT control\.paused/);
+     if(stopped)return {rows:[]};
      if(row.state!=='prepared')return {rows:[]};
      row.state='sent';row.attempt_started_at=new Date().toISOString();
      return {rows:[{...row}]};
@@ -52,7 +58,10 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false}={}){
    if(path.endsWith('/mahoraga'))return json({
      id:1343333190,full_name:'michaeljwilliams0123/mahoraga',
      private:true,default_branch:'main'});
-   if(path.endsWith('/git/ref/heads/main'))return json({object:{sha:main}});
+   if(path.endsWith('/git/ref/heads/main')){
+     if(pauseDuringPreflight)stopped=true;
+     return json({object:{sha:main}});
+   }
    if(path.endsWith('/git/ref/heads/mahoraga/control'))
      return json({object:{sha:'b'.repeat(40)}});
    if(path.endsWith('/actions/workflows/verify.yml'))return json({id:1});
@@ -133,4 +142,12 @@ test('owner stop keeps a prepared action unsubmitted even with valid GitHub cred
  assert.equal(result.error,'owner-execution-paused');
  assert.equal(f.calls.length,0,'no App token should even be requested');
  assert.equal(f.rows.get(KEY).state,'prepared');
+});
+test('pause during preflight prevents dispatch admission and an external POST',async()=>{
+ const f=fixture({pauseDuringPreflight:true});
+ const result=await execute(f);
+ assert.equal(result.error,'owner-execution-paused');
+ assert.equal(result.state,'prepared');
+ assert.equal(f.rows.get(KEY).state,'prepared');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
 });

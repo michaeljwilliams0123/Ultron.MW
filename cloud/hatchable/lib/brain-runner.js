@@ -24,9 +24,14 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
    SELECT id,'attempt-limit' FROM moved RETURNING task_id
  ) SELECT id FROM moved`);
  const token=crypto.randomUUID();
- const claim=await db.query(`WITH selected AS (
-   SELECT id FROM brain_tasks
+ // Lock the singleton for this statement. A pause either commits first and
+ // prevents the claim, or waits until this claim and receipt have committed.
+ const claim=await db.query(`WITH control AS MATERIALIZED (
+   SELECT paused FROM brain_runtime_control WHERE id=1 FOR SHARE
+ ), selected AS (
+   SELECT brain_tasks.id FROM brain_tasks CROSS JOIN control
    WHERE status='queued' AND attempts < max_attempts
+     AND NOT control.paused
      AND (lease_until IS NULL OR lease_until <= now())
    ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED
  ), moved AS (

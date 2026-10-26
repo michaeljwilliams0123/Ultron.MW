@@ -196,13 +196,20 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
  }
  try { await preflight(get,action); }
  catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,error:error.message}; }
- const claim=await db.query(`UPDATE mahoraga_actions
+ // Admission to 'sent' is the dispatch boundary. Serialize it with an owner
+ // pause so no prepared action can be admitted after the pause commits.
+ const claim=await db.query(`WITH control AS MATERIALIZED (
+   SELECT paused FROM brain_runtime_control WHERE id=1 FOR SHARE
+ ), moved AS (UPDATE mahoraga_actions
    SET state='sent',attempt_started_at=now(),updated_at=now()
-   WHERE id=$1 AND state='prepared'
-   RETURNING id,task_id,action_key,operation,request,state,attempt_started_at,result`,[row.id]);
+   FROM control WHERE id=$1 AND state='prepared' AND NOT control.paused
+   RETURNING id,task_id,action_key,operation,request,state,attempt_started_at,result
+ ) SELECT * FROM moved`,[row.id]);
  if(!claim.rows.length) {
    row=(await db.query(`SELECT id,task_id,action_key,operation,request,state,attempt_started_at,result
      FROM mahoraga_actions WHERE id=$1`,[row.id])).rows[0];
+   if(row?.state==='prepared')return {ok:false,state:'prepared',id:row.id,
+     taskId:row.task_id,key:action.key,error:'owner-execution-paused'};
    return row.state==='observed'
      ? {ok:true,state:'observed',id:row.id,taskId:row.task_id,key:action.key,result:row.result,reused:true}
      : reconcile(db,get,row);
