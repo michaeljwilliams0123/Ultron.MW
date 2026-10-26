@@ -14,5 +14,5 @@ export default async function(req,res){
  else if(b.action==='note')result=await saveNote({db},b.kind,b.body);
  else if(b.action==='cancel'||b.action==='retry')result=await controlTask({db},b.action,b.id);
  else return res.status(400).json({error:'unsupported-command'});
- return res.status(result.ok?(b.action==='queue'&&result.created?202:200):result.error==='task-not-eligible'||result.error==='idempotency-key-conflict'||result.error==='acceptance-ledger-conflict'?409:400).json(result);
+ return res.status(result.ok?(b.action==='queue'&&result.created?202:200):result.error==='task-not-eligible'||result.error==='idempotency-key-conflict'||result.error==='acceptance-ledger-conflict'||result.error==='heldout-ledger-conflict'?409:400).json(result);
 }

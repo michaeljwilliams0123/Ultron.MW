@@ -7,7 +7,8 @@ import {compareSnapshots} from '../scripts/compare-acceptance-evidence.mjs';
 const BASE='1'.repeat(40),CANDIDATE='2'.repeat(40);
 const council=`export function evaluateCouncilEvidence({lease,externalActions=[]}){
  const reasons=[];
- if(lease?.state==='expired')reasons.push('stale-or-mismatched-lease');
+ if(lease&&(lease.state!=='active'||lease.tokenMatches!==true))
+  reasons.push('stale-or-mismatched-lease');
  if(externalActions.some(a=>a.state==='uncertain'&&a.readback!=='committed'))
   reasons.push('external-action-readback-required');
  if(new Set(externalActions.map(a=>a.id)).size!==externalActions.length)

@@ -123,7 +123,7 @@ const cases=[
  }},
  {id:caseIds[8],needs:'council',run:async({council})=>{
   const r=council.evaluateCouncilEvidence({objectiveId:OBJECTIVE,
-   sourceSha:MAIN,now:'2026-10-25T10:06:00Z',lease:{state:'expired',tokenMatches:false}});
+   sourceSha:MAIN,now:'2026-10-25T10:06:00Z',lease:{state:'expired',tokenMatches:true}});
   return r.eligibleForProtectedPromotion===false&&
    r.reasons.includes('stale-or-mismatched-lease');
  }},

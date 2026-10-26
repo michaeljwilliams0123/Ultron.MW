@@ -10,6 +10,7 @@ const SET_SCHEMA='ultron.github-review-proxy-set.v1';
 const OUTCOME_SCHEMA='ultron.github-review-proxy-outcome.v1';
 const MARKER=/<!-- ultron-review-proxy-manifest:v1\s*\n([\s\S]*?)\n-->/;
 const HEADERS={Accept:'application/vnd.github+json','User-Agent':'UltronMW-Acceptance-Adapter'};
+const LIST_PAGE_LIMIT=10;
 
 function integer(value){
  return Number.isSafeInteger(value)&&value>0?value:null;
@@ -24,8 +25,37 @@ async function get(path,fetchImpl){
  if(!response.ok)throw Error('github-status-'+response.status);
  return response.json();
 }
+function nextPage(response,error){
+ const link=response.headers?.get?.('link');
+ if(!link)return null;
+ const entry=link.split(',').find(value=>/;\s*rel="next"\s*$/.test(value.trim()));
+ if(!entry)return null;
+ const matched=entry.match(/^\s*<([^>]+)>/);
+ if(!matched)throw Error(error);
+ let next;
+ try{next=new URL(matched[1]);}catch{throw Error(error);}
+ const repository=new URL(REPO);
+ if(next.origin!==repository.origin||!next.pathname.startsWith(repository.pathname+'/'))
+  throw Error(error);
+ return next.href;
+}
+async function list(path,fetchImpl,error){
+ const items=[];
+ let url=REPO+path;
+ for(let page=0;page<LIST_PAGE_LIMIT;page++){
+  const response=await fetchImpl(url,{headers:HEADERS,signal:AbortSignal.timeout(10000)});
+  if(!response.ok)throw Error('github-status-'+response.status);
+  const values=await response.json();
+  if(!Array.isArray(values))throw Error(error);
+  items.push(...values);
+  const next=nextPage(response,error);
+  if(!next)return items;
+  url=next;
+ }
+ throw Error(error);
+}
 function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha}){
- if(!Array.isArray(comments)||comments.length>=100)throw Error('invalid-manifest-comments');
+ if(!Array.isArray(comments))throw Error('invalid-manifest-comments');
  const matches=[];
  for(const comment of comments){
   const marker=typeof comment?.body==='string'?comment.body.match(MARKER):null;
@@ -49,7 +79,7 @@ function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha
  return matches[0];
 }
 function generatedReviews(reviews,{headSha=null,after=null}={}){
- if(!Array.isArray(reviews)||reviews.length>=100)throw Error('invalid-review-response');
+ if(!Array.isArray(reviews))throw Error('invalid-review-response');
  return reviews.filter(review=>{
   const body=typeof review?.body==='string'?review.body:'';
   const submitted=iso(review?.submitted_at);
@@ -85,8 +115,10 @@ export async function observeAcceptanceEvidence({
  const [ref,candidate,comments,candidateReviews]=await Promise.all([
   get('/git/ref/heads/main',fetchImpl),
   get('/pulls/'+candidatePullNumber,fetchImpl),
-  get('/issues/'+candidatePullNumber+'/comments?per_page=100',fetchImpl),
-  get('/pulls/'+candidatePullNumber+'/reviews?per_page=100',fetchImpl)
+  list('/issues/'+candidatePullNumber+'/comments?per_page=100',fetchImpl,
+   'invalid-manifest-comments'),
+  list('/pulls/'+candidatePullNumber+'/reviews?per_page=100',fetchImpl,
+   'invalid-review-response')
  ]);
  const currentSha=ref?.object?.sha;
  if(!SHA40.test(currentSha||'')||(sourceSha&&sourceSha!==currentSha))
@@ -99,7 +131,8 @@ export async function observeAcceptanceEvidence({
  const [currentCommit,headCommit,baseline,baselineReviews]=await Promise.all([
   get('/commits/'+currentSha,fetchImpl),get('/commits/'+candidate.head.sha,fetchImpl),
   get('/pulls/'+manifest.baselinePullNumber,fetchImpl),
-  get('/pulls/'+manifest.baselinePullNumber+'/reviews?per_page=100',fetchImpl)
+  list('/pulls/'+manifest.baselinePullNumber+'/reviews?per_page=100',fetchImpl,
+   'invalid-review-response')
  ]);
  if(!SHA40.test(currentCommit?.commit?.tree?.sha||'')||
     currentCommit.commit.tree.sha!==headCommit?.commit?.tree?.sha)

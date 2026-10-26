@@ -7,6 +7,7 @@ import {
 
 const MAIN='a'.repeat(40),HEAD='b'.repeat(40),TREE='c'.repeat(40),BASE='d'.repeat(40);
 const OBJECTIVE='issue-68-stage-1';
+const REPO='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const REVIEW_BODY=n=>'<!-- coderabbit-ai-generated:v1 -->\n\n**Actionable comments posted: '+n+'**';
 function fixtures(overrides={}){
  const values={
@@ -43,6 +44,22 @@ function fixtures(overrides={}){
   return {ok:true,json:async()=>values[path]};
  };
 }
+function response(body,link=null){
+ return {ok:true,status:200,headers:{get:name=>
+  String(name).toLowerCase()==='link'?link:null},json:async()=>body};
+}
+async function pagedFixture(paths){
+ const seed=fixtures(),pages={};
+ for(const path of paths)pages[path]=await (await seed(REPO+path)).json();
+ return async url=>{
+  const path=String(url).replace(REPO,'');
+  for(const base of paths){
+   if(path===base)return response([],`<${REPO+base}&page=2>; rel="next"`);
+   if(path===base+'&page=2')return response(pages[base]);
+  }
+  return seed(url);
+ };
+}
 
 test('acceptance adapter binds a pre-review manifest, exact reviewed head tree and current main',async()=>{
  const result=await observeAcceptanceEvidence({objectiveId:OBJECTIVE,
@@ -54,6 +71,33 @@ test('acceptance adapter binds a pre-review manifest, exact reviewed head tree a
  assert.equal(result.baselineScore,1/3);
  assert.equal(result.candidateScore,1);
  assert.equal(Object.isFrozen(result),true);
+});
+
+test('acceptance adapter follows bounded pagination for every comment and review list',async()=>{
+ const fetchImpl=await pagedFixture([
+  '/issues/106/comments?per_page=100',
+  '/pulls/106/reviews?per_page=100',
+  '/pulls/103/reviews?per_page=100'
+ ]);
+ const result=await observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl});
+ assert.equal(result.freezeCommentId,700);
+ assert.equal(result.reviewId,800);
+ assert.equal(result.baselineScore,1/3);
+});
+
+test('acceptance adapter fails closed when comment pagination exceeds its bound',async()=>{
+ const seed=fixtures(),base='/issues/106/comments?per_page=100';
+ const fetchImpl=async url=>{
+  const path=String(url).replace(REPO,'');
+  if(path.startsWith(base)){
+   const page=Number(new URL(String(url)).searchParams.get('page')||1);
+   return response([],`<${REPO+base}&page=${page+1}>; rel="next"`);
+  }
+  return seed(url);
+ };
+ await assert.rejects(observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl}),/invalid-manifest-comments/);
 });
 
 test('acceptance adapter rejects stale-head and post-review manifests',async()=>{
@@ -201,6 +245,19 @@ test('owner acceptance API passes db context and two positional arguments',async
  assert.equal(called[0].db.marker,'db');
  assert.equal(called[1],OBJECTIVE);
  assert.equal(called[2],106);
+ const conflictHandler=runInNewContext(body+'\nhandler',{
+  db:{marker:'db'},scheduler:{},
+  admitAcceptanceEvidence:async()=>({ok:false,error:'heldout-ledger-conflict'}),
+  queueObjective:async()=>({ok:true}),saveNote:async()=>({ok:true}),
+  controlTask:async()=>({ok:true}),snapshot:async()=>({ok:true})
+ });
+ status=0;payload=null;
+ await conflictHandler({method:'POST',body:{action:'acceptance',
+  objectiveId:OBJECTIVE,pullNumber:106}},{
+  status(code){status=code;return this;},json(value){payload=value;return value;}
+ });
+ assert.equal(status,409);
+ assert.equal(payload.error,'heldout-ledger-conflict');
 });
 
 test('legacy self-asserted disjoint held-out manifest cannot satisfy proxy admission',async()=>{
@@ -377,24 +434,27 @@ test('unrelated PostgreSQL errors are not retried as idempotency conflicts',asyn
 });
 
 
-test('GitHub first-page saturation cannot silently truncate manifest or reviewer evidence',async()=>{
- const base='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+test('complete 100-item GitHub pages remain valid when no next page is advertised',async()=>{
+ const base=REPO;
  const seed=fixtures();
  const comments=(await (await seed(base+'/issues/106/comments?per_page=100')).json());
  const reviews=(await (await seed(base+'/pulls/106/reviews?per_page=100')).json());
  const baseline=(await (await seed(base+'/pulls/103/reviews?per_page=100')).json());
- await assert.rejects(observeAcceptanceEvidence({
-  objectiveId:OBJECTIVE,candidatePullNumber:106,
-  fetchImpl:fixtures({'/issues/106/comments?per_page=100':Array.from({length:100},()=>comments[0])})
- }),/invalid-manifest-comments/);
- await assert.rejects(observeAcceptanceEvidence({
-  objectiveId:OBJECTIVE,candidatePullNumber:106,
-  fetchImpl:fixtures({'/pulls/106/reviews?per_page=100':Array.from({length:100},()=>reviews[0])})
- }),/invalid-review-response/);
- await assert.rejects(observeAcceptanceEvidence({
-  objectiveId:OBJECTIVE,candidatePullNumber:106,
-  fetchImpl:fixtures({'/pulls/103/reviews?per_page=100':Array.from({length:100},()=>baseline[0])})
- }),/invalid-review-response/);
+ const irrelevant=(id,submitted_at='2026-10-24T09:00:00Z')=>({id,
+  user:{login:'untrusted',id,type:'User'},state:'COMMENTED',commit_id:HEAD,
+  submitted_at,body:REVIEW_BODY(99)});
+ const result=await observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures({
+   '/issues/106/comments?per_page=100':[
+    ...Array.from({length:99},(_,index)=>({id:index+1,body:'ordinary comment'})),
+    comments[0]],
+   '/pulls/106/reviews?per_page=100':[
+    ...Array.from({length:99},(_,index)=>irrelevant(index+1)),reviews[0]],
+   '/pulls/103/reviews?per_page=100':[
+    ...Array.from({length:98},(_,index)=>irrelevant(index+1)),...baseline]
+  })});
+ assert.equal(result.freezeCommentId,700);
+ assert.equal(result.reviewId,800);
 });
 
 test('tampering independent assessment dissent or authority invalidates reviewer trust',async()=>{

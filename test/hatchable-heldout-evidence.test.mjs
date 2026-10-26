@@ -12,6 +12,7 @@ const {observeHeldOutEvidence,persistHeldOutEvidence,verifyPersistedHeldOutEvide
 
 const MAIN='a'.repeat(40),HEAD='b'.repeat(40),BASE='c'.repeat(40),TREE='d'.repeat(40);
 const GENERATOR='e'.repeat(40),WORKFLOW_BLOB='f'.repeat(40),OBJECTIVE='issue-68-stage-1';
+const REPO='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const adapterSource=await readFile(new URL('../cloud/hatchable/lib/acceptance-evidence.js',
  import.meta.url),'utf8');
 const encoded=value=>({encoding:'base64',content:Buffer.from(value).toString('base64')});
@@ -67,6 +68,22 @@ function fixtures(overrides={}){
   return {ok:true,status:200,json:async()=>values[path]};
  };
 }
+function response(body,link=null){
+ return {ok:true,status:200,headers:{get:name=>
+  String(name).toLowerCase()==='link'?link:null},json:async()=>body};
+}
+async function pagedFixture(paths){
+ const seed=fixtures(),pages={};
+ for(const path of paths)pages[path]=await (await seed(REPO+path)).json();
+ return async url=>{
+  const path=String(url).replace(REPO,'');
+  for(const base of paths){
+   if(path===base)return response([],`<${REPO+base}&page=2>; rel="next"`);
+   if(path===base+'&page=2')return response(pages[base]);
+  }
+  return seed(url);
+ };
+}
 
 test('seeded adapter reproduces ten post-freeze cases on base and candidate',async()=>{
  const result=await observeHeldOutEvidence({objectiveId:OBJECTIVE,
@@ -76,6 +93,28 @@ test('seeded adapter reproduces ten post-freeze cases on base and candidate',asy
  assert.equal(result.evaluationRunId,40310000001);
  assert.equal(result.baselineCases.length,10);
  assert.ok(result.candidateCases.every(item=>item.passed));
+});
+
+test('seeded adapter follows bounded pagination for manifests and reviews',async()=>{
+ const fetchImpl=await pagedFixture([
+  '/issues/106/comments?per_page=100','/pulls/106/reviews?per_page=100'
+ ]);
+ const result=await observeHeldOutEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl});
+ assert.equal(result.freezeCommentId,700);
+ assert.equal(result.independentReviewId,800);
+ assert.equal(result.candidateScore,1);
+});
+
+test('seeded adapter rejects failed and non-improving local reproductions',async()=>{
+ const baseline='/contents/cloud/hatchable/lib/acceptance-evidence.js?ref='+BASE;
+ const candidate='/contents/cloud/hatchable/lib/acceptance-evidence.js?ref='+HEAD;
+ await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures({[candidate]:encoded('export const broken=')})}),
+  /heldout-reproduction-mismatch/);
+ await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures({[baseline]:encoded(adapterSource)})}),
+  /heldout-reproduction-mismatch/);
 });
 
 test('seeded adapter rejects edited manifests and wrongly parameterized runs',async()=>{

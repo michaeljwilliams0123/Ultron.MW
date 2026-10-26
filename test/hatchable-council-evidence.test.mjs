@@ -161,8 +161,10 @@ test('stale evidence, stale source and a stale lease cannot pass the gate',()=>{
  assert.ok(staleGate.reasons.includes('stale-evidence'));
  const wrongSource=ready({evaluation:evaluation({sourceSha:OTHER_SHA})});
  assert.ok(wrongSource.reasons.includes('evaluation-source-mismatch'));
- const lostLease=ready({lease:{state:'expired',tokenMatches:false}});
+ const lostLease=ready({lease:{state:'expired',tokenMatches:true}});
  assert.ok(lostLease.reasons.includes('stale-or-mismatched-lease'));
+ const mismatchedLease=ready({lease:{state:'active',tokenMatches:false}});
+ assert.ok(mismatchedLease.reasons.includes('stale-or-mismatched-lease'));
 });
 
 test('role evidence must be bound to the exact source and successful current-head CI',()=>{

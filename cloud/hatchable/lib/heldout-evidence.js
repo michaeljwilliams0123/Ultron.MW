@@ -16,6 +16,7 @@ const GENERATOR_PATH='cloud/hatchable/lib/heldout-cases.js';
 const WORKFLOW_PATH='.github/workflows/held-out-acceptance.yml';
 const ADAPTER_PATH='cloud/hatchable/lib/acceptance-evidence.js';
 const HEADERS={Accept:'application/vnd.github+json','User-Agent':'UltronMW-HeldOut-Adapter'};
+const LIST_PAGE_LIMIT=10;
 
 function integer(value){return Number.isSafeInteger(value)&&value>0?value:null;}
 function iso(value){
@@ -29,13 +30,42 @@ async function request(path,fetchImpl,{optional=false}={}){
  if(!response.ok)throw Error('github-status-'+response.status);
  return response.json();
 }
+function nextPage(response,error){
+ const link=response.headers?.get?.('link');
+ if(!link)return null;
+ const entry=link.split(',').find(value=>/;\s*rel="next"\s*$/.test(value.trim()));
+ if(!entry)return null;
+ const matched=entry.match(/^\s*<([^>]+)>/);
+ if(!matched)throw Error(error);
+ let next;
+ try{next=new URL(matched[1]);}catch{throw Error(error);}
+ const repository=new URL(REPO);
+ if(next.origin!==repository.origin||!next.pathname.startsWith(repository.pathname+'/'))
+  throw Error(error);
+ return next.href;
+}
+async function list(path,fetchImpl,error){
+ const items=[];
+ let url=REPO+path;
+ for(let page=0;page<LIST_PAGE_LIMIT;page++){
+  const response=await fetchImpl(url,{headers:HEADERS,signal:AbortSignal.timeout(10000)});
+  if(!response.ok)throw Error('github-status-'+response.status);
+  const values=await response.json();
+  if(!Array.isArray(values))throw Error(error);
+  items.push(...values);
+  const next=nextPage(response,error);
+  if(!next)return items;
+  url=next;
+ }
+ throw Error(error);
+}
 function decode(file){
  if(!file||file.encoding!=='base64'||typeof file.content!=='string')return '';
  const bytes=Uint8Array.from(atob(file.content.replace(/\s/g,'')),char=>char.charCodeAt(0));
  return new TextDecoder().decode(bytes);
 }
 function manifestFrom(comments,{objectiveId,pullNumber,headSha,baseSha}){
- if(!Array.isArray(comments)||comments.length>=100)throw Error('invalid-heldout-comments');
+ if(!Array.isArray(comments))throw Error('invalid-heldout-comments');
  const matches=[];
  for(const comment of comments){
   const marker=typeof comment?.body==='string'?comment.body.match(MARKER):null;
@@ -59,7 +89,7 @@ function manifestFrom(comments,{objectiveId,pullNumber,headSha,baseSha}){
  return matches[0];
 }
 function independentReviews(reviews,{headSha,after}){
- if(!Array.isArray(reviews)||reviews.length>=100)throw Error('invalid-heldout-reviews');
+ if(!Array.isArray(reviews))throw Error('invalid-heldout-reviews');
  return reviews.filter(review=>{
   const submitted=iso(review?.submitted_at),body=typeof review?.body==='string'?
    review.body:'';
@@ -80,8 +110,10 @@ export async function observeHeldOutEvidence({
   throw Error('invalid-heldout-request');
  const [ref,candidate,comments,reviews]=await Promise.all([
   request('/git/ref/heads/main',fetchImpl),request('/pulls/'+candidatePullNumber,fetchImpl),
-  request('/issues/'+candidatePullNumber+'/comments?per_page=100',fetchImpl),
-  request('/pulls/'+candidatePullNumber+'/reviews?per_page=100',fetchImpl)
+  list('/issues/'+candidatePullNumber+'/comments?per_page=100',fetchImpl,
+   'invalid-heldout-comments'),
+  list('/pulls/'+candidatePullNumber+'/reviews?per_page=100',fetchImpl,
+   'invalid-heldout-reviews')
  ]);
  const currentSha=ref?.object?.sha;
  if(!SHA40.test(currentSha||'')||(sourceSha&&sourceSha!==currentSha))
@@ -132,14 +164,16 @@ export async function observeHeldOutEvidence({
   evaluateHeldOutSource({source:decode(baselineFile),seed:String(run.id),variant:'baseline'}),
   evaluateHeldOutSource({source:decode(candidateFile),seed:String(run.id),variant:'candidate'})
  ]);
+ const baselineScore=heldOutScore(baselineCases),candidateScore=heldOutScore(candidateCases);
+ if(candidateCases.some(item=>!item.passed)||candidateScore<=baselineScore)
+  throw Error('heldout-reproduction-mismatch');
  return Object.freeze({objectiveId,sourceSha:currentSha,candidatePullNumber,
   candidateHeadSha:candidate.head.sha,baselineSha:candidate.base.sha,
   freezeCommentId:comment.id,frozenAt:iso(comment.created_at),evaluationRunId:run.id,
   independentReviewId:review.id,reviewedAt:iso(review.submitted_at),
   evaluatorId:'github-actions:'+run.id,
   setId:'seeded-heldout-'+candidate.base.sha.slice(0,12)+'-'+candidatePullNumber,
-  baselineCases,candidateCases,baselineScore:heldOutScore(baselineCases),
-  candidateScore:heldOutScore(candidateCases)});
+  baselineCases,candidateCases,baselineScore,candidateScore});
 }
 
 function projection(observed){

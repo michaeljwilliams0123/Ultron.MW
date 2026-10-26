@@ -76,13 +76,13 @@ test('v2 release matrix gates every runtime file and identifies four divergent f
   const { root, check } = await v2ReleaseFixture(t);
   const matching = await check();
   assert.equal(matching.parity, true);
-  assert.equal(matching.filesCompared, V2_RUNTIME_FILES.length);
+  assert.equal(matching.filesCompared, 19);
   for (const path of V2_DIVERGENT) {
     await writeFile(join(root, path), 'synthetic source-only change: ' + path + '\n');
   }
   const drift = await check();
   assert.equal(drift.parity, false);
-  assert.equal(drift.filesCompared, V2_RUNTIME_FILES.length);
+  assert.equal(drift.filesCompared, 19);
   assert.deepEqual(drift.differences.map(d => d.type), Array(4).fill('changed-file'));
   assert.deepEqual(drift.differences.map(d => d.path).sort(), [...V2_DIVERGENT].sort());
 });
