@@ -54,7 +54,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: fixed-comparison-${{ github.event.pull_request.head.sha }}
+          name: fixed-comparison-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
           path: artifacts/fixed-comparison.json
           if-no-files-found: ignore
           retention-days: 7
