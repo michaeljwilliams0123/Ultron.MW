@@ -21,7 +21,9 @@ export async function observeAcceptanceEvidence({sourceSha,fetchImpl}){
  const comments=await (await fetchImpl(repo+'/issues/106/comments?per_page=100')).json();
  if(comments[0].updated_at!==comments[0].created_at)throw Error('review-proxy-manifest-missing');
  const reviews=await (await fetchImpl(repo+'/pulls/106/reviews?per_page=100')).json();
- if(reviews[0].user.login!=='coderabbitai[bot]')throw Error('candidate-review-missing');
+ const reviewer=reviews[0].user;
+ if(reviewer.login!=='coderabbitai[bot]'||reviewer.id!==136622811||
+    reviewer.type!=='Bot')throw Error('candidate-review-missing');
  return {sourceSha:ref.object.sha,reviewerId:'github:coderabbitai[bot]:136622811'};
 }
 export async function verifyPersistedAcceptanceEvidence(){return {reviewer:true,evaluation:false};}`;
@@ -53,6 +55,17 @@ test('base and candidate receive identical 8 cases with persisted per-case recei
    assert.equal(row.candidate.task.sourceSha,CANDIDATE);
   }
  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('CI comparison rejects a failed reviewer reread even when evaluation stays false',async()=>{
+ const untrusted=acceptance.replace('reviewer:true,evaluation:false','reviewer:false,evaluation:false');
+ const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
+  readSource:(sha,path)=>path.endsWith('council-evidence.js')?council:
+   sha===CANDIDATE?untrusted:null});
+ assert.equal(report.summary.candidatePassed,7);
+ assert.equal(report.summary.candidateFailures,1);
+ assert.equal(report.cases.find(c=>c.caseId==='review-proxy-never-certifies-heldout')
+  .candidate.event.outcome,'failed');
 });
 
 test('invalid sha and identical refs fail closed without any evaluation',async()=>{

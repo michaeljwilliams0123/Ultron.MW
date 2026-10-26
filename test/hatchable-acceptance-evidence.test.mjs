@@ -158,6 +158,18 @@ test('forged baseline reviews cannot manufacture an improvement',async()=>{
   candidatePullNumber:106,fetchImpl:forged}),/baseline-review-missing/);
 });
 
+test('reject string baseline PR numbers before issuing an ambiguous GitHub lookup',async()=>{
+ const original=fixtures();
+ const path='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/issues/106/comments?per_page=100';
+ const comments=await (await original(path)).json();
+ const modified=comments.map(comment=>({...comment,body:comment.body.replace(
+  '"baselinePullNumber":103','"baselinePullNumber":"103"')}));
+ await assert.rejects(observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures({
+   '/issues/106/comments?per_page=100':modified})}),
+  /review-proxy-manifest-missing/);
+});
+
 test('reject nonnumeric JSON pull number without ambiguous GitHub lookup',async()=>{
  await assert.rejects(observeAcceptanceEvidence({objectiveId:OBJECTIVE,
   candidatePullNumber:'106',fetchImpl:fixtures()}),/invalid-acceptance-request/);

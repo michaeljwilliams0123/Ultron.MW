@@ -36,7 +36,8 @@ function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha
   if(value?.schema!==MANIFEST_SCHEMA||value.objectiveId!==objectiveId||
      value.candidatePullNumber!==candidatePullNumber||
      value.candidateHeadSha!==candidateHeadSha||
-     !integer(value.baselinePullNumber)||value.baselinePullNumber===candidatePullNumber||
+     typeof value.baselinePullNumber!=='number'||!integer(value.baselinePullNumber)||
+     value.baselinePullNumber===candidatePullNumber||
      value.frozen!==true||value.setsDisjoint!==false||
      value.evaluator!=='github-review-actionable-findings-v1'||
      value.scoring!=='1/(1+actionable-comments)'||
@@ -281,5 +282,10 @@ export async function verifyPersistedAcceptanceEvidence({
    evaluation.candidateFailures===null&&evaluation.criticalRegressions===null;
   // Same-reviewer comment-count deltas cannot certify disjoint held-out improvement.
   return {reviewer:reviewer&&evaluationMatches,evaluation:false};
- }catch{return {reviewer:false,evaluation:false};}
+ }catch(error){
+  const code=/^github-status-\d{3}$/.test(String(error?.message||''))?
+   error.message:'readback-error';
+  console.warn('acceptance-reread-failed:'+code);
+  return {reviewer:false,evaluation:false};
+ }
 }

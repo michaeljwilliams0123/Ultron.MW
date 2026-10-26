@@ -22,7 +22,7 @@ const immutableManifest=Object.freeze({
  provenance:'PR source; not third-party pre-registered or blinded',
  independentEvaluator:false,heldOutCertified:false
 });
-function fixtures({edited=false,forged=false}={}){
+function fixtures({edited=false,forged=null}={}){
  const manifest={schema:'ultron.github-review-proxy-manifest.v1',
   objectiveId:OBJECTIVE,baselinePullNumber:103,candidatePullNumber:106,
   candidateHeadSha:HEAD,frozen:true,setsDisjoint:false,
@@ -37,8 +37,8 @@ function fixtures({edited=false,forged=false}={}){
    created_at:'2026-10-25T10:00:00Z',updated_at:edited?'2026-10-25T10:01:00Z':'2026-10-25T10:00:00Z',
    body:'<!-- ultron-review-proxy-manifest:v1\n'+JSON.stringify(manifest)+'\n-->'}],
   '/pulls/106/reviews?per_page=100':[{id:800,
-   user:forged?{login:'attacker',id:333,type:'User'}:
-    {login:'coderabbitai[bot]',id:136622811,type:'Bot'},
+   user:{login:forged==='login'?'attacker':'coderabbitai[bot]',
+    id:forged==='id'?333:136622811,type:forged==='type'?'User':'Bot'},
    state:'COMMENTED',commit_id:HEAD,
    submitted_at:'2026-10-25T10:05:00Z',body:reviewBody}],
   ['/commits/'+MAIN]:{commit:{tree:{sha:TREE}}},
@@ -68,10 +68,14 @@ const cases=[
   rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
    candidatePullNumber:106,fetchImpl:fixtures({edited:true})}),
    'review-proxy-manifest-missing')},
- {id:caseIds[2],needs:'acceptance',run:async({acceptance})=>
-  rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
-   candidatePullNumber:106,fetchImpl:fixtures({forged:true})}),
-   'candidate-review-missing')},
+ {id:caseIds[2],needs:'acceptance',run:async({acceptance})=>{
+  for(const forged of ['login','id','type']){
+   if(!await rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+    candidatePullNumber:106,fetchImpl:fixtures({forged})}),
+    'candidate-review-missing'))return false;
+  }
+  return true;
+ }},
  {id:caseIds[3],needs:'acceptance',run:async({acceptance})=>
   rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
    candidatePullNumber:106,sourceSha:'f'.repeat(40),fetchImpl:fixtures()}),
@@ -88,7 +92,7 @@ const cases=[
     independentlyObserved:false,evaluator:{kind:'advisory-proxy'},
     verifiedBy:{kind:'github-review-proxy'},
     candidateFailures:null,criticalRegressions:null}});
-  return r?.evaluation===false;
+  return r?.reviewer===true&&r.evaluation===false;
  }},
  {id:caseIds[5],needs:'council',run:async({council})=>{
   const r=council.evaluateCouncilEvidence({objectiveId:OBJECTIVE,
