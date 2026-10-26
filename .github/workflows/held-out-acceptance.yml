@@ -1,0 +1,43 @@
+name: Ultron held-out acceptance
+run-name: Ultron held-out acceptance ${{ inputs.baseline_sha }}..${{ inputs.candidate_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_sha:
+        description: Frozen baseline commit SHA
+        required: true
+        type: string
+      candidate_sha:
+        description: Frozen reviewed candidate commit SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  held-out:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Evaluate post-freeze seeded cases
+        env:
+          ULTRON_BASELINE_SHA: ${{ inputs.baseline_sha }}
+          ULTRON_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          ULTRON_EVALUATION_SEED: ${{ github.run_id }}
+          ULTRON_EVALUATION_REPORT: artifacts/seeded-held-out.json
+        run: node scripts/held-out-acceptance-evaluation.mjs
+      - name: Preserve seeded case outcomes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: seeded-held-out-${{ github.run_id }}
+          path: artifacts/seeded-held-out.json
+          if-no-files-found: error
+          retention-days: 30
