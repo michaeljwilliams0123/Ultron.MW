@@ -19,3 +19,8 @@ description = "Installation ID authorized only for the private Mahoraga reposito
 name = "ULTRON_MAHORAGA_GITHUB_APP_PRIVATE_KEY"
 required = false
 description = "Private signing key for the Mahoraga-scoped GitHub App."
+
+[[secret]]
+name = "ULTRON_EVENT_BRIDGE_HMAC_KEY"
+required = false
+description = "Private HMAC key for an authenticated Ultron event bridge; no unauthenticated GitHub webhook can bypass signed admission."
