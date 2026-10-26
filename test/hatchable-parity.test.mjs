@@ -40,6 +40,7 @@ const V2_RUNTIME_FILES = [
   'api/brain/command.js', 'api/brain/run.js', 'api/brain/tasks.js',
   'api/brain/tick.js', 'lib/brain-core.js', 'lib/brain-owner.js',
   'lib/brain-runner.js', 'lib/acceptance-evidence.js',
+  'lib/heldout-cases.js', 'lib/heldout-evidence.js',
   'mcp/ultron_control.js', 'mcp/ultron_queue.js',
   'mcp/ultron_remember.js', 'mcp/ultron_status.js',
   'migrations/0001_tasks.sql', 'migrations/0002_events.sql',

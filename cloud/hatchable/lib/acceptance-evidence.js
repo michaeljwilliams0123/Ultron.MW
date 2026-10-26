@@ -125,7 +125,7 @@ export async function observeAcceptanceEvidence({
   baselineScore:score(baselineActionable),candidateScore:score(candidateActionable)});
 }
 
-function eventDetails(observed){
+export function reviewEvidenceProjection(observed){
  const key='acceptance:'+observed.objectiveId+':'+observed.sourceSha;
  const baselineResult={schema:OUTCOME_SCHEMA,objectiveId:observed.objectiveId,
   sourceSha:observed.sourceSha,setId:observed.setId,caseId:'github-review-findings',
@@ -270,7 +270,7 @@ const PERSIST_SQL=`WITH baseline_task AS (
  LIMIT 1
 ), evaluation_insert AS (
  INSERT INTO brain_events(event_type,details)
- SELECT 'held-out-evaluation-observed',$13::jsonb || jsonb_build_object(
+ SELECT 'review-proxy-observed',$13::jsonb || jsonb_build_object(
   'manifestReceiptId',manifest.id,
   'taskIds',jsonb_build_array(baseline_task.id,candidate_task.id),
   'outcomeReceiptIds',jsonb_build_array(baseline_observed.id,candidate_observed.id))
@@ -281,7 +281,7 @@ const PERSIST_SQL=`WITH baseline_task AS (
  UNION ALL
  SELECT e.id FROM brain_events e,manifest,baseline_task,candidate_task,
   baseline_observed,candidate_observed
- WHERE e.event_type='held-out-evaluation-observed' AND e.details->>'adapterKey'=$14
+ WHERE e.event_type='review-proxy-observed' AND e.details->>'adapterKey'=$14
   AND e.details=($13::jsonb || jsonb_build_object(
    'manifestReceiptId',manifest.id,
    'taskIds',jsonb_build_array(baseline_task.id,candidate_task.id),
@@ -311,7 +311,7 @@ SELECT
 export async function persistAcceptanceEvidence({db,objectiveId,candidatePullNumber,
  fetchImpl=fetch}={}){
  const observed=await observeAcceptanceEvidence({objectiveId,candidatePullNumber,fetchImpl});
- const details=eventDetails(observed),short=observed.sourceSha.slice(0,12);
+ const details=reviewEvidenceProjection(observed),short=observed.sourceSha.slice(0,12);
  const params=[
   'heldout:'+objectiveId+':'+short+':baseline',JSON.stringify(details.baselineResult),
   'heldout:'+objectiveId+':'+short+':candidate',JSON.stringify(details.candidateResult),
@@ -350,15 +350,15 @@ function sameJson(left,right){
 
 /** Re-read GitHub so persisted adapter labels cannot make themselves trusted. */
 export async function verifyPersistedAcceptanceEvidence({
- objectiveId,sourceSha,identity,assessment,evaluation,fetchImpl=fetch
+ objectiveId,sourceSha,identity,assessment,fetchImpl=fetch
 }={}){
  const candidatePullNumber=integer(identity?.candidatePullNumber);
- if(!candidatePullNumber||candidatePullNumber!==evaluation?.candidatePullNumber||
-    candidatePullNumber!==assessment?.candidatePullNumber)return {reviewer:false,evaluation:false};
+ if(!candidatePullNumber||candidatePullNumber!==assessment?.candidatePullNumber)
+  return {reviewer:false,evaluation:false};
  try{
   const observed=await observeAcceptanceEvidence({objectiveId,candidatePullNumber,
    sourceSha,fetchImpl});
-  const expectedAssessment=eventDetails(observed).assessment;
+  const expectedAssessment=reviewEvidenceProjection(observed).assessment;
   const normalizedAssessment={...assessment,reviewer:{...assessment?.reviewer}};
   // Persistence adds this receipt link after assembling the expected assessment.
   delete normalizedAssessment.reviewer.identityReceiptId;
@@ -366,18 +366,7 @@ export async function verifyPersistedAcceptanceEvidence({
   const reviewer=assessmentMatches&&identity.reviewerId===observed.reviewerId&&
    identity.reviewId===observed.reviewId&&assessment.reviewId===observed.reviewId&&
    assessment.reviewer?.id===observed.reviewerId;
-  const evaluationMatches=evaluation.reviewId===observed.reviewId&&
-   evaluation.freezeCommentId===observed.freezeCommentId&&
-   evaluation.baselinePullNumber===observed.baselinePullNumber&&
-   evaluation.baselineScore===observed.baselineScore&&
-   evaluation.candidateScore===observed.candidateScore&&
-   evaluation.evidenceClass===PROXY_CLASS&&evaluation.setsDisjoint===false&&
-   evaluation.independentlyObserved===false&&
-   evaluation.evaluator?.kind==='advisory-proxy'&&
-   evaluation.verifiedBy?.kind==='github-review-proxy'&&
-   evaluation.candidateFailures===null&&evaluation.criticalRegressions===null;
-  // Same-reviewer comment-count deltas cannot certify disjoint held-out improvement.
-  return {reviewer:reviewer&&evaluationMatches,evaluation:false};
+  return {reviewer,evaluation:false};
  }catch(error){
   const code=/^github-status-\d{3}$/.test(String(error?.message||''))?
    error.message:'readback-error';

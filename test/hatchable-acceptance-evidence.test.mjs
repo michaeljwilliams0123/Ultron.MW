@@ -88,7 +88,7 @@ test('acceptance evidence persists the entire projection in one idempotent SQL s
  assert.match(calls[0].sql,/independent-reviewer-assessment/);
  assert.match(calls[0].sql,/held-out-evaluation-frozen/);
  assert.match(calls[0].sql,/\(\$5::jsonb->>'frozenAt'\)::timestamptz/);
- assert.match(calls[0].sql,/held-out-evaluation-observed/);
+ assert.match(calls[0].sql,/review-proxy-observed/);
  assert.match(calls[0].sql,/ON CONFLICT DO NOTHING/);
  assert.equal(calls[0].params.length,14);
  const assessment=JSON.parse(calls[0].params[10]);
@@ -128,11 +128,11 @@ test('council trust signal is granted only after a fresh external reread matches
   fetchImpl:fixtures()}),{reviewer:false,evaluation:false});
  assert.deepEqual(await verifyPersistedAcceptanceEvidence({objectiveId:OBJECTIVE,
   sourceSha:MAIN,identity,assessment,evaluation:{...evaluation,setsDisjoint:true},
-  fetchImpl:fixtures()}),{reviewer:false,evaluation:false});
+  fetchImpl:fixtures()}),{reviewer:true,evaluation:false});
  assert.deepEqual(await verifyPersistedAcceptanceEvidence({objectiveId:OBJECTIVE,
   sourceSha:MAIN,identity,assessment,evaluation:{...evaluation,
    evaluator:{kind:'independent-evaluator',id:identity.reviewerId}},
-  fetchImpl:fixtures()}),{reviewer:false,evaluation:false});
+  fetchImpl:fixtures()}),{reviewer:true,evaluation:false});
 });
 
 test('edited review-proxy manifest is rejected even when created before review',async()=>{

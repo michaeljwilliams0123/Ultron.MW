@@ -2,6 +2,7 @@ import {
  buildCouncilAssessmentReceipts,evaluateCouncilEvidence
 } from 'lib/council-evidence.js';
 import { verifyPersistedAcceptanceEvidence } from 'lib/acceptance-evidence.js';
+import { verifyPersistedHeldOutEvidence } from 'lib/heldout-evidence.js';
 
 const REPO = 'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const SITE = 'https://michaeljwilliams0123.github.io/Ultron.MW/';
@@ -173,9 +174,14 @@ export async function executeObjective(objective, {db,browser,task={}}){
   }
   let trustedAdapterEvidence={reviewer:false,evaluation:false};
   if(identityRows.length===1&&independentRows.length===1&&evaluationRows.length===1){
-   trustedAdapterEvidence=await verifyPersistedAcceptanceEvidence({objectiveId,
-    sourceSha,identity:identityRows[0].details,
-    assessment:independentRows[0].details,evaluation:evaluationRows[0].details});
+   const [reviewTrust,evaluationTrust]=await Promise.all([
+    verifyPersistedAcceptanceEvidence({objectiveId,sourceSha,
+     identity:identityRows[0].details,assessment:independentRows[0].details}),
+    verifyPersistedHeldOutEvidence({objectiveId,sourceSha,
+     evaluation:evaluationRows[0].details})
+   ]);
+   trustedAdapterEvidence={reviewer:reviewTrust.reviewer===true,
+    evaluation:evaluationTrust.evaluation===true};
   }
   const promotionGate=evaluateCouncilEvidence({
    objectiveId,sourceSha,receipts:[...assessmentReceipts,...independentReceipts],now:at,

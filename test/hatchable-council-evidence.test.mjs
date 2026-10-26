@@ -15,11 +15,15 @@ async function coreUnderTest(){
   import.meta.url),'utf8');
  const acceptanceUrl='data:text/javascript;base64,'+
   Buffer.from(acceptanceSource).toString('base64');
+ const heldoutUrl='data:text/javascript;base64,'+Buffer.from(
+  'export async function verifyPersistedHeldOutEvidence(){return {evaluation:false}};'
+ ).toString('base64');
  const coreSource=await readFile(new URL('../cloud/hatchable/lib/brain-core.js',
   import.meta.url),'utf8');
  const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource.replace(
   "from 'lib/council-evidence.js'","from '"+evidenceUrl+"'"
  ).replace("from 'lib/acceptance-evidence.js'","from '"+acceptanceUrl+"'"
+ ).replace("from 'lib/heldout-evidence.js'","from '"+heldoutUrl+"'"
  )).toString('base64');
  return import(coreUrl);
 }

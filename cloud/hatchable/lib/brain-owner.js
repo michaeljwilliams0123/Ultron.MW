@@ -1,5 +1,6 @@
 import { ALLOWED,CAPABILITIES } from 'lib/brain-core.js';
 import { persistAcceptanceEvidence } from 'lib/acceptance-evidence.js';
+import { persistHeldOutEvidence } from 'lib/heldout-evidence.js';
 const IDKEY=/^[a-z0-9-]{6,80}$/;
 export async function queueObjective({db,scheduler},objective,key){
  if(!ALLOWED.has(objective))return {ok:false,error:'unsupported-objective'};
@@ -56,8 +57,13 @@ export async function controlTask({db},action,id){
  return {ok:true,task:r.rows[0]};
 }
 export async function admitAcceptanceEvidence({db},objectiveId,pullNumber){
- try{return await persistAcceptanceEvidence({db,objectiveId,
-  candidatePullNumber:pullNumber});}
+ try{
+  const reviewer=await persistAcceptanceEvidence({db,objectiveId,
+   candidatePullNumber:pullNumber});
+  const evaluation=await persistHeldOutEvidence({db,objectiveId,
+   candidatePullNumber:pullNumber});
+  return {ok:true,reviewer:reviewer.receipts,evaluation:evaluation.receipts};
+ }
  catch(error){return {ok:false,error:String(error?.message||'acceptance-readback-failed')};}
 }
 export async function snapshot({db}){

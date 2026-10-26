@@ -9,15 +9,26 @@ const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource).toString('b
 async function moduleUnderTest(path,core=coreUrl){
  const source=await readFile(new URL('../cloud/hatchable/lib/'+path,import.meta.url),'utf8');
  const acceptance=`data:text/javascript;base64,${Buffer.from(
-  'export async function persistAcceptanceEvidence(){return {ok:true}};'
+  'export async function persistAcceptanceEvidence(){return {ok:true,receipts:{reviewer:true}}};'
+ ).toString('base64')}`;
+ const heldout=`data:text/javascript;base64,${Buffer.from(
+  'export async function persistHeldOutEvidence(){return {ok:true,receipts:{}}};'
  ).toString('base64')}`;
  const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'")
-  .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'");
+  .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'")
+  .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'");
  assert.notEqual(transformed,source,'test import alias should be replaced');
  return import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 }
 const {runOne}=await moduleUnderTest('brain-runner.js');
-const {queueObjective,controlTask,saveNote}=await moduleUnderTest('brain-owner.js');
+const {queueObjective,controlTask,saveNote,admitAcceptanceEvidence}=
+ await moduleUnderTest('brain-owner.js');
+
+test('cloud: owner acceptance combines independent review and held-out receipts',async()=>{
+ assert.deepEqual(await admitAcceptanceEvidence({db:{}},'issue-68-stage-1',106),{
+  ok:true,reviewer:{reviewer:true},evaluation:{}}
+ );
+});
 
 function fakeRunnerDb({complete=true,claimed=true,completionReject=false,failureStatus=null}={}){
  const statements=[];
@@ -276,9 +287,13 @@ async function realGithubRunner(){
   import.meta.url),'utf8');
  const acceptance='data:text/javascript;base64,'+
   Buffer.from(acceptanceSource).toString('base64');
+ const heldout='data:text/javascript;base64,'+Buffer.from(
+  'export async function verifyPersistedHeldOutEvidence(){return {evaluation:false}};'
+ ).toString('base64');
  const source=(await readFile(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8'))
   .replace("from 'lib/council-evidence.js'","from '"+evidence+"'")
-  .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'");
+  .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'")
+  .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'");
  const core='data:text/javascript;base64,'+Buffer.from(source).toString('base64');
  return moduleUnderTest('brain-runner.js',core);
 }
