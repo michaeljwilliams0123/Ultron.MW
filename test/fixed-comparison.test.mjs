@@ -62,7 +62,7 @@ test('CI comparison rejects a failed reviewer reread even when evaluation stays 
  const report=await compareSnapshots({baseSha:BASE,candidateSha:CANDIDATE,
   readSource:(sha,path)=>path.endsWith('council-evidence.js')?council:
    sha===CANDIDATE?untrusted:null});
- assert.equal(report.summary.candidatePassed,7);
+ assert.equal(report.summary.candidatePassed,9);
  assert.equal(report.summary.candidateFailures,1);
  assert.equal(report.cases.find(c=>c.caseId==='review-proxy-never-certifies-heldout')
   .candidate.event.outcome,'failed');
