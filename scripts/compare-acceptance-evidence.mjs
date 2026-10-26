@@ -11,7 +11,8 @@ const repoUrl='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const reviewBody='<!-- coderabbit-ai-generated:v1 -->\n**Actionable comments posted: 0**';
 const caseIds=Object.freeze([
  'valid-source-bound-review', 'edited-manifest-rejected',
- 'forged-reviewer-rejected', 'stale-main-rejected',
+ 'forged-reviewer-login-rejected', 'forged-reviewer-id-rejected',
+ 'forged-reviewer-type-rejected', 'stale-main-rejected',
  'review-proxy-never-certifies-heldout', 'uncertain-action-never-replayed',
  'stale-lease-held', 'duplicate-external-action-held'
 ]);
@@ -68,19 +69,23 @@ const cases=[
   rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
    candidatePullNumber:106,fetchImpl:fixtures({edited:true})}),
    'review-proxy-manifest-missing')},
- {id:caseIds[2],needs:'acceptance',run:async({acceptance})=>{
-  for(const forged of ['login','id','type']){
-   if(!await rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
-    candidatePullNumber:106,fetchImpl:fixtures({forged})}),
-    'candidate-review-missing'))return false;
-  }
-  return true;
- }},
+ {id:caseIds[2],needs:'acceptance',run:async({acceptance})=>
+  rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+   candidatePullNumber:106,fetchImpl:fixtures({forged:'login'})}),
+   'candidate-review-missing')},
  {id:caseIds[3],needs:'acceptance',run:async({acceptance})=>
+  rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+   candidatePullNumber:106,fetchImpl:fixtures({forged:'id'})}),
+   'candidate-review-missing')},
+ {id:caseIds[4],needs:'acceptance',run:async({acceptance})=>
+  rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
+   candidatePullNumber:106,fetchImpl:fixtures({forged:'type'})}),
+   'candidate-review-missing')},
+ {id:caseIds[5],needs:'acceptance',run:async({acceptance})=>
   rejectsWith(acceptance.observeAcceptanceEvidence({objectiveId:OBJECTIVE,
    candidatePullNumber:106,sourceSha:'f'.repeat(40),fetchImpl:fixtures()}),
    'source-sha-mismatch')},
- {id:caseIds[4],needs:'acceptance',run:async({acceptance})=>{
+ {id:caseIds[6],needs:'acceptance',run:async({acceptance})=>{
   const r=await acceptance.verifyPersistedAcceptanceEvidence({
    objectiveId:OBJECTIVE,sourceSha:MAIN,fetchImpl:fixtures(),
    identity:{candidatePullNumber:106,reviewId:800,reviewerId:'github:coderabbitai[bot]:136622811'},
@@ -94,7 +99,7 @@ const cases=[
     candidateFailures:null,criticalRegressions:null}});
   return r?.reviewer===true&&r.evaluation===false;
  }},
- {id:caseIds[5],needs:'council',run:async({council})=>{
+ {id:caseIds[7],needs:'council',run:async({council})=>{
   const r=council.evaluateCouncilEvidence({objectiveId:OBJECTIVE,
    sourceSha:MAIN,now:'2026-10-25T10:06:00Z',externalActions:[
     {id:'action-1',state:'uncertain',readback:'not-observed'}]});
@@ -102,13 +107,13 @@ const cases=[
    r.reasons.includes('external-action-readback-required')&&
    r.replayExternalActions.length===0;
  }},
- {id:caseIds[6],needs:'council',run:async({council})=>{
+ {id:caseIds[8],needs:'council',run:async({council})=>{
   const r=council.evaluateCouncilEvidence({objectiveId:OBJECTIVE,
    sourceSha:MAIN,now:'2026-10-25T10:06:00Z',lease:{state:'expired',tokenMatches:false}});
   return r.eligibleForProtectedPromotion===false&&
    r.reasons.includes('stale-or-mismatched-lease');
  }},
- {id:caseIds[7],needs:'council',run:async({council})=>{
+ {id:caseIds[9],needs:'council',run:async({council})=>{
   const r=council.evaluateCouncilEvidence({objectiveId:OBJECTIVE,
    sourceSha:MAIN,now:'2026-10-25T10:06:00Z',externalActions:[
     {id:'action-1',state:'not-started',readback:'not-observed'},
