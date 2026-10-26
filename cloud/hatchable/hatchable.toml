@@ -19,3 +19,8 @@ description = "Installation ID authorized only for the private Mahoraga reposito
 name = "ULTRON_MAHORAGA_GITHUB_APP_PRIVATE_KEY"
 required = false
 description = "Private signing key for the Mahoraga-scoped GitHub App."
+
+[[secret]]
+name = "ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK"
+required = false
+description = "Pinned ECDSA P-256 PUBLIC verification JWK for independently authorized, short-lived admin capability grants. No private key belongs in this runtime."
