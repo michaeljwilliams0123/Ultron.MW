@@ -35,7 +35,8 @@ export async function verifySignedEvent({
  try{data=JSON.parse(raw);}catch{reject('event-payload-invalid');}
  if(!data||typeof data!=='object'||Array.isArray(data)||
   data.schema!=='ultron.signed-event.v1'||
-  !SOURCES.has(data.source)||!IDENTIFIER.test(data.deliveryId||''))
+  !SOURCES.has(data.source)||typeof data.deliveryId!=='string'||
+  !IDENTIFIER.test(data.deliveryId))
   reject('event-payload-invalid');
  if(!ALLOWED.has(data.objective))reject('unsupported-event-objective');
  const digest=await subtle.digest('SHA-256',new TextEncoder().encode(raw));
@@ -52,6 +53,15 @@ export async function verifySignedEvent({
 export async function admitSignedEvent({db,scheduler,event}={}){
  if(!TRUSTED.has(event)||!db?.query||!scheduler?.now)
   reject('unverified-event');
+ // A replay is idempotent even when the queue is currently full.
+ const previous=await db.query(
+  "SELECT payload_sha256 FROM brain_signed_inbox WHERE source=$1 AND delivery_id=$2",
+  [event.source,event.deliveryId]);
+ if(previous?.rows?.length){
+  if(previous.rows.length!==1||previous.rows[0].payload_sha256!==event.payloadSha256)
+   reject('delivery-id-conflict');
+  return {ok:true,created:false,reason:'duplicate-delivery'};
+ }
  // Non-atomic capacity preflight: conservative for normal loads but needs a
  // serialized global budget before strict concurrent-queue-cap certification.
  const capacity=await db.query(
@@ -66,7 +76,7 @@ export async function admitSignedEvent({db,scheduler,event}={}){
  ), admitted AS (
   INSERT INTO brain_tasks(task_key,objective)
   SELECT accepted.task_key,$5::text FROM accepted
-  ON CONFLICT(task_key) DO NOTHING RETURNING id,task_key
+  RETURNING id,task_key
  ), receipt AS (
   INSERT INTO brain_events(task_id,event_type,details)
   SELECT id,'signed-webhook-admitted',
