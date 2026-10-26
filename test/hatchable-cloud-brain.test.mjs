@@ -6,9 +6,13 @@ const coreSource = `export const ALLOWED=new Set(['repo.inspect']);
 export const CAPABILITIES=[{id:'repo.inspect'}];
 export async function executeObjective(objective){return {objective,source:'fixture',sha:'fixed-test-sha'};}`;
 const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource).toString('base64');
+const stopUrl='data:text/javascript;base64,'+Buffer.from(
+ "export async function readExecutionControl(){return {paused:false,version:1};}"
+ ).toString('base64');
 async function moduleUnderTest(path,core=coreUrl){
  const source=await readFile(new URL('../cloud/hatchable/lib/'+path,import.meta.url),'utf8');
- const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'");
+ const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'")
+  .replace("from 'lib/runtime-control.js'","from '"+stopUrl+"'");
  assert.notEqual(transformed,source,'test import alias should be replaced');
  return import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 }
