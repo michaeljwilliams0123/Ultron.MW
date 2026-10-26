@@ -87,5 +87,7 @@ test('migration adds nonnegative persistent fencing state without erasing old re
  const migration=await readFile(migrationFile,'utf8');
  assert.match(migration,/ALTER TABLE brain_tasks ADD COLUMN IF NOT EXISTS fencing_generation BIGINT/);
  assert.match(migration,/CHECK\s*\(fencing_generation\s*>=\s*0\)/);
+ assert.match(migration,/CHECK\s*\(fencing_generation\s*>=\s*0\)\s+NOT VALID/);
+ assert.match(migration,/VALIDATE CONSTRAINT brain_tasks_fencing_generation_nonnegative/);
  assert.doesNotMatch(migration,/DROP TABLE|TRUNCATE|DELETE FROM brain_events/i);
 });
