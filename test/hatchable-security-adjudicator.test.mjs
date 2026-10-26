@@ -89,7 +89,10 @@ test('one-time consumption writes an event atomically and rejects replay',async(
   calls.push({sql,params});
   return {rows:calls.length===1?[{grant_id:base.grantId,receipt_id:101}]:[]};
  }};
- const verified=await check();
+ const at=new Date();
+ const live={...base,notBefore:new Date(at.getTime()-60_000).toISOString(),
+  expiresAt:new Date(at.getTime()+10*60_000).toISOString()};
+ const verified=await check(live,request,at.toISOString());
  const first=await consumeDelegatedGrant({db,verifiedGrant:verified});
  assert.deepEqual(first,{ok:true,grantId:base.grantId,receiptId:101});
  assert.match(calls[0].sql,/ON CONFLICT\s*\(grant_id\)\s*DO NOTHING/);
