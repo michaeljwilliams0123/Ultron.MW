@@ -20,7 +20,8 @@ function normalizeCases(cases){
  if(!Array.isArray(cases)||cases.length!==100)reject('invalid-case-count');
  const seen=new Set();
  for(const item of cases){
-  if(!item||!CASE_ID.test(item.caseId||'')||seen.has(item.caseId)||
+  if(!item||typeof item.caseId!=='string'||!CASE_ID.test(item.caseId)||
+     seen.has(item.caseId)||
      typeof item.critical!=='boolean')reject('duplicate-case-id');
   seen.add(item.caseId);
  }
@@ -28,21 +29,22 @@ function normalizeCases(cases){
  validDistribution(cases,'dimension',METRICS,'invalid-case-metric-distribution');
  return [...cases].map(c=>({
   caseId:c.caseId,domain:c.domain,dimension:c.dimension,critical:c.critical
- })).sort((a,b)=>a.caseId.localeCompare(b.caseId));
+ })).sort((a,b)=>a.caseId<b.caseId?-1:a.caseId>b.caseId?1:0);
 }
-function readOutcomes(variant,cases,label){
+function readOutcomes(variant,cases,label,receipts){
  if(!variant||!SHA.test(variant.sourceSha||''))reject('invalid-source-pair');
  if(!Array.isArray(variant.outcomes)||variant.outcomes.length!==100)
   reject('incomplete-'+label+'-outcomes');
- const seenIds=new Set(),receipts=new Set(),results=new Map();
+ const seenIds=new Set(),results=new Map();
  const validCases=new Set(cases.map(c=>c.caseId));
  for(const row of variant.outcomes){
   if(!row||typeof row.caseId!=='string'||!validCases.has(row.caseId)||
      seenIds.has(row.caseId)||!Number.isSafeInteger(row.receiptId)||
-     row.receiptId<=0||receipts.has(row.receiptId)||typeof row.passed!=='boolean')
+     row.receiptId<=0||typeof row.passed!=='boolean')
    reject('incomplete-'+label+'-outcomes');
   if(row.sourceSha!==variant.sourceSha)
    reject(label+'-source-mismatch');
+  if(receipts.has(row.receiptId))reject('duplicate-receipt-id');
   seenIds.add(row.caseId);receipts.add(row.receiptId);
   results.set(row.caseId,row.passed);
  }
@@ -73,8 +75,9 @@ export async function evaluateSharedEvaluation({
  const normalized=normalizeCases(cases);
  if(!SHA.test(baseline?.sourceSha||'')||!SHA.test(candidate?.sourceSha||'')||
     baseline.sourceSha===candidate.sourceSha)reject('invalid-source-pair');
- const before=readOutcomes(baseline,normalized,'baseline');
- const after=readOutcomes(candidate,normalized,'candidate');
+ const receipts=new Set();
+ const before=readOutcomes(baseline,normalized,'baseline',receipts);
+ const after=readOutcomes(candidate,normalized,'candidate',receipts);
  const baselineScore=weightedScore(normalized,before);
  const candidateScore=weightedScore(normalized,after);
  const improvementPoints=Math.round((candidateScore-baselineScore+Number.EPSILON)*100)/100;
