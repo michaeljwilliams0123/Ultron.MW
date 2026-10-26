@@ -16,10 +16,16 @@ export default async function(req,res){
   return res.status(503).json({schema:'ultron.authority-admission.v1',
    ok:false,error:'adjudicator-unconfigured'});
  }
+ let verified;
  try{
-  const verified=await verifyDelegatedGrant({
+  verified=await verifyDelegatedGrant({
    envelope:req.body?.envelope,request:req.body?.request,publicJwk
   });
+ }catch{
+  return res.status(403).json({schema:'ultron.authority-admission.v1',
+   ok:false,error:'authority-not-verified'});
+ }
+ try{
   const result=await consumeDelegatedGrant({db,verifiedGrant:verified});
   if(!result.ok)return res.status(result.error==='grant-replayed'?409:403).json({
    schema:'ultron.authority-admission.v1',ok:false,error:result.error
@@ -29,8 +35,11 @@ export default async function(req,res){
    schema:'ultron.authority-admission.v1',ok:true,
    grantId:result.grantId,receiptId:result.receiptId,status:'admitted-not-executed'
   });
- }catch{
-  return res.status(403).json({schema:'ultron.authority-admission.v1',
-   ok:false,error:'authority-not-verified'});
+ }catch(error){
+  // Log only the trusted short grant ID and error category, never signed data.
+  console.warn('authority-ledger-unavailable:'+verified.grantId+':'+
+   String(error?.code||'driver-failure').slice(0,24));
+  return res.status(503).json({schema:'ultron.authority-admission.v1',
+   ok:false,error:'authority-ledger-unavailable'});
  }
 }
