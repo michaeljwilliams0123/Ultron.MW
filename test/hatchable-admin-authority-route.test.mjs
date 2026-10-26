@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
-async function loadEndpoint({publicKey='{"kty":"EC","crv":"P-256"}',admitted=true}={}){
+async function loadEndpoint({publicKey='{"kty":"EC","crv":"P-256"}',admitted=true,consumeThrows=false}={}){
  const raw=await readFile(new URL('../cloud/hatchable/api/brain/authority.js',import.meta.url),'utf8');
  const b64=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64');
  const platform=b64(`export const db={query:async()=>({rows:[]})};
@@ -12,6 +12,7 @@ export const config={get:async()=>globalThis.__testAdjudicator.publicKey};`);
  return {authorized:true,grantId:'signed-grant-test-123'};
 }
 export async function consumeDelegatedGrant(){
+ if(globalThis.__testAdjudicator.consumeThrows)throw Error('simulated-driver-unavailable');
  return globalThis.__testAdjudicator.admitted
  ?{ok:true,grantId:'signed-grant-test-123',receiptId:55}
  :{ok:false,error:'grant-replayed'};
@@ -19,7 +20,7 @@ export async function consumeDelegatedGrant(){
  const source=raw.replace("from 'hatchable'","from '"+platform+"'")
   .replace("from 'lib/security-adjudicator.js'","from '"+validator+"'");
  const module=await import(b64(source)+'#'+Math.random());
- globalThis.__testAdjudicator={publicKey,admitted};
+ globalThis.__testAdjudicator={publicKey,admitted,consumeThrows};
  return module;
 }
 function response(){
@@ -60,5 +61,13 @@ test('replayed grant is a conflict and does not gain execution authority',async(
  const r=await e.default({body:{request:{operation:'repo.inspect'},envelope:{}}},response());
  assert.equal(r.status,409);
  assert.equal(r.body.error,'grant-replayed');
+ delete globalThis.__testAdjudicator;
+});
+
+test('database consumption failure reports temporary unavailability, not invalid identity',async()=>{
+ const e=await loadEndpoint({consumeThrows:true});
+ const r=await e.default({body:{request:{operation:'repo.inspect'},envelope:{}}},response());
+ assert.equal(r.status,503);
+ assert.equal(r.body.error,'authority-ledger-unavailable');
  delete globalThis.__testAdjudicator;
 });
