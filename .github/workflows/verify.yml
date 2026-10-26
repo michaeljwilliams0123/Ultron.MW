@@ -28,3 +28,33 @@ jobs:
         run: bash scripts/lint-workflows.sh
       - name: Syntax and regression checks
         run: node scripts/verify.mjs
+  fixed-comparison:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Evaluate fixed cases on exact base and candidate sources
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --test test/fixed-comparison.test.mjs
+          node scripts/compare-acceptance-evidence.mjs "$BASE_SHA" "$CANDIDATE_SHA" artifacts/fixed-comparison.json
+      - name: Preserve case-level task and event readbacks
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fixed-comparison-${{ github.event.pull_request.head.sha }}
+          path: artifacts/fixed-comparison.json
+          if-no-files-found: ignore
+          retention-days: 7
