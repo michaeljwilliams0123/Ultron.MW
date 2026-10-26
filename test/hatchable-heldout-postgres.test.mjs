@@ -39,6 +39,10 @@ function fixture({freezeId=700,frozenAt='2026-10-26T10:00:00Z',titleBase=BASE}={
    user:{login:'michaeljwilliams0123'},author_association:'OWNER',
    created_at:frozenAt,updated_at:frozenAt,
    body:'<!-- ultron-seeded-held-out-manifest:v1\n'+JSON.stringify(manifest)+'\n-->'}],
+  '/pulls/106/reviews?per_page=100':[{id:800,
+   user:{login:'coderabbitai[bot]',id:136622811,type:'Bot'},state:'COMMENTED',
+   commit_id:HEAD,submitted_at:'2026-10-26T10:05:00Z',
+   body:'<!-- coderabbit-ai-generated:v1 -->\n**Actionable comments posted: 0**'}],
   ['/commits/'+MAIN]:{commit:{tree:{sha:TREE}}},
   ['/commits/'+HEAD]:{commit:{tree:{sha:TREE}}},
   ['/contents/cloud/hatchable/lib/heldout-cases.js?ref='+HEAD]:

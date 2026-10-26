@@ -41,6 +41,10 @@ function fixtures(overrides={}){
   '/pulls/106':{number:106,merged:true,merge_commit_sha:MAIN,
    user:{login:'michaeljwilliams0123'},head:{sha:HEAD},base:{sha:BASE}},
   '/issues/106/comments?per_page=100':[manifest()],
+  '/pulls/106/reviews?per_page=100':[{id:800,
+   user:{login:'coderabbitai[bot]',id:136622811,type:'Bot'},state:'COMMENTED',
+   commit_id:HEAD,submitted_at:'2026-10-26T10:05:00Z',
+   body:'<!-- coderabbit-ai-generated:v1 -->\n**Actionable comments posted: 0**'}],
   ['/commits/'+MAIN]:{commit:{tree:{sha:TREE}}},
   ['/commits/'+HEAD]:{commit:{tree:{sha:TREE}}},
   ['/contents/cloud/hatchable/lib/heldout-cases.js?ref='+HEAD]:
@@ -79,6 +83,12 @@ test('seeded adapter rejects edited manifests and wrongly parameterized runs',as
   candidatePullNumber:106,fetchImpl:fixtures({
    '/issues/106/comments?per_page=100':[{...manifest(),
     updated_at:'2026-10-26T10:01:00Z'}]})}),/seeded-heldout-manifest-missing/);
+ await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures({
+   '/pulls/106/reviews?per_page=100':[{id:800,
+    user:{login:'coderabbitai[bot]',id:136622811,type:'Bot'},state:'COMMENTED',
+    commit_id:HEAD,submitted_at:'2026-10-26T09:59:00Z',
+    body:'<!-- coderabbit-ai-generated:v1 -->'}]})}),/heldout-review-missing/);
  const path='/actions/runs?head_sha='+MAIN+'&event=workflow_dispatch&per_page=100';
  await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,
   candidatePullNumber:106,fetchImpl:fixtures({[path]:{total_count:1,workflow_runs:[{

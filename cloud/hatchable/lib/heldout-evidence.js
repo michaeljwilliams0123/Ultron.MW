@@ -2,6 +2,7 @@ import {HELDOUT_CASE_IDS,evaluateHeldOutSource,heldOutScore} from 'lib/heldout-c
 
 const REPO='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const OWNER='michaeljwilliams0123';
+const REVIEWER={login:'coderabbitai[bot]',id:136622811,type:'Bot'};
 const SHA40=/^[a-f0-9]{40}$/;
 const OBJECTIVE=/^[a-z0-9][a-z0-9-]{5,79}$/;
 const MANIFEST_SCHEMA='ultron.seeded-held-out-manifest.v1';
@@ -57,6 +58,18 @@ function manifestFrom(comments,{objectiveId,pullNumber,headSha,baseSha}){
   'seeded-heldout-manifest-missing');
  return matches[0];
 }
+function independentReviews(reviews,{headSha,after}){
+ if(!Array.isArray(reviews)||reviews.length>=100)throw Error('invalid-heldout-reviews');
+ return reviews.filter(review=>{
+  const submitted=iso(review?.submitted_at),body=typeof review?.body==='string'?
+   review.body:'';
+  return integer(review?.id)&&review.user?.login===REVIEWER.login&&
+   review.user?.id===REVIEWER.id&&review.user?.type===REVIEWER.type&&
+   ['COMMENTED','APPROVED','CHANGES_REQUESTED'].includes(review.state)&&
+   review.commit_id===headSha&&body.includes('<!-- coderabbit-ai-generated:v1 -->')&&
+   submitted&&Date.parse(submitted)>Date.parse(after);
+ });
+}
 
 /** Reproduce the externally seeded exact cases from immutable GitHub source. */
 export async function observeHeldOutEvidence({
@@ -65,9 +78,10 @@ export async function observeHeldOutEvidence({
  if(!OBJECTIVE.test(objectiveId||'')||typeof candidatePullNumber!=='number'||
     !integer(candidatePullNumber)||(sourceSha!==null&&!SHA40.test(sourceSha)))
   throw Error('invalid-heldout-request');
- const [ref,candidate,comments]=await Promise.all([
+ const [ref,candidate,comments,reviews]=await Promise.all([
   request('/git/ref/heads/main',fetchImpl),request('/pulls/'+candidatePullNumber,fetchImpl),
-  request('/issues/'+candidatePullNumber+'/comments?per_page=100',fetchImpl)
+  request('/issues/'+candidatePullNumber+'/comments?per_page=100',fetchImpl),
+  request('/pulls/'+candidatePullNumber+'/reviews?per_page=100',fetchImpl)
  ]);
  const currentSha=ref?.object?.sha;
  if(!SHA40.test(currentSha||'')||(sourceSha&&sourceSha!==currentSha))
@@ -78,6 +92,11 @@ export async function observeHeldOutEvidence({
   throw Error('heldout-candidate-not-current-merged-pr');
  const {comment,value:manifest}=manifestFrom(comments,{objectiveId,
   pullNumber:candidatePullNumber,headSha:candidate.head.sha,baseSha:candidate.base.sha});
+ const reviewed=independentReviews(reviews,{headSha:candidate.head.sha,
+  after:comment.created_at});
+ if(reviewed.length!==1)throw Error(reviewed.length?'ambiguous-heldout-review':
+  'heldout-review-missing');
+ const review=reviewed[0];
  const [currentCommit,headCommit,generatorFile,workflowFile,baselineFile,candidateFile,runs]=
   await Promise.all([
    request('/commits/'+currentSha,fetchImpl),request('/commits/'+candidate.head.sha,fetchImpl),
@@ -116,6 +135,7 @@ export async function observeHeldOutEvidence({
  return Object.freeze({objectiveId,sourceSha:currentSha,candidatePullNumber,
   candidateHeadSha:candidate.head.sha,baselineSha:candidate.base.sha,
   freezeCommentId:comment.id,frozenAt:iso(comment.created_at),evaluationRunId:run.id,
+  independentReviewId:review.id,reviewedAt:iso(review.submitted_at),
   evaluatorId:'github-actions:'+run.id,
   setId:'seeded-heldout-'+candidate.base.sha.slice(0,12)+'-'+candidatePullNumber,
   baselineCases,candidateCases,baselineScore:heldOutScore(baselineCases),
@@ -144,6 +164,7 @@ function projection(observed){
   sourceSha:observed.sourceSha,setId:observed.setId,frozen:true,setsDisjoint:true,
   freezeCommentId:observed.freezeCommentId,frozenAt:observed.frozenAt,
   baselineSha:observed.baselineSha,candidateHeadSha:observed.candidateHeadSha,
+  independentReviewId:observed.independentReviewId,reviewedAt:observed.reviewedAt,
   evaluationRunId:observed.evaluationRunId,seedSource:'github.run_id',
   adapterKey:key+':manifest'},evaluation:{objectiveId:observed.objectiveId,
   sourceSha:observed.sourceSha,runtimeSourceSha:observed.sourceSha,

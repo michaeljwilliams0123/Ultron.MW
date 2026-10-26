@@ -44,11 +44,14 @@ The deployed adapter independently verifies all of the following:
 1. current `main` is the candidate PR's merge commit and has the reviewed head's
    exact tree;
 2. the frozen comment is owner-authored, unedited, unique, and matches the PR;
-3. the generator and workflow blobs still match their frozen Git SHAs;
-4. exactly one successful dispatch has the exact baseline/candidate title,
+3. exactly one pinned-identity CodeRabbit review targets the exact candidate head
+   after the frozen comment; known case families do not substitute for this
+   post-freeze review ordering;
+4. the generator and workflow blobs still match their frozen Git SHAs;
+5. exactly one successful dispatch has the exact baseline/candidate title,
    current-main SHA, held-out job, and evaluation step;
-5. regenerating the run-ID-seeded cases from GitHub source reproduces the scores;
-6. one PostgreSQL statement commits the frozen manifest, twenty tasks, twenty
+6. regenerating the run-ID-seeded cases from GitHub source reproduces the scores;
+7. one PostgreSQL statement commits the frozen manifest, twenty tasks, twenty
    observed outcomes, and the evaluation event, with exact idempotent readback.
 
 Every council run performs the GitHub and Actions reread again before trusting
