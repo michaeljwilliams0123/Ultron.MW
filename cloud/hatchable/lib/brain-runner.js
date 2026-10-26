@@ -2,7 +2,9 @@ import { executeObjective } from 'lib/brain-core.js';
 
 // Each transition and its authoritative receipt must commit in ONE SQL statement.
 // This prevents receipt/state divergence on interrupted database calls.
-export async function runOne({db,browser}){
+export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
+ if(!Number.isSafeInteger(heartbeatIntervalMs)||heartbeatIntervalMs<1||heartbeatIntervalMs>20_000)
+  throw Error('invalid-heartbeat-interval');
  const recovered=await db.query(`WITH moved AS (
    UPDATE brain_tasks SET status='queued',owner_token=NULL,lease_until=NULL,updated_at=now()
    WHERE status='leased' AND lease_until < now() AND attempts < max_attempts RETURNING id
@@ -25,23 +27,54 @@ export async function runOne({db,browser}){
    ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED
  ), moved AS (
    UPDATE brain_tasks SET status='leased',attempts=attempts+1,owner_token=$1,
-     lease_until=now()+interval '3 minutes',updated_at=now()
-   WHERE id IN (SELECT id FROM selected) RETURNING id,task_key,objective,attempts
+     fencing_generation=fencing_generation+1,
+     lease_until=now()+interval '90 seconds',updated_at=now()
+   WHERE id IN (SELECT id FROM selected) RETURNING id,task_key,objective,attempts,fencing_generation
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type,details)
    SELECT id,'claimed',jsonb_build_object('objective',objective,'attempt',attempts)
    FROM moved RETURNING task_id
- ) SELECT id,task_key,objective,attempts FROM moved`,[token]);
+ ) SELECT id,task_key,objective,attempts,fencing_generation FROM moved`,[token]);
  const task=claim.rows[0];
  if(!task)return {status:'idle',recovered:recovered.rows.length,blocked:blocked.rows.length};
- let result;
+
+ // A 20-second renewable heartbeat prevents an active objective from being
+ // reclaimed merely because the original 90-second lease elapsed.
+ // Every heartbeat is fenced by BOTH the opaque token and monotonic generation.
+ let heartbeatPending=null;
+ let heartbeatLost=false;
+ const pulse=()=>{
+  if(heartbeatPending||heartbeatLost)return;
+  heartbeatPending=db.query(`WITH moved AS (
+    UPDATE brain_tasks SET lease_until=now()+interval '90 seconds',updated_at=now()
+    WHERE id=$1 AND owner_token=$2 AND fencing_generation=$3
+      AND status='leased' AND lease_until>now() RETURNING id
+   ), receipt AS (
+    INSERT INTO brain_events(task_id,event_type,details)
+    SELECT id,'lease-heartbeat',jsonb_build_object('fencingGeneration',$3::bigint)
+    FROM moved RETURNING task_id
+   ) SELECT id FROM moved`,[task.id,token,task.fencing_generation])
+   .then(r=>{if(r?.rows?.length!==1)heartbeatLost=true;})
+   .catch(()=>{heartbeatLost=true;})
+   .finally(()=>{heartbeatPending=null;});
+ };
+ const timer=setInterval(pulse,heartbeatIntervalMs);
+ let result,executionError;
  try{
-  // In v2 these objectives are read-only/advisory. Any future write objective
-  // requires a durable action checkpoint before it can use this retry policy.
+  // Future external-write objectives must still use a durable checkpoint and
+  // provider-side preconditions; cooperative leases alone are not exactly-once.
   result=await executeObjective(task.objective,{db,browser,task:{
-   id:task.id,taskKey:task.task_key,attempt:task.attempts
+   id:task.id,taskKey:task.task_key,attempt:task.attempts,
+   fencingGeneration:task.fencing_generation
   }});
- }catch(e){
+ }catch(e){executionError=e;
+ }finally{
+  clearInterval(timer);
+  if(heartbeatPending)await heartbeatPending;
+ }
+ if(heartbeatLost)return {status:'lost-lease',task_id:task.id,objective:task.objective};
+ if(executionError){
+  const e=executionError;
   const reason=String(e?.message||'execution-failed').replace(/[^a-z0-9-_]/gi,'-').slice(0,70);
   const failed=await db.query(`WITH moved AS (
     UPDATE brain_tasks SET
@@ -49,12 +82,13 @@ export async function runOne({db,browser}){
       lease_until=CASE WHEN attempts>=max_attempts THEN NULL ELSE now()+interval '15 minutes' END,
       owner_token=NULL,updated_at=now()
     WHERE id=$1 AND owner_token=$2 AND status='leased' AND lease_until>now()
+      AND fencing_generation=$4
     RETURNING id,objective,status
   ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'failed',jsonb_build_object('objective',objective,'reason',$3::text,'next_status',status)
     FROM moved RETURNING task_id
-  ) SELECT id,status FROM moved`,[task.id,token,reason]);
+  ) SELECT id,status FROM moved`,[task.id,token,reason,task.fencing_generation]);
   if(failed.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};
   return {status:'failed',task_id:task.id,objective:task.objective,reason,next_status:failed.rows[0].status};
  }
@@ -63,6 +97,7 @@ export async function runOne({db,browser}){
     UPDATE brain_tasks SET status='done',last_result=$1::jsonb,owner_token=NULL,
       lease_until=NULL,updated_at=now()
     WHERE id=$2 AND owner_token=$3 AND status='leased' AND lease_until>now()
+      AND fencing_generation=$6
     RETURNING id,objective
   ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
@@ -74,7 +109,8 @@ export async function runOne({db,browser}){
     FROM moved CROSS JOIN LATERAL jsonb_array_elements($5::jsonb) AS item
     WHERE moved.objective='council.review' RETURNING task_id
   ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown',
-   JSON.stringify(Array.isArray(result.assessment_receipts)?result.assessment_receipts:[])]);
+   JSON.stringify(Array.isArray(result.assessment_receipts)?result.assessment_receipts:[]),
+   task.fencing_generation]);
   if(done.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};
   return {status:'done',task_id:task.id,objective:task.objective,summary:result};
  }catch(_error){

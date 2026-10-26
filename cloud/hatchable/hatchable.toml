@@ -24,3 +24,8 @@ description = "Private signing key for the Mahoraga-scoped GitHub App."
 name = "ULTRON_EVENT_BRIDGE_HMAC_KEY"
 required = false
 description = "Private HMAC key for an authenticated Ultron event bridge; no unauthenticated GitHub webhook can bypass signed admission."
+
+[[secret]]
+name = "ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK"
+required = false
+description = "Pinned ECDSA P-256 PUBLIC verification JWK for independently authorized, short-lived admin capability grants. No private key belongs in this runtime."
