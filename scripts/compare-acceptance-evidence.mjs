@@ -164,6 +164,7 @@ export async function compareSnapshots({baseSha,candidateSha,readSource,outputPa
   candidateFailures:candidate.filter(x=>!x.passed).length};
  const report={schema:'ultron.fixed-comparison-report.v1',objectiveId:OBJECTIVE,
   baseSha,candidateSha,manifest:immutableManifest,
+  evaluatorSourceSha256:digest(await readFile(new URL(import.meta.url))),
   evidenceKind:'CI-only-deterministic-task-event-readbacks',
   independentlyObserved:false,heldOutCertified:false,
   eligibleForProtectedPromotion:false,cases:casesWithReceipts,summary};
