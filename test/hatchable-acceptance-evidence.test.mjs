@@ -304,3 +304,45 @@ test('persisted reviewer identity pull number must be a JSON number, not a coerc
    'Rejected coerced identity '+JSON.stringify(disguised));
  }
 });
+
+
+test('acceptance keyed ledger readbacks require complete effective payload and task identity',async()=>{
+ let sql;
+ const db={query:async statement=>{
+  sql=statement;
+  return {rows:[{identity_id:1,assessment_id:2,manifest_id:3,evaluation_id:4,
+   baseline_task_id:5,candidate_task_id:6,baseline_receipt_id:7,candidate_receipt_id:8}]};
+ }};
+ await persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures()});
+ const part=(current,next)=>{
+  const start=sql.indexOf('), '+current+' AS (');
+  const end=next?sql.indexOf('), '+next+' AS (',start+4):sql.indexOf(')\nSELECT',start+4);
+  assert.ok(start>=0&&end>start,'CTE boundaries: '+current);
+  return sql.slice(start,end);
+ };
+ // An adapter key alone must never select an old receipt with changed evidence.
+ assert.match(part('manifest','identity_insert'),/e\.details\s*=\s*\(\$5::jsonb\s*\|\|/);
+ assert.match(part('manifest','identity_insert'),/baselineTaskId/);
+ assert.match(part('manifest','identity_insert'),/candidateTaskId/);
+ assert.match(part('identity','baseline_observed_insert'),/e\.details\s*=\s*\$7::jsonb/);
+ assert.match(part('baseline_observed','candidate_observed_insert'),/e\.task_id\s*=\s*baseline_task\.id/);
+ assert.match(part('baseline_observed','candidate_observed_insert'),/e\.details\s*=\s*jsonb_build_object/);
+ assert.match(part('candidate_observed','assessment_insert'),/e\.task_id\s*=\s*candidate_task\.id/);
+ assert.match(part('candidate_observed','assessment_insert'),/e\.details\s*=\s*jsonb_build_object/);
+ assert.match(part('assessment','evaluation_insert'),/e\.task_id\s*=\s*candidate_task\.id/);
+ assert.match(part('assessment','evaluation_insert'),/e\.details\s*=\s*\(\$11::jsonb\s*\|\|/);
+ assert.match(part('assessment','evaluation_insert'),/identityReceiptId/);
+ assert.match(part('evaluation',null),/e\.details\s*=\s*\(\$13::jsonb\s*\|\|/);
+ assert.match(part('evaluation',null),/outcomeReceiptIds/);
+ // A mismatch must roll back the entire single statement, not commit partial CTE writes.
+ assert.match(sql,/COUNT\(\*\)\s+FROM\s+projection/);
+ assert.match(sql,/consistency_guard/);
+});
+
+test('PostgreSQL rollback guard maps conflicting keyed receipts to explicit admission conflict',async()=>{
+ const conflict=Object.assign(new Error('division by zero'),{code:'22012'});
+ const db={query:async()=>{throw conflict;}};
+ await assert.rejects(persistAcceptanceEvidence({db,objectiveId:OBJECTIVE,
+  candidatePullNumber:106,fetchImpl:fixtures()}),/acceptance-ledger-conflict/);
+});
