@@ -12,8 +12,7 @@ const MARKER=/<!-- ultron-review-proxy-manifest:v1\s*\n([\s\S]*?)\n-->/;
 const HEADERS={Accept:'application/vnd.github+json','User-Agent':'UltronMW-Acceptance-Adapter'};
 
 function integer(value){
- const n=Number(value);
- return Number.isSafeInteger(n)&&n>0?n:null;
+ return Number.isSafeInteger(value)&&value>0?value:null;
 }
 function iso(value){
  if(typeof value!=='string')return null;
