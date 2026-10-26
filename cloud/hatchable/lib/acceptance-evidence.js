@@ -25,7 +25,7 @@ async function get(path,fetchImpl){
  return response.json();
 }
 function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha}){
- if(!Array.isArray(comments))throw Error('invalid-manifest-comments');
+ if(!Array.isArray(comments)||comments.length>=100)throw Error('invalid-manifest-comments');
  const matches=[];
  for(const comment of comments){
   const marker=typeof comment?.body==='string'?comment.body.match(MARKER):null;
@@ -49,7 +49,7 @@ function manifestFrom(comments,{objectiveId,candidatePullNumber,candidateHeadSha
  return matches[0];
 }
 function generatedReviews(reviews,{headSha=null,after=null}={}){
- if(!Array.isArray(reviews))throw Error('invalid-review-response');
+ if(!Array.isArray(reviews)||reviews.length>=100)throw Error('invalid-review-response');
  return reviews.filter(review=>{
   const body=typeof review?.body==='string'?review.body:'';
   const submitted=iso(review?.submitted_at);
@@ -308,6 +308,17 @@ export async function persistAcceptanceEvidence({db,objectiveId,candidatePullNum
  return {ok:true,observed,receipts:saved.rows[0]};
 }
 
+// Compare complete JSONB projections without relying on PostgreSQL's object-key order.
+function sameJson(left,right){
+ if(left===right)return true;
+ if(Array.isArray(left)||Array.isArray(right))
+  return Array.isArray(left)&&Array.isArray(right)&&
+   left.length===right.length&&left.every((item,i)=>sameJson(item,right[i]));
+ if(!left||!right||typeof left!=='object'||typeof right!=='object')return false;
+ const a=Object.keys(left).sort(),b=Object.keys(right).sort();
+ return a.length===b.length&&a.every((key,i)=>key===b[i]&&sameJson(left[key],right[key]));
+}
+
 /** Re-read GitHub so persisted adapter labels cannot make themselves trusted. */
 export async function verifyPersistedAcceptanceEvidence({
  objectiveId,sourceSha,identity,assessment,evaluation,fetchImpl=fetch
@@ -318,7 +329,12 @@ export async function verifyPersistedAcceptanceEvidence({
  try{
   const observed=await observeAcceptanceEvidence({objectiveId,candidatePullNumber,
    sourceSha,fetchImpl});
-  const reviewer=identity.reviewerId===observed.reviewerId&&
+  const expectedAssessment=eventDetails(observed).assessment;
+  const normalizedAssessment={...assessment,reviewer:{...assessment?.reviewer}};
+  // Persistence adds this receipt link after assembling the expected assessment.
+  delete normalizedAssessment.reviewer.identityReceiptId;
+  const assessmentMatches=sameJson(normalizedAssessment,expectedAssessment);
+  const reviewer=assessmentMatches&&identity.reviewerId===observed.reviewerId&&
    identity.reviewId===observed.reviewId&&assessment.reviewId===observed.reviewId&&
    assessment.reviewer?.id===observed.reviewerId;
   const evaluationMatches=evaluation.reviewId===observed.reviewId&&
