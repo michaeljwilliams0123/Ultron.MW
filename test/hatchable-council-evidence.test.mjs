@@ -426,3 +426,25 @@ test('hosted council rejects a main change during its evaluation',async()=>{
   }),/main-moved-during-council-evaluation/);
  }finally{globalThis.fetch=originalFetch;}
 });
+
+
+test('seeded property-case evidence cannot pass independent learning promotion',()=>{
+ const seeded=ready({evaluation:evaluation({
+  evidenceClass:'seeded-adapter-regression-v1',
+  manifestReadback:manifestReadback({evidenceClass:'seeded-adapter-regression-v1'}),
+  baselineScore:.5,candidateScore:.7,candidateFailures:0,criticalRegressions:0
+ })});
+ assert.equal(seeded.eligibleForProtectedPromotion,false);
+ assert.ok(seeded.reasons.includes('independent-heldout-task-evidence-required'));
+});
+
+test('unclassified or mismatched held-out evidence classes cannot pass promotion',()=>{
+ for(const [kind,manifestKind] of [[undefined,undefined],
+   ['independent-task-evaluation-v1','seeded-adapter-regression-v1'],
+   ['seeded-adapter-regression-v1','independent-task-evaluation-v1']]){
+  const value=ready({evaluation:evaluation({evidenceClass:kind,
+   manifestReadback:manifestReadback({evidenceClass:manifestKind})})});
+  assert.equal(value.eligibleForProtectedPromotion,false);
+  assert.ok(value.reasons.includes('independent-heldout-task-evidence-required'));
+ }
+});
