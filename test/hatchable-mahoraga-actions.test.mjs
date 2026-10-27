@@ -11,11 +11,12 @@ const input={key:KEY,operation:'issue.create',
   input:{title:'Ultron control canary',body:'One bounded acceptance issue.',
     expectedMainSha:MAIN}};
 function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
- pauseDuringPreflight=false}={}){
+ pauseDuringPreflight=false,pat=false}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
  let stopped=paused;
  const config={async get(name){
    if(!ready)throw Error('setup_required');
+   if(name==='ULTRON_MAHORAGA_CONNECTION1026')return pat?'github_pat_'+'A'.repeat(42):null;
    return name.endsWith('CLIENT_ID')?'Iv1.testclient':
      name.endsWith('INSTALLATION_ID')?'321':PEM;
  }};
@@ -150,4 +151,20 @@ test('pause during preflight prevents dispatch admission and an external POST',a
  assert.equal(result.state,'prepared');
  assert.equal(f.rows.get(KEY).state,'prepared');
  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
+});
+
+test('PAT lane performs durable bounded issue write without App installation token',async()=>{
+ const f=fixture({pat:true});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(result.result.kind,'issue');
+ assert.equal(f.issues.length,1);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,0);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+});
+test('App installation lane remains compatible when PAT is absent',async()=>{
+ const f=fixture({pat:false});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,1);
 });
