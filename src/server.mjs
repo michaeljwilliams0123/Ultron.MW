@@ -121,7 +121,13 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
       if (req.method === 'GET' && req.url === '/app.js') {
         return response(res, 200, await readFile(resolve(root, 'docs', 'app.js'), 'utf8'), 'text/javascript; charset=utf-8');
       }
-      if (req.method === 'GET' && ['/core/cycle.mjs', '/core/providers.mjs', '/core/capabilities.mjs', '/core/cloud-submit.mjs'].includes(req.url)) {
+      // Explicit browser dependency allowlist. Never serve docs/ or repo root
+      // generically: the optional local UI must load without exposing secrets.
+      if (req.method === 'GET' && [
+        '/core/cycle.mjs', '/core/providers.mjs', '/core/capabilities.mjs',
+        '/core/cloud-submit.mjs', '/core/cloud-pr-submit.mjs',
+        '/core/codex-authors.mjs', '/browser-vault.mjs', '/browser-brain.mjs',
+      ].includes(req.url)) {
         return response(res, 200,
           await readFile(resolve(root, 'docs', req.url.slice(1)), 'utf8'),
           'text/javascript; charset=utf-8');
