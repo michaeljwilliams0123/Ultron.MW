@@ -106,7 +106,7 @@ test('rehydrated multipart never sends bytes that differ from owner-approved SHA
  assert.ok(output.includes(source));
 });
 
-test('separate trusted preallocated tab remains readable; unknown popup stays blocked',async t=>{
+test('all tabs stay fenced while an upload is armed; unknown popup stays blocked',async t=>{
  const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
  const armed={url:()=>origin+'/upload'},secondary={url:()=>origin+'/receipt'};
  const popup={url:()=>origin+'/popup'};
@@ -114,10 +114,10 @@ test('separate trusted preallocated tab remains readable; unknown popup stays bl
  bridge.arm(armed,record,root,'canary');
  const reqGet=page=>({url:()=>origin+'/receipt',method:()=> 'GET',
    headers:()=>({}),isNavigationRequest:()=>true,frame:()=>({page:()=>page})});
- assert.equal(bridge.mustBlockRequest(secondary,reqGet(secondary)),false);
+ assert.equal(bridge.mustBlockRequest(secondary,reqGet(secondary)),true);
  assert.equal(bridge.mustBlockRequest(popup,reqGet(popup)),true);
  assert.equal(bridge.mustBlockRequest(armed,reqGet(armed)),true);
  bridge.approveSubmit(armed,origin);
- assert.equal(bridge.mustBlockRequest(secondary,reqGet(secondary)),false);
+ assert.equal(bridge.mustBlockRequest(secondary,reqGet(secondary)),true);
  assert.equal(bridge.mustBlockRequest(armed,reqGet(armed)),true);
 });
