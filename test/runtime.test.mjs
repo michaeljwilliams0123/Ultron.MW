@@ -277,7 +277,7 @@ test('local UI serves all required and optional startup modules but no unrelated
  for(const path of modules){
   const response=await fetch(base()+path);
   assert.equal(response.status,200,path+' must load before the UI can initialize');
-  assert.match(response.headers.get('content-type')||'',/text\\/javascript/,path);
+  assert.ok((response.headers.get('content-type')||'').includes('text/javascript'),path);
   assert.equal(await response.text(),await readFile(resolve(root,'docs',path.slice(1)),'utf8'),path);
  }
  for(const path of ['/package.json','/src/server.mjs','/core/not-allowed.mjs',
