@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, createPublicKey, verify } from 'node:crypto';
 import { runMahoragaAction,mahoragaActionStatus } from '../cloud/hatchable/lib/mahoraga-actions.js';
 
 const MAIN='a'.repeat(40);
@@ -12,9 +12,9 @@ const input={key:KEY,operation:'issue.create',
   input:{title:'Ultron control canary',body:'One bounded acceptance issue.',
     expectedMainSha:MAIN}};
 function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
- pauseDuringPreflight=false,pat=false,githubAppPem=false}={}){
+ pauseDuringPreflight=false,pat=false,githubAppPem=false,loseClaim=false}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
- let stopped=paused;
+ let stopped=paused,claimLost=loseClaim;
  const config={async get(name){
    if(!ready)throw Error('setup_required');
    if(name==='ULTRON_MAHORAGA_CONNECTION1026')return pat?'github_pat_'+'A'.repeat(42):null;
@@ -39,6 +39,11 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
      assert.match(sql,/AND NOT control\.paused/);
      if(stopped)return {rows:[]};
      if(row.state!=='prepared')return {rows:[]};
+     if(claimLost){
+       claimLost=false;
+       row.state='sent';row.attempt_started_at=new Date().toISOString();
+       return {rows:[]};
+     }
      row.state='sent';row.attempt_started_at=new Date().toISOString();
      return {rows:[{...row}]};
    }
@@ -53,10 +58,20 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
    const path=new URL(url).pathname;
    calls.push({path,method:init.method});
    const json=(data,status=200)=>({ok:status<400,status,json:async()=>data});
-   if(path.endsWith('/access_tokens'))return json({
+   if(path.endsWith('/access_tokens')){
+     const jwt=String(init.headers.Authorization||'').replace(/^Bearer /,'');
+     const parts=jwt.split('.');
+     assert.equal(parts.length,3,'JWT must contain header, payload, signature');
+     assert.equal(JSON.parse(Buffer.from(parts[0],'base64url').toString()).alg,'RS256');
+     assert.equal(JSON.parse(Buffer.from(parts[1],'base64url').toString()).iss,'Iv1.testclient');
+     assert.equal(verify('RSA-SHA256',Buffer.from(parts[0]+'.'+parts[1]),
+       createPublicKey(RSA_KEY),Buffer.from(parts[2],'base64url')),true,
+       'JWT must be signed by the test app private key');
+     return json({
      token:'fixture-installation-token',expires_at:new Date(Date.now()+3600000).toISOString(),
      repositories:[{id:1343333190,full_name:'michaeljwilliams0123/mahoraga'}],
      permissions:{contents:'read',issues:'write',actions:'write'}});
+   }
    if(path.endsWith('/mahoraga'))return json({
      id:1343333190,full_name:'michaeljwilliams0123/mahoraga',
      private:true,default_branch:'main'});
@@ -188,4 +203,30 @@ test('standard GitHub App downloaded RSA private key is accepted for signing',as
  assert.equal(result.state,'observed');
  assert.equal(f.issues.length,1);
  assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,1);
+});
+
+test('retrying an uncertain action with a changed matching-marker issue stays conflicted',async()=>{
+ const f=fixture({uncertainWrite:true});
+ assert.equal((await execute(f)).state,'uncertain');
+ f.issues[0].title='Edited after external create';
+ const result=await execute(f);
+ assert.equal(result.ok,false);
+ assert.equal(result.error,'issue-marker-conflict');
+ assert.equal(result.state,'uncertain');
+ assert.equal(f.rows.get(KEY).state,'uncertain');
+ assert.equal(f.issues.length,1);
+ assert.equal(f.calls.filter(c=>c.path.endsWith('/issues')&&c.method==='POST').length,1);
+});
+
+test('concurrent loser of sent claim returns durable marker conflict, not exception',async()=>{
+ const f=fixture({loseClaim:true});
+ f.issues.push({number:31,title:'Edited before reconciliation',
+   body:input.input.body+'\\n\\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+KEY+' -->',
+   html_url:'https://github.com/example/issues/31'});
+ const result=await execute(f);
+ assert.equal(result.ok,false);
+ assert.equal(result.error,'issue-marker-conflict');
+ assert.equal(result.state,'uncertain');
+ assert.equal(f.rows.get(KEY).state,'uncertain');
+ assert.equal(f.calls.filter(c=>c.path.endsWith('/issues')&&c.method==='POST').length,0);
 });
