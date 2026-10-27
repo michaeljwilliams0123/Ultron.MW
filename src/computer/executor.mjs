@@ -135,9 +135,26 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
 
   async function run(raw) {
     const plan = normalizeComputerPlan(raw, { allowedOrigins });
+    const execute = async () => {
+      let result, primaryError, cleanupError;
+      try { result = await runLocked(plan); }
+      catch (error) { primaryError = error; }
+      try { await driver.endRun?.(); }
+      catch (error) { cleanupError = error; }
+      if (primaryError) {
+        if (cleanupError)
+          throw new AggregateError([primaryError, cleanupError],
+            'Browser run and cleanup failed', { cause: primaryError });
+        throw primaryError;
+      }
+      if (cleanupError)
+        return { ...result, status: result.status === 'completed'
+          ? 'browser-restart-required' : result.status, cleanupFailed: true };
+      return result;
+    };
     if (typeof store.withLock === 'function')
-      return store.withLock(plan.id, () => runLocked(plan));
-    return runLocked(plan);
+      return store.withLock(plan.id, execute);
+    return execute();
   }
 
   async function runLocked(plan) {
@@ -199,6 +216,13 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       }
       // A newly launched isolated browser starts at about:blank.
       // Only first-step navigation may begin from that browser-native state.
+      if (before.url === 'about:blank' && state.completed.length && step.action !== 'navigate') {
+        state.status = 'approval-required';
+        await store.write(plan.id, state);
+        return { status: 'browser-restart-required', id: plan.id, stepId: step.id,
+          reason: 'Fresh browser requires an explicit navigation before continuing',
+          receipts: [...state.receipts] };
+      }
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
         safeUrl(before.url, allowedOrigins);
       if (ACTIVE.has(step.action) && !['type','upload','download'].includes(step.action) &&
@@ -209,13 +233,22 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       if (!await preflightAction(step))
         return actionNotReady(step,
           'Target not actionable; no interaction dispatched');
+      const uploadEvidence=step.action==='upload'
+        ? await driver.approvalMetadata?.(step):null;
+      if(step.action==='upload' &&
+          (!/^[a-f0-9]{64}$/.test(uploadEvidence?.fileSha256 || '') ||
+           !Number.isSafeInteger(uploadEvidence?.fileBytes) ||
+           uploadEvidence.fileBytes < 1 || uploadEvidence.fileBytes > 8*1024*1024))
+        return actionNotReady(step,'Upload lacks immutable byte-bound preflight');
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
         selector: step.selector, uploadDestination: step.sendToOrigin,
         valueLength: step.action === 'type' ? step.value.length : undefined,
-        fileName: step.action === 'upload' ? step.filePath.replaceAll('\\','/').split('/').at(-1) :
+        fileName: step.action === 'upload' ? uploadEvidence.fileName :
           step.action === 'download' ? step.outputName : undefined,
+        fileSha256: uploadEvidence?.fileSha256,
+        fileBytes: uploadEvidence?.fileBytes,
         key: step.action === 'keypress' ? step.key : undefined,
         expectedState: step.expect
       }) !== true) {
@@ -230,6 +263,13 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       if (!await preflightAction(step))
         return actionNotReady(step,
           'Target changed or became unavailable after owner approval');
+      if(step.action==='upload'){
+        const fresh=await driver.approvalMetadata?.(step);
+        if(!fresh || fresh.fileSha256!==uploadEvidence.fileSha256 ||
+           fresh.fileBytes!==uploadEvidence.fileBytes ||
+           fresh.fileName!==uploadEvidence.fileName)
+          return actionNotReady(step,'Approved file changed before dispatch');
+      }
       const blockedBeforeCheckpoint = await sessionGate(step);
       if (blockedBeforeCheckpoint) return blockedBeforeCheckpoint;
       state.status = 'running';
@@ -336,6 +376,17 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           reason: 'Outcome unverified; inspect the application before retrying',
           ...diagnostics, receipts: [...state.receipts] };
       }
+      // The action receipt is durable before browser retirement. A failure
+      // to replace the context must never turn that verified action into a
+      // replayable pending write or dispatch the next step in the old context.
+      try { await driver.completeStep?.({ hasMoreSteps: state.completed.length < plan.steps.length }); }
+      catch {
+        state.status = 'approval-required';
+        await store.write(plan.id, state);
+        return { status: 'browser-restart-required', id: plan.id,
+          reason: 'Verified action retained; start a fresh browser session before continuing',
+          receipts: [...state.receipts] };
+      }
     }
     state.status = 'completed';
     await store.write(plan.id, state);
@@ -356,3 +407,4 @@ export function createMemoryComputerStore() {
     },
   };
 }
+

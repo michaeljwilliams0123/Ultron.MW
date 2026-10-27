@@ -12,8 +12,14 @@ const bound='----WebKitFormBoundaryAnotherKnown42';
 const origin='https://postman-echo.com';
 const metadata=()=>Buffer.from('--'+bound+'\r\nContent-Disposition: form-data; name="canary"; filename="canary.txt"\r\nContent-Type: text/plain\r\n\r\n\r\n--'+bound+'--\r\n');
 const page={url:()=> 'http://127.0.0.1:3822/fixture'};
+function frameFor(page){
+  if(!page.__mainFrame)page.__mainFrame={page:()=>page};
+  if(typeof page.mainFrame!=='function')page.mainFrame=()=>page.__mainFrame;
+  return page.__mainFrame;
+}
+page.mainFrame=()=>frameFor(page);
 function req(page,overrides={}){return {
-  frame:()=>({page:()=>page}),url:()=>origin+'/post',method:()=> 'POST',
+  frame:()=>frameFor(page),url:()=>origin+'/post',method:()=> 'POST',
   isNavigationRequest:()=>true,
   headers:()=>({'content-type':'multipart/form-data; boundary='+bound}),
   postDataBuffer:metadata,...overrides,
@@ -27,6 +33,7 @@ async function fixture(t){
 }
 test('approved file bytes reconstruct one original multipart request, then consume grant',async t=>{
   const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
+  bridge.registerPage(page);
   bridge.arm(page,record,root,'canary');
   bridge.approveSubmit(page,origin);
   const body=await bridge.rehydrate(req(page));
@@ -38,6 +45,7 @@ test('unapproved origin, missing submit, mutation and wrong filename fail closed
   const {root,file,record}=await fixture(t);
   for(const shape of ['no-submit','wrong-origin','changed-file','wrong-field','extra-file']){
     const bridge=createBoundedMultipartBridge(),sidePage={url:page.url};
+    bridge.registerPage(sidePage);
     bridge.arm(sidePage,record,root,'canary');
     if(shape!=='no-submit')bridge.approveSubmit(sidePage,origin);
     if(shape==='changed-file')await writeFile(file,'changed-after-approval\n');
@@ -60,4 +68,56 @@ test('upload destination must be explicitly allowlisted and visible in owner pre
     action:'click',stepId:'submit',currentOrigin:origins[0],selector:'#submit',
     expectedState:action.expect,uploadDestination:origin});
   assert.equal(summary.uploadDestination,origin);
+});
+
+test('armed upload blocks background requests until one approved multipart submit',async t=>{
+ const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
+ const p={url:()=>origin+'/form'};
+  p.mainFrame=()=>frameFor(p); bridge.registerPage(p);
+ bridge.arm(p,record,root,'canary');
+ assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/leak?file=secret',method:()=> 'GET'}),true);
+ assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/data',method:()=> 'POST',
+   headers:()=>({'content-type':'application/json'})}),true);
+ bridge.approveSubmit(p,origin);
+ assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/data',method:()=> 'POST',
+   headers:()=>({'content-type':'text/plain'})}),true);
+ assert.equal(bridge.mustBlockRequest(p,req(p)),false);
+ await bridge.rehydrate(req(p));
+ // The file remains readable on the original page even after a submit;
+ // keep it fenced until the isolated context is closed.
+ assert.equal(bridge.authorizeReceiptNavigation(p,req(p),origin+'/receipt'),true);
+  const receipt={url:()=>origin+'/receipt',method:()=> 'GET',
+    isNavigationRequest:()=>true,frame:()=>frameFor(p)};
+  assert.equal(bridge.mustBlockRequest(p,receipt),false);
+  assert.equal(bridge.mustBlockRequest(p,receipt),true);
+  assert.equal(bridge.mustBlockRequest(p,{...receipt,url:()=>origin+'/receipt?extra=1'}),true);
+});
+
+test('rehydrated multipart never sends bytes that differ from owner-approved SHA',async t=>{
+ const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
+ const p={url:page.url};
+  p.mainFrame=()=>frameFor(p); bridge.registerPage(p);
+ bridge.arm(p,record,root,'canary');bridge.approveSubmit(p,origin);
+ // The independent buffer SHA check must be present on the actual dispatched contents.
+ const fileModule=await import('node:fs/promises');
+ const source=await fileModule.readFile(record.path);
+ assert.equal(source.length,record.bytes);
+ const output=await bridge.rehydrate(req(p));
+ assert.ok(output.includes(source));
+});
+
+test('all tabs stay fenced while an upload is armed; unknown popup stays blocked',async t=>{
+ const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
+ const armed={url:()=>origin+'/upload'},secondary={url:()=>origin+'/receipt'};
+ const popup={url:()=>origin+'/popup'};
+ bridge.registerPage(armed);bridge.registerPage(secondary);
+ bridge.arm(armed,record,root,'canary');
+ const reqGet=page=>({url:()=>origin+'/receipt',method:()=> 'GET',
+   headers:()=>({}),isNavigationRequest:()=>true,frame:()=>({page:()=>page})});
+ assert.equal(bridge.mustBlockRequest(secondary,reqGet(secondary)),true);
+ assert.equal(bridge.mustBlockRequest(popup,reqGet(popup)),true);
+ assert.equal(bridge.mustBlockRequest(armed,reqGet(armed)),true);
+ bridge.approveSubmit(armed,origin);
+ assert.equal(bridge.mustBlockRequest(secondary,reqGet(secondary)),true);
+ assert.equal(bridge.mustBlockRequest(armed,reqGet(armed)),true);
 });

@@ -9,12 +9,15 @@ import { createBoundedMultipartBridge } from './multipart-bridge.mjs';
  */
 export function createPlaywrightComputerDriver(initialPage, {
   tabs = { primary: initialPage }, windows = {}, uploadRoot, downloadRoot, uploadBridge,
+  createCleanSession,
 } = {}) {
   let page = initialPage;
+  let retired = false;
+  let contextsDiscarded = false;
   if (!page || typeof page.goto !== 'function' ||
       typeof page.locator !== 'function' || typeof page.url !== 'function')
     throw TypeError('An actual Playwright Page is required');
-  const slots = new Map([...Object.entries(tabs), ...Object.entries(windows)]);
+  let slots = new Map([...Object.entries(tabs), ...Object.entries(windows)]);
   if (slots.get('primary') !== initialPage ||
       [...slots.keys()].some(key => !['primary','secondary','tertiary','window-secondary'].includes(key)) ||
       (windows['window-secondary'] && windows['window-secondary'].context() === initialPage.context()))
@@ -22,12 +25,87 @@ export function createPlaywrightComputerDriver(initialPage, {
   // Keep the exact Playwright ElementHandle that passed the first trial.
   // A second preflight after owner consent checks that same node, and perform
   // never resolves the selector again to a replacement element.
+  // Register every preallocated page so the bridge can fence all tabs
+  // while any selected file remains available to page-controlled scripts.
+  for (const slot of slots.values()) uploadBridge?.registerPage?.(slot);
   const preparedTargets = new Map();
   const preparedUploads = new Map();
+  function assertAvailable() {
+    if (retired) throw Error('Browser context retired; a fresh owner session is required');
+  }
+  function uploadContexts() {
+    const contexts = [...new Set([...slots.values()].map(slot => slot.context?.()))];
+    if (contexts.some(context => typeof context?.close !== 'function'))
+      throw Error('Upload requires disposable isolated browser contexts');
+    return contexts;
+  }
+  async function discardUploadContexts() {
+    if (contextsDiscarded) return;
+    retired = true;
+    // Sibling pages can retain file bytes through BroadcastChannel. Close all
+    // contexts before admitting any replacement; never just clear the fence.
+    const results = await Promise.allSettled(uploadContexts().map(async context => context.close()));
+    for (const target of preparedTargets.values()) {
+      try { await target.dispose?.(); } catch {}
+    }
+    preparedTargets.clear();
+    preparedUploads.clear();
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    contextsDiscarded = true;
+  }
   return Object.freeze({
+    async endRun() {
+      if (uploadBridge?.hasArmedUploads?.() || retired && !contextsDiscarded)
+        await discardUploadContexts();
+    },
+    async completeStep({ hasMoreSteps = true } = {}) {
+      if (!uploadBridge?.hasConsumedUpload?.()) return;
+      // A page can put selected bytes in history.pushState(). Never carry its
+      // current URL into a new network request. Only a response-derived
+      // receipt URL may be revisited after every old context has closed.
+      const receiptUrl = uploadBridge.receiptNavigationUrl();
+      await discardUploadContexts();
+      if (!hasMoreSteps) return;
+      if (typeof createCleanSession !== 'function')
+        throw Error('Upload context closed; a fresh owner session is required');
+      const clean = await createCleanSession();
+      const nextSlots = new Map([...Object.entries(clean.tabs), ...Object.entries(clean.windows)]);
+      if (!clean.page || nextSlots.get('primary') !== clean.page ||
+          typeof clean.page.goto !== 'function' || typeof clean.page.locator !== 'function' ||
+          typeof clean.page.url !== 'function' ||
+          [...nextSlots.keys()].some(key => !['primary','secondary','tertiary','window-secondary'].includes(key)) ||
+          (clean.windows['window-secondary'] &&
+            clean.windows['window-secondary'].context() === clean.page.context()) ||
+          !clean.uploadBridge || clean.uploadBridge.hasArmedUploads?.() !== false)
+        throw Error('Fresh isolated browser session required after upload');
+      page = clean.page;
+      slots = nextSlots;
+      uploadBridge = clean.uploadBridge;
+      contextsDiscarded = false;
+      for (const slot of slots.values()) uploadBridge.registerPage(slot);
+      // No cookies, local storage or selected-file data cross this boundary.
+      // Revisit only the verified receipt URL in the new isolated context.
+      try {
+        if (receiptUrl)
+          await page.goto(receiptUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      } catch (error) {
+        await discardUploadContexts().catch(() => {}); // endRun retries a failed close.
+        throw error;
+      }
+      retired = false;
+    },
+    // Approval uses only preflighted metadata, never raw owner file contents.
+    approvalMetadata(step) {
+      if (step?.action !== 'upload') return null;
+      const file = preparedUploads.get(step.id);
+      return file ? Object.freeze({ fileSha256:file.sha256,
+        fileBytes:file.bytes,fileName:file.name }) : null;
+    },
     // A read-only actionability trial checks the intended target BEFORE
     // a human is asked to approve. It does not click, type or press a key.
     async preflight(step) {
+      assertAvailable();
       const locator = page.locator(step.selector);
       let target = preparedTargets.get(step.id);
       if (!target && typeof locator.elementHandle === 'function') {
@@ -45,6 +123,10 @@ export function createPlaywrightComputerDriver(initialPage, {
         if (typeof target.evaluate !== 'function' ||
             !await target.evaluate(el => el.tagName === 'INPUT' && el.type === 'file'))
           throw Error('Upload target is not a file input');
+        const prior=preparedUploads.get(step.id);
+        if (prior && (prior.sha256 !== file.sha256 || prior.bytes !== file.bytes ||
+                      prior.path !== file.path))
+          throw Error('Upload file changed after owner approval');
         preparedUploads.set(step.id, file);
       } else if (step.action === 'type' || step.action === 'keypress') {
         if (typeof target.waitForElementState === 'function')
@@ -54,6 +136,7 @@ export function createPlaywrightComputerDriver(initialPage, {
       return true;
     },
     async observe() {
+      assertAvailable();
       const body = page.locator('body');
       const text = String(await body.innerText({ timeout: 10000 })).slice(0, 10000);
       // Visual and accessibility evidence stay in process memory only. Never
@@ -91,6 +174,7 @@ export function createPlaywrightComputerDriver(initialPage, {
       };
     },
     async perform(step) {
+      assertAvailable();
       const prepared = preparedTargets.get(step.id);
       try {
         switch (step.action) {
@@ -130,20 +214,27 @@ export function createPlaywrightComputerDriver(initialPage, {
           case 'upload': {
             const file = preparedUploads.get(step.id);
             if (!file) throw Error('Unprepared upload action');
+            if (!uploadBridge ||
+                ['registerPage','arm','mustBlockRequest','approveSubmit','rehydrate',
+                  'authorizeReceiptNavigation','hasArmedUploads','hasConsumedUpload',
+                  'receiptNavigationUrl'].some(name =>
+                  typeof uploadBridge[name] !== 'function'))
+              throw Error('Upload requires a complete approved-transfer network fence');
             const fresh = await validateUploadFile(step.filePath, uploadRoot);
             if (fresh.sha256 !== file.sha256 || fresh.path !== file.path || fresh.bytes !== file.bytes)
               throw Error('Upload file changed after owner approval');
+            uploadContexts();
             const target = prepared || page.locator(step.selector);
+            const fieldName = await target.evaluate(el => el.name);
+            // Fence the page before setInputFiles fires page-controlled input/change
+            // handlers, which can read the selected File and start network requests.
+            uploadBridge.arm(page, fresh, uploadRoot, fieldName);
             await target.setInputFiles(fresh.path, { timeout: 10000 });
             const selected = await target.evaluate(el =>
               [...(el.files || [])].map(f => ({ name: f.name, bytes: f.size })));
             if (selected.length !== 1 || selected[0].name !== fresh.name ||
                 selected[0].bytes !== fresh.bytes)
               throw Error('Browser did not select the approved upload file');
-            if (uploadBridge) {
-              const fieldName = await target.evaluate(el => el.name);
-              uploadBridge.arm(page, fresh, uploadRoot, fieldName);
-            }
             return { verifiedEffect: true, fileSha256: fresh.sha256, bytes: fresh.bytes };
           }
           case 'download': {
@@ -184,6 +275,10 @@ export function createPlaywrightComputerDriver(initialPage, {
             throw Error('Unrecognized browser action');
         }
         return null;
+      } catch (error) {
+        if (uploadBridge?.hasArmedUploads?.())
+          await discardUploadContexts().catch(() => {}); // endRun retries cleanup.
+        throw error;
       } finally {
         preparedUploads.delete(step.id);
         if (prepared) {
@@ -236,6 +331,16 @@ export async function installNetworkPolicy(context, allowedOrigins, { uploadBrid
     // one bounded request via route.fetch(maxRedirects: 0), retaining the
     // only the bound, independently revalidated approved file as postData.
     const request = route.request();
+    let requestPage = null;
+    try { requestPage = request.frame?.().page?.(); } catch {}
+    if (uploadBridge) {
+      // Fail closed when any selected file remains in a page, including
+      // non-multipart fetch(), GET query exfiltration and unknown frames.
+      if (uploadBridge.mustBlockRequest?.(requestPage, request)) {
+        await route.abort('blockedbyclient');
+        return;
+      }
+    }
     const headers = typeof request.headers === 'function' ? request.headers() : {};
     const contentType = String(headers['content-type'] || '').toLowerCase();
     const isMultipart = typeof request.method === 'function' && request.method() === 'POST' &&
@@ -265,7 +370,6 @@ export async function installNetworkPolicy(context, allowedOrigins, { uploadBrid
         ...(isMultipart ? { postData } : {}),
       });
       if (response.status() >= 300 && response.status() < 400) {
-        const request = route.request();
         const method = typeof request.method === 'function' ? request.method() : '';
         const isNavigation = typeof request.isNavigationRequest === 'function' &&
           request.isNavigationRequest();
@@ -280,6 +384,15 @@ export async function installNetworkPolicy(context, allowedOrigins, { uploadBrid
             target.username || target.password || !allowed.has(target.origin)) {
           // The original request may already have changed server state.
           // Executor reconciliation must refuse blind replay.
+          await route.abort('blockedbyclient');
+          return;
+        }
+        // An upload redirect may expose a receipt only through the exact,
+        // one-time same-origin main-frame GET issued by this POST response.
+        // The bridge rejects broad, replayed, cross-origin, or subframe reads.
+        if (isMultipart &&
+            uploadBridge?.authorizeReceiptNavigation?.(
+              requestPage, request, target.href) !== true) {
           await route.abort('blockedbyclient');
           return;
         }
@@ -329,41 +442,51 @@ export async function launchIsolatedBrowser(options = {}) {
     headless: options.headless === true,
     ...(options.channel ? { channel: options.channel } : {}),
   });
-  try {
-    const uploadBridge = createBoundedMultipartBridge();
-    const context = await browser.newContext({
-      acceptDownloads: Boolean(options.downloadRoot), serviceWorkers: 'block',
-    });
-    await installNetworkPolicy(context, options.allowedOrigins, { uploadBridge });
-    const page = await context.newPage();
-    // Optional multi-tab uses a fixed set of preallocated pages created
-    // before any untrusted website can execute. All arbitrary popups close.
-    const tabs = { primary: page };
-    if (options.enableTabs === true) {
-      tabs.secondary = await context.newPage();
-      tabs.tertiary = await context.newPage();
-    }
-    const admitted = new Set(Object.values(tabs));
-    context.on('page', opened => {
-      if (!admitted.has(opened)) void opened.close().catch(() => {});
-    });
-    const windows = {};
-    if (options.enableWindows === true) {
-      // A separate isolated context produces a separate native Chrome window.
-      // Session cookies and site storage are not inherited across windows.
-      const secondary = await browser.newContext({
+  let activePage;
+  async function createCleanSession() {
+    const contexts = [];
+    try {
+      const uploadBridge = createBoundedMultipartBridge();
+      const context = await browser.newContext({
         acceptDownloads: Boolean(options.downloadRoot), serviceWorkers: 'block',
       });
-      await installNetworkPolicy(secondary, options.allowedOrigins, { uploadBridge });
-      const secondaryPage = await secondary.newPage();
-      windows['window-secondary'] = secondaryPage;
-      secondary.on('page', opened => {
-        if (opened !== secondaryPage) void opened.close().catch(() => {});
+      contexts.push(context);
+      await installNetworkPolicy(context, options.allowedOrigins, { uploadBridge });
+      const page = await context.newPage();
+      const tabs = { primary: page };
+      if (options.enableTabs === true) {
+        tabs.secondary = await context.newPage();
+        tabs.tertiary = await context.newPage();
+      }
+      const admitted = new Set(Object.values(tabs));
+      context.on('page', opened => {
+        if (!admitted.has(opened)) void opened.close().catch(() => {});
       });
+      const windows = {};
+      if (options.enableWindows === true) {
+        const secondary = await browser.newContext({
+          acceptDownloads: Boolean(options.downloadRoot), serviceWorkers: 'block',
+        });
+        contexts.push(secondary);
+        await installNetworkPolicy(secondary, options.allowedOrigins, { uploadBridge });
+        const secondaryPage = await secondary.newPage();
+        windows['window-secondary'] = secondaryPage;
+        secondary.on('page', opened => {
+          if (opened !== secondaryPage) void opened.close().catch(() => {});
+        });
+      }
+      activePage = page;
+      return { page, tabs, windows, uploadBridge };
+    } catch (error) {
+      await Promise.allSettled(contexts.map(context => context.close()));
+      throw error;
     }
-    return { page, driver: createPlaywrightComputerDriver(page, {
-      tabs, windows, uploadRoot: options.uploadRoot, downloadRoot: options.downloadRoot,
-      uploadBridge,
+  }
+  try {
+    const session = await createCleanSession();
+    return { get page() { return activePage; }, driver: createPlaywrightComputerDriver(session.page, {
+      ...session, uploadRoot: options.uploadRoot, downloadRoot: options.downloadRoot,
+      createCleanSession,
     }),
       async close() { await browser.close(); } };
   } catch (error) {
@@ -371,3 +494,4 @@ export async function launchIsolatedBrowser(options = {}) {
     throw error;
   }
 }
+
