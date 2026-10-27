@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS capability_attempts (
  status text NOT NULL CHECK (status IN
   ('approval-pending','reconcile-required','completed')),
  receipt jsonb NOT NULL CHECK (jsonb_typeof(receipt)='object'),
+ CONSTRAINT capability_attempt_receipt_status_consistent CHECK (receipt->>'status'=status),
  created_at timestamptz NOT NULL DEFAULT now(),
  updated_at timestamptz NOT NULL DEFAULT now()
 );
