@@ -134,3 +134,23 @@ test('terminal file-risk approval redacts source path and expected assertions', 
   });
   assert.equal(dl.risk,'write-owner-approved-local-file');
 });
+
+
+test('Playwright refuses file changes between owner approval and second preflight',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'ultron-upload-race-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const file=join(dir,'approved.csv');await writeFile(file,'original bytes');
+ const target={evaluate:async()=>true,setInputFiles:async()=>{}};
+ const page={url:()=>origin+'/files',goto:async()=>{},locator:()=>target};
+ const {createPlaywrightComputerDriver}=await import('../src/computer/playwright-driver.mjs');
+ const driver=createPlaywrightComputerDriver(page,{uploadRoot:dir});
+ const step={id:'upload-race',action:'upload',selector:'#file',filePath:file};
+ assert.equal(await driver.preflight(step),true);
+ const approval=driver.approvalMetadata(step);
+ assert.match(approval.fileSha256,/^[a-f0-9]{64}$/);
+ assert.equal(approval.fileBytes,14);
+ await writeFile(file,'modified bytes');
+ await assert.rejects(driver.preflight(step),/changed after owner approval/i);
+ assert.equal(driver.approvalMetadata(step).fileSha256,approval.fileSha256);
+ await assert.rejects(driver.perform(step),/changed after owner approval/i);
+});
