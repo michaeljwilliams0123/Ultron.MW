@@ -22,7 +22,7 @@ export async function verifyMahoragaToken({
   'X-GitHub-Api-Version':'2022-11-28',
   'User-Agent':'Ultron-Mahoraga-Connection1026'};
  async function request(path,method='GET',payload){
-  if(typeof path!=='string'||!path.startsWith('/')||path.includes('..'))
+  if(typeof path!=='string'||(path!==''&&!path.startsWith('/'))||path.includes('..'))
    throw Error('invalid-api-path');
   const response=await fetcher(API+path,{
    method,redirect:'error',
