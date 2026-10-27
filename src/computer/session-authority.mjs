@@ -6,7 +6,7 @@
  * approval callback. A local TTY is operator presence, not remote OAuth proof.
  */
 const ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
-const INTERACTIVE = new Set(['click', 'type', 'keypress']);
+const INTERACTIVE = new Set(['click', 'type', 'keypress', 'upload', 'download']);
 
 export function createComputerSessionAuthority({
   sessionId, expiresAt, allowedOrigins, verifyOwner, requestApproval,
@@ -51,6 +51,17 @@ export function createComputerSessionAuthority({
     async authorize(context) {
       if (!live() || !context || !INTERACTIVE.has(context.action) ||
           !admitted.has(context.currentOrigin)) return false;
+      // File uploads must be individually bound to the preflighted exact
+      // bytes, not only a file name or an owner-authenticated session.
+      if (context.action === 'upload' &&
+          (!/^[a-f0-9]{64}$/.test(context.fileSha256 || '') ||
+           !Number.isSafeInteger(context.fileBytes) ||
+           context.fileBytes < 1 || context.fileBytes > 8 * 1024 * 1024))
+        return false;
+      if (context.action === 'download' &&
+          (typeof context.fileName !== 'string' ||
+           !/^[a-z0-9][a-z0-9_.-]{0,79}$/i.test(context.fileName) ||
+           context.fileName.includes('..'))) return false;
       pending++;
       try {
         // The identity proof and approval originate outside the model/page.
