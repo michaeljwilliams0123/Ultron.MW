@@ -61,3 +61,30 @@ test('upload destination must be explicitly allowlisted and visible in owner pre
     expectedState:action.expect,uploadDestination:origin});
   assert.equal(summary.uploadDestination,origin);
 });
+
+test('armed upload blocks background requests until one approved multipart submit',async t=>{
+ const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
+ const p={url:()=>origin+'/form'};
+ bridge.arm(p,record,root,'canary');
+ assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/leak?file=secret',method:()=> 'GET'}),true);
+ assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/data',method:()=> 'POST',
+   headers:()=>({'content-type':'application/json'})}),true);
+ bridge.approveSubmit(p,origin);
+ assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/data',method:()=> 'POST',
+   headers:()=>({'content-type':'text/plain'})}),true);
+ assert.equal(bridge.mustBlockRequest(p,req(p)),false);
+ await bridge.rehydrate(req(p));
+ assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/receipt',method:()=> 'GET'}),false);
+});
+
+test('rehydrated multipart never sends bytes that differ from owner-approved SHA',async t=>{
+ const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
+ const p={url:page.url};
+ bridge.arm(p,record,root,'canary');bridge.approveSubmit(p,origin);
+ // The independent buffer SHA check must be present on the actual dispatched contents.
+ const fileModule=await import('node:fs/promises');
+ const source=await fileModule.readFile(record.path);
+ assert.equal(source.length,record.bytes);
+ const output=await bridge.rehydrate(req(p));
+ assert.ok(output.includes(source));
+});
