@@ -17,11 +17,20 @@ const MAX_WIRE_BYTES = MAX_BROWSER_FILE_BYTES + 32 * 1024;
 export function createBoundedMultipartBridge() {
   const approved = new WeakMap();
   const active = new Set();
+  const knownPages = new WeakSet();
   return Object.freeze({
+    registerPage(page) {
+      if (!page || typeof page !== 'object') throw Error('Known browser page required');
+      knownPages.add(page);
+    },
     mustBlockRequest(page, request) {
       if (!active.size) return false;
+      // Only preallocated trusted pages may make unarmed requests. Popups and
+      // unknown frames stay blocked when any approved file remains readable.
+      if (!page || !knownPages.has(page)) return true;
       const state = approved.get(page);
-      if (!state || !state.submitApproved || state.consumed) return true;
+      if (!state) return false;
+      if (!state.submitApproved || state.consumed) return true;
       let target;
       try { target = new URL(request.url()); } catch { return true; }
       const type = String(request.headers?.()['content-type'] || '').toLowerCase();
@@ -33,6 +42,7 @@ export function createBoundedMultipartBridge() {
       if (!page || !file || !SAFE_FIELD.test(fieldName || '') ||
           !file.path || !file.sha256 || !file.name)
         throw Error('Approved upload must bind a named file input and SHA-256');
+      if (!knownPages.has(page)) throw Error('Upload page must be preallocated');
       approved.set(page, { file, root, fieldName, submitApproved: false });
       active.add(page);
     },
