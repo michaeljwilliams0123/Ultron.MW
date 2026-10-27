@@ -146,6 +146,11 @@ test('seeded outcomes persist atomically with first-write-visible receipts',asyn
  const saved=await persistHeldOutEvidence({db,objectiveId:OBJECTIVE,
   candidatePullNumber:106,fetchImpl:fixtures()});
  assert.equal(saved.ok,true);
+ assert.equal(JSON.parse(params[2]).evidenceClass,'seeded-adapter-regression-v1');
+ const evaluation=JSON.parse(params[5]);
+ assert.equal(evaluation.evidenceClass,'seeded-adapter-regression-v1');
+ assert.equal(evaluation.independentlyObserved,false);
+ assert.equal(evaluation.evaluator.kind,'seeded-regression-harness');
  assert.equal(JSON.parse(params[1]).length,20);
  assert.match(sql,/\(item->>'caseId'\).*\(item->>'variant'\)/);
  assert.match(sql,/\(last_result->>'caseId'\).*\(last_result->>'variant'\)/s);

@@ -7,6 +7,7 @@ const SHA40=/^[a-f0-9]{40}$/;
 const OBJECTIVE=/^[a-z0-9][a-z0-9-]{5,79}$/;
 const MANIFEST_SCHEMA='ultron.seeded-held-out-manifest.v1';
 const SET_SCHEMA='ultron.held-out-evaluation-set.v1';
+const EVIDENCE_CLASS='seeded-adapter-regression-v1';
 const OUTCOME_SCHEMA='ultron.held-out-outcome.v1';
 const MARKER=/<!-- ultron-seeded-held-out-manifest:v1\s*\n([\s\S]*?)\n-->/;
 const WORKFLOW='Ultron held-out acceptance';
@@ -196,14 +197,16 @@ function projection(observed){
   item.criticalRegression).length;
  return {key,outcomes,manifest:{schema:SET_SCHEMA,objectiveId:observed.objectiveId,
   sourceSha:observed.sourceSha,setId:observed.setId,frozen:true,setsDisjoint:true,
+  evidenceClass:EVIDENCE_CLASS,
   freezeCommentId:observed.freezeCommentId,frozenAt:observed.frozenAt,
   baselineSha:observed.baselineSha,candidateHeadSha:observed.candidateHeadSha,
   independentReviewId:observed.independentReviewId,reviewedAt:observed.reviewedAt,
   evaluationRunId:observed.evaluationRunId,seedSource:'github.run_id',
   adapterKey:key+':manifest'},evaluation:{objectiveId:observed.objectiveId,
   sourceSha:observed.sourceSha,runtimeSourceSha:observed.sourceSha,
-  frozen:true,setsDisjoint:true,independentlyObserved:true,outcomeReadbacksObserved:true,
-  evaluator:{kind:'independent-evaluator',id:observed.evaluatorId},
+  evidenceClass:EVIDENCE_CLASS,
+  frozen:true,setsDisjoint:true,independentlyObserved:false,outcomeReadbacksObserved:true,
+  evaluator:{kind:'seeded-regression-harness',id:observed.evaluatorId},
   verifiedBy:{kind:'held-out-evaluation-readback',id:'held-out-evaluation-adapter'},
   baselineScore:observed.baselineScore,candidateScore:observed.candidateScore,
   setId:observed.setId,
