@@ -157,7 +157,9 @@ test('Playwright refuses file changes between owner approval and second prefligh
  const target={evaluate:async()=>true,setInputFiles:async()=>{}};
  const page={url:()=>origin+'/files',goto:async()=>{},locator:()=>target};
  const {createPlaywrightComputerDriver}=await import('../src/computer/playwright-driver.mjs');
- const driver=createPlaywrightComputerDriver(page,{uploadRoot:dir});
+ const driver=createPlaywrightComputerDriver(page,{
+   uploadRoot:dir,uploadBridge:createBoundedMultipartBridge(),
+ });
  const step={id:'upload-race',action:'upload',selector:'#file',filePath:file};
  assert.equal(await driver.preflight(step),true);
  const approval=driver.approvalMetadata(step);
