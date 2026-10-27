@@ -278,3 +278,36 @@ test('text-only MFA challenge pauses automation without trusting page instructio
   const observation = await createPlaywrightComputerDriver(page).observe();
   assert.equal(observation.requiresOwnerTakeover, true);
 });
+
+
+test('upload and download require authenticated owner approval with transfer metadata', async () => {
+ const seen=[];
+ const authority=createComputerSessionAuthority({...base,maxApprovals:2,
+   verifyOwner:async context=>{seen.push(['verified',context.action]);return true;},
+   requestApproval:async context=>{seen.push(['approved',context.action,context.fileSha256]);return true;}
+ });
+ const upload={...click,action:'upload',stepId:'choose-owner-file',
+   selector:'input[type=file]',fileName:'approved.csv',fileSha256:'b'.repeat(64),
+   fileBytes:51};
+ const download={...click,action:'download',stepId:'download-report',
+   selector:'#download',fileName:'report.csv'};
+ assert.equal(await authority.authorize(upload),true);
+ assert.equal(await authority.authorize(download),true);
+ assert.equal(authority.status,'exhausted');
+ assert.deepEqual(seen.map(v=>v[1]),['upload','upload','download','download']);
+});
+
+test('upload authorization rejects missing file digest, unknown origin and owner denial',async()=>{
+ let attempts=0;
+ const authority=createComputerSessionAuthority({...base,
+   verifyOwner:async()=>true,
+   requestApproval:async()=>{attempts++;return false;}
+ });
+ const upload={...click,action:'upload',fileName:'upload.csv',fileBytes:32};
+ assert.equal(await authority.authorize(upload),false);
+ assert.equal(await authority.authorize({...upload,fileSha256:'c'.repeat(64),
+   currentOrigin:'https://unknown.test'}),false);
+ assert.equal(attempts,0);
+ assert.equal(await authority.authorize({...upload,fileSha256:'c'.repeat(64)}),false);
+ assert.equal(attempts,1);
+});
