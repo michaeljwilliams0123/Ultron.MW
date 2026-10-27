@@ -144,20 +144,25 @@ export function createPlaywrightComputerDriver(initialPage, {
           case 'upload': {
             const file = preparedUploads.get(step.id);
             if (!file) throw Error('Unprepared upload action');
+            if (!uploadBridge ||
+                ['registerPage','arm','mustBlockRequest','approveSubmit','rehydrate',
+                  'authorizeReceiptNavigation'].some(name =>
+                  typeof uploadBridge[name] !== 'function'))
+              throw Error('Upload requires a complete approved-transfer network fence');
             const fresh = await validateUploadFile(step.filePath, uploadRoot);
             if (fresh.sha256 !== file.sha256 || fresh.path !== file.path || fresh.bytes !== file.bytes)
               throw Error('Upload file changed after owner approval');
             const target = prepared || page.locator(step.selector);
+            const fieldName = await target.evaluate(el => el.name);
+            // Fence the page before setInputFiles fires page-controlled input/change
+            // handlers, which can read the selected File and start network requests.
+            uploadBridge.arm(page, fresh, uploadRoot, fieldName);
             await target.setInputFiles(fresh.path, { timeout: 10000 });
             const selected = await target.evaluate(el =>
               [...(el.files || [])].map(f => ({ name: f.name, bytes: f.size })));
             if (selected.length !== 1 || selected[0].name !== fresh.name ||
                 selected[0].bytes !== fresh.bytes)
               throw Error('Browser did not select the approved upload file');
-            if (uploadBridge) {
-              const fieldName = await target.evaluate(el => el.name);
-              uploadBridge.arm(page, fresh, uploadRoot, fieldName);
-            }
             return { verifiedEffect: true, fileSha256: fresh.sha256, bytes: fresh.bytes };
           }
           case 'download': {
@@ -250,12 +255,12 @@ export async function installNetworkPolicy(context, allowedOrigins, { uploadBrid
     // one bounded request via route.fetch(maxRedirects: 0), retaining the
     // only the bound, independently revalidated approved file as postData.
     const request = route.request();
+    let requestPage = null;
+    try { requestPage = request.frame?.().page?.(); } catch {}
     if (uploadBridge) {
-      let page = null;
-      try { page = request.frame?.().page?.(); } catch {}
       // Fail closed when any selected file remains in a page, including
       // non-multipart fetch(), GET query exfiltration and unknown frames.
-      if (uploadBridge.mustBlockRequest?.(page, request)) {
+      if (uploadBridge.mustBlockRequest?.(requestPage, request)) {
         await route.abort('blockedbyclient');
         return;
       }
@@ -289,7 +294,6 @@ export async function installNetworkPolicy(context, allowedOrigins, { uploadBrid
         ...(isMultipart ? { postData } : {}),
       });
       if (response.status() >= 300 && response.status() < 400) {
-        const request = route.request();
         const method = typeof request.method === 'function' ? request.method() : '';
         const isNavigation = typeof request.isNavigationRequest === 'function' &&
           request.isNavigationRequest();
@@ -304,6 +308,15 @@ export async function installNetworkPolicy(context, allowedOrigins, { uploadBrid
             target.username || target.password || !allowed.has(target.origin)) {
           // The original request may already have changed server state.
           // Executor reconciliation must refuse blind replay.
+          await route.abort('blockedbyclient');
+          return;
+        }
+        // An upload redirect may expose a receipt only through the exact,
+        // one-time same-origin main-frame GET issued by this POST response.
+        // The bridge rejects broad, replayed, cross-origin, or subframe reads.
+        if (isMultipart &&
+            uploadBridge?.authorizeReceiptNavigation?.(
+              requestPage, request, target.href) !== true) {
           await route.abort('blockedbyclient');
           return;
         }
