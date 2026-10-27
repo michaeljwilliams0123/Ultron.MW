@@ -12,6 +12,7 @@ const bound='----WebKitFormBoundaryAnotherKnown42';
 const origin='https://postman-echo.com';
 const metadata=()=>Buffer.from('--'+bound+'\r\nContent-Disposition: form-data; name="canary"; filename="canary.txt"\r\nContent-Type: text/plain\r\n\r\n\r\n--'+bound+'--\r\n');
 const page={url:()=> 'http://127.0.0.1:3822/fixture'};
+page.mainFrame=()=>page;
 function req(page,overrides={}){return {
   frame:()=>({page:()=>page}),url:()=>origin+'/post',method:()=> 'POST',
   isNavigationRequest:()=>true,
@@ -67,7 +68,7 @@ test('upload destination must be explicitly allowlisted and visible in owner pre
 test('armed upload blocks background requests until one approved multipart submit',async t=>{
  const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
  const p={url:()=>origin+'/form'};
- bridge.registerPage(p);
+  p.mainFrame=()=>p; bridge.registerPage(p);
  bridge.arm(p,record,root,'canary');
  assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/leak?file=secret',method:()=> 'GET'}),true);
  assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/data',method:()=> 'POST',
@@ -85,7 +86,7 @@ test('armed upload blocks background requests until one approved multipart submi
 test('rehydrated multipart never sends bytes that differ from owner-approved SHA',async t=>{
  const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
  const p={url:page.url};
- bridge.registerPage(p);
+  p.mainFrame=()=>p; bridge.registerPage(p);
  bridge.arm(p,record,root,'canary');bridge.approveSubmit(p,origin);
  // The independent buffer SHA check must be present on the actual dispatched contents.
  const fileModule=await import('node:fs/promises');
