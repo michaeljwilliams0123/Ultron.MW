@@ -74,7 +74,9 @@ test('armed upload blocks background requests until one approved multipart submi
    headers:()=>({'content-type':'text/plain'})}),true);
  assert.equal(bridge.mustBlockRequest(p,req(p)),false);
  await bridge.rehydrate(req(p));
- assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/receipt',method:()=> 'GET'}),false);
+ // The file remains readable on the original page even after a submit;
+ // keep it fenced until the isolated context is closed.
+ assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/receipt',method:()=> 'GET'}),true);
 });
 
 test('rehydrated multipart never sends bytes that differ from owner-approved SHA',async t=>{
