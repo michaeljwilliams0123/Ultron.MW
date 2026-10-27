@@ -5,20 +5,21 @@ import { runMahoragaAction,mahoragaActionStatus } from '../cloud/hatchable/lib/m
 
 const MAIN='a'.repeat(40);
 const KEY='ultron:issue-95-canary';
-const PEM=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey
-  .export({type:'pkcs8',format:'pem'});
+const RSA_KEY=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey;
+const PEM=RSA_KEY.export({type:'pkcs8',format:'pem'});
+const GITHUB_APP_PEM=RSA_KEY.export({type:'pkcs1',format:'pem'});
 const input={key:KEY,operation:'issue.create',
   input:{title:'Ultron control canary',body:'One bounded acceptance issue.',
     expectedMainSha:MAIN}};
 function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
- pauseDuringPreflight=false,pat=false}={}){
+ pauseDuringPreflight=false,pat=false,githubAppPem=false}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
  let stopped=paused;
  const config={async get(name){
    if(!ready)throw Error('setup_required');
    if(name==='ULTRON_MAHORAGA_CONNECTION1026')return pat?'github_pat_'+'A'.repeat(42):null;
    return name.endsWith('CLIENT_ID')?'Iv1.testclient':
-     name.endsWith('INSTALLATION_ID')?'321':PEM;
+     name.endsWith('INSTALLATION_ID')?'321':githubAppPem?GITHUB_APP_PEM:PEM;
  }};
  const db={async query(sql,params=[]){
    if(sql.includes('SELECT paused FROM brain_runtime_control')&&
@@ -166,5 +167,25 @@ test('App installation lane remains compatible when PAT is absent',async()=>{
  const f=fixture({pat:false});
  const result=await execute(f);
  assert.equal(result.state,'observed');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,1);
+});
+
+
+test('an edited issue bearing this action marker cannot trigger duplicate creation',async()=>{
+ const f=fixture();
+ f.issues.push({number:31,title:'Edited externally',
+   body:'An operator changed this existing issue.\\n\\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+KEY+' -->',
+   html_url:'https://github.com/example/issues/31'});
+ const result=await execute(f);
+ assert.notEqual(result.state,'observed','content mismatch must not be adopted');
+ assert.equal(f.issues.length,1,'must not create a second issue with the same marker');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
+});
+
+test('standard GitHub App downloaded RSA private key is accepted for signing',async()=>{
+ const f=fixture({githubAppPem:true});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(f.issues.length,1);
  assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,1);
 });
