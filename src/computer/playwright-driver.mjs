@@ -22,6 +22,9 @@ export function createPlaywrightComputerDriver(initialPage, {
   // Keep the exact Playwright ElementHandle that passed the first trial.
   // A second preflight after owner consent checks that same node, and perform
   // never resolves the selector again to a replacement element.
+  // Pages are explicitly created by the isolated launcher. Only this known
+  // set may conduct unrelated reads while another page has a selected file.
+  for (const slot of slots.values()) uploadBridge?.registerPage?.(slot);
   const preparedTargets = new Map();
   const preparedUploads = new Map();
   return Object.freeze({
