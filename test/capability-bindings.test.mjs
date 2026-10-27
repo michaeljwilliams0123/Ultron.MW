@@ -222,3 +222,77 @@ test('denied write frees reservation for later approved same-key retry', async (
  assert.equal((await broker.execute('github-owner',request)).status,'completed');
  assert.equal(target.executions,1);
 });
+
+test('independent broker processes share one durable same-key action reservation',async()=>{
+ const slots=new Map();const shared={
+  async claim({id,fingerprint,receipt}){
+   if(slots.has(id))return {claimed:false,...slots.get(id)};
+   const stored={fingerprint,receipt};slots.set(id,stored);
+   return {claimed:true,...stored};
+  },
+  async advance({id,fingerprint,expectedStatus,receipt}){
+   const old=slots.get(id);
+   if(old?.fingerprint!==fingerprint || old.receipt.status!==expectedStatus)
+     throw Error('durable-attempt-transition-conflict');
+   slots.set(id,{fingerprint,receipt});return true;
+  },
+  async release({id,fingerprint}){
+   const old=slots.get(id);
+   if(old?.fingerprint!==fingerprint||old.receipt.status!=='approval-pending')
+     throw Error('durable-approval-release-conflict');
+   slots.delete(id);return true;
+  }
+ };
+ let approvals=0;
+ const target=adapter(),req={operation:'issue.write',idempotencyKey:'write:durable01',
+  estimatedCostCents:0,input:{title:'Durable once'},expected:{issueCreated:true}};
+ const make=async()=>{
+  const broker=createCapabilityBroker({clock:()=>now,attemptStore:shared,
+   authorize:async()=>{approvals++;return true;}});
+  broker.bind(manifest(),target);await broker.health('github-owner');return broker;
+ };
+ const [a,b]=await Promise.all([make(),make()]);
+ const [one,two]=await Promise.all([a.execute('github-owner',req),
+   b.execute('github-owner',req)]);
+ assert.equal([one,two].filter(x=>x.status==='completed').length,1);
+ assert.equal([one,two].filter(x=>x.resumed===true).length,1);
+ assert.equal(target.executions,1);
+ assert.equal(approvals,1);
+ const restarted=await make();
+ assert.equal((await restarted.execute('github-owner',req)).resumed,true);
+ assert.equal(target.executions,1);
+ await assert.rejects(restarted.execute('github-owner',{...req,input:{title:'Mutated'}}),
+  /Idempotency key/i);
+});
+
+test('external-write failure persists unknown outcome across broker restarts',async()=>{
+ const slots=new Map();
+ const shared={
+  async claim({id,fingerprint,receipt}){
+   const old=slots.get(id);
+   if(old)return {claimed:false,...old};
+   slots.set(id,{fingerprint,receipt});return {claimed:true,fingerprint,receipt};
+  },
+  async advance({id,fingerprint,expectedStatus,receipt}){
+   const old=slots.get(id);
+   if(old?.fingerprint!==fingerprint||old?.receipt?.status!==expectedStatus)
+     throw Error('invalid-durable-transition');
+   slots.set(id,{fingerprint,receipt});return true;
+  },
+  async release({id}){slots.delete(id);}
+ };
+ let writes=0;
+ const target=adapter({execute:async()=>{writes++;throw Error('external-response-lost');}});
+ const req={operation:'issue.write',idempotencyKey:'write:lostresponse1',
+  estimatedCostCents:0,input:{title:'Crash safe'},expected:{issueCreated:true}};
+ const make=async()=>{
+  const broker=createCapabilityBroker({clock:()=>now,attemptStore:shared,
+   authorize:async()=>true});
+  broker.bind(manifest(),target);await broker.health('github-owner');return broker;
+ };
+ const initial=await make();
+ assert.equal((await initial.execute('github-owner',req)).status,'reconcile-required');
+ const recreated=await make();
+ assert.equal((await recreated.execute('github-owner',req)).status,'reconcile-required');
+ assert.equal(writes,1);
+});
