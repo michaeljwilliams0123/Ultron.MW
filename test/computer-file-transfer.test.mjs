@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalizeComputerPlan } from '../src/computer/executor.mjs';
 import { validateUploadFile, receiveDownload } from '../src/computer/file-transfer.mjs';
+import { createBoundedMultipartBridge } from '../src/computer/multipart-bridge.mjs';
 const origin = 'https://example.test';
 
 test('upload and download are typed-risk actions with bounded fields', () => {
@@ -65,15 +66,28 @@ test('Playwright upload preflight binds the approved bytes before file-input dis
   const dir = await mkdtemp(join(tmpdir(),'ultron-driver-upload-'));
   t.after(() => rm(dir,{recursive:true,force:true}));
   const file = join(dir,'test.csv'); await writeFile(file,'a,b\n1,2\n');
-  let evaluations=0, selected=0;
+  let selected=0;
+  const bridge=createBoundedMultipartBridge();
   const target={
-    evaluate: async () => ++evaluations === 1 ? true : [{name:'test.csv',bytes:8}],
-    setInputFiles: async path => { assert.equal(path,await realpath(file)); selected++; },
+    evaluate: async fn => {
+      const source=String(fn);
+      if(source.includes('el.name')) return 'upload';
+      if(source.includes('el.files')) return [{name:'test.csv',bytes:8}];
+      return true;
+    },
+    setInputFiles: async path => {
+      assert.equal(bridge.mustBlockRequest(page,{
+        url:()=>origin+'/exfil',method:()=> 'GET',
+      }),true);
+      assert.equal(path,await realpath(file)); selected++;
+    },
   };
-  const page={ url:()=>origin+'/form', goto:async()=>{},
+  const page={ url:()=>origin+'/form', goto:async()=>{}, context:()=>({close:async()=>{}}),
     locator:()=>target };
   const { createPlaywrightComputerDriver } = await import('../src/computer/playwright-driver.mjs');
-  const driver=createPlaywrightComputerDriver(page,{uploadRoot:dir});
+  const driver=createPlaywrightComputerDriver(page,{
+    uploadRoot:dir,uploadBridge:bridge,
+  });
   const step={id:'upload-canary',action:'upload',selector:'#upload',filePath:file};
   assert.equal(await driver.preflight(step),true);
   const result=await driver.perform(step);
@@ -134,3 +148,26 @@ test('terminal file-risk approval redacts source path and expected assertions', 
   });
   assert.equal(dl.risk,'write-owner-approved-local-file');
 });
+
+
+test('Playwright refuses file changes between owner approval and second preflight',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'ultron-upload-race-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const file=join(dir,'approved.csv');await writeFile(file,'original bytes');
+ const target={evaluate:async()=>true,setInputFiles:async()=>{}};
+ const page={url:()=>origin+'/files',goto:async()=>{},locator:()=>target};
+ const {createPlaywrightComputerDriver}=await import('../src/computer/playwright-driver.mjs');
+ const driver=createPlaywrightComputerDriver(page,{
+   uploadRoot:dir,uploadBridge:createBoundedMultipartBridge(),
+ });
+ const step={id:'upload-race',action:'upload',selector:'#file',filePath:file};
+ assert.equal(await driver.preflight(step),true);
+ const approval=driver.approvalMetadata(step);
+ assert.match(approval.fileSha256,/^[a-f0-9]{64}$/);
+ assert.equal(approval.fileBytes,14);
+ await writeFile(file,'modified bytes');
+ await assert.rejects(driver.preflight(step),/changed after owner approval/i);
+ assert.equal(driver.approvalMetadata(step).fileSha256,approval.fileSha256);
+ await assert.rejects(driver.perform(step),/changed after owner approval/i);
+});
+

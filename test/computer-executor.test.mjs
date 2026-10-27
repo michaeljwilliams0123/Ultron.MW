@@ -611,3 +611,50 @@ test('click with unchanged screen remains uncertain but gives failure phase', as
   assert.equal((await store.read(p.id)).pending, 'step-1');
   assert.equal(actions, 1);
 });
+
+
+test('approved upload file digest and size are forwarded to owner; mutation prevents dispatch',async()=>{
+ let current='a'.repeat(64),executions=0,proof;
+ const driver={
+   async observe(){return {url:'https://example.test/upload',text:'Upload ready'};},
+   async preflight(){return true;},
+   approvalMetadata(){return {fileSha256:current,fileBytes:16,fileName:'document.csv'};},
+   async perform(){executions++;}
+ };
+ const executor=createComputerExecutor({driver,store:createMemoryComputerStore(),
+   allowedOrigins:['https://example.test'],
+   authorize:async context=>{proof=context;current='b'.repeat(64);return true;}});
+ const result=await executor.run({id:'upload-file-sha-binding',steps:[{
+   action:'upload',selector:'#file',filePath:'/approved/document.csv',
+   expect:{textIncludes:'Upload confirmed'}
+ }]});
+ assert.equal(proof.fileSha256,'a'.repeat(64));
+ assert.equal(proof.fileBytes,16);
+ assert.equal(proof.fileName,'document.csv');
+ assert.equal(result.status,'action-not-ready');
+ assert.equal(executions,0);
+});
+
+test('network policy refuses non-multipart data, query-string or GET while upload is armed',async()=>{
+ let intercept,fetches=0,aborts=0;
+ const uploadBridge={ mustBlockRequest(_page,req){
+   return req.method()!=='POST' || !(req.headers()['content-type']||'').startsWith('multipart/form-data');
+ },rehydrate:async()=>Buffer.from('approved') };
+ await installNetworkPolicy({route:async(_,cb)=>{intercept=cb;},
+   routeWebSocket:async()=>{}},allowedOrigins,{uploadBridge});
+ const page={};
+ for(const [method,url,contentType] of [
+   ['GET','https://example.test/leak?file=secret',''],
+   ['POST','https://example.test/submit','application/json'],
+   ['POST','https://example.test/submit','text/plain']
+ ]){
+   await intercept({
+    request:()=>({url:()=>url,method:()=>method,
+      headers:()=>({'content-type':contentType}),frame:()=>({page:()=>page})}),
+    fetch:async()=>{fetches++;return {status:()=>200,headers:()=>({})}},
+    abort:async()=>{aborts++},fulfill:async()=>{}
+   });
+ }
+ assert.equal(fetches,0);
+ assert.equal(aborts,3);
+});
