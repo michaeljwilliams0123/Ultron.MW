@@ -67,6 +67,7 @@ test('Playwright upload preflight binds the approved bytes before file-input dis
   t.after(() => rm(dir,{recursive:true,force:true}));
   const file = join(dir,'test.csv'); await writeFile(file,'a,b\n1,2\n');
   let selected=0;
+  const bridge=createBoundedMultipartBridge();
   const target={
     evaluate: async fn => {
       const source=String(fn);
@@ -74,13 +75,18 @@ test('Playwright upload preflight binds the approved bytes before file-input dis
       if(source.includes('el.files')) return [{name:'test.csv',bytes:8}];
       return true;
     },
-    setInputFiles: async path => { assert.equal(path,await realpath(file)); selected++; },
+    setInputFiles: async path => {
+      assert.equal(bridge.mustBlockRequest(page,{
+        url:()=>origin+'/exfil',method:()=> 'GET',
+      }),true);
+      assert.equal(path,await realpath(file)); selected++;
+    },
   };
   const page={ url:()=>origin+'/form', goto:async()=>{},
     locator:()=>target };
   const { createPlaywrightComputerDriver } = await import('../src/computer/playwright-driver.mjs');
   const driver=createPlaywrightComputerDriver(page,{
-    uploadRoot:dir,uploadBridge:createBoundedMultipartBridge(),
+    uploadRoot:dir,uploadBridge:bridge,
   });
   const step={id:'upload-canary',action:'upload',selector:'#upload',filePath:file};
   assert.equal(await driver.preflight(step),true);
