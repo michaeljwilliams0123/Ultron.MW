@@ -83,8 +83,10 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
    if(path.endsWith('/git/ref/heads/mahoraga/control'))
      return json({object:{sha:'b'.repeat(40)}});
    if(path.endsWith('/actions/workflows/verify.yml'))return json({id:1});
-   if(path.endsWith('/actions/workflows/verify.yml/runs'))
-     return json({workflow_runs:duplicateVerify?[...runs,...runs.map(x=>({...x,id:100}))]:runs});
+   if(path.endsWith('/actions/workflows/verify.yml/runs')){
+     const items=duplicateVerify?[...runs,...runs.map(x=>({...x,id:100}))]:runs;
+     return json({total_count:items.length,workflow_runs:items});
+   }
    if(path.endsWith('/actions/runs/99/jobs'))
      return json({total_count:2,jobs:[
        {id:201,name:'Verify (ubuntu-latest)',status:verifyStatus,conclusion:verifyConclusion},
@@ -93,7 +95,7 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
    if(path.endsWith('/actions/workflows/verify.yml/dispatches')){
      const data=JSON.parse(init.body);
      runs.push({id:99,event:'workflow_dispatch',head_sha:'b'.repeat(40),
-       head_branch:'mahoraga/control',path:'.github/workflows/verify.yml',
+       head_branch:'mahoraga/control',path:'.github/workflows/verify.yml@mahoraga/control',
        display_title:'Ultron exact-head '+data.inputs?.ultron_action_key,
        status:verifyStatus,conclusion:verifyConclusion,
        created_at:new Date().toISOString()});
@@ -269,10 +271,28 @@ test('ambiguous or unrelated Verify runs never get silently adopted',async()=>{
  assert.equal(duplicate.calls.filter(x=>x.path.endsWith('/dispatches')).length,1);
  const unrelated=fixture();
  unrelated.runs.push({id:77,event:'workflow_dispatch',head_sha:'b'.repeat(40),
-   head_branch:'mahoraga/control',path:'.github/workflows/verify.yml',
+   head_branch:'mahoraga/control',path:'.github/workflows/verify.yml@mahoraga/control',
    display_title:'Ultron exact-head some-other-action',
    status:'completed',conclusion:'success',created_at:new Date().toISOString()});
  const result=await execute(unrelated,action);
  assert.equal(result.state,'observed');
  assert.equal(result.result.runId,99,'readback must select the action-specific run');
+});
+
+
+test('truncated GitHub run pagination cannot be adopted as an unambiguous execution',async()=>{
+ const f=fixture();
+ const transport=f.transport;
+ f.transport=async(url,init)=>{
+  if(new URL(url).pathname.endsWith('/actions/workflows/verify.yml/runs')){
+   const response=await transport(url,init),body=await response.json();
+   return {ok:true,status:200,json:async()=>({...body,total_count:body.total_count+1})};
+  }
+  return transport(url,init);
+ };
+ const request={key:'ultron:verify-95',operation:'verify.dispatch',
+   input:{ref:'mahoraga/control',expectedHeadSha:'b'.repeat(40)}};
+ const result=await execute(f,request);
+ assert.equal(result.state,'uncertain');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/dispatches')).length,0);
 });
