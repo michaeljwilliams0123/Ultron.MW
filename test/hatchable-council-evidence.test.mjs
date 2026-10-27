@@ -67,6 +67,7 @@ function manifestReadback(overrides={}){
  return {receiptId:903,eventType:'held-out-evaluation-frozen',
   schema:'ultron.held-out-evaluation-set.v1',objectiveId:OBJECTIVE,
   sourceSha:SHA,setId:'held-out-set-1',observedAt:MANIFEST_OBSERVED,
+  evidenceClass:'independent-task-evaluation-v1',
   frozen:true,setsDisjoint:true,cases:[{
    caseId:'case-1',baselineTaskId:21,candidateTaskId:22
   }],...overrides};
@@ -85,6 +86,7 @@ function outcomeReadbacks(){
 }
 function evaluation(overrides={}){
  return {objectiveId:OBJECTIVE,frozen:true,setsDisjoint:true,
+  evidenceClass:'independent-task-evaluation-v1',
   sourceSha:SHA,runtimeSourceSha:SHA,
   independentlyObserved:true,outcomeReadbacksObserved:true,
   eventId:906,eventType:'held-out-evaluation-observed',observedAt:OBSERVED,
