@@ -104,3 +104,15 @@ export async function evaluateSharedEvaluation({
   reasons
  };
 }
+
+// This API compares against a pinned corpus digest obtained by the caller from
+// an independently authenticated, immutable source. It does not attest that
+// source or grant promotion authority.
+export async function evaluatePinnedSharedEvaluation({pinnedCaseDigest,...comparison}={}){
+ if(typeof pinnedCaseDigest!=='string'||!/^[a-f0-9]{64}$/.test(pinnedCaseDigest))
+  reject('pinned-case-digest-required');
+ const result=await evaluateSharedEvaluation(comparison);
+ if(result.caseDigest!==pinnedCaseDigest)reject('pinned-case-digest-mismatch');
+ return {...result,pinnedCaseDigestVerified:true,
+  pinnedSharedThresholdMet:result.sharedThresholdMet};
+}
