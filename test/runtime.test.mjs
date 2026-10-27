@@ -267,3 +267,39 @@ test('local model conversation survives runtime restart and informs subsequent t
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test('local UI serves all required and optional startup modules but no unrelated files',async()=>fixture(async({base})=>{
+ const root=resolve(import.meta.dirname,'..');
+ const modules=['/core/cloud-submit.mjs','/core/cloud-pr-submit.mjs',
+   '/core/codex-authors.mjs','/core/cycle.mjs','/core/providers.mjs',
+   '/core/capabilities.mjs','/browser-vault.mjs','/browser-brain.mjs'];
+ for(const path of modules){
+  const response=await fetch(base()+path);
+  assert.equal(response.status,200,path+' must load before the UI can initialize');
+  assert.ok((response.headers.get('content-type')||'').includes('text/javascript'),path);
+  assert.equal(await response.text(),await readFile(resolve(root,'docs',path.slice(1)),'utf8'),path);
+ }
+ for(const path of ['/package.json','/src/server.mjs','/core/not-allowed.mjs',
+   '/.git/config','/core/%2e%2e/%2e%2e/package.json',
+   '/core/../../package.json','/core/%252e%252e/package.json',
+   '/core/%2f../package.json']){
+  // Native HTTP path is sent verbatim. fetch() normalizes dot segments first
+  // and would silently weaken the encoded-traversal regression.
+  const {status,body}=await new Promise((resolveResult,reject)=>{
+   const target=new URL(base());
+   const request=httpRequest({hostname:target.hostname,port:Number(target.port),
+     method:'GET',path,headers:{host:target.host}},response=>{
+     const chunks=[];
+     response.on('data',chunk=>chunks.push(chunk));
+     response.on('end',()=>resolveResult({
+       status:response.statusCode,body:Buffer.concat(chunks).toString('utf8')
+     }));
+   });
+   request.on('error',reject);
+   request.end();
+  });
+  assert.equal(status,404,path+' must be rejected without normalization');
+  assert.ok(!body.includes('"private"'),path+' must not leak package contents');
+ }
+}));

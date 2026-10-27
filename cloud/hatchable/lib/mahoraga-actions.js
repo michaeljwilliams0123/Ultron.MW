@@ -144,19 +144,41 @@ async function findIssue(get,key) {
 }
 async function findRun(get,action,since) {
  const {ref,expectedHeadSha} = action.input;
- const value = await get('/actions/workflows/verify.yml/runs?event=workflow_dispatch&head_sha='+
+ const value=await get('/actions/workflows/verify.yml/runs?event=workflow_dispatch&head_sha='+
    expectedHeadSha+'&per_page=100');
- if(!Array.isArray(value?.workflow_runs)) throw Error('run-readback-invalid');
- const matches = value.workflow_runs.filter(run =>
+ if(!Array.isArray(value?.workflow_runs) || value.workflow_runs.length>100 ||
+   !Number.isSafeInteger(value.total_count) ||
+   value.total_count!==value.workflow_runs.length)
+   throw Error('run-readback-invalid');
+ const title='Ultron exact-head '+action.key;
+ const matches=value.workflow_runs.filter(run =>
    run.event==='workflow_dispatch' && run.head_sha===expectedHeadSha &&
-   run.head_branch===ref && run.path==='.github/workflows/verify.yml' &&
+   run.head_branch===ref &&
+   (run.path==='.github/workflows/verify.yml@'+ref ||
+    run.path==='.github/workflows/verify.yml@refs/heads/'+ref) &&
+   run.display_title===title &&
    Number.isSafeInteger(run.id) && run.id>0 &&
-   Date.parse(run.created_at || '') >=
-     Math.floor(Date.parse(since)/1000)*1000);
- return matches.length===1?matches[0]:null;
+   Number.isFinite(Date.parse(run.created_at || '')) &&
+   Date.parse(run.created_at) >= Math.floor(Date.parse(since)/1000)*1000);
+ if(matches.length>1)throw Error('verify-run-ambiguous');
+ if(!matches.length)return null;
+ const run=matches[0];
+ if(run.status!=='completed')return null; // Pending means uncertain, never re-dispatch.
+ if(run.conclusion!=='success')throw Error('verify-run-not-successful');
+ const jobs=await get('/actions/runs/'+run.id+'/jobs?per_page=100');
+ if(!Array.isArray(jobs?.jobs)||jobs.total_count!==jobs.jobs.length ||
+   jobs.total_count<2||jobs.total_count>100)
+   throw Error('verify-run-jobs-incomplete');
+ for(const name of ['Verify (ubuntu-latest)','Verify (windows-latest)']){
+   const matches=jobs.jobs.filter(job=>job.name===name);
+   if(matches.length!==1||matches[0].status!=='completed'||
+     matches[0].conclusion!=='success')
+     throw Error('verify-required-job-not-successful');
+ }
+ return run;
 }
 async function observe(get,row) {
- const action={operation:row.operation,input:row.request};
+ const action={key:row.action_key,operation:row.operation,input:row.request};
  if(row.operation==='issue.create') {
    const item=await findIssue(get,row.action_key);
    const expected=row.request.body+'\n\n'+MARKER(row.action_key);
@@ -191,7 +213,9 @@ async function reconciliationFailure(db,row,error) {
  // idempotency marker with changed contents is never a missing issue.
  try { await db.query(`UPDATE mahoraga_actions SET state='uncertain',updated_at=now()
      WHERE id=$1 AND state='sent'`,[row.id]); } catch {}
- const conflict=['issue-marker-conflict','issue-marker-collision'].includes(error?.message);
+ const conflict=['issue-marker-conflict','issue-marker-collision',
+   'verify-run-ambiguous','verify-run-not-successful',
+   'verify-run-jobs-incomplete','verify-required-job-not-successful'].includes(error?.message);
  return {ok:!conflict,state:'uncertain',id:row.id,taskId:row.task_id,
    key:row.action_key,...(conflict?{error:error.message}:{})};
 }
@@ -271,7 +295,8 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
        await get('/issues','POST',{title:action.input.title,
          body:action.input.body+'\n\n'+MARKER(action.key)});
      else await get('/actions/workflows/verify.yml/dispatches','POST',
-       {ref:action.input.ref});
+       {ref:action.input.ref,inputs:{ultron_action_key:action.key,
+         ultron_expected_head_sha:action.input.expectedHeadSha}});
    }
    return await reconcile(db,get,row);
  } catch(error) {
