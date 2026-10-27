@@ -186,6 +186,15 @@ async function reconcile(db,get,row) {
  return {ok:true,state:saved.rows[0]?.state || 'uncertain',id:row.id,taskId:row.task_id,
    key:row.action_key,result:saved.rows[0]?.result || null};
 }
+async function reconciliationFailure(db,row,error) {
+ // Marker conflicts on ANY sent/uncertain path must be explicit. A matching
+ // idempotency marker with changed contents is never a missing issue.
+ try { await db.query(`UPDATE mahoraga_actions SET state='uncertain',updated_at=now()
+     WHERE id=$1 AND state='sent'`,[row.id]); } catch {}
+ const conflict=['issue-marker-conflict','issue-marker-collision'].includes(error?.message);
+ return {ok:!conflict,state:'uncertain',id:row.id,taskId:row.task_id,
+   key:row.action_key,...(conflict?{error:error.message}:{})};
+}
 export async function runMahoragaAction({db,config,transport=fetch},raw) {
  let action;
  try { action=validate(raw); } catch(error) {
@@ -230,7 +239,7 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
  catch(error) { return {ok:false,state:row.state,id:row.id,taskId:row.task_id,error:error.message}; }
  if(row.state!=='prepared') {
    try { return await reconcile(db,get,row); }
-   catch { return {ok:true,state:'uncertain',id:row.id,taskId:row.task_id,key:action.key}; }
+   catch(error) { return reconciliationFailure(db,row,error); }
  }
  try { await preflight(get,action); }
  catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,error:error.message}; }
@@ -248,9 +257,11 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
      FROM mahoraga_actions WHERE id=$1`,[row.id])).rows[0];
    if(row?.state==='prepared')return {ok:false,state:'prepared',id:row.id,
      taskId:row.task_id,key:action.key,error:'owner-execution-paused'};
-   return row.state==='observed'
-     ? {ok:true,state:'observed',id:row.id,taskId:row.task_id,key:action.key,result:row.result,reused:true}
-     : reconcile(db,get,row);
+   if(row.state==='observed')
+     return {ok:true,state:'observed',id:row.id,taskId:row.task_id,
+       key:action.key,result:row.result,reused:true};
+   try { return await reconcile(db,get,row); }
+   catch(error) { return reconciliationFailure(db,row,error); }
  }
  row=claim.rows[0];
  try {
@@ -264,15 +275,8 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
    }
    return await reconcile(db,get,row);
  } catch(error) {
-   // A network or database error after the durable sent transition is ambiguous.
-   // A conflicting marker is explicitly unresolved and must never cause a POST.
-   // No later call with this key is allowed to POST again.
-   try { await db.query(`UPDATE mahoraga_actions SET state='uncertain',updated_at=now()
-     WHERE id=$1 AND state='sent'`,[row.id]); } catch {}
-   if(['issue-marker-conflict','issue-marker-collision'].includes(error?.message))
-     return {ok:false,state:'uncertain',id:row.id,taskId:row.task_id,
-       key:action.key,error:error.message};
-   return {ok:true,state:'uncertain',id:row.id,taskId:row.task_id,key:action.key};
+   // A sent operation remains non-replayable after any ambiguous outcome.
+   return reconciliationFailure(db,row,error);
  }
 }
 /**
