@@ -267,3 +267,22 @@ test('local model conversation survives runtime restart and informs subsequent t
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test('local UI serves all required and optional startup modules but no unrelated files',async()=>fixture(async({base})=>{
+ const root=resolve(import.meta.dirname,'..');
+ const modules=['/core/cloud-submit.mjs','/core/cloud-pr-submit.mjs',
+   '/core/codex-authors.mjs','/core/cycle.mjs','/core/providers.mjs',
+   '/core/capabilities.mjs','/browser-vault.mjs','/browser-brain.mjs'];
+ for(const path of modules){
+  const response=await fetch(base()+path);
+  assert.equal(response.status,200,path+' must load before the UI can initialize');
+  assert.match(response.headers.get('content-type')||'',/text\\/javascript/,path);
+  assert.equal(await response.text(),await readFile(resolve(root,'docs',path.slice(1)),'utf8'),path);
+ }
+ for(const path of ['/package.json','/src/server.mjs','/core/not-allowed.mjs',
+   '/.git/config','/core/%2e%2e/%2e%2e/package.json']){
+  const response=await fetch(base()+path);
+  assert.notEqual(response.status,200,path+' must not expose repository files');
+ }
+}));
