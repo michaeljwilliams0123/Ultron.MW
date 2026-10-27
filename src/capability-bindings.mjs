@@ -164,46 +164,73 @@ export function createCapabilityBroker({ authorize = async () => false,
       throw Error('Invalid capability request');
     const operation = record.binding.operations.find(item => item.name === request.operation);
     if (!operation) throw Error('Operation not admitted by binding');
-    const attemptId = `${id}:${request.idempotencyKey}`;
-    const fingerprint = digest({ operation: request.operation, input: request.input,
-      expected: request.expected, estimatedCostCents: request.estimatedCostCents });
+    // Snapshot the exact request before any asynchronous authorization. An
+    // untrusted caller must not mutate the dispatch payload after approval.
+    const snapshot = {
+      operation: request.operation, idempotencyKey: request.idempotencyKey,
+      estimatedCostCents: request.estimatedCostCents,
+      input: JSON.parse(JSON.stringify(request.input)),
+      expected: JSON.parse(JSON.stringify(request.expected)),
+    };
+    const attemptId = `${id}:${snapshot.idempotencyKey}`;
+    const fingerprint = digest({ operation: snapshot.operation, input: snapshot.input,
+      expected: snapshot.expected, estimatedCostCents: snapshot.estimatedCostCents });
     const prior = attempts.get(attemptId);
     if (prior) {
       if (prior.fingerprint !== fingerprint)
         throw Error('Idempotency key reused with different request');
       return Object.freeze({ ...prior.receipt, resumed: true });
     }
-    if (operation.effect !== 'read' && await authorize({
-      bindingId: id, provider: record.binding.provider,
-      actorRef: record.binding.actorRef, operation: operation.name,
-      effect: operation.effect, scope: operation.scope,
-      idempotencyKey: request.idempotencyKey,
-      estimatedCostCents: request.estimatedCostCents,
-      maxCostCents: record.binding.maxCostCents,
-    }) !== true)
-      return Object.freeze({ status: 'approval-required', bindingId: id,
-        operation: operation.name });
 
-    const pending = { fingerprint, receipt: { status: 'reconcile-required',
-      bindingId: id, provider: record.binding.provider, operation: operation.name,
-      effect: operation.effect, idempotencyKey: request.idempotencyKey,
-      reason: 'Provider outcome requires independent reconciliation' } };
+    // Reserve synchronously, before authorize() can yield to a competing
+    // request. This guards a single broker process only; durable runtime
+    // writes still require an external transaction-backed attempt ledger.
+    const pending = { fingerprint, receipt: Object.freeze({
+      status: 'approval-pending', bindingId: id, operation: operation.name,
+      idempotencyKey: snapshot.idempotencyKey }) };
     attempts.set(attemptId, pending);
     try {
+      if (operation.effect !== 'read' && await authorize({
+        bindingId: id, provider: record.binding.provider,
+        actorRef: record.binding.actorRef, operation: operation.name,
+        effect: operation.effect, scope: operation.scope,
+        idempotencyKey: snapshot.idempotencyKey,
+        estimatedCostCents: snapshot.estimatedCostCents,
+        maxCostCents: record.binding.maxCostCents,
+        requestFingerprint: fingerprint,
+        inputDigest: digest(snapshot.input), expectedDigest: digest(snapshot.expected),
+      }) !== true) {
+        attempts.delete(attemptId); // Denial has no possible external side effect.
+        return Object.freeze({ status: 'approval-required', bindingId: id,
+          operation: operation.name });
+      }
+      // Approval is not timeless: an expiry, revocation, or unbind that occurs
+      // while the owner responds must fail before any provider side effect.
+      if (recordFor(id) !== record || record.readiness !== 'ready')
+        throw Error('Capability binding not ready');
+      pending.receipt = Object.freeze({ status: 'reconcile-required',
+        bindingId: id, provider: record.binding.provider, operation: operation.name,
+        effect: operation.effect, idempotencyKey: snapshot.idempotencyKey,
+        reason: 'Provider outcome requires independent reconciliation' });
+    } catch (error) {
+      attempts.delete(attemptId); // Still pre-dispatch; another approval may retry.
+      throw error;
+    }
+    try {
       const result = await record.adapter.execute({ binding: record.binding,
-        operation: operation.name, input: request.input,
-        idempotencyKey: request.idempotencyKey,
-        estimatedCostCents: request.estimatedCostCents });
+        operation: operation.name, input: snapshot.input,
+        idempotencyKey: snapshot.idempotencyKey,
+        estimatedCostCents: snapshot.estimatedCostCents });
       const observation = await record.adapter.observe({ binding: record.binding,
-        query: { operation: operation.name, expected: request.expected,
+        query: { operation: operation.name, expected: snapshot.expected,
           resultDigest: digest(result ?? null) } });
       if (!observation || observation.verified !== true ||
           !serializable(observation, 20_000)) throw Error('Outcome not verified');
       pending.receipt = Object.freeze({ status: 'completed', bindingId: id,
         provider: record.binding.provider, actorRef: record.binding.actorRef,
         operation: operation.name, effect: operation.effect,
-        idempotencyKey: request.idempotencyKey, observedAt: clock(),
-        costCents: request.estimatedCostCents,
+        idempotencyKey: snapshot.idempotencyKey, observedAt: clock(),
+        costCents: snapshot.estimatedCostCents,
         resultDigest: digest(result ?? null), observationDigest: digest(observation) });
       return pending.receipt;
     } catch {
