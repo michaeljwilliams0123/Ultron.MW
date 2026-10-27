@@ -146,12 +146,16 @@ async function findRun(get,action,since) {
  const {ref,expectedHeadSha} = action.input;
  const value=await get('/actions/workflows/verify.yml/runs?event=workflow_dispatch&head_sha='+
    expectedHeadSha+'&per_page=100');
- if(!Array.isArray(value?.workflow_runs) || value.workflow_runs.length>100)
+ if(!Array.isArray(value?.workflow_runs) || value.workflow_runs.length>100 ||
+   !Number.isSafeInteger(value.total_count) ||
+   value.total_count!==value.workflow_runs.length)
    throw Error('run-readback-invalid');
  const title='Ultron exact-head '+action.key;
  const matches=value.workflow_runs.filter(run =>
    run.event==='workflow_dispatch' && run.head_sha===expectedHeadSha &&
-   run.head_branch===ref && run.path==='.github/workflows/verify.yml' &&
+   run.head_branch===ref &&
+   (run.path==='.github/workflows/verify.yml@'+ref ||
+    run.path==='.github/workflows/verify.yml@refs/heads/'+ref) &&
    run.display_title===title &&
    Number.isSafeInteger(run.id) && run.id>0 &&
    Number.isFinite(Date.parse(run.created_at || '')) &&
