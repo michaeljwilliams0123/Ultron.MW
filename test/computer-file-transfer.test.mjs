@@ -82,7 +82,7 @@ test('Playwright upload preflight binds the approved bytes before file-input dis
       assert.equal(path,await realpath(file)); selected++;
     },
   };
-  const page={ url:()=>origin+'/form', goto:async()=>{},
+  const page={ url:()=>origin+'/form', goto:async()=>{}, context:()=>({close:async()=>{}}),
     locator:()=>target };
   const { createPlaywrightComputerDriver } = await import('../src/computer/playwright-driver.mjs');
   const driver=createPlaywrightComputerDriver(page,{
@@ -170,3 +170,4 @@ test('Playwright refuses file changes between owner approval and second prefligh
  assert.equal(driver.approvalMetadata(step).fileSha256,approval.fileSha256);
  await assert.rejects(driver.perform(step),/changed after owner approval/i);
 });
+

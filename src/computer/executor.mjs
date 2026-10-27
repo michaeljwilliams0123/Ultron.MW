@@ -135,9 +135,13 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
 
   async function run(raw) {
     const plan = normalizeComputerPlan(raw, { allowedOrigins });
+    const execute = async () => {
+      try { return await runLocked(plan); }
+      finally { await driver.endRun?.(); }
+    };
     if (typeof store.withLock === 'function')
-      return store.withLock(plan.id, () => runLocked(plan));
-    return runLocked(plan);
+      return store.withLock(plan.id, execute);
+    return execute();
   }
 
   async function runLocked(plan) {
@@ -199,6 +203,13 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       }
       // A newly launched isolated browser starts at about:blank.
       // Only first-step navigation may begin from that browser-native state.
+      if (before.url === 'about:blank' && state.completed.length && step.action !== 'navigate') {
+        state.status = 'approval-required';
+        await store.write(plan.id, state);
+        return { status: 'browser-restart-required', id: plan.id, stepId: step.id,
+          reason: 'Fresh browser requires an explicit navigation before continuing',
+          receipts: [...state.receipts] };
+      }
       if (!(step.action === 'navigate' && before.url === 'about:blank'))
         safeUrl(before.url, allowedOrigins);
       if (ACTIVE.has(step.action) && !['type','upload','download'].includes(step.action) &&
@@ -352,6 +363,17 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
           reason: 'Outcome unverified; inspect the application before retrying',
           ...diagnostics, receipts: [...state.receipts] };
       }
+      // The action receipt is durable before browser retirement. A failure
+      // to replace the context must never turn that verified action into a
+      // replayable pending write or dispatch the next step in the old context.
+      try { await driver.completeStep?.({ hasMoreSteps: state.completed.length < plan.steps.length }); }
+      catch {
+        state.status = 'approval-required';
+        await store.write(plan.id, state);
+        return { status: 'browser-restart-required', id: plan.id,
+          reason: 'Verified action retained; start a fresh browser session before continuing',
+          receipts: [...state.receipts] };
+      }
     }
     state.status = 'completed';
     await store.write(plan.id, state);
@@ -372,3 +394,4 @@ export function createMemoryComputerStore() {
     },
   };
 }
+

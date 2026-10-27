@@ -29,6 +29,17 @@ export function createBoundedMultipartBridge() {
   const active = new Set();
   const knownPages = new WeakSet();
   return Object.freeze({
+    hasArmedUploads() { return active.size > 0; },
+    hasConsumedUpload() {
+      return [...active].some(page => approved.get(page)?.consumed === true);
+    },
+    receiptNavigationUrl() {
+      for (const page of active) {
+        const receipt = approved.get(page)?.receiptNavigation;
+        if (receipt?.used) return receipt.url;
+      }
+      return null;
+    },
     registerPage(page) {
       if (!page || typeof page !== 'object') throw Error('Known browser page required');
       knownPages.add(page);
@@ -159,3 +170,4 @@ export function createBoundedMultipartBridge() {
     },
   });
 }
+

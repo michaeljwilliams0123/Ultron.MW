@@ -9,12 +9,15 @@ import { createBoundedMultipartBridge } from './multipart-bridge.mjs';
  */
 export function createPlaywrightComputerDriver(initialPage, {
   tabs = { primary: initialPage }, windows = {}, uploadRoot, downloadRoot, uploadBridge,
+  createCleanSession,
 } = {}) {
   let page = initialPage;
+  let retired = false;
+  let contextsDiscarded = false;
   if (!page || typeof page.goto !== 'function' ||
       typeof page.locator !== 'function' || typeof page.url !== 'function')
     throw TypeError('An actual Playwright Page is required');
-  const slots = new Map([...Object.entries(tabs), ...Object.entries(windows)]);
+  let slots = new Map([...Object.entries(tabs), ...Object.entries(windows)]);
   if (slots.get('primary') !== initialPage ||
       [...slots.keys()].some(key => !['primary','secondary','tertiary','window-secondary'].includes(key)) ||
       (windows['window-secondary'] && windows['window-secondary'].context() === initialPage.context()))
@@ -27,7 +30,65 @@ export function createPlaywrightComputerDriver(initialPage, {
   for (const slot of slots.values()) uploadBridge?.registerPage?.(slot);
   const preparedTargets = new Map();
   const preparedUploads = new Map();
+  function assertAvailable() {
+    if (retired) throw Error('Browser context retired; a fresh owner session is required');
+  }
+  function uploadContexts() {
+    const contexts = [...new Set([...slots.values()].map(slot => slot.context?.()))];
+    if (contexts.some(context => typeof context?.close !== 'function'))
+      throw Error('Upload requires disposable isolated browser contexts');
+    return contexts;
+  }
+  async function discardUploadContexts() {
+    if (contextsDiscarded) return;
+    retired = true;
+    // Sibling pages can retain file bytes through BroadcastChannel. Close all
+    // contexts before admitting any replacement; never just clear the fence.
+    const results = await Promise.allSettled(uploadContexts().map(context => context.close()));
+    for (const target of preparedTargets.values()) {
+      try { await target.dispose?.(); } catch {}
+    }
+    preparedTargets.clear();
+    preparedUploads.clear();
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    contextsDiscarded = true;
+  }
   return Object.freeze({
+    async endRun() {
+      if (uploadBridge?.hasArmedUploads?.()) await discardUploadContexts();
+    },
+    async completeStep({ hasMoreSteps = true } = {}) {
+      if (!uploadBridge?.hasConsumedUpload?.()) return;
+      // A page can put selected bytes in history.pushState(). Never carry its
+      // current URL into a new network request. Only a response-derived
+      // receipt URL may be revisited after every old context has closed.
+      const receiptUrl = uploadBridge.receiptNavigationUrl();
+      await discardUploadContexts();
+      if (!hasMoreSteps) return;
+      if (typeof createCleanSession !== 'function')
+        throw Error('Upload context closed; a fresh owner session is required');
+      const clean = await createCleanSession();
+      const nextSlots = new Map([...Object.entries(clean.tabs), ...Object.entries(clean.windows)]);
+      if (!clean.page || nextSlots.get('primary') !== clean.page ||
+          typeof clean.page.goto !== 'function' || typeof clean.page.locator !== 'function' ||
+          typeof clean.page.url !== 'function' ||
+          [...nextSlots.keys()].some(key => !['primary','secondary','tertiary','window-secondary'].includes(key)) ||
+          (clean.windows['window-secondary'] &&
+            clean.windows['window-secondary'].context() === clean.page.context()) ||
+          !clean.uploadBridge || clean.uploadBridge.hasArmedUploads?.() !== false)
+        throw Error('Fresh isolated browser session required after upload');
+      page = clean.page;
+      slots = nextSlots;
+      uploadBridge = clean.uploadBridge;
+      contextsDiscarded = false;
+      for (const slot of slots.values()) uploadBridge.registerPage(slot);
+      // No cookies, local storage or selected-file data cross this boundary.
+      // Revisit only the verified receipt URL in the new isolated context.
+      if (receiptUrl)
+        await page.goto(receiptUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      retired = false;
+    },
     // Approval uses only preflighted metadata, never raw owner file contents.
     approvalMetadata(step) {
       if (step?.action !== 'upload') return null;
@@ -38,6 +99,7 @@ export function createPlaywrightComputerDriver(initialPage, {
     // A read-only actionability trial checks the intended target BEFORE
     // a human is asked to approve. It does not click, type or press a key.
     async preflight(step) {
+      assertAvailable();
       const locator = page.locator(step.selector);
       let target = preparedTargets.get(step.id);
       if (!target && typeof locator.elementHandle === 'function') {
@@ -68,6 +130,7 @@ export function createPlaywrightComputerDriver(initialPage, {
       return true;
     },
     async observe() {
+      assertAvailable();
       const body = page.locator('body');
       const text = String(await body.innerText({ timeout: 10000 })).slice(0, 10000);
       // Visual and accessibility evidence stay in process memory only. Never
@@ -105,6 +168,7 @@ export function createPlaywrightComputerDriver(initialPage, {
       };
     },
     async perform(step) {
+      assertAvailable();
       const prepared = preparedTargets.get(step.id);
       try {
         switch (step.action) {
@@ -146,12 +210,14 @@ export function createPlaywrightComputerDriver(initialPage, {
             if (!file) throw Error('Unprepared upload action');
             if (!uploadBridge ||
                 ['registerPage','arm','mustBlockRequest','approveSubmit','rehydrate',
-                  'authorizeReceiptNavigation'].some(name =>
+                  'authorizeReceiptNavigation','hasArmedUploads','hasConsumedUpload',
+                  'receiptNavigationUrl'].some(name =>
                   typeof uploadBridge[name] !== 'function'))
               throw Error('Upload requires a complete approved-transfer network fence');
             const fresh = await validateUploadFile(step.filePath, uploadRoot);
             if (fresh.sha256 !== file.sha256 || fresh.path !== file.path || fresh.bytes !== file.bytes)
               throw Error('Upload file changed after owner approval');
+            uploadContexts();
             const target = prepared || page.locator(step.selector);
             const fieldName = await target.evaluate(el => el.name);
             // Fence the page before setInputFiles fires page-controlled input/change
@@ -203,6 +269,9 @@ export function createPlaywrightComputerDriver(initialPage, {
             throw Error('Unrecognized browser action');
         }
         return null;
+      } catch (error) {
+        if (uploadBridge?.hasArmedUploads?.()) await discardUploadContexts();
+        throw error;
       } finally {
         preparedUploads.delete(step.id);
         if (prepared) {
@@ -366,41 +435,51 @@ export async function launchIsolatedBrowser(options = {}) {
     headless: options.headless === true,
     ...(options.channel ? { channel: options.channel } : {}),
   });
-  try {
-    const uploadBridge = createBoundedMultipartBridge();
-    const context = await browser.newContext({
-      acceptDownloads: Boolean(options.downloadRoot), serviceWorkers: 'block',
-    });
-    await installNetworkPolicy(context, options.allowedOrigins, { uploadBridge });
-    const page = await context.newPage();
-    // Optional multi-tab uses a fixed set of preallocated pages created
-    // before any untrusted website can execute. All arbitrary popups close.
-    const tabs = { primary: page };
-    if (options.enableTabs === true) {
-      tabs.secondary = await context.newPage();
-      tabs.tertiary = await context.newPage();
-    }
-    const admitted = new Set(Object.values(tabs));
-    context.on('page', opened => {
-      if (!admitted.has(opened)) void opened.close().catch(() => {});
-    });
-    const windows = {};
-    if (options.enableWindows === true) {
-      // A separate isolated context produces a separate native Chrome window.
-      // Session cookies and site storage are not inherited across windows.
-      const secondary = await browser.newContext({
+  let activePage;
+  async function createCleanSession() {
+    const contexts = [];
+    try {
+      const uploadBridge = createBoundedMultipartBridge();
+      const context = await browser.newContext({
         acceptDownloads: Boolean(options.downloadRoot), serviceWorkers: 'block',
       });
-      await installNetworkPolicy(secondary, options.allowedOrigins, { uploadBridge });
-      const secondaryPage = await secondary.newPage();
-      windows['window-secondary'] = secondaryPage;
-      secondary.on('page', opened => {
-        if (opened !== secondaryPage) void opened.close().catch(() => {});
+      contexts.push(context);
+      await installNetworkPolicy(context, options.allowedOrigins, { uploadBridge });
+      const page = await context.newPage();
+      const tabs = { primary: page };
+      if (options.enableTabs === true) {
+        tabs.secondary = await context.newPage();
+        tabs.tertiary = await context.newPage();
+      }
+      const admitted = new Set(Object.values(tabs));
+      context.on('page', opened => {
+        if (!admitted.has(opened)) void opened.close().catch(() => {});
       });
+      const windows = {};
+      if (options.enableWindows === true) {
+        const secondary = await browser.newContext({
+          acceptDownloads: Boolean(options.downloadRoot), serviceWorkers: 'block',
+        });
+        contexts.push(secondary);
+        await installNetworkPolicy(secondary, options.allowedOrigins, { uploadBridge });
+        const secondaryPage = await secondary.newPage();
+        windows['window-secondary'] = secondaryPage;
+        secondary.on('page', opened => {
+          if (opened !== secondaryPage) void opened.close().catch(() => {});
+        });
+      }
+      activePage = page;
+      return { page, tabs, windows, uploadBridge };
+    } catch (error) {
+      await Promise.allSettled(contexts.map(context => context.close()));
+      throw error;
     }
-    return { page, driver: createPlaywrightComputerDriver(page, {
-      tabs, windows, uploadRoot: options.uploadRoot, downloadRoot: options.downloadRoot,
-      uploadBridge,
+  }
+  try {
+    const session = await createCleanSession();
+    return { get page() { return activePage; }, driver: createPlaywrightComputerDriver(session.page, {
+      ...session, uploadRoot: options.uploadRoot, downloadRoot: options.downloadRoot,
+      createCleanSession,
     }),
       async close() { await browser.close(); } };
   } catch (error) {
@@ -408,3 +487,4 @@ export async function launchIsolatedBrowser(options = {}) {
     throw error;
   }
 }
+
