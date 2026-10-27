@@ -209,13 +209,22 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       if (!await preflightAction(step))
         return actionNotReady(step,
           'Target not actionable; no interaction dispatched');
+      const uploadEvidence=step.action==='upload'
+        ? await driver.approvalMetadata?.(step):null;
+      if(step.action==='upload' &&
+          (!/^[a-f0-9]{64}$/.test(uploadEvidence?.fileSha256 || '') ||
+           !Number.isSafeInteger(uploadEvidence?.fileBytes) ||
+           uploadEvidence.fileBytes < 1 || uploadEvidence.fileBytes > 8*1024*1024))
+        return actionNotReady(step,'Upload lacks immutable byte-bound preflight');
       if (ACTIVE.has(step.action) && await authorize({
         planId: plan.id, planFingerprint: fingerprint, action: step.action,
         stepId: step.id, currentOrigin: new URL(before.url).origin,
         selector: step.selector, uploadDestination: step.sendToOrigin,
         valueLength: step.action === 'type' ? step.value.length : undefined,
-        fileName: step.action === 'upload' ? step.filePath.replaceAll('\\','/').split('/').at(-1) :
+        fileName: step.action === 'upload' ? uploadEvidence.fileName :
           step.action === 'download' ? step.outputName : undefined,
+        fileSha256: uploadEvidence?.fileSha256,
+        fileBytes: uploadEvidence?.fileBytes,
         key: step.action === 'keypress' ? step.key : undefined,
         expectedState: step.expect
       }) !== true) {
@@ -230,6 +239,13 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
       if (!await preflightAction(step))
         return actionNotReady(step,
           'Target changed or became unavailable after owner approval');
+      if(step.action==='upload'){
+        const fresh=await driver.approvalMetadata?.(step);
+        if(!fresh || fresh.fileSha256!==uploadEvidence.fileSha256 ||
+           fresh.fileBytes!==uploadEvidence.fileBytes ||
+           fresh.fileName!==uploadEvidence.fileName)
+          return actionNotReady(step,'Approved file changed before dispatch');
+      }
       const blockedBeforeCheckpoint = await sessionGate(step);
       if (blockedBeforeCheckpoint) return blockedBeforeCheckpoint;
       state.status = 'running';
