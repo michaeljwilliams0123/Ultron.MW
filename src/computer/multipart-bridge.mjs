@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { validateUploadFile, MAX_BROWSER_FILE_BYTES } from './file-transfer.mjs';
 
 const SAFE_FIELD = /^[a-z0-9_.-]{1,80}$/i;
@@ -15,12 +16,25 @@ const MAX_WIRE_BYTES = MAX_BROWSER_FILE_BYTES + 32 * 1024;
  */
 export function createBoundedMultipartBridge() {
   const approved = new WeakMap();
+  const active = new Set();
   return Object.freeze({
+    mustBlockRequest(page, request) {
+      if (!active.size) return false;
+      const state = approved.get(page);
+      if (!state || !state.submitApproved || state.consumed) return true;
+      let target;
+      try { target = new URL(request.url()); } catch { return true; }
+      const type = String(request.headers?.()['content-type'] || '').toLowerCase();
+      return target.origin !== state.destinationOrigin ||
+        request.method?.() !== 'POST' || !request.isNavigationRequest?.() ||
+        !type.startsWith('multipart/form-data');
+    },
     arm(page, file, root, fieldName) {
       if (!page || !file || !SAFE_FIELD.test(fieldName || '') ||
           !file.path || !file.sha256 || !file.name)
         throw Error('Approved upload must bind a named file input and SHA-256');
       approved.set(page, { file, root, fieldName, submitApproved: false });
+      active.add(page);
     },
     approveSubmit(page, destinationOrigin = null) {
       const state = approved.get(page);
@@ -37,8 +51,9 @@ export function createBoundedMultipartBridge() {
     async rehydrate(request) {
       const page = request.frame().page();
       const state = approved.get(page);
-      // Consume the authority before any I/O; network failure never replays.
-      approved.delete(page);
+      // Only one send is admitted. Keep the selected-file page fenced after
+      // the POST until the isolated browser context is closed.
+      if (state) state.consumed = true;
       if (!state?.submitApproved ||
           new URL(request.url()).origin !== state.destinationOrigin ||
           request.method() !== 'POST' || !request.isNavigationRequest())
@@ -75,6 +90,8 @@ export function createBoundedMultipartBridge() {
         throw Error('Browser multipart part is not an empty file placeholder');
       const contents = await readFile(fresh.path);
       if (contents.length !== fresh.bytes) throw Error('Approved file size drift');
+      if (createHash('sha256').update(contents).digest('hex') !== fresh.sha256)
+        throw Error('Approved file contents changed after selection');
       const outbound = Buffer.concat([
         original.subarray(0, dataStart), contents, original.subarray(dataStart),
       ]);
