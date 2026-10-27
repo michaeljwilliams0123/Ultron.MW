@@ -39,7 +39,9 @@ export function createBoundedMultipartBridge() {
       // unknown frames stay blocked when any approved file remains readable.
       if (!page || !knownPages.has(page)) return true;
       const state = approved.get(page);
-      if (!state) return false;
+      // A same-origin page can receive selected bytes over BroadcastChannel,
+      // so every page in this browser context stays fenced while one is armed.
+      if (!state) return true;
       const receipt = state.receiptNavigation;
       if (receipt && !receipt.used) {
         let requestedUrl = '';
