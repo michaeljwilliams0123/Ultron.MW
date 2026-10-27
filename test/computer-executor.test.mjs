@@ -634,3 +634,27 @@ test('approved upload file digest and size are forwarded to owner; mutation prev
  assert.equal(result.status,'action-not-ready');
  assert.equal(executions,0);
 });
+
+test('network policy refuses non-multipart data, query-string or GET while upload is armed',async()=>{
+ let intercept,fetches=0,aborts=0;
+ const uploadBridge={ mustBlockRequest(_page,req){
+   return req.method()!=='POST' || !(req.headers()['content-type']||'').startsWith('multipart/form-data');
+ },rehydrate:async()=>Buffer.from('approved') };
+ await installNetworkPolicy({route:async(_,cb)=>{intercept=cb;},
+   routeWebSocket:async()=>{}},allowedOrigins,{uploadBridge});
+ const page={};
+ for(const [method,url,contentType] of [
+   ['GET','https://example.test/leak?file=secret',''],
+   ['POST','https://example.test/submit','application/json'],
+   ['POST','https://example.test/submit','text/plain']
+ ]){
+   await intercept({
+    request:()=>({url:()=>url,method:()=>method,
+      headers:()=>({'content-type':contentType}),frame:()=>({page:()=>page})}),
+    fetch:async()=>{fetches++;return {status:()=>200,headers:()=>({})}},
+    abort:async()=>{aborts++},fulfill:async()=>{}
+   });
+ }
+ assert.equal(fetches,0);
+ assert.equal(aborts,3);
+});
