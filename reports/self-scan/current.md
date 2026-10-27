@@ -1,10 +1,10 @@
 <!-- ULTRON_SELF_SCAN_REPORT_V1 -->
 # Ultron self-scan — actionable source findings
 
-Finding signature: 8e006f6e9d2fb727316f45bd3c138e02681c17ebbd98037ad41bf2146f18fcb8
-Observed GitHub main SHA: 9794b4d1384b461ff1e65a5fd946cac637d0b6a0
-Observed source tree SHA: d5f51df5d31652e60bdef90db974bfd66e243a3e
-Observed at: 2026-10-26T06:24:49.930Z
+Finding signature: b7885086a40f393dbd2553571295419657d5a4e5a759db1241f5b5a9ed7806a4
+Observed GitHub main SHA: d9450aceb89e21e8d63e73e935b59eb867673f63
+Observed source tree SHA: 8b6b97484692ec781843cc3c5853b62b30664f5c
+Observed at: 2026-10-27T19:27:02.455Z
 Authority: exact GitHub main, not a deployed production runtime
 
 ## Findings
@@ -12,18 +12,17 @@ Authority: exact GitHub main, not a deployed production runtime
 | Priority | Code | Evidence | Suggested next action |
 | --- | --- | --- | --- |
 | high | live-execution-unobserved | Source inspection cannot attest a production request or response | Run an authenticated end-to-end task and validate its durable result |
-| medium | ci-head-unobserved | Current-main CI conclusion was not independently verified during this scan | Read exact-main GitHub Actions Verify outcome before making a CI claim |
 | medium | learning-effect-unobserved | The scan has no independently scored future-task or held-out cognition outcome | Compare actual realized outcomes against prior predictions before updating policy |
 
 ## Scanned source
 
-- Files inventoried: 262
+- Files inventoried: 306
 - Source files: 59
-- Test files: 78
-- Workflow files: 6
+- Test files: 93
+- Workflow files: 8
 - Static evidence coverage: 1
-- Observed current-main CI: not-probed
-- GitHub CI evidence run: unavailable
+- Observed current-main CI: success
+- GitHub CI evidence run: https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/40566204326
 
 ## Static wiring checks
 
@@ -53,7 +52,6 @@ Authority: exact GitHub main, not a deployed production runtime
 ## Next steps
 
 - Compare actual realized outcomes against prior predictions before updating policy
-- Read exact-main GitHub Actions Verify outcome before making a CI claim
 - Run an authenticated end-to-end task and validate its durable result
 
 This PR is a source scan, not a verified code fix.
