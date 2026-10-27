@@ -27,6 +27,7 @@ async function fixture(t){
 }
 test('approved file bytes reconstruct one original multipart request, then consume grant',async t=>{
   const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
+  bridge.registerPage(page);
   bridge.arm(page,record,root,'canary');
   bridge.approveSubmit(page,origin);
   const body=await bridge.rehydrate(req(page));
@@ -38,6 +39,7 @@ test('unapproved origin, missing submit, mutation and wrong filename fail closed
   const {root,file,record}=await fixture(t);
   for(const shape of ['no-submit','wrong-origin','changed-file','wrong-field','extra-file']){
     const bridge=createBoundedMultipartBridge(),sidePage={url:page.url};
+    bridge.registerPage(sidePage);
     bridge.arm(sidePage,record,root,'canary');
     if(shape!=='no-submit')bridge.approveSubmit(sidePage,origin);
     if(shape==='changed-file')await writeFile(file,'changed-after-approval\n');
@@ -65,6 +67,7 @@ test('upload destination must be explicitly allowlisted and visible in owner pre
 test('armed upload blocks background requests until one approved multipart submit',async t=>{
  const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
  const p={url:()=>origin+'/form'};
+ bridge.registerPage(p);
  bridge.arm(p,record,root,'canary');
  assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/leak?file=secret',method:()=> 'GET'}),true);
  assert.equal(bridge.mustBlockRequest(p,{url:()=>origin+'/data',method:()=> 'POST',
@@ -82,6 +85,7 @@ test('armed upload blocks background requests until one approved multipart submi
 test('rehydrated multipart never sends bytes that differ from owner-approved SHA',async t=>{
  const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
  const p={url:page.url};
+ bridge.registerPage(p);
  bridge.arm(p,record,root,'canary');bridge.approveSubmit(p,origin);
  // The independent buffer SHA check must be present on the actual dispatched contents.
  const fileModule=await import('node:fs/promises');
@@ -89,4 +93,20 @@ test('rehydrated multipart never sends bytes that differ from owner-approved SHA
  assert.equal(source.length,record.bytes);
  const output=await bridge.rehydrate(req(p));
  assert.ok(output.includes(source));
+});
+
+test('separate trusted preallocated tab remains readable; unknown popup stays blocked',async t=>{
+ const {root,record}=await fixture(t),bridge=createBoundedMultipartBridge();
+ const armed={url:()=>origin+'/upload'},secondary={url:()=>origin+'/receipt'};
+ const popup={url:()=>origin+'/popup'};
+ bridge.registerPage(armed);bridge.registerPage(secondary);
+ bridge.arm(armed,record,root,'canary');
+ const reqGet=page=>({url:()=>origin+'/receipt',method:()=> 'GET',
+   headers:()=>({}),isNavigationRequest:()=>true,frame:()=>({page:()=>page})});
+ assert.equal(bridge.mustBlockRequest(secondary,reqGet(secondary)),false);
+ assert.equal(bridge.mustBlockRequest(popup,reqGet(popup)),true);
+ assert.equal(bridge.mustBlockRequest(armed,reqGet(armed)),true);
+ bridge.approveSubmit(armed,origin);
+ assert.equal(bridge.mustBlockRequest(secondary,reqGet(secondary)),false);
+ assert.equal(bridge.mustBlockRequest(armed,reqGet(armed)),true);
 });
