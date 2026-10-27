@@ -136,8 +136,21 @@ export function createComputerExecutor({ driver, store, authorize = async () => 
   async function run(raw) {
     const plan = normalizeComputerPlan(raw, { allowedOrigins });
     const execute = async () => {
-      try { return await runLocked(plan); }
-      finally { await driver.endRun?.(); }
+      let result, primaryError, cleanupError;
+      try { result = await runLocked(plan); }
+      catch (error) { primaryError = error; }
+      try { await driver.endRun?.(); }
+      catch (error) { cleanupError = error; }
+      if (primaryError) {
+        if (cleanupError)
+          throw new AggregateError([primaryError, cleanupError],
+            'Browser run and cleanup failed', { cause: primaryError });
+        throw primaryError;
+      }
+      if (cleanupError)
+        return { ...result, status: result.status === 'completed'
+          ? 'browser-restart-required' : result.status, cleanupFailed: true };
+      return result;
     };
     if (typeof store.withLock === 'function')
       return store.withLock(plan.id, execute);

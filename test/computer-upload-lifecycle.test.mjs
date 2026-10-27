@@ -70,7 +70,8 @@ test('a verified upload retires every old context before later steps use a clean
   await driver.perform({ id: 'later', action: 'navigate', url: origin + '/later' });
   assert.deepEqual(p.visits, []);
   assert.deepEqual(fresh.visits, [origin + '/receipt', origin + '/later']);
-  assert.equal(freshBridge.mustBlockRequest(fresh, { url: () => origin + '/later' }), false);
+  freshBridge.arm(fresh, file, root, 'canary');
+  assert.equal(freshBridge.mustBlockRequest(fresh, { url: () => origin + '/later' }), true);
 });
 
 test('a direct upload response cannot carry a page-controlled URL into the clean context', async t => {
@@ -124,6 +125,22 @@ test('cleanup failure cannot open a replacement context', async t => {
   await assert.rejects(driver.perform({ id: 'later', action: 'navigate', url: origin + '/later' }), /retired/);
 });
 
+test('selection timeout remains the primary error when context close also fails', async t => {
+  const { root, path } = await fixture(t);
+  const timeout = Object.assign(Error('selection timeout'), { name: 'TimeoutError' });
+  const ctx = { close: async () => { throw Error('close failed'); } };
+  const p = page(ctx, { evaluate: async fn => String(fn).includes('el.name') ? 'canary' : true,
+    setInputFiles: async () => { throw timeout; } });
+  const driver = createPlaywrightComputerDriver(p, {
+    uploadRoot: root, uploadBridge: createBoundedMultipartBridge(),
+  });
+  const step = { id: 'timed-out', action: 'upload', selector: '#file', filePath: path };
+  await driver.preflight(step);
+  await assert.rejects(driver.perform(step), error => error === timeout);
+  await assert.rejects(driver.endRun(), /close failed/);
+  await assert.rejects(driver.perform({ id: 'later', action: 'navigate', url: origin }), /retired/);
+});
+
 test('executor closes armed contexts when consent for the submit is denied', async () => {
   let armed = false, cleaned = false, clicks = 0;
   const driver = {
@@ -163,4 +180,45 @@ test('a replacement failure preserves the verified receipt without replaying the
   assert.equal(saved.receipts.length, 1);
   assert.equal((await executor.run(plan)).status, 'completed');
   assert.equal(clicked, 1);
+});
+
+test('failed cleanup preserves timeout diagnostics and the pending action', async () => {
+  const timeout = Object.assign(Error('action timed out'), { name: 'TimeoutError' });
+  const driver = {
+    observe: async () => ({ url: origin + '/form', text: 'form' }),
+    perform: async () => { throw timeout; },
+    endRun: async () => { throw Error('close failed'); },
+  };
+  const executor = createComputerExecutor({ driver, store: createMemoryComputerStore(),
+    allowedOrigins: [origin], authorize: async () => true });
+  const result = await executor.run({ id: 'timeout-cleanup', steps: [
+    { action: 'click', selector: '#submit', expect: { textIncludes: 'receipt' } },
+  ] });
+  assert.equal(result.status, 'reconcile-required');
+  assert.equal(result.failureKind, 'browser-timeout');
+  assert.equal(result.cleanupFailed, true); assert.ok(result.pending);
+});
+
+test('failed cleanup after verified completion preserves receipts and requests restart', async () => {
+  let moved = false;
+  const executor = createComputerExecutor({ driver: {
+    observe: async () => ({ url: origin + (moved ? '/done' : '/form'), text: 'fixture' }),
+    perform: async () => { moved = true; }, endRun: async () => { throw Error('close failed'); },
+  }, store: createMemoryComputerStore(), allowedOrigins: [origin] });
+  const result = await executor.run({ id: 'completed-cleanup', steps: [
+    { action: 'navigate', url: origin + '/done', expect: { urlIncludes: '/done' } },
+  ] });
+  assert.equal(result.status, 'browser-restart-required');
+  assert.equal(result.receipts.length, 1); assert.equal(result.cleanupFailed, true);
+});
+
+test('run and cleanup errors are both retained when observation fails', async () => {
+  const primary = Error('observation failed'), cleanup = Error('cleanup failed');
+  const executor = createComputerExecutor({ driver: {
+    observe: async () => { throw primary; }, endRun: async () => { throw cleanup; },
+  }, store: createMemoryComputerStore(), allowedOrigins: [origin] });
+  await assert.rejects(executor.run({ id: 'both-failed', steps: [
+    { action: 'navigate', url: origin + '/done' },
+  ] }), error => error instanceof AggregateError && error.cause === primary &&
+    error.errors[0] === primary && error.errors[1] === cleanup);
 });

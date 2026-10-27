@@ -44,7 +44,7 @@ export function createPlaywrightComputerDriver(initialPage, {
     retired = true;
     // Sibling pages can retain file bytes through BroadcastChannel. Close all
     // contexts before admitting any replacement; never just clear the fence.
-    const results = await Promise.allSettled(uploadContexts().map(context => context.close()));
+    const results = await Promise.allSettled(uploadContexts().map(async context => context.close()));
     for (const target of preparedTargets.values()) {
       try { await target.dispose?.(); } catch {}
     }
@@ -270,7 +270,8 @@ export function createPlaywrightComputerDriver(initialPage, {
         }
         return null;
       } catch (error) {
-        if (uploadBridge?.hasArmedUploads?.()) await discardUploadContexts();
+        if (uploadBridge?.hasArmedUploads?.())
+          await discardUploadContexts().catch(() => {}); // endRun retries cleanup.
         throw error;
       } finally {
         preparedUploads.delete(step.id);
