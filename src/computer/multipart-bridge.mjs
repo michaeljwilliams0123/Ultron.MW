@@ -59,7 +59,8 @@ export function createBoundedMultipartBridge() {
       try { target = new URL(request.url()); } catch { return true; }
       const type = String(request.headers?.()['content-type'] || '').toLowerCase();
       return target.origin !== state.destinationOrigin ||
-        request.method?.() !== 'POST' || !request.isNavigationRequest?.() ||
+        request.method?.() !== 'POST' ||
+        !isMainFrameNavigation(page, request) ||
         !type.startsWith('multipart/form-data');
     },
     arm(page, file, root, fieldName) {
@@ -112,7 +113,8 @@ export function createBoundedMultipartBridge() {
       state.consumed = true;
       if (!state.submitApproved ||
           new URL(request.url()).origin !== state.destinationOrigin ||
-          request.method() !== 'POST' || !request.isNavigationRequest())
+          request.method() !== 'POST' ||
+          !isMainFrameNavigation(page, request))
         throw Error('Multipart form not bound to an owner-approved submit');
       const fresh = await validateUploadFile(state.file.path, state.root);
       if (fresh.sha256 !== state.file.sha256 || fresh.name !== state.file.name ||
