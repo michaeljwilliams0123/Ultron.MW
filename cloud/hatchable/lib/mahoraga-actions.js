@@ -48,6 +48,27 @@ async function jwt(clientId,pem,now=Date.now()) {
    'RSASSA-PKCS1-v1_5',key,new TextEncoder().encode(content)));
 }
 async function appClient(config,transport=fetch) {
+ // Fine-grained PAT is an optional, explicit owner-managed credential lane.
+ // The caller's preflight verifies repository ID and exact head before effects.
+ let pat;
+ try { pat=await config.get('ULTRON_MAHORAGA_CONNECTION1026'); }
+ catch { pat=null; } // Unconfigured secret: preserve existing GitHub App lane.
+ if(pat!==undefined && pat!==null && pat!==''){
+  if(typeof pat!=='string'||!/^github_pat_[A-Za-z0-9_]{20,}$/.test(pat))
+   throw Error('mahoraga-pat-invalid');
+  return async (path,method='GET',body) => {
+   if(!/^\/[a-zA-Z0-9/?=&._-]*$/.test(path)||
+     path.includes('..')||!['GET','POST'].includes(method))
+    throw Error('invalid-github-api-path');
+   const response=await transport(API+'/repos/'+REPO+(path==='/'?'':path),{
+    method,redirect:'error',headers:{...HEADERS,Authorization:'Bearer '+pat,
+     ...(method==='POST'?{'Content-Type':'application/json'}:{})},
+    ...(method==='POST'?{body:JSON.stringify(body)}:{})
+   });
+   if(!response.ok)throw Error('github-status-'+response.status);
+   return response.status===204?null:response.json();
+  };
+ }
  const [clientId,installationId,key] = await Promise.all([
    config.get('ULTRON_MAHORAGA_GITHUB_APP_CLIENT_ID'),
    config.get('ULTRON_MAHORAGA_GITHUB_APP_INSTALLATION_ID'),

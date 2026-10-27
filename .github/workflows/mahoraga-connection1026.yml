@@ -1,0 +1,37 @@
+name: Ultron Mahoraga Connection1026
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Read-only verification or explicitly authorized private-branch push canary"
+        required: true
+        type: choice
+        default: read
+        options:
+          - read
+          - write-canary
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mah-connection1026-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'michaeljwilliams0123/Ultron.MW' && github.actor == 'michaeljwilliams0123'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Validate Mahoraga fine-grained PAT without printing secret
+        env:
+          MAHORAGA_PAT: ${{ secrets.ULTRON_MAHORAGA_CONNECTION1026 }}
+          CANARY_MODE: ${{ inputs.mode }}
+        run: node scripts/mahoraga-connection1026.mjs

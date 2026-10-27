@@ -29,3 +29,8 @@ description = "Private HMAC key for an authenticated Ultron event bridge; no una
 name = "ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK"
 required = false
 description = "Pinned ECDSA P-256 PUBLIC verification JWK for independently authorized, short-lived admin capability grants. No private key belongs in this runtime."
+
+[[secret]]
+name = "ULTRON_MAHORAGA_CONNECTION1026"
+required = false
+description = "Optional Mahoraga-only fine-grained PAT; only the protected hosted runtime may read this value. Never put it in source or event payloads."
