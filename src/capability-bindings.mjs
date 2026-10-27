@@ -175,7 +175,9 @@ export function createCapabilityBroker({ authorize = async () => false,
       expected: JSON.parse(JSON.stringify(request.expected)),
     };
     const attemptId = `${id}:${snapshot.idempotencyKey}`;
-    const fingerprint = digest({ bindingAuthority: record.fingerprint,
+    const fingerprint = digest({ bindingId: id,
+      provider: record.binding.provider, actorRef: record.binding.actorRef,
+      authMethod: record.binding.authMethod, scope: operation.scope,
       operation: snapshot.operation, input: snapshot.input,
       expected: snapshot.expected, estimatedCostCents: snapshot.estimatedCostCents });
     const prior = attempts.get(attemptId);
