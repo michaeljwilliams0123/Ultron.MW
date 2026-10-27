@@ -34,12 +34,25 @@ const encodeBytes = bytes => {
  for(const byte of new Uint8Array(bytes)) out += String.fromCharCode(byte);
  return btoa(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 };
+function der(tag,bytes) {
+ const octets=[];
+ for(let n=bytes.length;n>0;n=Math.floor(n/256))octets.unshift(n&255);
+ const length=bytes.length<128?[bytes.length]:[128|octets.length,...octets];
+ return Uint8Array.from([tag,...length,...bytes]);
+}
 async function jwt(clientId,pem,now=Date.now()) {
- if(!/^[a-zA-Z0-9._-]{3,120}$/.test(clientId) ||
-   typeof pem !== 'string' || !pem.includes('-----BEGIN PRIVATE KEY-----'))
+ const match=typeof pem==='string' && pem.trim().match(
+   /^-----BEGIN (RSA PRIVATE KEY|PRIVATE KEY)-----\s*([A-Za-z0-9+/=\s]+?)\s*-----END \1-----$/);
+ if(!/^[a-zA-Z0-9._-]{3,120}$/.test(clientId) || !match)
    throw Error('app-signing-configuration-invalid');
- const bytes = Uint8Array.from(atob(pem.replace(/-----[^-]+-----|\s/g,'')),x=>x.charCodeAt(0));
- const key = await crypto.subtle.importKey('pkcs8',bytes,
+ const bytes=Uint8Array.from(atob(match[2].replace(/\s/g,'')),x=>x.charCodeAt(0));
+ // GitHub downloads PKCS#1 ("RSA PRIVATE KEY"), whereas WebCrypto imports PKCS#8.
+ // Wrap the ASN.1 RSAPrivateKey in an unencrypted PrivateKeyInfo (RSA OID).
+ const rsaOid=Uint8Array.from([0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,
+   0xf7,0x0d,0x01,0x01,0x01,0x05,0x00]);
+ const pkcs8=match[1]==='PRIVATE KEY'?bytes:
+   der(0x30,Uint8Array.from([0x02,0x01,0x00,...rsaOid,...der(0x04,bytes)]));
+ const key=await crypto.subtle.importKey('pkcs8',pkcs8,
    {name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
  const time = Math.floor(now/1000);
  const content = encode({alg:'RS256',typ:'JWT'}) + '.' +
@@ -147,9 +160,13 @@ async function observe(get,row) {
  if(row.operation==='issue.create') {
    const item=await findIssue(get,row.action_key);
    const expected=row.request.body+'\n\n'+MARKER(row.action_key);
-   return item?.title===row.request.title && item.body===expected &&
-     Number.isSafeInteger(item.number) && item.number>0
-     ? {kind:'issue',number:item.number,url:item.html_url}:null;
+   if(!item)return null;
+   // An existing marker with changed content is a conflict, never absence.
+   // Treat it as unresolved instead of issuing another POST for the same key.
+   if(item.title!==row.request.title || item.body!==expected ||
+     !Number.isSafeInteger(item.number) || item.number<=0)
+     throw Error('issue-marker-conflict');
+   return {kind:'issue',number:item.number,url:item.html_url};
  }
  if(!row.attempt_started_at) return null;
  const run=await findRun(get,action,row.attempt_started_at);
@@ -168,6 +185,15 @@ async function reconcile(db,get,row) {
    [row.id,JSON.stringify(result)]);
  return {ok:true,state:saved.rows[0]?.state || 'uncertain',id:row.id,taskId:row.task_id,
    key:row.action_key,result:saved.rows[0]?.result || null};
+}
+async function reconciliationFailure(db,row,error) {
+ // Marker conflicts on ANY sent/uncertain path must be explicit. A matching
+ // idempotency marker with changed contents is never a missing issue.
+ try { await db.query(`UPDATE mahoraga_actions SET state='uncertain',updated_at=now()
+     WHERE id=$1 AND state='sent'`,[row.id]); } catch {}
+ const conflict=['issue-marker-conflict','issue-marker-collision'].includes(error?.message);
+ return {ok:!conflict,state:'uncertain',id:row.id,taskId:row.task_id,
+   key:row.action_key,...(conflict?{error:error.message}:{})};
 }
 export async function runMahoragaAction({db,config,transport=fetch},raw) {
  let action;
@@ -213,7 +239,7 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
  catch(error) { return {ok:false,state:row.state,id:row.id,taskId:row.task_id,error:error.message}; }
  if(row.state!=='prepared') {
    try { return await reconcile(db,get,row); }
-   catch { return {ok:true,state:'uncertain',id:row.id,taskId:row.task_id,key:action.key}; }
+   catch(error) { return reconciliationFailure(db,row,error); }
  }
  try { await preflight(get,action); }
  catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,error:error.message}; }
@@ -231,9 +257,11 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
      FROM mahoraga_actions WHERE id=$1`,[row.id])).rows[0];
    if(row?.state==='prepared')return {ok:false,state:'prepared',id:row.id,
      taskId:row.task_id,key:action.key,error:'owner-execution-paused'};
-   return row.state==='observed'
-     ? {ok:true,state:'observed',id:row.id,taskId:row.task_id,key:action.key,result:row.result,reused:true}
-     : reconcile(db,get,row);
+   if(row.state==='observed')
+     return {ok:true,state:'observed',id:row.id,taskId:row.task_id,
+       key:action.key,result:row.result,reused:true};
+   try { return await reconcile(db,get,row); }
+   catch(error) { return reconciliationFailure(db,row,error); }
  }
  row=claim.rows[0];
  try {
@@ -246,12 +274,9 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
        {ref:action.input.ref});
    }
    return await reconcile(db,get,row);
- } catch {
-   // A network or database error after the durable sent transition is ambiguous.
-   // No later call with this key is allowed to POST again.
-   try { await db.query(`UPDATE mahoraga_actions SET state='uncertain',updated_at=now()
-     WHERE id=$1 AND state='sent'`,[row.id]); } catch {}
-   return {ok:true,state:'uncertain',id:row.id,taskId:row.task_id,key:action.key};
+ } catch(error) {
+   // A sent operation remains non-replayable after any ambiguous outcome.
+   return reconciliationFailure(db,row,error);
  }
 }
 /**
