@@ -56,7 +56,8 @@ export function createPlaywrightComputerDriver(initialPage, {
   }
   return Object.freeze({
     async endRun() {
-      if (uploadBridge?.hasArmedUploads?.()) await discardUploadContexts();
+      if (uploadBridge?.hasArmedUploads?.() || retired && !contextsDiscarded)
+        await discardUploadContexts();
     },
     async completeStep({ hasMoreSteps = true } = {}) {
       if (!uploadBridge?.hasConsumedUpload?.()) return;
@@ -85,8 +86,13 @@ export function createPlaywrightComputerDriver(initialPage, {
       for (const slot of slots.values()) uploadBridge.registerPage(slot);
       // No cookies, local storage or selected-file data cross this boundary.
       // Revisit only the verified receipt URL in the new isolated context.
-      if (receiptUrl)
-        await page.goto(receiptUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      try {
+        if (receiptUrl)
+          await page.goto(receiptUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      } catch (error) {
+        await discardUploadContexts().catch(() => {}); // endRun retries a failed close.
+        throw error;
+      }
       retired = false;
     },
     // Approval uses only preflighted metadata, never raw owner file contents.

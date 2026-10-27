@@ -90,6 +90,29 @@ test('a direct upload response cannot carry a page-controlled URL into the clean
   assert.deepEqual(fresh.visits, [origin + '/later']);
 });
 
+test('failed receipt navigation discards the clean session and endRun retries a failed close', async t => {
+  const { root, file } = await fixture(t), old = context(), p = page(old);
+  const freshContext = { closed: false, attempts: 0, async close() {
+    if (++this.attempts === 1) throw Error('first close failed'); this.closed = true;
+  } };
+  const fresh = page(freshContext), bridge = createBoundedMultipartBridge();
+  const navigationError = Error('receipt unavailable');
+  fresh.goto = async () => { throw navigationError; };
+  const driver = createPlaywrightComputerDriver(p, { uploadBridge: bridge,
+    createCleanSession: async () => ({ page: fresh, tabs: { primary: fresh },
+      windows: {}, uploadBridge: createBoundedMultipartBridge() }),
+  });
+  const request = await consume(bridge, p, file, root);
+  bridge.authorizeReceiptNavigation(p, request, origin + '/receipt');
+  assert.equal(bridge.mustBlockRequest(p, { url: () => origin + '/receipt', method: () => 'GET',
+    isNavigationRequest: () => true, frame: () => p.mainFrame() }), false);
+  await assert.rejects(driver.completeStep(), error => error === navigationError);
+  assert.equal(old.closed, true); assert.equal(freshContext.attempts, 1);
+  await driver.endRun();
+  assert.equal(freshContext.closed, true); assert.equal(freshContext.attempts, 2);
+  await assert.rejects(driver.perform({ id: 'later', action: 'navigate', url: origin }), /retired/);
+});
+
 test('file-selection failure closes all contexts and prevents further dispatch', async t => {
   const { root, path, file } = await fixture(t);
   const ctx = context(), other = context();
