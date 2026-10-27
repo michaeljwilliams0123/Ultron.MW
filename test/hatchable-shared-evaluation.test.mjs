@@ -146,6 +146,8 @@ test('pinned corpus refuses altered criticality and missing freeze evidence',asy
  const baseline=await evaluateSharedEvaluation(valid);
  const observed=await evaluatePinnedSharedEvaluation({...valid,
   pinnedCaseDigest:baseline.caseDigest});
- assert.equal(observed.pinnedSharedThresholdMet,true);
+ assert.equal(observed.pinnedResearchThresholdMet,true);
+ assert.equal(observed.pinnedDigestMatched,true);
+ assert.equal(observed.eligibleForProtectedPromotion,false);
  assert.equal(observed.eligibleForProtectedPromotion,false);
 });
