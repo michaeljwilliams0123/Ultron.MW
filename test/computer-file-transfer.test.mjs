@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalizeComputerPlan } from '../src/computer/executor.mjs';
 import { validateUploadFile, receiveDownload } from '../src/computer/file-transfer.mjs';
+import { createBoundedMultipartBridge } from '../src/computer/multipart-bridge.mjs';
 const origin = 'https://example.test';
 
 test('upload and download are typed-risk actions with bounded fields', () => {
@@ -65,15 +66,22 @@ test('Playwright upload preflight binds the approved bytes before file-input dis
   const dir = await mkdtemp(join(tmpdir(),'ultron-driver-upload-'));
   t.after(() => rm(dir,{recursive:true,force:true}));
   const file = join(dir,'test.csv'); await writeFile(file,'a,b\n1,2\n');
-  let evaluations=0, selected=0;
+  let selected=0;
   const target={
-    evaluate: async () => ++evaluations === 1 ? true : [{name:'test.csv',bytes:8}],
+    evaluate: async fn => {
+      const source=String(fn);
+      if(source.includes('el.name')) return 'upload';
+      if(source.includes('el.files')) return [{name:'test.csv',bytes:8}];
+      return true;
+    },
     setInputFiles: async path => { assert.equal(path,await realpath(file)); selected++; },
   };
   const page={ url:()=>origin+'/form', goto:async()=>{},
     locator:()=>target };
   const { createPlaywrightComputerDriver } = await import('../src/computer/playwright-driver.mjs');
-  const driver=createPlaywrightComputerDriver(page,{uploadRoot:dir});
+  const driver=createPlaywrightComputerDriver(page,{
+    uploadRoot:dir,uploadBridge:createBoundedMultipartBridge(),
+  });
   const step={id:'upload-canary',action:'upload',selector:'#upload',filePath:file};
   assert.equal(await driver.preflight(step),true);
   const result=await driver.perform(step);
