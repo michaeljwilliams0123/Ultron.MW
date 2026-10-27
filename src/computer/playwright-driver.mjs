@@ -247,6 +247,16 @@ export async function installNetworkPolicy(context, allowedOrigins, { uploadBrid
     // one bounded request via route.fetch(maxRedirects: 0), retaining the
     // only the bound, independently revalidated approved file as postData.
     const request = route.request();
+    if (uploadBridge) {
+      let page = null;
+      try { page = request.frame?.().page?.(); } catch {}
+      // Fail closed when any selected file remains in a page, including
+      // non-multipart fetch(), GET query exfiltration and unknown frames.
+      if (uploadBridge.mustBlockRequest?.(page, request)) {
+        await route.abort('blockedbyclient');
+        return;
+      }
+    }
     const headers = typeof request.headers === 'function' ? request.headers() : {};
     const contentType = String(headers['content-type'] || '').toLowerCase();
     const isMultipart = typeof request.method === 'function' && request.method() === 'POST' &&
