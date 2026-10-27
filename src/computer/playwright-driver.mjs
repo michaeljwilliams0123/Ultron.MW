@@ -25,6 +25,13 @@ export function createPlaywrightComputerDriver(initialPage, {
   const preparedTargets = new Map();
   const preparedUploads = new Map();
   return Object.freeze({
+    // Approval uses only preflighted metadata, never raw owner file contents.
+    approvalMetadata(step) {
+      if (step?.action !== 'upload') return null;
+      const file = preparedUploads.get(step.id);
+      return file ? Object.freeze({ fileSha256:file.sha256,
+        fileBytes:file.bytes,fileName:file.name }) : null;
+    },
     // A read-only actionability trial checks the intended target BEFORE
     // a human is asked to approve. It does not click, type or press a key.
     async preflight(step) {
@@ -45,6 +52,10 @@ export function createPlaywrightComputerDriver(initialPage, {
         if (typeof target.evaluate !== 'function' ||
             !await target.evaluate(el => el.tagName === 'INPUT' && el.type === 'file'))
           throw Error('Upload target is not a file input');
+        const prior=preparedUploads.get(step.id);
+        if (prior && (prior.sha256 !== file.sha256 || prior.bytes !== file.bytes ||
+                      prior.path !== file.path))
+          throw Error('Upload file changed after owner approval');
         preparedUploads.set(step.id, file);
       } else if (step.action === 'type' || step.action === 'keypress') {
         if (typeof target.waitForElementState === 'function')
