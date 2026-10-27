@@ -113,6 +113,6 @@ export async function evaluatePinnedSharedEvaluation({pinnedCaseDigest,...compar
   reject('pinned-case-digest-required');
  const result=await evaluateSharedEvaluation(comparison);
  if(result.caseDigest!==pinnedCaseDigest)reject('pinned-case-digest-mismatch');
- return {...result,pinnedCaseDigestVerified:true,
-  pinnedSharedThresholdMet:result.sharedThresholdMet};
+ return {...result,pinnedDigestMatched:true,
+  pinnedResearchThresholdMet:result.sharedThresholdMet};
 }
