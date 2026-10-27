@@ -35,12 +35,10 @@ export function createBoundedMultipartBridge() {
     },
     mustBlockRequest(page, request) {
       if (!active.size) return false;
-      // Only preallocated trusted pages may make unarmed requests. Popups and
-      // unknown frames stay blocked when any approved file remains readable.
+      // A same-origin page can receive selected bytes over BroadcastChannel,
+      // so fence every page in the browser context while one file is armed.
       if (!page || !knownPages.has(page)) return true;
       const state = approved.get(page);
-      // A same-origin page can receive selected bytes over BroadcastChannel,
-      // so every page in this browser context stays fenced while one is armed.
       if (!state) return true;
       const receipt = state.receiptNavigation;
       if (receipt && !receipt.used) {
