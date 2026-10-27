@@ -53,7 +53,7 @@ export function createBoundedMultipartBridge() {
       const state = approved.get(page);
       // Only one send is admitted. Keep the selected-file page fenced after
       // the POST until the isolated browser context is closed.
-      if (!state || state.consumed) throw Error('Multipart upload already consumed');
+      if (!state || state.consumed) throw Error('Approved multipart upload already consumed');
       state.consumed = true;
       if (!state.submitApproved ||
           new URL(request.url()).origin !== state.destinationOrigin ||
