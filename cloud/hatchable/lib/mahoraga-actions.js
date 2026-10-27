@@ -34,12 +34,25 @@ const encodeBytes = bytes => {
  for(const byte of new Uint8Array(bytes)) out += String.fromCharCode(byte);
  return btoa(out).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 };
+function der(tag,bytes) {
+ const octets=[];
+ for(let n=bytes.length;n>0;n=Math.floor(n/256))octets.unshift(n&255);
+ const length=bytes.length<128?[bytes.length]:[128|octets.length,...octets];
+ return Uint8Array.from([tag,...length,...bytes]);
+}
 async function jwt(clientId,pem,now=Date.now()) {
- if(!/^[a-zA-Z0-9._-]{3,120}$/.test(clientId) ||
-   typeof pem !== 'string' || !pem.includes('-----BEGIN PRIVATE KEY-----'))
+ const match=typeof pem==='string' && pem.trim().match(
+   /^-----BEGIN (RSA PRIVATE KEY|PRIVATE KEY)-----\s*([A-Za-z0-9+/=\s]+?)\s*-----END \1-----$/);
+ if(!/^[a-zA-Z0-9._-]{3,120}$/.test(clientId) || !match)
    throw Error('app-signing-configuration-invalid');
- const bytes = Uint8Array.from(atob(pem.replace(/-----[^-]+-----|\s/g,'')),x=>x.charCodeAt(0));
- const key = await crypto.subtle.importKey('pkcs8',bytes,
+ const bytes=Uint8Array.from(atob(match[2].replace(/\s/g,'')),x=>x.charCodeAt(0));
+ // GitHub downloads PKCS#1 ("RSA PRIVATE KEY"), whereas WebCrypto imports PKCS#8.
+ // Wrap the ASN.1 RSAPrivateKey in an unencrypted PrivateKeyInfo (RSA OID).
+ const rsaOid=Uint8Array.from([0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,
+   0xf7,0x0d,0x01,0x01,0x01,0x05,0x00]);
+ const pkcs8=match[1]==='PRIVATE KEY'?bytes:
+   der(0x30,Uint8Array.from([0x02,0x01,0x00,...rsaOid,...der(0x04,bytes)]));
+ const key=await crypto.subtle.importKey('pkcs8',pkcs8,
    {name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
  const time = Math.floor(now/1000);
  const content = encode({alg:'RS256',typ:'JWT'}) + '.' +
@@ -147,9 +160,13 @@ async function observe(get,row) {
  if(row.operation==='issue.create') {
    const item=await findIssue(get,row.action_key);
    const expected=row.request.body+'\n\n'+MARKER(row.action_key);
-   return item?.title===row.request.title && item.body===expected &&
-     Number.isSafeInteger(item.number) && item.number>0
-     ? {kind:'issue',number:item.number,url:item.html_url}:null;
+   if(!item)return null;
+   // An existing marker with changed content is a conflict, never absence.
+   // Treat it as unresolved instead of issuing another POST for the same key.
+   if(item.title!==row.request.title || item.body!==expected ||
+     !Number.isSafeInteger(item.number) || item.number<=0)
+     throw Error('issue-marker-conflict');
+   return {kind:'issue',number:item.number,url:item.html_url};
  }
  if(!row.attempt_started_at) return null;
  const run=await findRun(get,action,row.attempt_started_at);
@@ -246,11 +263,15 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
        {ref:action.input.ref});
    }
    return await reconcile(db,get,row);
- } catch {
+ } catch(error) {
    // A network or database error after the durable sent transition is ambiguous.
+   // A conflicting marker is explicitly unresolved and must never cause a POST.
    // No later call with this key is allowed to POST again.
    try { await db.query(`UPDATE mahoraga_actions SET state='uncertain',updated_at=now()
      WHERE id=$1 AND state='sent'`,[row.id]); } catch {}
+   if(['issue-marker-conflict','issue-marker-collision'].includes(error?.message))
+     return {ok:false,state:'uncertain',id:row.id,taskId:row.task_id,
+       key:action.key,error:error.message};
    return {ok:true,state:'uncertain',id:row.id,taskId:row.task_id,key:action.key};
  }
 }
