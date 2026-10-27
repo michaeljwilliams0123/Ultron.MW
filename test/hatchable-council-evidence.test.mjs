@@ -67,6 +67,7 @@ function manifestReadback(overrides={}){
  return {receiptId:903,eventType:'held-out-evaluation-frozen',
   schema:'ultron.held-out-evaluation-set.v1',objectiveId:OBJECTIVE,
   sourceSha:SHA,setId:'held-out-set-1',observedAt:MANIFEST_OBSERVED,
+  evidenceClass:'independent-task-evaluation-v1',
   frozen:true,setsDisjoint:true,cases:[{
    caseId:'case-1',baselineTaskId:21,candidateTaskId:22
   }],...overrides};
@@ -85,6 +86,7 @@ function outcomeReadbacks(){
 }
 function evaluation(overrides={}){
  return {objectiveId:OBJECTIVE,frozen:true,setsDisjoint:true,
+  evidenceClass:'independent-task-evaluation-v1',
   sourceSha:SHA,runtimeSourceSha:SHA,
   independentlyObserved:true,outcomeReadbacksObserved:true,
   eventId:906,eventType:'held-out-evaluation-observed',observedAt:OBSERVED,
@@ -425,4 +427,26 @@ test('hosted council rejects a main change during its evaluation',async()=>{
    db:{query:async()=>({rows:[]})},browser:{},task:{taskKey:OBJECTIVE}
   }),/main-moved-during-council-evaluation/);
  }finally{globalThis.fetch=originalFetch;}
+});
+
+
+test('seeded property-case evidence cannot pass independent learning promotion',()=>{
+ const seeded=ready({evaluation:evaluation({
+  evidenceClass:'seeded-adapter-regression-v1',
+  manifestReadback:manifestReadback({evidenceClass:'seeded-adapter-regression-v1'}),
+  baselineScore:.5,candidateScore:.7,candidateFailures:0,criticalRegressions:0
+ })});
+ assert.equal(seeded.eligibleForProtectedPromotion,false);
+ assert.ok(seeded.reasons.includes('independent-heldout-task-evidence-required'));
+});
+
+test('unclassified or mismatched held-out evidence classes cannot pass promotion',()=>{
+ for(const [kind,manifestKind] of [[undefined,undefined],
+   ['independent-task-evaluation-v1','seeded-adapter-regression-v1'],
+   ['seeded-adapter-regression-v1','independent-task-evaluation-v1']]){
+  const value=ready({evaluation:evaluation({evidenceClass:kind,
+   manifestReadback:manifestReadback({evidenceClass:manifestKind})})});
+  assert.equal(value.eligibleForProtectedPromotion,false);
+  assert.ok(value.reasons.includes('independent-heldout-task-evidence-required'));
+ }
 });

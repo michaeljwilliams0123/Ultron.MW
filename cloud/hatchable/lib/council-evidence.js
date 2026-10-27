@@ -26,6 +26,7 @@ const TRUSTED_EVALUATION_READBACK=Object.freeze({
  kind:'held-out-evaluation-readback',id:'held-out-evaluation-adapter'
 });
 const EVALUATION_SET_SCHEMA='ultron.held-out-evaluation-set.v1';
+const INDEPENDENT_EVIDENCE_CLASS='independent-task-evaluation-v1';
 const OUTCOME_SCHEMA='ultron.held-out-outcome.v1';
 const HELD_OUT_OBJECTIVE='held-out.evaluate';
 
@@ -396,6 +397,12 @@ export function evaluateCouncilEvidence({
  else{
   if(trustedAdapterEvidence?.evaluation!==true)
    reasons.add('evaluation-adapter-unavailable');
+  // Public seeded property/regression cases test the adapter. They are not
+  // independently authored, held-out task outcomes, even when every case passes.
+  // Require classification at BOTH persisted manifest and evaluation readback.
+  if(evaluation.evidenceClass!==INDEPENDENT_EVIDENCE_CLASS ||
+     evaluation.manifestReadback?.evidenceClass!==INDEPENDENT_EVIDENCE_CLASS)
+   reasons.add('independent-heldout-task-evidence-required');
   const lineage=evaluationLineage(evaluation,{objectiveId:objective,
    sourceSha,now:Date.parse(at),maxEvidenceAgeMs});
   if(lineage.problem)reasons.add(lineage.problem);
