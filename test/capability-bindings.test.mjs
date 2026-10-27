@@ -149,3 +149,76 @@ test('unbind requires approval and provider-confirmed revocation', async () => {
   assert.equal((await allowed.unbind('github-owner')).status, 'unbound');
   assert.throws(() => allowed.status('github-owner'), /Unknown/);
 });
+
+
+test('two same-key writes reserve once before asynchronous owner authorization', async () => {
+ let releaseApproval;
+ const gate=new Promise(resolve=>{releaseApproval=resolve;});
+ let approvals=0;
+ const target=adapter();
+ const broker=createCapabilityBroker({clock:()=>now,authorize:async()=>{
+   approvals++;await gate;return true;
+ }});
+ broker.bind(manifest(),target);
+ await broker.health('github-owner');
+ const req={operation:'issue.write',idempotencyKey:'write:concurrent1',
+   estimatedCostCents:0,input:{title:'Bounded test'},expected:{issueCreated:true}};
+ const first=broker.execute('github-owner',req);
+ const second=broker.execute('github-owner',req);
+ releaseApproval();
+ const [firstReceipt,secondReceipt]=await Promise.all([first,second]);
+ assert.equal(secondReceipt.status,'approval-pending');
+ assert.equal(secondReceipt.resumed,true);
+ assert.equal(firstReceipt.status,'completed');
+ assert.equal(approvals,1,'the same action cannot request approval twice in parallel');
+ assert.equal(target.executions,1,'the same action must have at most one side effect');
+});
+
+test('approval cannot dispatch after binding expires while awaiting authorization', async () => {
+ let current=now;
+ const target=adapter();
+ const broker=createCapabilityBroker({clock:()=>current,authorize:async()=>{
+   current='2026-10-23T20:00:00.000Z';return true;
+ }});
+ broker.bind(manifest(),target);
+ await broker.health('github-owner');
+ await assert.rejects(broker.execute('github-owner',{
+   operation:'issue.write',idempotencyKey:'write:expires01',
+   estimatedCostCents:0,input:{title:'Expires'},expected:{issueCreated:true},
+ }),/expired|ready|revoked/i);
+ assert.equal(target.executions,0,'expired authority must never dispatch');
+});
+
+test('approval binds immutable request content despite caller mutation', async () => {
+ const seen=[];
+ const target=adapter({execute:async ({input})=>{
+   seen.push(input.title);return {status:201};
+ }});
+ const request={operation:'issue.write',idempotencyKey:'write:mutation1',
+   estimatedCostCents:0,input:{title:'Owner-approved title'},expected:{issueCreated:true}};
+ const broker=createCapabilityBroker({clock:()=>now,authorize:async context=>{
+   assert.match(context.requestFingerprint||'',/^[a-f0-9]{64}$/);
+   request.input.title='Changed after approval request';
+   return true;
+ }});
+ broker.bind(manifest(),target);
+ await broker.health('github-owner');
+ assert.equal((await broker.execute('github-owner',request)).status,'completed');
+ assert.deepEqual(seen,['Owner-approved title'],
+   'dispatched operation must be identical to the authorization fingerprint');
+});
+
+test('denied write frees reservation for later approved same-key retry', async () => {
+ let allow=false;
+ const target=adapter();
+ const broker=createCapabilityBroker({clock:()=>now,authorize:async()=>allow});
+ broker.bind(manifest(),target);
+ await broker.health('github-owner');
+ const request={operation:'issue.write',idempotencyKey:'write:denied01',
+   estimatedCostCents:0,input:{title:'Approved retry'},expected:{issueCreated:true}};
+ assert.equal((await broker.execute('github-owner',request)).status,'approval-required');
+ assert.equal(target.executions,0);
+ allow=true;
+ assert.equal((await broker.execute('github-owner',request)).status,'completed');
+ assert.equal(target.executions,1);
+});
