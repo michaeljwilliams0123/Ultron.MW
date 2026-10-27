@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
-import {evaluateSharedEvaluation} from '../cloud/hatchable/lib/shared-evaluation.js';
+import {evaluateSharedEvaluation,evaluatePinnedSharedEvaluation} from '../cloud/hatchable/lib/shared-evaluation.js';
 
 const BASE='a'.repeat(40),CAND='b'.repeat(40);
 const domains={execution:30,recovery:20,security:20,concurrency:15,deployment:10,resources:5};
@@ -126,4 +126,28 @@ test('case digest is identical under a hostile ambient locale collation',async()
   const changed=await evaluateSharedEvaluation(f);
   assert.equal(changed.caseDigest,baseline.caseDigest);
  }finally{String.prototype.localeCompare=original;}
+});
+
+test('pinned corpus refuses altered criticality and missing freeze evidence',async()=>{
+ const reference=fixture();
+ reference.candidate.outcomes[50].passed=false;
+ const anchor=await evaluateSharedEvaluation(reference);
+ assert.equal(anchor.sharedThresholdMet,false);
+ const tampered=fixture();
+ tampered.candidate.outcomes[50].passed=false;
+ tampered.cases[50].critical=false;
+ const unpinned=await evaluateSharedEvaluation(tampered);
+ assert.equal(unpinned.candidateScore,anchor.candidateScore);
+ assert.equal(unpinned.sharedThresholdMet,true);
+ await assert.rejects(evaluatePinnedSharedEvaluation({...tampered,
+  pinnedCaseDigest:anchor.caseDigest}),/pinned-case-digest-mismatch/);
+ await assert.rejects(evaluatePinnedSharedEvaluation(tampered),/pinned-case-digest-required/);
+ const valid=fixture();
+ const baseline=await evaluateSharedEvaluation(valid);
+ const observed=await evaluatePinnedSharedEvaluation({...valid,
+  pinnedCaseDigest:baseline.caseDigest});
+ assert.equal(observed.pinnedResearchThresholdMet,true);
+ assert.equal(observed.pinnedDigestMatched,true);
+ assert.equal(observed.eligibleForProtectedPromotion,false);
+ assert.equal(observed.eligibleForProtectedPromotion,false);
 });
