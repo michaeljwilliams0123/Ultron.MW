@@ -5,6 +5,16 @@ import { validateUploadFile, MAX_BROWSER_FILE_BYTES } from './file-transfer.mjs'
 const SAFE_FIELD = /^[a-z0-9_.-]{1,80}$/i;
 const MAX_WIRE_BYTES = MAX_BROWSER_FILE_BYTES + 32 * 1024;
 
+function isMainFrameNavigation(page, request) {
+  try {
+    return request.isNavigationRequest?.() === true &&
+      typeof page.mainFrame === 'function' &&
+      request.frame?.() === page.mainFrame();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Rebuild ONLY one explicitly selected, owner-approved file in Chromium's
  * redacted multipart postDataBuffer. Playwright's route.fetch otherwise
@@ -30,6 +40,20 @@ export function createBoundedMultipartBridge() {
       if (!page || !knownPages.has(page)) return true;
       const state = approved.get(page);
       if (!state) return false;
+      const receipt = state.receiptNavigation;
+      if (receipt && !receipt.used) {
+        let requestedUrl = '';
+        try { requestedUrl = request.url(); } catch { /* Fail closed below. */ }
+        if (requestedUrl === receipt.url) {
+          receipt.used = true;
+          try {
+            return request.method?.() !== 'GET' ||
+              !isMainFrameNavigation(page, request);
+          } catch {
+            return true;
+          }
+        }
+      }
       if (!state.submitApproved || state.consumed) return true;
       let target;
       try { target = new URL(request.url()); } catch { return true; }
@@ -56,6 +80,27 @@ export function createBoundedMultipartBridge() {
           throw Error('File upload recipient origin must be explicit');
         state.destinationOrigin = target.origin;
         state.submitApproved = true;
+      }
+    },
+    authorizeReceiptNavigation(page, sourceRequest, targetUrl) {
+      const state = approved.get(page);
+      if (!state || !state.submitApproved || !state.consumed ||
+          state.receiptNavigation) return false;
+      try {
+        const source = new URL(sourceRequest.url());
+        const target = new URL(targetUrl);
+        const headers = sourceRequest.headers?.() || {};
+        const contentType = String(headers['content-type'] || '').toLowerCase();
+        if (source.origin !== state.destinationOrigin ||
+            target.origin !== state.destinationOrigin ||
+            target.username || target.password || target.href.length > 2048 ||
+            sourceRequest.method?.() !== 'POST' ||
+            !isMainFrameNavigation(page, sourceRequest) ||
+            !contentType.startsWith('multipart/form-data')) return false;
+        state.receiptNavigation = { url: target.href, used: false };
+        return true;
+      } catch {
+        return false;
       }
     },
     async rehydrate(request) {
