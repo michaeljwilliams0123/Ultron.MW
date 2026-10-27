@@ -1,0 +1,15 @@
+{
+  "schema": "ultron.codex.receipt.v1",
+  "taskId": "ucc-9cdc02c80d2fb7106caab7b9",
+  "taskDigest": "1a1f37a395cec7c42af3908ad655661a1d052701eba9f73d65a5e4d86c2ead74",
+  "authorId": "destiny-codex",
+  "authorFingerprint": "550e01b316cfbd16729dd73a635cf6fc3343dcf682708b342d269e115fad14d9",
+  "bindingFingerprint": "1278bdf842ec4108ae053fa3656cc38fde798c7eabb10f19834ee74969ebdfbd",
+  "sourceSha": "b0d1e8342d068c98d419d71e9c7a4dfee0b43cc4",
+  "headSha": "55706c1d53c11c6daee3fdf083ce0862814c4cba",
+  "claimHeadSha": "55706c1d53c11c6daee3fdf083ce0862814c4cba",
+  "completedAt": "2026-10-27T18:12:35.711Z",
+  "status": "completed",
+  "result": "Callable author IDs (2): mike-codex, destiny-codex; Destiny author fingerprint: 550e01b316cfbd16729dd73a635cf6fc3343dcf682708b342d269e115fad14d9; installed Work lane binding hash matched trusted main; enrollment metadata is not separate account attestation.",
+  "identityEvidence": "work-enrollment-not-account-attestation"
+}
