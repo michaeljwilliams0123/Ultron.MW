@@ -3,7 +3,7 @@
 Run `node scripts/audit-route-references.mjs` from a Git checkout to print a
 deterministic JSON inventory. The command reads tracked source files and records
 the Git revision and whether the working tree changed. It reports imports,
-re-exports, literal dynamic imports, workflow references, document links and other
+re-exports, literal dynamic imports (including non-interpolated templates), workflow references, document links and other
 text references with file and line evidence. External URLs are reduced to origins;
 the audit makes no network requests and reads no credentials.
 
@@ -18,7 +18,9 @@ references and tests do not prove that a production route is live.
 The audit is a conservative first phase of #69. It cannot resolve computed
 imports, shell-generated paths, remote consumers, server-side configuration or
 runtime endpoint health. Missing literal module targets and retained entrypoints
-produce a nonzero exit status. Review omitted non-text, symbolic or oversized
+produce a nonzero exit status. Deleted tracked files remain visible as omitted
+paths. Parent-directory symlinks are rejected before reading a tracked file.
+Review omitted non-text, symbolic or oversized
 paths separately; source strings are never executed.
 
 For each candidate, collect actual caller/runtime evidence, security and feature

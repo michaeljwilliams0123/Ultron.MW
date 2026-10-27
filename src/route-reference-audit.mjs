@@ -23,13 +23,16 @@ function moduleSpecifiers(text) {
     if (text.startsWith('//', i)) { i = text.indexOf('\n', i + 2); if (i < 0) break; continue; }
     if (text.startsWith('/*', i)) { const end = text.indexOf('*/', i + 2); i = end < 0 ? text.length : end + 2; continue; }
     if (c === '"' || c === "'" || c === '`') {
-      let value = ''; i++;
+      let value = '', interpolated = false; i++;
       while (i < text.length && text[i] !== c) {
         if (text[i] === '\\') { i++; if (i < text.length) value += text[i++]; }
-        else value += text[i++];
+        else {
+          if (c === '`' && text.startsWith('${', i)) interpolated = true;
+          value += text[i++];
+        }
       }
       i++;
-      tokens.push({ type: c === '`' ? 'template' : 'string', value, index: start });
+      tokens.push({ type: interpolated ? 'template' : 'string', value, index: start });
     } else if (/[a-zA-Z_$]/.test(c)) {
       i++; while (i < text.length && /[a-zA-Z0-9_$]/.test(text[i])) i++;
       tokens.push({ type: 'word', value: text.slice(start, i), index: start });
@@ -58,8 +61,9 @@ function resolveReference(source, specifier, paths) {
   try { value = decodeURIComponent(specifier.split(/[?#]/, 1)[0]); }
   catch { return null; }
   if (!value || value.includes('\\') || /^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+  const base = source.startsWith('.github/workflows/') ? '' : posix.dirname(source);
   const candidates = value.startsWith('.')
-    ? [posix.join(posix.dirname(source), value)]
+    ? [posix.join(base, value)]
     : [value.replace(/^\//, ''), posix.join(posix.dirname(source), value)];
   return candidates.map(path => posix.normalize(path)).find(path =>
     !path.startsWith('../') && paths.has(path)) || null;

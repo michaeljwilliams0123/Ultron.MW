@@ -66,7 +66,26 @@ test('a workflow trigger is a declared entrypoint even without incoming path ref
   assert.equal(result.routes[0].deletionEligible, false);
 });
 
-test('CLI inventories tracked files and omits symlinks without reading their destination', async t => {
+test('literal template dynamic imports are checked while interpolated targets remain unknown', () => {
+  const result = buildRouteReferenceInventory({ 'src/a.mjs': [
+    'import(`./present.mjs`);', 'import(`./missing.mjs`);', 'import(`./${name}.mjs`);',
+  ].join('\n'), 'src/present.mjs': '' });
+  assert.equal(result.routes.find(x => x.path === 'src/present.mjs').referencedBy[0].kind, 'module-specifier');
+  assert.deepEqual(result.unresolvedModuleReferences, [{ source: 'src/a.mjs', line: 2, specifier: './missing.mjs' }]);
+});
+
+test('dot-prefixed workflow commands and local actions resolve from the repository root', () => {
+  const result = buildRouteReferenceInventory({ '.github/workflows/a.yml':
+    'run: node ./scripts/task.mjs\nuses: ./.github/actions/tool/action.yml',
+    'scripts/task.mjs': '', '.github/actions/tool/action.yml': '',
+  });
+  const task = result.routes.find(x => x.path === 'scripts/task.mjs');
+  assert.equal(task.classification, 'referenced-source');
+  assert.equal(task.referencedBy[0].source, '.github/workflows/a.yml');
+  assert.equal(result.summary.references, 2);
+});
+
+test('CLI reports deleted tracked paths and both file and parent symlink boundaries', async t => {
   const root = await mkdtemp(join(tmpdir(), 'ultron-route-audit-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const path of RETAINED_ROUTES) {
@@ -80,8 +99,10 @@ test('CLI inventories tracked files and omits symlinks without reading their des
   const outside = join(root, 'outside.txt');
   await writeFile(outside, 'https://private-destination.example/credential');
   await symlink(outside, join(root, 'src/link.mjs'));
+  await mkdir(join(root, 'cloud'));
+  await writeFile(join(root, 'cloud/endpoint.mjs'), '');
   execFileSync('git', ['init', '-q'], { cwd: root });
-  execFileSync('git', ['add', ...RETAINED_ROUTES, 'src', 'scripts'], { cwd: root });
+  execFileSync('git', ['add', ...RETAINED_ROUTES, 'src', 'scripts', 'cloud'], { cwd: root });
   execFileSync('git', ['-c', 'user.name=Audit fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'fixture'], { cwd: root });
   const child = spawnSync(process.execPath, [join(root, 'scripts/audit-route-references.mjs')], { encoding: 'utf8' });
   assert.equal(child.status, 0, child.stderr);
@@ -90,4 +111,17 @@ test('CLI inventories tracked files and omits symlinks without reading their des
   assert.equal(result.omitted.find(x => x.path === 'src/link.mjs').reason, 'symlink-or-nonregular-or-oversize');
   assert.equal(result.routes.some(x => x.path === 'outside.txt'), false);
   assert.equal(child.stdout.includes('private-destination.example'), false);
+  const outsideDir = await mkdtemp(join(tmpdir(), 'ultron-audit-outside-'));
+  t.after(() => rm(outsideDir, { recursive: true, force: true }));
+  await writeFile(join(outsideDir, 'endpoint.mjs'), 'https://outside-private.example/secret');
+  await rm(join(root, 'cloud'), { recursive: true });
+  await symlink(outsideDir, join(root, 'cloud'));
+  await rm(join(root, '.github/workflows/verify.yml'));
+  const changed = spawnSync(process.execPath, [join(root, 'scripts/audit-route-references.mjs')], { encoding: 'utf8' });
+  assert.equal(changed.status, 1, changed.stderr);
+  const changedResult = JSON.parse(changed.stdout);
+  assert.ok(changedResult.missingRetainedRoutes.includes('.github/workflows/verify.yml'));
+  assert.equal(changedResult.omitted.find(x => x.path === '.github/workflows/verify.yml').reason, 'missing-working-tree-file');
+  assert.equal(changedResult.omitted.find(x => x.path === 'cloud/endpoint.mjs').reason, 'symlinked-parent');
+  assert.equal(changed.stdout.includes('outside-private.example'), false);
 });
