@@ -87,9 +87,11 @@ function adapterContract(adapter) {
  * the adapter/runtime that owns them.
  */
 export function createCapabilityBroker({ authorize = async () => false,
-  clock = () => new Date().toISOString() } = {}) {
+  clock = () => new Date().toISOString(), attemptStore = null } = {}) {
   if (typeof authorize !== 'function' || typeof clock !== 'function')
     throw Error('Capability broker requires authority and clock functions');
+  if (attemptStore && ['claim','advance','release'].some(k => typeof attemptStore[k] !== 'function'))
+    throw Error('Durable attempt store contract incomplete');
   const bindings = new Map();
   const attempts = new Map();
 
@@ -173,7 +175,10 @@ export function createCapabilityBroker({ authorize = async () => false,
       expected: JSON.parse(JSON.stringify(request.expected)),
     };
     const attemptId = `${id}:${snapshot.idempotencyKey}`;
-    const fingerprint = digest({ operation: snapshot.operation, input: snapshot.input,
+    const fingerprint = digest({ bindingId: id,
+      provider: record.binding.provider, actorRef: record.binding.actorRef,
+      authMethod: record.binding.authMethod, scope: operation.scope,
+      operation: snapshot.operation, input: snapshot.input,
       expected: snapshot.expected, estimatedCostCents: snapshot.estimatedCostCents });
     const prior = attempts.get(attemptId);
     if (prior) {
@@ -182,13 +187,26 @@ export function createCapabilityBroker({ authorize = async () => false,
       return Object.freeze({ ...prior.receipt, resumed: true });
     }
 
-    // Reserve synchronously, before authorize() can yield to a competing
-    // request. This guards a single broker process only; durable runtime
-    // writes still require an external transaction-backed attempt ledger.
     const pending = { fingerprint, receipt: Object.freeze({
       status: 'approval-pending', bindingId: id, operation: operation.name,
       idempotencyKey: snapshot.idempotencyKey }) };
-    attempts.set(attemptId, pending);
+    // External store must perform its claim with a database UNIQUE constraint.
+    // A fresh broker/worker may only observe a receipt, never replay a claimed
+    // action. Without a store, the legacy single-process guard remains.
+    if(attemptStore){
+      const reservation=await attemptStore.claim({
+        id: attemptId, fingerprint, receipt: pending.receipt });
+      if(!reservation || typeof reservation.claimed!=='boolean')
+        throw Error('Durable reservation unavailable');
+      if(reservation.claimed!==true){
+        if(reservation.fingerprint!==fingerprint)
+          throw Error('Idempotency key reused with different request');
+        if(!reservation.receipt?.status)
+          throw Error('Durable receipt unavailable');
+        return Object.freeze({...reservation.receipt,resumed:true});
+      }
+    }
+    attempts.set(attemptId,pending);
     try {
       if (operation.effect !== 'read' && await authorize({
         bindingId: id, provider: record.binding.provider,
@@ -200,6 +218,7 @@ export function createCapabilityBroker({ authorize = async () => false,
         requestFingerprint: fingerprint,
         inputDigest: digest(snapshot.input), expectedDigest: digest(snapshot.expected),
       }) !== true) {
+        if(attemptStore)await attemptStore.release({id:attemptId,fingerprint});
         attempts.delete(attemptId); // Denial has no possible external side effect.
         return Object.freeze({ status: 'approval-required', bindingId: id,
           operation: operation.name });
@@ -208,12 +227,20 @@ export function createCapabilityBroker({ authorize = async () => false,
       // while the owner responds must fail before any provider side effect.
       if (recordFor(id) !== record || record.readiness !== 'ready')
         throw Error('Capability binding not ready');
-      pending.receipt = Object.freeze({ status: 'reconcile-required',
+      const checkpoint = Object.freeze({ status: 'reconcile-required',
         bindingId: id, provider: record.binding.provider, operation: operation.name,
         effect: operation.effect, idempotencyKey: snapshot.idempotencyKey,
         reason: 'Provider outcome requires independent reconciliation' });
+      // Persist the irreversible/uncertain boundary BEFORE any adapter write.
+      if(attemptStore)await attemptStore.advance({
+        id:attemptId,fingerprint,expectedStatus:'approval-pending',receipt:checkpoint});
+      pending.receipt=checkpoint;
     } catch (error) {
-      attempts.delete(attemptId); // Still pre-dispatch; another approval may retry.
+      // Release only a pre-dispatch approval-pending record. An ambiguous
+      // persisted 'reconcile-required' state must remain non-replayable.
+      if(attemptStore)await attemptStore.release({
+        id:attemptId,fingerprint}).catch(()=>{});
+      attempts.delete(attemptId);
       throw error;
     }
     try {
@@ -226,12 +253,15 @@ export function createCapabilityBroker({ authorize = async () => false,
           resultDigest: digest(result ?? null) } });
       if (!observation || observation.verified !== true ||
           !serializable(observation, 20_000)) throw Error('Outcome not verified');
-      pending.receipt = Object.freeze({ status: 'completed', bindingId: id,
+      const completed=Object.freeze({ status: 'completed', bindingId: id,
         provider: record.binding.provider, actorRef: record.binding.actorRef,
         operation: operation.name, effect: operation.effect,
         idempotencyKey: snapshot.idempotencyKey, observedAt: clock(),
         costCents: snapshot.estimatedCostCents,
         resultDigest: digest(result ?? null), observationDigest: digest(observation) });
+      if(attemptStore)await attemptStore.advance({
+        id:attemptId,fingerprint,expectedStatus:'reconcile-required',receipt:completed});
+      pending.receipt=completed;
       return pending.receipt;
     } catch {
       return Object.freeze({ ...pending.receipt });
