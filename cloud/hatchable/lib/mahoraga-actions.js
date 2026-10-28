@@ -212,7 +212,8 @@ async function findRun(get,action,since) {
  const matches=value.workflow_runs.filter(run =>
    run.event==='workflow_dispatch' && run.head_sha===expectedHeadSha &&
    run.head_branch===ref &&
-   (run.path==='.github/workflows/verify.yml@'+ref ||
+   (run.path==='.github/workflows/verify.yml' ||
+    run.path==='.github/workflows/verify.yml@'+ref ||
     run.path==='.github/workflows/verify.yml@refs/heads/'+ref) &&
    run.display_title===title &&
    Number.isSafeInteger(run.id) && run.id>0 &&

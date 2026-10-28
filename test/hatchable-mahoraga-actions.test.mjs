@@ -14,7 +14,7 @@ const input={key:KEY,operation:'issue.create',
 function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
  pauseDuringPreflight=false,pat=false,githubAppPem=false,loseClaim=false,
  claimConflict=false,verifyConclusion='success',verifyStatus='completed',
- duplicateVerify=false}={}){
+ duplicateVerify=false,bareVerifyPath=false}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
  let stopped=paused,claimLost=loseClaim;
  const config={async get(name){
@@ -100,7 +100,8 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
    if(path.endsWith('/actions/workflows/verify.yml/dispatches')){
      const data=JSON.parse(init.body);
      runs.push({id:99,event:'workflow_dispatch',head_sha:'b'.repeat(40),
-       head_branch:'mahoraga/control',path:'.github/workflows/verify.yml@mahoraga/control',
+       head_branch:'mahoraga/control',path:bareVerifyPath?
+         '.github/workflows/verify.yml':'.github/workflows/verify.yml@mahoraga/control',
        display_title:'Ultron exact-head '+data.inputs?.ultron_action_key,
        status:verifyStatus,conclusion:verifyConclusion,
        created_at:new Date().toISOString()});
@@ -214,6 +215,15 @@ test('exact-head Verify dispatch records one run and never dispatches twice',asy
    ref:'mahoraga/control',inputs:{ultron_action_key:'ultron:verify-95',
      ultron_expected_head_sha:'b'.repeat(40)}
  });
+});
+test('GitHub bare workflow path is accepted for the exact correlated Verify run',async()=>{
+ const f=fixture({bareVerifyPath:true});
+ const request={key:'ultron:verify-bare-path',operation:'verify.dispatch',
+   input:{ref:'mahoraga/control',expectedHeadSha:'b'.repeat(40)}};
+ const result=await execute(f,request);
+ assert.equal(result.state,'observed');
+ assert.equal(result.result.runId,99);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/dispatches')).length,1);
 });
 
 test('owner stop keeps a prepared action unsubmitted even with valid GitHub credentials',async()=>{
