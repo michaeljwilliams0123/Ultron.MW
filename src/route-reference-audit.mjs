@@ -11,7 +11,7 @@ export const RETAINED_ROUTES = Object.freeze([
 ]);
 const byText = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const isRoute = path => RETAINED_ROUTES.includes(path) ||
-  /^(src|scripts|cloud)\/.*\.(mjs|js|sh|json|yml|yaml|sql)$/.test(path) ||
+  /^(src|scripts|cloud)\/.*\.(mjs|js|sh|json|yml|yaml|sql|toml)$/.test(path) ||
   /^docs\/.*\.(mjs|js|html|css)$/.test(path) ||
   /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path);
 const lineAt = (text, index) => text.slice(0, index).split('\n').length;
@@ -61,12 +61,28 @@ function resolveReference(source, specifier, paths) {
   try { value = decodeURIComponent(specifier.split(/[?#]/, 1)[0]); }
   catch { return null; }
   if (!value || value.includes('\\') || /^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+  // Hatchable's lib/ namespace is project-root relative, including from nested
+  // handlers and other shared modules. It is not a repository-root npm import.
+  if (/^cloud\/hatchable\/(api|mcp|lib)\//.test(source) && value.startsWith('lib/')) {
+    const target = posix.normalize('cloud/hatchable/' + value);
+    return target.startsWith('cloud/hatchable/lib/') && paths.has(target) ? target : null;
+  }
   const base = source.startsWith('.github/workflows/') ? '' : posix.dirname(source);
   const candidates = value.startsWith('.')
     ? [posix.join(base, value)]
     : [value.replace(/^\//, ''), posix.join(posix.dirname(source), value)];
   return candidates.map(path => posix.normalize(path)).find(path =>
     !path.startsWith('../') && paths.has(path)) || null;
+}
+
+function hatchableEntrypoint(path, paths) {
+  if (!paths.has('cloud/hatchable/hatchable.toml')) return null;
+  if (path === 'cloud/hatchable/hatchable.toml') return 'hatchable-project-config';
+  if (/^cloud\/hatchable\/api\/(?!lib\/).+\.js$/.test(path)) return 'declared-hatchable-api-entrypoint';
+  if (/^cloud\/hatchable\/mcp\/(?!lib\/).+\.js$/.test(path)) return 'declared-hatchable-mcp-entrypoint';
+  // Migration history is consumed by deploy in filename order, not by imports.
+  if (/^cloud\/hatchable\/migrations\/[^/]+\.sql$/.test(path)) return 'retained-hatchable-migration';
+  return null;
 }
 
 /** Static references are evidence of a consumer, never proof of live service.
@@ -91,7 +107,8 @@ export function buildRouteReferenceInventory(files) {
   for (const source of paths) {
     const text = files[source];
     if (/\.(mjs|js)$/.test(source)) for (const match of moduleSpecifiers(text)) {
-      if (!match.specifier.startsWith('.')) continue;
+      const hatchableAlias = /^cloud\/hatchable\/(api|mcp|lib)\//.test(source) && match.specifier.startsWith('lib/');
+      if (!match.specifier.startsWith('.') && !hatchableAlias) continue;
       if (!record(source, match.specifier, match.index, 'module-specifier'))
         unresolved.push({ source, line: lineAt(text, match.index), specifier: match.specifier.split(/[?#]/, 1)[0] });
     }
@@ -115,8 +132,10 @@ export function buildRouteReferenceInventory(files) {
     const referencedBy = references.filter(edge => edge.target === path);
     const retained = RETAINED_ROUTES.includes(path);
     const workflowEntrypoint = /^\.github\/workflows\//.test(path) && /^on\s*:/m.test(files[path]);
+    const platformEntrypoint = hatchableEntrypoint(path, pathSet);
     return { path, classification: retained ? 'retained-entrypoint' :
       workflowEntrypoint ? 'declared-workflow-entrypoint' :
+      platformEntrypoint ? platformEntrypoint :
       referencedBy.length ? 'referenced-source' : 'unreferenced-candidate',
       referencedBy, runtimeEvidence: 'not-probed', deletionEligible: false };
   });

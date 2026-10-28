@@ -1,0 +1,761 @@
+{
+  "schema": "ultron.routing-runtime-evidence.v1",
+  "date": "2026-10-28",
+  "sourceHead": "8f4ea384d953b115475bb4e2fc382e2f9e917e61",
+  "production": {
+    "project": "proj_A6GCXRSKizko",
+    "version": 16,
+    "status": "live",
+    "fileManifest": [
+      {
+        "path": "migrations/0001_tasks.sql",
+        "hash": "2ed9803a02abb683ee25ec12f5479ebd819674ace94d1672d639791c03f8726f",
+        "size": 566
+      },
+      {
+        "path": "migrations/0002_events.sql",
+        "hash": "6d0618c901dd4255dd0e72c8730ef111e98771ed4aaff2733f7ae77154dcfc81",
+        "size": 287
+      },
+      {
+        "path": "hatchable.toml",
+        "hash": "4d51f3d0cad485037ad764a6410703970dcba08069fee501a35954fbc1f8a45f",
+        "size": 1215
+      },
+      {
+        "path": "api/brain/tasks.js",
+        "hash": "910908b56bb313fdf1cd993a64a312055dcbaaf7b57c0d654c0a4a59a65ef4b8",
+        "size": 1042
+      },
+      {
+        "path": "api/brain/tick.js",
+        "hash": "bc547605d7001f956a79ba862d8a7953d8f75ee23d24a6478d9c4a604a971c8a",
+        "size": 1742
+      },
+      {
+        "path": "lib/brain-core.js",
+        "hash": "068751f9270a344f838ffb6ef002c76662a42bea7c5cf9265ea1c3eb0e10b556",
+        "size": 11054
+      },
+      {
+        "path": "migrations/0003_native_commands.sql",
+        "hash": "193dbf8b6c3ffb33b8de7d32530175fcaf44c3e194e46f227f6eead8b1286a7c",
+        "size": 497
+      },
+      {
+        "path": "lib/brain-runner.js",
+        "hash": "2d1c2b97e151afeb5043d256bce18a62a3f1b5432f6501d51657b5fbda5d1b44",
+        "size": 7019
+      },
+      {
+        "path": "api/brain/run.js",
+        "hash": "32314ee34a8805dd009038ececa420ab94b6d56202872496258a226a869018f7",
+        "size": 1551
+      },
+      {
+        "path": "lib/brain-owner.js",
+        "hash": "2fe1055f7907b3281f5ee4a5fdba16b3f9a2be30d4773f4b9b71ae421f67ae60",
+        "size": 4236
+      },
+      {
+        "path": "api/brain/command.js",
+        "hash": "761e38cbed33a2c153fe30df78f66fc7c5db997e31e84640f8ebee3261352a03",
+        "size": 1188
+      },
+      {
+        "path": "mcp/ultron_status.js",
+        "hash": "abb0548c44d54b98bd6a731f21c76174c1f1ad2ed7d3caf6baacdf2e9766eed4",
+        "size": 370
+      },
+      {
+        "path": "mcp/ultron_queue.js",
+        "hash": "fb7ed1c5338add1f39cc0e2fc2f0bfd90241bbce44bf30bf8451e967031b400c",
+        "size": 662
+      },
+      {
+        "path": "mcp/ultron_remember.js",
+        "hash": "703be86c9039f7b95291d3bc8c3588e7ea1e7dce7e9b5684bec82e4f731ea339",
+        "size": 541
+      },
+      {
+        "path": "mcp/ultron_control.js",
+        "hash": "90e6f38640c0f14f11e56c48662895cfae10fe6ab3dd57e5df716000028408bb",
+        "size": 536
+      },
+      {
+        "path": "api/brain/mahoraga.js",
+        "hash": "290b2c6f7d344eda34ce287c696b8812216473c825f228db31e99ca724585f03",
+        "size": 571
+      },
+      {
+        "path": "lib/mahoraga-actions.js",
+        "hash": "ec7b9352dbecb3ba61218057eb8be285bb7856f3b81f63b604699927497a87a8",
+        "size": 21850
+      },
+      {
+        "path": "mcp/ultron_mahoraga.js",
+        "hash": "c1af78cf9ee8e32de422a5a35f9a482a5c9e11792ef0df9af9d72c3915237e6e",
+        "size": 1017
+      },
+      {
+        "path": "migrations/0004_mahoraga_actions.sql",
+        "hash": "411551527e63bf8128c53eb0c6c47fdac3bec06ca21a18fb51fdd00a0be25b89",
+        "size": 790
+      },
+      {
+        "path": "public/index.html",
+        "hash": "6895025efa8ccda888d91822068beda94a6df03413931dcc2ffff45a956e5a92",
+        "size": 4228,
+        "blob": "f3e3118ac5891d4a807c8f462e1173d6f32fac4018bd18013e237dc5aa2a4476"
+      },
+      {
+        "path": "lib/council-evidence.js",
+        "hash": "f023bfba2901c504be0b03349001a8f7fc653754377ca0e1401160fc1ae9697d",
+        "size": 22004
+      },
+      {
+        "path": "migrations/0005_mahoraga_scan_fairness.sql",
+        "hash": "8238ef6cdd722a8795a7fc91dacaadcf677fd1e781099fa19b9df4e16cb16aeb",
+        "size": 301
+      },
+      {
+        "path": "api/brain/authority.js",
+        "hash": "651cf1128aed8db4e8315c2a88365897e1f595be1b2c905a93bbb3ae6c7395f3",
+        "size": 1841
+      },
+      {
+        "path": "api/brain/control.js",
+        "hash": "c18e4c70fa93b479b0b09e8e3ce22cae55c88f03d050d013d94f61c865b191a3",
+        "size": 955
+      },
+      {
+        "path": "api/brain/events.js",
+        "hash": "0118b7d4e7f8547ead59d8b387a9806bfc87c5766e5f92141d6e5f0c06679ffc",
+        "size": 1896
+      },
+      {
+        "path": "lib/acceptance-evidence.js",
+        "hash": "cc446c9b3b090fed8e9aa799892189df39ae6ed13e47d9a05f96ed052c28afe0",
+        "size": 21395
+      },
+      {
+        "path": "lib/heldout-cases.js",
+        "hash": "038ffbd685f540d7a13b7f5528758830314c4875d388d6c56fd927755cf2939a",
+        "size": 8409
+      },
+      {
+        "path": "lib/heldout-evidence.js",
+        "hash": "f2f5e882992f1cc3c802e9274634cbf22ae2cb82a60c5b549a5c75a3dd940c1a",
+        "size": 17522
+      },
+      {
+        "path": "lib/runtime-control.js",
+        "hash": "ed0ea0c92da2d890bc9a59276956db239d556dcb12c869656ce52505b83e51e2",
+        "size": 1740
+      },
+      {
+        "path": "lib/security-adjudicator.js",
+        "hash": "945a9c5ba5c2b0f11fad2a4a9722cf0d6b81aec350fcff29718b64c8b5a7b1b6",
+        "size": 5392
+      },
+      {
+        "path": "lib/shared-evaluation.js",
+        "hash": "315d45db000416034051b50aecfba9e7a49b5dcae7fa07fe0892c2e281a3904a",
+        "size": 5802
+      },
+      {
+        "path": "lib/signed-event-inbox.js",
+        "hash": "ab12fd6661acce7b520660d60e77a399b258c1a403903a7855b4d4606c9065bf",
+        "size": 5162
+      },
+      {
+        "path": "migrations/0006_acceptance_evidence.sql",
+        "hash": "d364c1d47e9c167feefc487e3dc5ee50d3ee2f72f242075c8d3ff0ee98cea39c",
+        "size": 401
+      },
+      {
+        "path": "migrations/0007_cooperative_fencing.sql",
+        "hash": "32fecd5c45959ed2df4230661f57646fe77497fe6455b99af669b7e98c78dd8e",
+        "size": 526
+      },
+      {
+        "path": "migrations/0008_admin_grants.sql",
+        "hash": "f7f0d6f60f140a279d90d8ce87579dbfc3ed98bae647a2070c8879f04c285eb0",
+        "size": 628
+      },
+      {
+        "path": "migrations/0009_signed_event_inbox.sql",
+        "hash": "ca2ec693b135c66f5eb1a6a1ad793abf86f7fb5548d70789eb38cc908d8519ad",
+        "size": 632
+      },
+      {
+        "path": "migrations/0010_runtime_stop.sql",
+        "hash": "ca351d0a88c9d507808c402a371ff054a8aaf29d74954338e810dc8954b62b8b",
+        "size": 513
+      },
+      {
+        "path": "migrations/0011_capability_attempts.sql",
+        "hash": "98c5b094f36e3d7c0f3fee3d6504864b777943d49f9474fd6d25caeb72d66dde",
+        "size": 766
+      }
+    ],
+    "functions": [
+      {
+        "id": 478212,
+        "name": "api-brain-tasks",
+        "route": "/api/brain/tasks",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 478213,
+        "name": "api-brain-tick",
+        "route": "/api/brain/tick",
+        "method": "ANY",
+        "declared_access": "scheduler",
+        "type": "scheduled",
+        "schedule": "17 * * * *",
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 478257,
+        "name": "api-brain-run",
+        "route": "/api/brain/run",
+        "method": "ANY",
+        "declared_access": "scheduler",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 478258,
+        "name": "api-brain-command",
+        "route": "/api/brain/command",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 490774,
+        "name": "api-brain-mahoraga",
+        "route": "/api/brain/mahoraga",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509977,
+        "name": "api-brain-authority",
+        "route": "/api/brain/authority",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509978,
+        "name": "api-brain-control",
+        "route": "/api/brain/control",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509979,
+        "name": "api-brain-events",
+        "route": "/api/brain/events",
+        "method": "ANY",
+        "declared_access": "public",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      }
+    ]
+  },
+  "experiment": {
+    "project": "proj_TcBub9teRzv1",
+    "baselineVersion": 9,
+    "injectedVersion": 10,
+    "restoredVersion": 11,
+    "status": "live",
+    "restoredFileManifest": [
+      {
+        "path": "api/brain/command.js",
+        "hash": "761e38cbed33a2c153fe30df78f66fc7c5db997e31e84640f8ebee3261352a03",
+        "size": 1188
+      },
+      {
+        "path": "api/brain/mahoraga.js",
+        "hash": "290b2c6f7d344eda34ce287c696b8812216473c825f228db31e99ca724585f03",
+        "size": 571
+      },
+      {
+        "path": "api/brain/run.js",
+        "hash": "32314ee34a8805dd009038ececa420ab94b6d56202872496258a226a869018f7",
+        "size": 1551
+      },
+      {
+        "path": "api/brain/tasks.js",
+        "hash": "910908b56bb313fdf1cd993a64a312055dcbaaf7b57c0d654c0a4a59a65ef4b8",
+        "size": 1042
+      },
+      {
+        "path": "api/brain/tick.js",
+        "hash": "bc547605d7001f956a79ba862d8a7953d8f75ee23d24a6478d9c4a604a971c8a",
+        "size": 1742
+      },
+      {
+        "path": "hatchable.toml",
+        "hash": "4d51f3d0cad485037ad764a6410703970dcba08069fee501a35954fbc1f8a45f",
+        "size": 1215
+      },
+      {
+        "path": "lib/brain-core.js",
+        "hash": "068751f9270a344f838ffb6ef002c76662a42bea7c5cf9265ea1c3eb0e10b556",
+        "size": 11054
+      },
+      {
+        "path": "lib/council-evidence.js",
+        "hash": "f023bfba2901c504be0b03349001a8f7fc653754377ca0e1401160fc1ae9697d",
+        "size": 22004
+      },
+      {
+        "path": "lib/mahoraga-actions.js",
+        "hash": "ec7b9352dbecb3ba61218057eb8be285bb7856f3b81f63b604699927497a87a8",
+        "size": 21850
+      },
+      {
+        "path": "lib/brain-owner.js",
+        "hash": "2fe1055f7907b3281f5ee4a5fdba16b3f9a2be30d4773f4b9b71ae421f67ae60",
+        "size": 4236
+      },
+      {
+        "path": "mcp/ultron_control.js",
+        "hash": "90e6f38640c0f14f11e56c48662895cfae10fe6ab3dd57e5df716000028408bb",
+        "size": 536
+      },
+      {
+        "path": "mcp/ultron_mahoraga.js",
+        "hash": "c1af78cf9ee8e32de422a5a35f9a482a5c9e11792ef0df9af9d72c3915237e6e",
+        "size": 1017
+      },
+      {
+        "path": "mcp/ultron_queue.js",
+        "hash": "fb7ed1c5338add1f39cc0e2fc2f0bfd90241bbce44bf30bf8451e967031b400c",
+        "size": 662
+      },
+      {
+        "path": "mcp/ultron_remember.js",
+        "hash": "703be86c9039f7b95291d3bc8c3588e7ea1e7dce7e9b5684bec82e4f731ea339",
+        "size": 541
+      },
+      {
+        "path": "mcp/ultron_status.js",
+        "hash": "abb0548c44d54b98bd6a731f21c76174c1f1ad2ed7d3caf6baacdf2e9766eed4",
+        "size": 370
+      },
+      {
+        "path": "lib/brain-runner.js",
+        "hash": "2d1c2b97e151afeb5043d256bce18a62a3f1b5432f6501d51657b5fbda5d1b44",
+        "size": 7019
+      },
+      {
+        "path": "migrations/0001_tasks.sql",
+        "hash": "2ed9803a02abb683ee25ec12f5479ebd819674ace94d1672d639791c03f8726f",
+        "size": 566
+      },
+      {
+        "path": "migrations/0002_events.sql",
+        "hash": "6d0618c901dd4255dd0e72c8730ef111e98771ed4aaff2733f7ae77154dcfc81",
+        "size": 287
+      },
+      {
+        "path": "migrations/0003_native_commands.sql",
+        "hash": "193dbf8b6c3ffb33b8de7d32530175fcaf44c3e194e46f227f6eead8b1286a7c",
+        "size": 497
+      },
+      {
+        "path": "migrations/0005_mahoraga_scan_fairness.sql",
+        "hash": "8238ef6cdd722a8795a7fc91dacaadcf677fd1e781099fa19b9df4e16cb16aeb",
+        "size": 301
+      },
+      {
+        "path": "migrations/0004_mahoraga_actions.sql",
+        "hash": "411551527e63bf8128c53eb0c6c47fdac3bec06ca21a18fb51fdd00a0be25b89",
+        "size": 790
+      },
+      {
+        "path": "public/index.html",
+        "hash": "6895025efa8ccda888d91822068beda94a6df03413931dcc2ffff45a956e5a92",
+        "size": 4228,
+        "blob": "5efd77925a260344bc7d003e7d959bbf7067a67daa495e9658fa9d228c61e375"
+      },
+      {
+        "path": "migrations/0006_acceptance_evidence.sql",
+        "hash": "d364c1d47e9c167feefc487e3dc5ee50d3ee2f72f242075c8d3ff0ee98cea39c",
+        "size": 401
+      },
+      {
+        "path": "migrations/0007_cooperative_fencing.sql",
+        "hash": "32fecd5c45959ed2df4230661f57646fe77497fe6455b99af669b7e98c78dd8e",
+        "size": 526
+      },
+      {
+        "path": "migrations/0008_admin_grants.sql",
+        "hash": "f7f0d6f60f140a279d90d8ce87579dbfc3ed98bae647a2070c8879f04c285eb0",
+        "size": 628
+      },
+      {
+        "path": "migrations/0009_signed_event_inbox.sql",
+        "hash": "ca2ec693b135c66f5eb1a6a1ad793abf86f7fb5548d70789eb38cc908d8519ad",
+        "size": 632
+      },
+      {
+        "path": "migrations/0010_runtime_stop.sql",
+        "hash": "ca351d0a88c9d507808c402a371ff054a8aaf29d74954338e810dc8954b62b8b",
+        "size": 513
+      },
+      {
+        "path": "api/brain/authority.js",
+        "hash": "651cf1128aed8db4e8315c2a88365897e1f595be1b2c905a93bbb3ae6c7395f3",
+        "size": 1841
+      },
+      {
+        "path": "api/brain/control.js",
+        "hash": "c18e4c70fa93b479b0b09e8e3ce22cae55c88f03d050d013d94f61c865b191a3",
+        "size": 955
+      },
+      {
+        "path": "api/brain/events.js",
+        "hash": "0118b7d4e7f8547ead59d8b387a9806bfc87c5766e5f92141d6e5f0c06679ffc",
+        "size": 1896
+      },
+      {
+        "path": "lib/acceptance-evidence.js",
+        "hash": "cc446c9b3b090fed8e9aa799892189df39ae6ed13e47d9a05f96ed052c28afe0",
+        "size": 21395
+      },
+      {
+        "path": "lib/heldout-cases.js",
+        "hash": "038ffbd685f540d7a13b7f5528758830314c4875d388d6c56fd927755cf2939a",
+        "size": 8409
+      },
+      {
+        "path": "lib/heldout-evidence.js",
+        "hash": "f2f5e882992f1cc3c802e9274634cbf22ae2cb82a60c5b549a5c75a3dd940c1a",
+        "size": 17522
+      },
+      {
+        "path": "lib/runtime-control.js",
+        "hash": "ed0ea0c92da2d890bc9a59276956db239d556dcb12c869656ce52505b83e51e2",
+        "size": 1740
+      },
+      {
+        "path": "lib/security-adjudicator.js",
+        "hash": "945a9c5ba5c2b0f11fad2a4a9722cf0d6b81aec350fcff29718b64c8b5a7b1b6",
+        "size": 5392
+      },
+      {
+        "path": "lib/shared-evaluation.js",
+        "hash": "315d45db000416034051b50aecfba9e7a49b5dcae7fa07fe0892c2e281a3904a",
+        "size": 5802
+      },
+      {
+        "path": "lib/signed-event-inbox.js",
+        "hash": "ab12fd6661acce7b520660d60e77a399b258c1a403903a7855b4d4606c9065bf",
+        "size": 5162
+      },
+      {
+        "path": "migrations/0011_capability_attempts.sql",
+        "hash": "98c5b094f36e3d7c0f3fee3d6504864b777943d49f9474fd6d25caeb72d66dde",
+        "size": 766
+      }
+    ],
+    "functions": [
+      {
+        "id": 509674,
+        "name": "api-brain-command",
+        "route": "/api/brain/command",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509675,
+        "name": "api-brain-mahoraga",
+        "route": "/api/brain/mahoraga",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509676,
+        "name": "api-brain-run",
+        "route": "/api/brain/run",
+        "method": "ANY",
+        "declared_access": "scheduler",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509677,
+        "name": "api-brain-tasks",
+        "route": "/api/brain/tasks",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509678,
+        "name": "api-brain-tick",
+        "route": "/api/brain/tick",
+        "method": "ANY",
+        "declared_access": "scheduler",
+        "type": "scheduled",
+        "schedule": "17 * * * *",
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509747,
+        "name": "api-brain-authority",
+        "route": "/api/brain/authority",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509748,
+        "name": "api-brain-control",
+        "route": "/api/brain/control",
+        "method": "ANY",
+        "declared_access": "admin",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      },
+      {
+        "id": 509749,
+        "name": "api-brain-events",
+        "route": "/api/brain/events",
+        "method": "ANY",
+        "declared_access": "public",
+        "type": "api",
+        "schedule": null,
+        "runtime_tier": "v8"
+      }
+    ]
+  },
+  "rollback": {
+    "faultFile": {"path":"api/brain/control.js","hash":"11b4d2b23e7c7a0c237d0eb77f9ec0204b0deaa09aa3fd975e40f2abf843f6b2","size":1067},
+    "changedPaths": ["api/brain/control.js"],
+    "scope": "experiment read-only control GET; no production deployment",
+    "baselineStatus": 200,
+    "injectedStatus": 503,
+    "injectedError": "issue69-staging-rollback-drill",
+    "restoredStatus": 200,
+    "baselineControlVersion": 5,
+    "restoredControlVersion": 5,
+    "restoredManifestMatchesBaseline": true,
+    "filesCompared": 38
+  },
+  "atomicRollback": {
+    "status": 200,
+    "durationMs": 165,
+    "schema": "ultron.atomic-rollback-drill.v1",
+    "positive": {
+      "tasks": 1,
+      "events": 1
+    },
+    "negative": {
+      "tasks": 0,
+      "events": 0
+    },
+    "expectedSqlError": "division-by-zero",
+    "cleanup": {
+      "tasks": 0,
+      "events": 0
+    },
+    "at": "2026-10-28T18:34:19.712Z"
+  },
+  "tasks": {
+    "status": 200,
+    "durationMs": 30,
+    "tasks": [
+      {
+        "id": 53,
+        "task_key": "issue69-runtime-20261028-wtgy7lrq-repo",
+        "objective": "repo.inspect",
+        "status": "done",
+        "attempts": 1,
+        "fencing_generation": 1,
+        "last_result": {
+          "at": "2026-10-28T18:35:14.347Z",
+          "sha": "8f4ea384d953b115475bb4e2fc382e2f9e917e61",
+          "source": "github-api",
+          "objective": "repo.inspect",
+          "repository": "michaeljwilliams0123/Ultron.MW"
+        },
+        "updated_at": "2026-10-28T18:35:14.497305+00:00"
+      },
+      {
+        "id": 54,
+        "task_key": "issue69-runtime-20261028-wtgy7lrq-site",
+        "objective": "site.render",
+        "status": "done",
+        "attempts": 1,
+        "fencing_generation": 1,
+        "last_result": {
+          "at": "2026-10-28T18:35:14.531Z",
+          "url": "https://michaeljwilliams0123.github.io/Ultron.MW/",
+          "title": "Ultron · MW",
+          "source": "hatchable-chromium",
+          "objective": "site.render",
+          "has_ultron": true,
+          "html_bytes": 22464,
+          "source_sha": "8f4ea384d953b115475bb4e2fc382e2f9e917e61",
+          "has_app_shell": true,
+          "runtime_source_sha": "8f4ea384d953b115475bb4e2fc382e2f9e917e61"
+        },
+        "updated_at": "2026-10-28T18:35:15.889472+00:00"
+      }
+    ],
+    "events": [
+      {
+        "id": 70,
+        "task_id": 53,
+        "event_type": "owner-queued",
+        "created_at": "2026-10-28T18:35:06.779625+00:00"
+      },
+      {
+        "id": 71,
+        "task_id": 54,
+        "event_type": "owner-queued",
+        "created_at": "2026-10-28T18:35:09.969531+00:00"
+      },
+      {
+        "id": 72,
+        "task_id": 53,
+        "event_type": "claimed",
+        "created_at": "2026-10-28T18:35:14.343574+00:00"
+      },
+      {
+        "id": 73,
+        "task_id": 53,
+        "event_type": "observed",
+        "created_at": "2026-10-28T18:35:14.497305+00:00"
+      },
+      {
+        "id": 74,
+        "task_id": 54,
+        "event_type": "claimed",
+        "created_at": "2026-10-28T18:35:14.528329+00:00"
+      },
+      {
+        "id": 75,
+        "task_id": 54,
+        "event_type": "observed",
+        "created_at": "2026-10-28T18:35:15.889472+00:00"
+      }
+    ],
+    "at": "2026-10-28T18:35:34.033Z"
+  },
+  "idempotentAdmission": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "ok": true,
+      "task": {
+        "id": 53,
+        "task_key": "issue69-runtime-20261028-wtgy7lrq-repo",
+        "objective": "repo.inspect",
+        "status": "done"
+      },
+      "created": false,
+      "immediate_scheduled": false,
+      "scheduled_fallback": "hourly"
+    },
+    "logs": null,
+    "error": null,
+    "duration_ms": 58
+  },
+  "hostedBrowser": {
+    "status": 200,
+    "durationMs": 872,
+    "schema": "ultron.hosted-browser-observation.v1",
+    "url": "https://michaeljwilliams0123.github.io/Ultron.MW/",
+    "title": "Ultron · MW",
+    "headings": [
+      "Ultron is ready to evolve.",
+      "Objective console",
+      "Evolution ledger",
+      "Execution & owner actions"
+    ],
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+    "forms": 1,
+    "screenshotBytes": 273533,
+    "screenshotSha256": "9459000a6bfced62d1861b9fcf51de9285277f11f92bcb8276ef1d41d3387760",
+    "mutations": 0,
+    "ownerApproval": "not-exercised",
+    "computerExecutor": "not-exercised"
+  },
+  "accessProbes": [
+    {
+      "project": "production",
+      "route": "/api/brain/control",
+      "caller": "owner",
+      "status": 200,
+      "durationMs": 70
+    },
+    {
+      "project": "production",
+      "route": "/api/brain/control",
+      "caller": "public",
+      "status": 401,
+      "durationMs": 0
+    },
+    {
+      "project": "production",
+      "route": "/api/brain/run",
+      "caller": "public",
+      "status": 404,
+      "durationMs": 0
+    }
+  ],
+  "recoveryMirror": {
+    "repository": "michaelj.williams0123/Ultron.MW",
+    "branch": "main",
+    "commit": "8f4ea384d953b115475bb4e2fc382e2f9e917e61",
+    "protected": true,
+    "githubRunId": 40708990259
+  },
+  "limits": {
+    "ownerAuthenticatedComputerExecutor": "not-exercised",
+    "browserTransfers": "not-exercised",
+    "gitbookLiveSync": "not-observed",
+    "replacementLatencyComparison": "not-performed",
+    "pricedCostComparison": "not-performed",
+    "verifiedDeadRoutes": 0,
+    "deletedRoutes": 0
+  }
+}
