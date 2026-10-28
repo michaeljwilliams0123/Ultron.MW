@@ -146,22 +146,26 @@ async function preflight(get, action) {
  await get('/actions/workflows/verify.yml');
 }
 async function findIssue(get,key) {
- let found = null;
- for(let first=1;first<=MAX_ISSUE_PAGES;first+=ISSUE_SCAN_BATCH_SIZE) {
-   const count=Math.min(ISSUE_SCAN_BATCH_SIZE,MAX_ISSUE_PAGES-first+1);
+ let found = null,total=0;
+ // The extra page distinguishes exactly-full capacity from overflow.
+ for(let first=1;first<=MAX_ISSUE_PAGES+1;first+=ISSUE_SCAN_BATCH_SIZE) {
+   const count=Math.min(ISSUE_SCAN_BATCH_SIZE,MAX_ISSUE_PAGES+2-first);
    const pages=await Promise.all(Array.from({length:count},(_,offset)=>
      get('/issues?state=all&per_page='+ISSUE_PAGE_SIZE+'&page='+(first+offset))));
    let ended=false;
    for(const rows of pages) {
      if(!Array.isArray(rows) || rows.length>ISSUE_PAGE_SIZE ||
        (ended && rows.length)) throw Error('issue-readback-invalid');
+     total+=rows.length;
+     if(total>MAX_ISSUE_PAGES*ISSUE_PAGE_SIZE)
+       throw Error('issue-reconciliation-window-exceeded');
      for(const row of rows) if(!row.pull_request && row.body?.includes(MARKER(key))) {
        if(found) throw Error('issue-marker-collision');
        found = row;
      }
      if(rows.length<ISSUE_PAGE_SIZE)ended=true;
    }
-   if(ended)return found;
+   if(ended)return {found,total};
  }
  throw Error('issue-reconciliation-window-exceeded');
 }
@@ -200,10 +204,13 @@ async function findRun(get,action,since) {
  }
  return run;
 }
-async function observe(get,row) {
+async function observe(get,row,{reserveIssueSlot=false}={}) {
  const action={key:row.action_key,operation:row.operation,input:row.request};
  if(row.operation==='issue.create') {
-   const item=await findIssue(get,row.action_key);
+   const inventory=await findIssue(get,row.action_key),item=inventory.found;
+   if(reserveIssueSlot && !item &&
+     inventory.total>=MAX_ISSUE_PAGES*ISSUE_PAGE_SIZE)
+     throw Error('issue-reconciliation-window-exceeded');
    const expected=row.request.body+'\n\n'+MARKER(row.action_key);
    if(!item)return null;
    // An existing marker with changed content is a conflict, never absence.
@@ -300,7 +307,7 @@ export async function runMahoragaAction({db,config,transport=fetch,
  // read cannot leave an action uncertain when no external write was attempted.
  let existingIssue=null;
  if(action.operation==='issue.create') {
-   try { existingIssue=await observe(get,row); }
+   try { existingIssue=await observe(get,row,{reserveIssueSlot:true}); }
    catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,
      error:error.message}; }
  }

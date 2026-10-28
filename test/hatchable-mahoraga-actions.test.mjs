@@ -263,6 +263,18 @@ test('an older-page marker conflict cannot trigger another issue',async()=>{
  assert.equal(f.issues.length,1178);
  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
 });
+test('the last available issue slot can be written and read back',async()=>{
+ const f=fixture({pat:true});
+ for(let i=0;i<3999;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
+   body:'No canary marker',html_url:'https://github.com/example/issues/'+(i+1)});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(result.result.number,4000);
+ assert.equal(f.issues.length,4000);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+ assert.ok(f.calls.some(x=>x.search.includes('page=41')),
+   'post-write readback must verify the terminal empty page');
+});
 test('an oversized issue inventory fails before the send checkpoint',async()=>{
  const f=fixture({pat:true});
  for(let i=0;i<4000;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
