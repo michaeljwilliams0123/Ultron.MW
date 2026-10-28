@@ -9,6 +9,9 @@ const HEADERS = { Accept: 'application/vnd.github+json',
   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Ultron-Mahoraga-Control' };
 const REQUEST_TIMEOUT_MS = 8000;
 const ACTION_DEADLINE_MS = 24000;
+const ISSUE_PAGE_SIZE = 100;
+const ISSUE_SCAN_BATCH_SIZE = 4;
+const MAX_ISSUE_PAGES = 40;
 
 async function githubJson(transport,url,init,deadlineAt,requestTimeoutMs,errorCode) {
  const remaining=deadlineAt-Date.now();
@@ -143,15 +146,57 @@ async function preflight(get, action) {
  await get('/actions/workflows/verify.yml');
 }
 async function findIssue(get,key) {
- let found = null;
- for(let page=1;page<=10;page++) {
-   const rows = await get('/issues?state=all&per_page=100&page='+page);
-   if(!Array.isArray(rows) || rows.length>100) throw Error('issue-readback-invalid');
-   for(const row of rows) if(!row.pull_request && row.body?.includes(MARKER(key))) {
-     if(found) throw Error('issue-marker-collision');
-     found = row;
+ let found = null,total=0;
+ // Ascending creation order keeps older page boundaries stable when another
+ // actor creates an issue during the batched pre-write inventory.
+ // The extra page distinguishes exactly-full capacity from overflow.
+ for(let first=1;first<=MAX_ISSUE_PAGES+1;first+=ISSUE_SCAN_BATCH_SIZE) {
+   const count=Math.min(ISSUE_SCAN_BATCH_SIZE,MAX_ISSUE_PAGES+2-first);
+   const pages=await Promise.all(Array.from({length:count},(_,offset)=>
+     get('/issues?state=all&sort=created&direction=asc&per_page='+
+       ISSUE_PAGE_SIZE+'&page='+(first+offset))));
+   let ended=false;
+   for(const rows of pages) {
+     if(!Array.isArray(rows) || rows.length>ISSUE_PAGE_SIZE ||
+       (ended && rows.length)) throw Error('issue-readback-invalid');
+     total+=rows.length;
+     if(total>MAX_ISSUE_PAGES*ISSUE_PAGE_SIZE)
+       throw Error('issue-reconciliation-window-exceeded');
+     for(const row of rows) if(!row.pull_request && row.body?.includes(MARKER(key))) {
+       if(found) throw Error('issue-marker-collision');
+       found = row;
+     }
+     if(rows.length<ISSUE_PAGE_SIZE)ended=true;
    }
-   if(rows.length<100) return found;
+   if(ended)return {found,total};
+ }
+ throw Error('issue-reconciliation-window-exceeded');
+}
+async function findRecentIssue(get,key,since) {
+ const started=Date.parse(since || '');
+ if(!Number.isFinite(started))throw Error('issue-attempt-time-invalid');
+ // GitHub timestamps and the database clock may differ slightly. A sent
+ // action is never replayed, even if this bounded readback finds no issue.
+ const cutoff=started-60000;
+ let found=null;
+ for(let page=1;page<=MAX_ISSUE_PAGES;page++) {
+   // Sequential descending reads cannot skip an older boundary when a new
+   // issue is inserted between page requests; the boundary only overlaps.
+   const rows=await get('/issues?state=all&sort=created&direction=desc&per_page='+
+     ISSUE_PAGE_SIZE+'&page='+page);
+   if(!Array.isArray(rows)||rows.length>ISSUE_PAGE_SIZE)
+     throw Error('issue-readback-invalid');
+   let older=false;
+   for(const row of rows) {
+     const created=Date.parse(row.created_at || '');
+     if(!Number.isFinite(created))throw Error('issue-readback-invalid');
+     if(created<cutoff){older=true;break;}
+     if(!row.pull_request && row.body?.includes(MARKER(key))) {
+       if(found)throw Error('issue-marker-collision');
+       found=row;
+     }
+   }
+   if(older||rows.length<ISSUE_PAGE_SIZE)return found;
  }
  throw Error('issue-reconciliation-window-exceeded');
 }
@@ -193,7 +238,9 @@ async function findRun(get,action,since) {
 async function observe(get,row) {
  const action={key:row.action_key,operation:row.operation,input:row.request};
  if(row.operation==='issue.create') {
-   const item=await findIssue(get,row.action_key);
+   const item=row.state==='prepared'
+     ?(await findIssue(get,row.action_key)).found
+     :await findRecentIssue(get,row.action_key,row.attempt_started_at);
    const expected=row.request.body+'\n\n'+MARKER(row.action_key);
    if(!item)return null;
    // An existing marker with changed content is a conflict, never absence.
@@ -286,6 +333,16 @@ export async function runMahoragaAction({db,config,transport=fetch,
  }
  try { await preflight(get,action); }
  catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,error:error.message}; }
+ // Complete the issue inventory before the durable send checkpoint. A failed
+ // read cannot leave an action uncertain when no external write was attempted.
+ if(action.operation==='issue.create') {
+   try {
+     if(await observe(get,row))return {ok:false,state:'prepared',id:row.id,
+       taskId:row.task_id,error:'issue-marker-already-exists'};
+   }
+   catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,
+     error:error.message}; }
+ }
  // Admission to 'sent' is the dispatch boundary. Serialize it with an owner
  // pause so no prepared action can be admitted after the pause commits.
  const claim=await db.query(`WITH control AS MATERIALIZED (
@@ -308,12 +365,11 @@ export async function runMahoragaAction({db,config,transport=fetch,
  }
  row=claim.rows[0];
  try {
-   const existing=await observe(get,row);
-   if(!existing) {
-     if(action.operation==='issue.create')
-       await get('/issues','POST',{title:action.input.title,
-         body:action.input.body+'\n\n'+MARKER(action.key)});
-     else await get('/actions/workflows/verify.yml/dispatches','POST',
+   if(action.operation==='issue.create') {
+     await get('/issues','POST',{title:action.input.title,
+       body:action.input.body+'\n\n'+MARKER(action.key)});
+   } else if(!await observe(get,row)) {
+     await get('/actions/workflows/verify.yml/dispatches','POST',
        {ref:action.input.ref,inputs:{ultron_action_key:action.key,
          ultron_expected_head_sha:action.input.expectedHeadSha}});
    }
