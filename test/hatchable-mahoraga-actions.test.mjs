@@ -114,6 +114,12 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
  return {db,config,transport,calls,rows,issues,runs};
 }
 const execute=(f,action=input)=>runMahoragaAction(f,action);
+function waitForAbort(signal){
+ return new Promise((resolve,reject)=>{
+   if(signal.aborted)return reject(signal.reason);
+   signal.addEventListener('abort',()=>reject(signal.reason),{once:true});
+ });
+}
 test('durable issue action commits sent before GitHub write and observes one canary',async()=>{
  const f=fixture();
  const result=await execute(f);
@@ -132,6 +138,38 @@ test('lost GitHub write response is not replayed after a new invocation',async()
  assert.equal(f.rows.get(KEY).state,'uncertain');
  assert.equal((await execute(f)).state,'observed');
  assert.equal(f.issues.length,1);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+});
+test('a stalled preflight read times out before the durable send checkpoint',async()=>{
+ const f=fixture({pat:true});
+ const transport=f.transport;
+ f.transport=(url,init)=>new URL(url).searchParams.has('per_page') &&
+   new URL(url).pathname.endsWith('/issues')
+   ? waitForAbort(init.signal) : transport(url,init);
+ const result=await runMahoragaAction({...f,requestTimeoutMs:15,
+   actionDeadlineMs:100},input);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'github-request-timeout');
+ assert.equal(f.rows.get(KEY).state,'prepared');
+ assert.equal(f.issues.length,0);
+ assert.equal(f.calls.filter(x=>x.method==='POST').length,0);
+});
+test('a timed out write remains uncertain and is reconciled without a second POST',async()=>{
+ const f=fixture({pat:true});
+ const transport=f.transport;
+ f.transport=async(url,init)=>{
+   if(new URL(url).pathname.endsWith('/issues')&&init.method==='POST'){
+     await transport(url,init); // Remote service commits the issue, then loses its response.
+     return waitForAbort(init.signal);
+   }
+   return transport(url,init);
+ };
+ const result=await runMahoragaAction({...f,requestTimeoutMs:15,
+   actionDeadlineMs:100},input);
+ assert.equal(result.state,'uncertain');
+ assert.equal(f.rows.get(KEY).state,'uncertain');
+ assert.equal(f.issues.length,1);
+ assert.equal((await execute(f)).state,'observed');
  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
 });
 test('no credential or stale exact SHA can reach a Mahoraga write',async()=>{

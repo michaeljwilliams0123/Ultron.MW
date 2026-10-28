@@ -7,6 +7,23 @@ const REF = /^mahoraga\/[a-z0-9][a-z0-9._-]{2,79}$/;
 const MARKER = key => `<!-- ULTRON_MAHORAGA_CONTROL_V1 ${key} -->`;
 const HEADERS = { Accept: 'application/vnd.github+json',
   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Ultron-Mahoraga-Control' };
+const REQUEST_TIMEOUT_MS = 8000;
+const ACTION_DEADLINE_MS = 24000;
+
+async function githubJson(transport,url,init,deadlineAt,requestTimeoutMs,errorCode) {
+ const remaining=deadlineAt-Date.now();
+ if(remaining<=0)throw Error('mahoraga-action-deadline-exceeded');
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),Math.min(requestTimeoutMs,remaining));
+ try {
+   const response=await transport(url,{...init,signal:controller.signal});
+   if(!response.ok)throw Error(errorCode || 'github-status-'+response.status);
+   return response.status===204?null:await response.json();
+ } catch(error) {
+   if(controller.signal.aborted)throw Error('github-request-timeout');
+   throw error;
+ } finally {clearTimeout(timer);}
+}
 
 function validate(action) {
  if(!action || !KEY.test(action.key || '') ||
@@ -60,7 +77,8 @@ async function jwt(clientId,pem,now=Date.now()) {
  return content + '.' + encodeBytes(await crypto.subtle.sign(
    'RSASSA-PKCS1-v1_5',key,new TextEncoder().encode(content)));
 }
-async function appClient(config,transport=fetch) {
+async function appClient(config,transport=fetch,deadlineAt=Date.now()+ACTION_DEADLINE_MS,
+ requestTimeoutMs=REQUEST_TIMEOUT_MS) {
  // Fine-grained PAT is an optional, explicit owner-managed credential lane.
  // The caller's preflight verifies repository ID and exact head before effects.
  let pat;
@@ -73,13 +91,11 @@ async function appClient(config,transport=fetch) {
    if(!/^\/[a-zA-Z0-9/?=&._-]*$/.test(path)||
      path.includes('..')||!['GET','POST'].includes(method))
     throw Error('invalid-github-api-path');
-   const response=await transport(API+'/repos/'+REPO+(path==='/'?'':path),{
+   return githubJson(transport,API+'/repos/'+REPO+(path==='/'?'':path),{
     method,redirect:'error',headers:{...HEADERS,Authorization:'Bearer '+pat,
      ...(method==='POST'?{'Content-Type':'application/json'}:{})},
     ...(method==='POST'?{body:JSON.stringify(body)}:{})
-   });
-   if(!response.ok)throw Error('github-status-'+response.status);
-   return response.status===204?null:response.json();
+   },deadlineAt,requestTimeoutMs);
   };
  }
  const [clientId,installationId,key] = await Promise.all([
@@ -88,13 +104,12 @@ async function appClient(config,transport=fetch) {
    config.get('ULTRON_MAHORAGA_GITHUB_APP_PRIVATE_KEY')]);
  if(!/^[1-9][0-9]{0,15}$/.test(String(installationId || '')))
    throw Error('app-installation-id-invalid');
- const response = await transport(API+'/app/installations/'+installationId+'/access_tokens',{
+ const value = await githubJson(transport,API+'/app/installations/'+installationId+'/access_tokens',{
    method:'POST',redirect:'error',headers:{...HEADERS,Authorization:'Bearer '+await jwt(clientId,key),
      'Content-Type':'application/json'},
    body:JSON.stringify({repository_ids:[REPO_ID],
-     permissions:{contents:'read',issues:'write',actions:'write'}})});
- if(!response.ok) throw Error('app-installation-admission-denied');
- const value = await response.json();
+     permissions:{contents:'read',issues:'write',actions:'write'}})},
+   deadlineAt,requestTimeoutMs,'app-installation-admission-denied');
  const expiry = Date.parse(value.expires_at || '');
  if(typeof value.token !== 'string' || value.token.length < 16 ||
    !Number.isFinite(expiry) || expiry < Date.now()+60000 ||
@@ -107,12 +122,10 @@ async function appClient(config,transport=fetch) {
  return async (path,method='GET',body) => {
    if(!/^\/[a-zA-Z0-9/?=&._-]*$/.test(path) || path.includes('..') ||
      !['GET','POST'].includes(method)) throw Error('invalid-github-api-path');
-   const r = await transport(API+'/repos/'+REPO+(path==='/'?'':path),{
+   return githubJson(transport,API+'/repos/'+REPO+(path==='/'?'':path),{
      method,redirect:'error',headers:{...HEADERS,Authorization:'Bearer '+value.token,
        ...(method==='POST'?{'Content-Type':'application/json'}:{})},
-     ...(method==='POST'?{body:JSON.stringify(body)}:{})});
-   if(!r.ok) throw Error('github-status-'+r.status);
-   return r.status===204?null:r.json();
+     ...(method==='POST'?{body:JSON.stringify(body)}:{})},deadlineAt,requestTimeoutMs);
  };
 }
 async function preflight(get, action) {
@@ -219,7 +232,12 @@ async function reconciliationFailure(db,row,error) {
  return {ok:!conflict,state:'uncertain',id:row.id,taskId:row.task_id,
    key:row.action_key,...(conflict?{error:error.message}:{})};
 }
-export async function runMahoragaAction({db,config,transport=fetch},raw) {
+export async function runMahoragaAction({db,config,transport=fetch,
+ requestTimeoutMs=REQUEST_TIMEOUT_MS,actionDeadlineMs=ACTION_DEADLINE_MS},raw) {
+ if(!Number.isSafeInteger(requestTimeoutMs)||requestTimeoutMs<1||
+   requestTimeoutMs>REQUEST_TIMEOUT_MS||!Number.isSafeInteger(actionDeadlineMs)||
+   actionDeadlineMs<1||actionDeadlineMs>ACTION_DEADLINE_MS)
+   throw Error('invalid-mahoraga-network-deadline');
  let action;
  try { action=validate(raw); } catch(error) {
    return {ok:false,error:error.message};
@@ -259,7 +277,8 @@ export async function runMahoragaAction({db,config,transport=fetch},raw) {
      return {ok:false,state:'prepared',error:'owner-execution-paused'};
  }
  let get;
- try { get=await appClient(config,transport); }
+ try { get=await appClient(config,transport,Date.now()+actionDeadlineMs,
+   requestTimeoutMs); }
  catch(error) { return {ok:false,state:row.state,id:row.id,taskId:row.task_id,error:error.message}; }
  if(row.state!=='prepared') {
    try { return await reconcile(db,get,row); }
