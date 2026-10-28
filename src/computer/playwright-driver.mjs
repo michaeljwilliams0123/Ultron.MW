@@ -135,10 +135,21 @@ export function createPlaywrightComputerDriver(initialPage, {
       }
       return true;
     },
-    async observe() {
+    async observe(expect = {}) {
       assertAvailable();
       const body = page.locator('body');
-      const text = String(await body.innerText({ timeout: 10000 })).slice(0, 10000);
+      const fullText = String(await body.innerText({ timeout: 10000 }));
+      let text = fullText.slice(0, 10000);
+      const needle = expect?.textIncludes;
+      if (typeof needle === 'string' && needle.length > 0 && needle.length <= 120 &&
+          !text.includes(needle)) {
+        const index = fullText.indexOf(needle);
+        if (index >= 0) {
+          const excerpt = fullText.slice(Math.max(0, index - 180), index + needle.length + 180);
+          const marker = '\n[verified excerpt]\n';
+          text = text.slice(0, 10000 - marker.length - excerpt.length) + marker + excerpt;
+        }
+      }
       // Visual and accessibility evidence stay in process memory only. Never
       // save screenshots, page HTML or account contents to GitHub/checkpoints.
       const screenshotDigest = typeof page.screenshot === 'function'
@@ -166,11 +177,12 @@ export function createPlaywrightComputerDriver(initialPage, {
       }
       // Push-based MFA and security-key prompts may have no input fields.
       // Page text can ONLY pause automation; it can never grant permission.
-      if (/two.factor authentication|multi.factor authentication|one.time code|passkey|security key|verify it.s you|authenticator app/i.test(text))
+      if (/two.factor authentication|multi.factor authentication|one.time code|passkey|security key|verify it.s you|authenticator app/i.test(fullText))
         requiresOwnerTakeover = true;
       return {
         url: page.url(), title: String(await page.title()).slice(0, 240),
-        text, screenshotDigest, accessibilityDigest, requiresOwnerTakeover,
+        text, textDigest: createHash('sha256').update(fullText).digest('hex'),
+        screenshotDigest, accessibilityDigest, requiresOwnerTakeover,
       };
     },
     async perform(step) {

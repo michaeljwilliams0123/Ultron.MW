@@ -1,0 +1,162 @@
+{
+  "schema": "ultron.route-consumer-baseline.v1",
+  "date": "2026-10-28",
+  "sourceHead": "8b13ca3c1a7e53bde88ef5a84a715894f3c02048",
+  "productionVersion": 16,
+  "window": "24h",
+  "logsReturned": 69,
+  "truncated": false,
+  "observedFrom": "2026-10-27T19:02:22+00:00",
+  "observedThrough": "2026-10-28T18:40:19+00:00",
+  "routes": [
+    {
+      "route": "/api/brain/authority",
+      "classification": "retained-owner-or-integration-entrypoint",
+      "registered": true,
+      "invocations24h": 0,
+      "errors24h": 0,
+      "handlerTimingMs": null,
+      "deletionEligible": false
+    },
+    {
+      "route": "/api/brain/command",
+      "classification": "retained-owner-or-integration-entrypoint",
+      "registered": true,
+      "invocations24h": 0,
+      "errors24h": 0,
+      "handlerTimingMs": null,
+      "deletionEligible": false
+    },
+    {
+      "route": "/api/brain/control",
+      "classification": "exercised",
+      "registered": true,
+      "invocations24h": 5,
+      "errors24h": 0,
+      "handlerTimingMs": {
+        "count": 5,
+        "min": 53,
+        "median": 55,
+        "p95": 131,
+        "max": 131
+      },
+      "deletionEligible": false
+    },
+    {
+      "route": "/api/brain/events",
+      "classification": "retained-owner-or-integration-entrypoint",
+      "registered": true,
+      "invocations24h": 0,
+      "errors24h": 0,
+      "handlerTimingMs": null,
+      "deletionEligible": false
+    },
+    {
+      "route": "/api/brain/mahoraga",
+      "classification": "exercised",
+      "registered": true,
+      "invocations24h": 18,
+      "errors24h": 0,
+      "handlerTimingMs": {
+        "count": 18,
+        "min": 9,
+        "median": 40.5,
+        "p95": 11180,
+        "max": 11180
+      },
+      "deletionEligible": false
+    },
+    {
+      "route": "/api/brain/run",
+      "classification": "exercised",
+      "registered": true,
+      "invocations24h": 23,
+      "errors24h": 0,
+      "handlerTimingMs": {
+        "count": 23,
+        "min": 260,
+        "median": 322,
+        "p95": 2363,
+        "max": 11543
+      },
+      "deletionEligible": false
+    },
+    {
+      "route": "/api/brain/tasks",
+      "classification": "retained-owner-or-integration-entrypoint",
+      "registered": true,
+      "invocations24h": 0,
+      "errors24h": 0,
+      "handlerTimingMs": null,
+      "deletionEligible": false
+    },
+    {
+      "route": "/api/brain/tick",
+      "classification": "exercised",
+      "registered": true,
+      "invocations24h": 23,
+      "errors24h": 0,
+      "handlerTimingMs": {
+        "count": 23,
+        "min": 146,
+        "median": 171,
+        "p95": 213,
+        "max": 225
+      },
+      "deletionEligible": false
+    }
+  ],
+  "cron": {
+    "tasks": [
+      {
+        "id": 533763,
+        "function_id": 478213,
+        "route": "/api/brain/tick",
+        "source": "declared",
+        "name": "default",
+        "cron": "17 * * * *",
+        "payload": null,
+        "status": "active",
+        "attempts": 153,
+        "last_error": null,
+        "next_fire_at": "2026-10-28T19:39:54+00:00",
+        "last_fired_at": "2026-10-28T18:40:02+00:00",
+        "runs_7d": 158,
+        "errors_7d": 1,
+        "last_run_at": "2026-10-28 18:40:13"
+      }
+    ],
+    "count": 1
+  },
+  "errors7d": [
+    {
+      "route": "/api/brain/authority",
+      "status": 503,
+      "at": "2026-10-27T17:25:28+00:00"
+    },
+    {
+      "route": "/api/brain/tick",
+      "status": 503,
+      "at": "2026-10-23T07:40:09+00:00"
+    }
+  ],
+  "pricing": {
+    "source": "https://hatchable.com/pricing",
+    "browserSource": "https://hatchable.com/features/browser",
+    "retrievedDate": "2026-10-28",
+    "quotedFreeMonthlyUsd": 0,
+    "quotedBuilderMonthlyUsd": 12,
+    "scope": "published plan quote, not observed account invoice",
+    "actualAccountPlan": "not-observed",
+    "actualBilledCost": "not-observed",
+    "changedRuntimeRoutes": 0,
+    "addedControlPlanes": 0
+  },
+  "limits": {
+    "callerIdentityInLogs": "not-provided",
+    "zeroInvocationsProvesDead": false,
+    "replacementCompared": false,
+    "networkLatencyMeasured": false,
+    "gitbookSync": "awaiting-authenticated-readback"
+  }
+}

@@ -13,6 +13,61 @@ const click = { action: 'click', planId: 'test', planFingerprint: 'f'.repeat(64)
   currentOrigin: origin, stepId: 'send', selector: 'button',
   expectedState: { textIncludes: 'Saved' } };
 
+function longPageFixture(initialText) {
+  let text = initialText, dispatches = 0;
+  const page = {
+    url: () => origin + '/receipt', title: async () => 'Owner fixture',
+    goto: async () => {},
+    locator: selector => selector === 'body'
+      ? { innerText: async () => text }
+      : { count: async () => 0, click: async options => {
+        if (!options?.trial) dispatches++;
+      } },
+  };
+  return {driver:createPlaywrightComputerDriver(page),
+    setText: value => { text = value; }, get dispatches() { return dispatches; }};
+}
+
+test('Playwright observes tail confirmation and tail-only changes without persisting full text', async () => {
+  const prefix = 'x'.repeat(15000), confirmation = 'Saved receipt at page tail';
+  const fixture = longPageFixture(prefix + ' Before');
+  const before = await fixture.driver.observe();
+  fixture.setText(prefix + ' ' + confirmation);
+  const tail = await fixture.driver.observe({textIncludes:confirmation});
+  assert.ok(tail.text.includes(confirmation));
+  assert.ok(tail.text.length <= 10000);
+  const after = await fixture.driver.observe();
+  assert.equal(before.text, after.text);
+  assert.notEqual(before.textDigest, after.textDigest);
+  assert.match(after.textDigest, /^[a-f0-9]{64}$/);
+  const store = createMemoryComputerStore();
+  const result = await createComputerExecutor({driver:fixture.driver,store,
+    allowedOrigins:[origin]}).run({id:'tail-readback',steps:[{
+      action:'observe',expect:{textIncludes:confirmation},
+    }]});
+  assert.equal(result.status, 'completed');
+  assert.equal(result.receipts.length, 1);
+  assert.equal(JSON.stringify(await store.read('tail-readback')).includes(confirmation), false);
+});
+
+test('Playwright pauses on text-only credential challenges beyond the text preview', async () => {
+  const fixture = longPageFixture('z'.repeat(15000) + ' Approve sign-in with authenticator app');
+  assert.equal((await fixture.driver.observe()).requiresOwnerTakeover, true);
+});
+
+test('tail confirmation already present refuses an interactive action before owner approval', async () => {
+  const fixture = longPageFixture('p'.repeat(15000) + ' Already saved');
+  let approvals = 0;
+  const executor = createComputerExecutor({driver:fixture.driver,
+    store:createMemoryComputerStore(),allowedOrigins:[origin],
+    authorize:async () => { approvals++; return true; }});
+  await assert.rejects(executor.run({id:'tail-precondition',steps:[{
+    action:'click',selector:'#save',expect:{textIncludes:'Already saved'},
+  }]}), /already satisfied/);
+  assert.equal(approvals, 0);
+  assert.equal(fixture.dispatches, 0);
+});
+
 test('operator approval requires an independent current owner-session check', async () => {
   let prompted = 0;
   const authority = createComputerSessionAuthority({ ...base,
