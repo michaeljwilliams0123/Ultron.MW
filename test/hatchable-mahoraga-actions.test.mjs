@@ -13,7 +13,8 @@ const input={key:KEY,operation:'issue.create',
     expectedMainSha:MAIN}};
 function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
  pauseDuringPreflight=false,pat=false,githubAppPem=false,loseClaim=false,
- verifyConclusion='success',verifyStatus='completed',duplicateVerify=false}={}){
+ claimConflict=false,verifyConclusion='success',verifyStatus='completed',
+ duplicateVerify=false}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
  let stopped=paused,claimLost=loseClaim;
  const config={async get(name){
@@ -43,6 +44,9 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
      if(claimLost){
        claimLost=false;
        row.state='sent';row.attempt_started_at=new Date().toISOString();
+       if(claimConflict)issues.push({number:31,title:'Edited before reconciliation',
+         body:row.request.body+'\n\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+row.action_key+' -->',
+         html_url:'https://github.com/example/issues/31'});
        return {rows:[]};
      }
      row.state='sent';row.attempt_started_at=new Date().toISOString();
@@ -56,8 +60,9 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
    throw Error('unexpected SQL');
  }};
  const transport=async(url,init)=>{
-   const path=new URL(url).pathname;
-   calls.push({path,method:init.method,body:init.body?JSON.parse(init.body):null});
+   const target=new URL(url),path=target.pathname;
+   calls.push({path,search:target.search,method:init.method,
+     body:init.body?JSON.parse(init.body):null});
    const json=(data,status=200)=>({ok:status<400,status,json:async()=>data});
    if(path.endsWith('/access_tokens')){
      const jwt=String(init.headers.Authorization||'').replace(/^Bearer /,'');
@@ -108,7 +113,11 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
      if(uncertainWrite)throw Error('response lost');
      return json(item,201);
    }
-   if(path.endsWith('/issues'))return json(issues);
+   if(path.endsWith('/issues')){
+     const perPage=Number(target.searchParams.get('per_page')||30);
+     const page=Number(target.searchParams.get('page')||1);
+     return json([...issues].reverse().slice((page-1)*perPage,page*perPage));
+   }
    throw Error('unexpected path '+path);
  };
  return {db,config,transport,calls,rows,issues,runs};
@@ -231,6 +240,39 @@ test('PAT lane performs durable bounded issue write without App installation tok
  assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,0);
  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
 });
+test('issue readback covers a repository with more than 1000 issue records',async()=>{
+ const f=fixture({pat:true});
+ for(let i=0;i<1178;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
+   body:'No canary marker',html_url:'https://github.com/example/issues/'+(i+1)});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(result.result.number,1179);
+ assert.equal(f.issues.length,1179);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+ assert.ok(f.calls.some(x=>x.search.includes('page=12')),
+   'both pre-write and post-write inventories must reach the terminal page');
+});
+test('an older-page marker conflict cannot trigger another issue',async()=>{
+ const f=fixture({pat:true});
+ for(let i=0;i<1178;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
+   body:'No canary marker',html_url:'https://github.com/example/issues/'+(i+1)});
+ f.issues[0].body='Changed content\n\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+KEY+' -->';
+ const result=await execute(f);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'issue-marker-conflict');
+ assert.equal(f.issues.length,1178);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
+});
+test('an oversized issue inventory fails before the send checkpoint',async()=>{
+ const f=fixture({pat:true});
+ for(let i=0;i<4000;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
+   body:'No canary marker',html_url:'https://github.com/example/issues/'+(i+1)});
+ const result=await execute(f);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'issue-reconciliation-window-exceeded');
+ assert.equal(f.rows.get(KEY).state,'prepared');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
+});
 test('App installation lane remains compatible when PAT is absent',async()=>{
  const f=fixture({pat:false});
  const result=await execute(f);
@@ -272,10 +314,7 @@ test('retrying an uncertain action with a changed matching-marker issue stays co
 });
 
 test('concurrent loser of sent claim returns durable marker conflict, not exception',async()=>{
- const f=fixture({loseClaim:true});
- f.issues.push({number:31,title:'Edited before reconciliation',
-   body:input.input.body+'\\n\\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+KEY+' -->',
-   html_url:'https://github.com/example/issues/31'});
+ const f=fixture({loseClaim:true,claimConflict:true});
  const result=await execute(f);
  assert.equal(result.ok,false);
  assert.equal(result.error,'issue-marker-conflict');

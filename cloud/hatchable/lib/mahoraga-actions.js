@@ -9,6 +9,9 @@ const HEADERS = { Accept: 'application/vnd.github+json',
   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Ultron-Mahoraga-Control' };
 const REQUEST_TIMEOUT_MS = 8000;
 const ACTION_DEADLINE_MS = 24000;
+const ISSUE_PAGE_SIZE = 100;
+const ISSUE_SCAN_BATCH_SIZE = 4;
+const MAX_ISSUE_PAGES = 40;
 
 async function githubJson(transport,url,init,deadlineAt,requestTimeoutMs,errorCode) {
  const remaining=deadlineAt-Date.now();
@@ -144,14 +147,21 @@ async function preflight(get, action) {
 }
 async function findIssue(get,key) {
  let found = null;
- for(let page=1;page<=10;page++) {
-   const rows = await get('/issues?state=all&per_page=100&page='+page);
-   if(!Array.isArray(rows) || rows.length>100) throw Error('issue-readback-invalid');
-   for(const row of rows) if(!row.pull_request && row.body?.includes(MARKER(key))) {
-     if(found) throw Error('issue-marker-collision');
-     found = row;
+ for(let first=1;first<=MAX_ISSUE_PAGES;first+=ISSUE_SCAN_BATCH_SIZE) {
+   const count=Math.min(ISSUE_SCAN_BATCH_SIZE,MAX_ISSUE_PAGES-first+1);
+   const pages=await Promise.all(Array.from({length:count},(_,offset)=>
+     get('/issues?state=all&per_page='+ISSUE_PAGE_SIZE+'&page='+(first+offset))));
+   let ended=false;
+   for(const rows of pages) {
+     if(!Array.isArray(rows) || rows.length>ISSUE_PAGE_SIZE ||
+       (ended && rows.length)) throw Error('issue-readback-invalid');
+     for(const row of rows) if(!row.pull_request && row.body?.includes(MARKER(key))) {
+       if(found) throw Error('issue-marker-collision');
+       found = row;
+     }
+     if(rows.length<ISSUE_PAGE_SIZE)ended=true;
    }
-   if(rows.length<100) return found;
+   if(ended)return found;
  }
  throw Error('issue-reconciliation-window-exceeded');
 }
@@ -286,6 +296,14 @@ export async function runMahoragaAction({db,config,transport=fetch,
  }
  try { await preflight(get,action); }
  catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,error:error.message}; }
+ // Complete the issue inventory before the durable send checkpoint. A failed
+ // read cannot leave an action uncertain when no external write was attempted.
+ let existingIssue=null;
+ if(action.operation==='issue.create') {
+   try { existingIssue=await observe(get,row); }
+   catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,
+     error:error.message}; }
+ }
  // Admission to 'sent' is the dispatch boundary. Serialize it with an owner
  // pause so no prepared action can be admitted after the pause commits.
  const claim=await db.query(`WITH control AS MATERIALIZED (
@@ -308,12 +326,12 @@ export async function runMahoragaAction({db,config,transport=fetch,
  }
  row=claim.rows[0];
  try {
-   const existing=await observe(get,row);
-   if(!existing) {
-     if(action.operation==='issue.create')
+   if(action.operation==='issue.create') {
+     if(!existingIssue)
        await get('/issues','POST',{title:action.input.title,
          body:action.input.body+'\n\n'+MARKER(action.key)});
-     else await get('/actions/workflows/verify.yml/dispatches','POST',
+   } else if(!await observe(get,row)) {
+     await get('/actions/workflows/verify.yml/dispatches','POST',
        {ref:action.input.ref,inputs:{ultron_action_key:action.key,
          ultron_expected_head_sha:action.input.expectedHeadSha}});
    }
