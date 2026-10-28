@@ -28,3 +28,9 @@ retain the file. The owner runner still closes the browser at the end of the run
 
 These source regressions exercise lifecycle boundaries with isolated fixtures.
 They do not establish live owner-authenticated transfer acceptance for issue #65.
+
+The owner runner's Playwright observation keeps its text preview within 10,000
+characters while including an expected confirmation found later on the page.
+A SHA-256 digest of the complete observed text detects changes outside that
+preview; checkpoints retain digests rather than full page text. Text-only
+credential challenges anywhere in the page still require owner takeover.
