@@ -147,11 +147,14 @@ async function preflight(get, action) {
 }
 async function findIssue(get,key) {
  let found = null,total=0;
+ // Ascending creation order keeps older page boundaries stable when another
+ // actor creates an issue during the batched pre-write inventory.
  // The extra page distinguishes exactly-full capacity from overflow.
  for(let first=1;first<=MAX_ISSUE_PAGES+1;first+=ISSUE_SCAN_BATCH_SIZE) {
    const count=Math.min(ISSUE_SCAN_BATCH_SIZE,MAX_ISSUE_PAGES+2-first);
    const pages=await Promise.all(Array.from({length:count},(_,offset)=>
-     get('/issues?state=all&per_page='+ISSUE_PAGE_SIZE+'&page='+(first+offset))));
+     get('/issues?state=all&sort=created&direction=asc&per_page='+
+       ISSUE_PAGE_SIZE+'&page='+(first+offset))));
    let ended=false;
    for(const rows of pages) {
      if(!Array.isArray(rows) || rows.length>ISSUE_PAGE_SIZE ||
@@ -166,6 +169,34 @@ async function findIssue(get,key) {
      if(rows.length<ISSUE_PAGE_SIZE)ended=true;
    }
    if(ended)return {found,total};
+ }
+ throw Error('issue-reconciliation-window-exceeded');
+}
+async function findRecentIssue(get,key,since) {
+ const started=Date.parse(since || '');
+ if(!Number.isFinite(started))throw Error('issue-attempt-time-invalid');
+ // GitHub timestamps and the database clock may differ slightly. A sent
+ // action is never replayed, even if this bounded readback finds no issue.
+ const cutoff=started-60000;
+ let found=null;
+ for(let page=1;page<=MAX_ISSUE_PAGES;page++) {
+   // Sequential descending reads cannot skip an older boundary when a new
+   // issue is inserted between page requests; the boundary only overlaps.
+   const rows=await get('/issues?state=all&sort=created&direction=desc&per_page='+
+     ISSUE_PAGE_SIZE+'&page='+page);
+   if(!Array.isArray(rows)||rows.length>ISSUE_PAGE_SIZE)
+     throw Error('issue-readback-invalid');
+   let older=false;
+   for(const row of rows) {
+     const created=Date.parse(row.created_at || '');
+     if(!Number.isFinite(created))throw Error('issue-readback-invalid');
+     if(created<cutoff){older=true;break;}
+     if(!row.pull_request && row.body?.includes(MARKER(key))) {
+       if(found)throw Error('issue-marker-collision');
+       found=row;
+     }
+   }
+   if(older||rows.length<ISSUE_PAGE_SIZE)return found;
  }
  throw Error('issue-reconciliation-window-exceeded');
 }
@@ -204,13 +235,12 @@ async function findRun(get,action,since) {
  }
  return run;
 }
-async function observe(get,row,{reserveIssueSlot=false}={}) {
+async function observe(get,row) {
  const action={key:row.action_key,operation:row.operation,input:row.request};
  if(row.operation==='issue.create') {
-   const inventory=await findIssue(get,row.action_key),item=inventory.found;
-   if(reserveIssueSlot && !item &&
-     inventory.total>=MAX_ISSUE_PAGES*ISSUE_PAGE_SIZE)
-     throw Error('issue-reconciliation-window-exceeded');
+   const item=row.state==='prepared'
+     ?(await findIssue(get,row.action_key)).found
+     :await findRecentIssue(get,row.action_key,row.attempt_started_at);
    const expected=row.request.body+'\n\n'+MARKER(row.action_key);
    if(!item)return null;
    // An existing marker with changed content is a conflict, never absence.
@@ -305,9 +335,11 @@ export async function runMahoragaAction({db,config,transport=fetch,
  catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,error:error.message}; }
  // Complete the issue inventory before the durable send checkpoint. A failed
  // read cannot leave an action uncertain when no external write was attempted.
- let existingIssue=null;
  if(action.operation==='issue.create') {
-   try { existingIssue=await observe(get,row,{reserveIssueSlot:true}); }
+   try {
+     if(await observe(get,row))return {ok:false,state:'prepared',id:row.id,
+       taskId:row.task_id,error:'issue-marker-already-exists'};
+   }
    catch(error) { return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,
      error:error.message}; }
  }
@@ -334,9 +366,8 @@ export async function runMahoragaAction({db,config,transport=fetch,
  row=claim.rows[0];
  try {
    if(action.operation==='issue.create') {
-     if(!existingIssue)
-       await get('/issues','POST',{title:action.input.title,
-         body:action.input.body+'\n\n'+MARKER(action.key)});
+     await get('/issues','POST',{title:action.input.title,
+       body:action.input.body+'\n\n'+MARKER(action.key)});
    } else if(!await observe(get,row)) {
      await get('/actions/workflows/verify.yml/dispatches','POST',
        {ref:action.input.ref,inputs:{ultron_action_key:action.key,

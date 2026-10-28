@@ -46,7 +46,7 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
        row.state='sent';row.attempt_started_at=new Date().toISOString();
        if(claimConflict)issues.push({number:31,title:'Edited before reconciliation',
          body:row.request.body+'\n\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+row.action_key+' -->',
-         html_url:'https://github.com/example/issues/31'});
+         html_url:'https://github.com/example/issues/31',created_at:new Date().toISOString()});
        return {rows:[]};
      }
      row.state='sent';row.attempt_started_at=new Date().toISOString();
@@ -108,7 +108,8 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
    }
    if(path.endsWith('/issues')&&init.method==='POST'){
      const body=JSON.parse(init.body);
-     const item={number:issues.length+1,...body,html_url:'https://github.com/example/issues/1'};
+     const item={number:issues.length+1,...body,html_url:'https://github.com/example/issues/1',
+       created_at:new Date().toISOString()};
      issues.push(item);
      if(uncertainWrite)throw Error('response lost');
      return json(item,201);
@@ -116,7 +117,9 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
    if(path.endsWith('/issues')){
      const perPage=Number(target.searchParams.get('per_page')||30);
      const page=Number(target.searchParams.get('page')||1);
-     return json([...issues].reverse().slice((page-1)*perPage,page*perPage));
+     const ordered=target.searchParams.get('direction')==='asc'?[...issues]:[...issues].reverse();
+     return json(ordered.slice((page-1)*perPage,page*perPage).map(row=>({
+       created_at:'2020-01-01T00:00:00Z',...row})));
    }
    throw Error('unexpected path '+path);
  };
@@ -249,18 +252,49 @@ test('issue readback covers a repository with more than 1000 issue records',asyn
  assert.equal(result.result.number,1179);
  assert.equal(f.issues.length,1179);
  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
- assert.ok(f.calls.some(x=>x.search.includes('page=12')),
-   'both pre-write and post-write inventories must reach the terminal page');
+ assert.ok(f.calls.some(x=>x.search.includes('page=12')&&x.search.includes('direction=asc')),
+   'pre-write inventory must reach the older page in stable ascending order');
+ assert.ok(f.calls.some(x=>x.search.includes('direction=desc')),
+   'post-write readback must search the recent issue window');
 });
 test('an older-page marker conflict cannot trigger another issue',async()=>{
  const f=fixture({pat:true});
  for(let i=0;i<1178;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
    body:'No canary marker',html_url:'https://github.com/example/issues/'+(i+1)});
- f.issues[0].body='Changed content\n\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+KEY+' -->';
+ f.issues[1177].body='Changed content\n\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+KEY+' -->';
  const result=await execute(f);
  assert.equal(result.state,'prepared');
  assert.equal(result.error,'issue-marker-conflict');
  assert.equal(f.issues.length,1178);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
+});
+test('an issue added between batched pages cannot hide an existing marker',async()=>{
+ const f=fixture({pat:true});
+ for(let i=0;i<200;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
+   body:'No canary marker',html_url:'https://github.com/example/issues/'+(i+1)});
+ f.issues[100].body='Changed content\n\n<!-- ULTRON_MAHORAGA_CONTROL_V1 '+KEY+' -->';
+ const transport=f.transport;
+ let inserted=false;
+ f.transport=async(url,init)=>{
+   const target=new URL(url);
+   if(target.pathname.endsWith('/issues')&&init.method==='GET'&&
+     target.searchParams.get('direction')==='asc'){
+     if(target.searchParams.get('page')==='1')
+       await new Promise(resolve=>setImmediate(resolve));
+     if(target.searchParams.get('page')==='2'&&!inserted){
+       const response=await transport(url,init);
+       f.issues.push({number:201,title:'Concurrent issue',body:'No canary marker',
+         html_url:'https://github.com/example/issues/201'});
+       inserted=true;
+       return response;
+     }
+   }
+   return transport(url,init);
+ };
+ const result=await execute(f);
+ assert.equal(inserted,true);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'issue-marker-conflict');
  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
 });
 test('the last available issue slot can be written and read back',async()=>{
@@ -272,12 +306,21 @@ test('the last available issue slot can be written and read back',async()=>{
  assert.equal(result.result.number,4000);
  assert.equal(f.issues.length,4000);
  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
- assert.ok(f.calls.some(x=>x.search.includes('page=41')),
-   'post-write readback must verify the terminal empty page');
+ assert.ok(f.calls.some(x=>x.search.includes('page=40')&&x.search.includes('direction=asc')),
+   'pre-write readback must reach the last full inventory page');
 });
-test('an oversized issue inventory fails before the send checkpoint',async()=>{
+test('a full inventory still reconciles a new issue beyond the pre-write cap',async()=>{
  const f=fixture({pat:true});
  for(let i=0;i<4000;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
+   body:'No canary marker',html_url:'https://github.com/example/issues/'+(i+1)});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(result.result.number,4001);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+});
+test('an oversized pre-write issue inventory fails before the send checkpoint',async()=>{
+ const f=fixture({pat:true});
+ for(let i=0;i<4001;i++)f.issues.push({number:i+1,title:'Historical issue '+i,
    body:'No canary marker',html_url:'https://github.com/example/issues/'+(i+1)});
  const result=await execute(f);
  assert.equal(result.state,'prepared');
