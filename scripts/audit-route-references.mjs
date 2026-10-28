@@ -10,7 +10,7 @@ const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', max
 const paths = git(['ls-files', '-z']).split('\0').filter(Boolean).sort();
 const files = {}, omitted = [];
 for (const path of paths) {
-  if (!/\.(mjs|js|json|md|ya?ml|sh|html|css|sql|txt)$/.test(path)) {
+  if (!/\.(mjs|js|json|md|ya?ml|sh|html|css|sql|toml|txt)$/.test(path)) {
     omitted.push({ path, reason: 'non-text-source-extension' }); continue;
   }
   const fullPath = resolve(root, path);

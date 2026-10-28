@@ -66,6 +66,56 @@ test('a workflow trigger is a declared entrypoint even without incoming path ref
   assert.equal(result.routes[0].deletionEligible, false);
 });
 
+test('Hatchable lib imports resolve to the project pool from nested handlers and shared code', () => {
+  const result = buildRouteReferenceInventory({
+    'cloud/hatchable/hatchable.toml': '[mcp]\nenabled=true',
+    'cloud/hatchable/api/brain/run.js': "import {run} from 'lib/runner.js';",
+    'cloud/hatchable/mcp/tool.js': "import {run} from 'lib/runner.js';",
+    'cloud/hatchable/lib/runner.js': "export {check} from 'lib/control.js';",
+    'cloud/hatchable/lib/control.js': '',
+  });
+  const runner = result.routes.find(x => x.path === 'cloud/hatchable/lib/runner.js');
+  assert.equal(runner.classification, 'referenced-source');
+  assert.deepEqual(runner.referencedBy.map(x => x.source), [
+    'cloud/hatchable/api/brain/run.js', 'cloud/hatchable/mcp/tool.js',
+  ]);
+  assert.ok(runner.referencedBy.every(x => x.kind === 'module-specifier'));
+  assert.equal(result.routes.find(x => x.path === 'cloud/hatchable/lib/control.js').referencedBy[0].kind, 'module-specifier');
+  assert.deepEqual(result.unresolvedModuleReferences, []);
+});
+
+test('missing and escaping Hatchable aliases fail closed without changing other project imports', () => {
+  const result = buildRouteReferenceInventory({
+    'cloud/hatchable/api/route.js': "import 'lib/missing.js';\nimport 'lib/../../outside.js';",
+    'cloud/outside.js': '',
+    'src/other.mjs': "import 'lib/unrelated.js';",
+  });
+  assert.deepEqual(result.unresolvedModuleReferences, [
+    {source:'cloud/hatchable/api/route.js',line:1,specifier:'lib/missing.js'},
+    {source:'cloud/hatchable/api/route.js',line:2,specifier:'lib/../../outside.js'},
+  ]);
+});
+
+test('configured Hatchable API, MCP and migration entrypoints are retained without literal callers', () => {
+  const files = {
+    'cloud/hatchable/hatchable.toml': '[mcp]\nenabled=true',
+    'cloud/hatchable/api/brain/mahoraga.js': '',
+    'cloud/hatchable/mcp/ultron_mahoraga.js': '',
+    'cloud/hatchable/migrations/0004_mahoraga_actions.sql': '',
+    'cloud/hatchable/api/lib/helper.js': '',
+  };
+  const result = buildRouteReferenceInventory(files);
+  const classes = Object.fromEntries(result.routes.map(x => [x.path, x.classification]));
+  assert.equal(classes['cloud/hatchable/hatchable.toml'], 'hatchable-project-config');
+  assert.equal(classes['cloud/hatchable/api/brain/mahoraga.js'], 'declared-hatchable-api-entrypoint');
+  assert.equal(classes['cloud/hatchable/mcp/ultron_mahoraga.js'], 'declared-hatchable-mcp-entrypoint');
+  assert.equal(classes['cloud/hatchable/migrations/0004_mahoraga_actions.sql'], 'retained-hatchable-migration');
+  assert.equal(classes['cloud/hatchable/api/lib/helper.js'], 'unreferenced-candidate');
+  assert.ok(result.routes.every(x => x.runtimeEvidence === 'not-probed' && !x.deletionEligible));
+  delete files['cloud/hatchable/hatchable.toml'];
+  assert.ok(buildRouteReferenceInventory(files).routes.every(x => x.classification === 'unreferenced-candidate'));
+});
+
 test('literal template dynamic imports are checked while interpolated targets remain unknown', () => {
   const result = buildRouteReferenceInventory({ 'src/a.mjs': [
     'import(`./present.mjs`);', 'import(`./missing.mjs`);', 'import(`./${name}.mjs`);',
