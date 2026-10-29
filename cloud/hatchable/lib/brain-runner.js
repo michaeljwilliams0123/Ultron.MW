@@ -110,7 +110,7 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
     RETURNING id,objective
   ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
-    SELECT id,'observed',jsonb_build_object('objective',objective,'source',$4::text)
+    SELECT id,'observed',jsonb_build_object('objective',objective,'source',$4::text,'fencingGeneration',$6::bigint)
     FROM moved RETURNING task_id
   ), assessments AS (
     INSERT INTO brain_events(task_id,event_type,details)
@@ -123,10 +123,26 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
   if(done.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};
   return {status:'done',task_id:task.id,objective:task.objective,summary:result};
  }catch(_error){
-  // The completion query may have committed before the driver failed.
-  // Never misclassify a successful objective as failed or immediately requeue it.
+  // The completion may have COMMITTED before its database driver lost the reply.
+  // Read the exact result, fenced generation and correlated receipt in an
+  // independent query. No second execution or state mutation is permitted here.
+  try{
+   const observed=await db.query(`SELECT id FROM brain_tasks
+     WHERE id=$1 AND status='done' AND fencing_generation=$2
+       AND last_result=$3::jsonb
+       AND EXISTS (SELECT 1 FROM brain_events
+         WHERE task_id=$1 AND event_type='observed'
+           AND details->>'objective'=$4
+           AND details->>'fencingGeneration'=$2::text)`,
+    [task.id,task.fencing_generation,JSON.stringify(result),task.objective]);
+   if(observed.rows.length===1)
+    return {status:'done',task_id:task.id,objective:task.objective,
+      summary:result,readback:'committed'};
+  }catch(_readbackError){
+   // Unavailable or failed readback cannot establish success.
+  }
   // Only the existing lease-recovery path may revisit read-only objectives;
-  // any future consequential write objective requires an external-action checkpoint.
+  // future consequential writes require a distinct external checkpoint.
   return {status:'completion-uncertain',task_id:task.id,objective:task.objective};
  }
 }
