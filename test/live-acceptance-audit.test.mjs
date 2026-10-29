@@ -69,5 +69,5 @@ test('one production Hatchable surface is checked without calling the retired ex
  assert.equal(REQUIRED_CHECKS.some(x=>x.id==='experimental-isolation'),false);
  const script=await readFile(new URL('../scripts/live-acceptance-audit.mjs',import.meta.url),'utf8');
  assert.doesNotMatch(script,/up3slz|EXPERIMENT|experimental-isolation/);
- assert.match(script,/ultron-mw-cloud\\.hatchable\\.site/);
+ assert.ok(script.includes('https://ultron-mw-cloud.hatchable.site'));
 });
