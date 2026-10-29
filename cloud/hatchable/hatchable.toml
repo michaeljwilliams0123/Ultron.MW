@@ -34,3 +34,8 @@ description = "Pinned ECDSA P-256 PUBLIC verification JWK for independently auth
 name = "ULTRON_MAHORAGA_CONNECTION1026"
 required = false
 description = "Optional Mahoraga-only fine-grained PAT; only the protected hosted runtime may read this value. Never put it in source or event payloads."
+
+[[secret]]
+name = "ULTRON_MAHORAGA_CREDENTIAL_MODE"
+required = false
+description = "Optional exact credential mode: auto (legacy PAT-first), pat (no App fallback), or app (no PAT fallback). Configure independently before claiming App identity."

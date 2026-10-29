@@ -12,13 +12,14 @@ const input={key:KEY,operation:'issue.create',
   input:{title:'Ultron control canary',body:'One bounded acceptance issue.',
     expectedMainSha:MAIN}};
 function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
- pauseDuringPreflight=false,pat=false,githubAppPem=false,loseClaim=false,
+ pauseDuringPreflight=false,pat=false,authMode=null,githubAppPem=false,loseClaim=false,
  claimConflict=false,verifyConclusion='success',verifyStatus='completed',
  duplicateVerify=false,bareVerifyPath=false}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
  let stopped=paused,claimLost=loseClaim;
  const config={async get(name){
    if(!ready)throw Error('setup_required');
+   if(name==='ULTRON_MAHORAGA_CREDENTIAL_MODE')return authMode;
    if(name==='ULTRON_MAHORAGA_CONNECTION1026')return pat?'github_pat_'+'A'.repeat(42):null;
    return name.endsWith('CLIENT_ID')?'Iv1.testclient':
      name.endsWith('INSTALLATION_ID')?'321':githubAppPem?GITHUB_APP_PEM:PEM;
@@ -437,4 +438,38 @@ test('truncated GitHub run pagination cannot be adopted as an unambiguous execut
  const result=await execute(f,request);
  assert.equal(result.state,'uncertain');
  assert.equal(f.calls.filter(x=>x.path.endsWith('/dispatches')).length,0);
+});
+
+test('explicit app credential mode selects GitHub App even when PAT is configured',async()=>{
+ const f=fixture({pat:true,authMode:'app'});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(f.issues.length,1);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,1);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+});
+
+test('explicit PAT credential mode refuses silent fallback to App',async()=>{
+ const f=fixture({pat:false,authMode:'pat'});
+ const result=await execute(f);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'mahoraga-pat-unavailable');
+ assert.equal(f.issues.length,0);
+ assert.equal(f.calls.length,0);
+});
+
+test('invalid configured credential mode fails closed before provider requests',async()=>{
+ const f=fixture({pat:true,authMode:'anything-else'});
+ const result=await execute(f);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'mahoraga-auth-mode-invalid');
+ assert.equal(f.calls.length,0);
+ assert.equal(f.issues.length,0);
+});
+
+test('explicit auto credential mode preserves legacy PAT-first behavior',async()=>{
+ const f=fixture({pat:true,authMode:'auto'});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,0);
 });

@@ -82,11 +82,20 @@ async function jwt(clientId,pem,now=Date.now()) {
 }
 async function appClient(config,transport=fetch,deadlineAt=Date.now()+ACTION_DEADLINE_MS,
  requestTimeoutMs=REQUEST_TIMEOUT_MS) {
- // Fine-grained PAT is an optional, explicit owner-managed credential lane.
- // The caller's preflight verifies repository ID and exact head before effects.
- let pat;
- try { pat=await config.get('ULTRON_MAHORAGA_CONNECTION1026'); }
- catch { pat=null; } // Unconfigured secret: preserve existing GitHub App lane.
+ // The mode is explicitly selectable so an installed PAT cannot silently
+ // shadow a deliberately authorized GitHub App identity. Missing mode keeps
+ // the established PAT-first behavior; invalid mode fails before any I/O.
+ let configuredMode;
+ try { configuredMode=await config.get('ULTRON_MAHORAGA_CREDENTIAL_MODE'); }
+ catch { configuredMode=null; }
+ const mode=configuredMode===undefined||configuredMode===null||configuredMode===''?
+   'auto':configuredMode;
+ if(!['auto','app','pat'].includes(mode))throw Error('mahoraga-auth-mode-invalid');
+ let pat=null;
+ if(mode!=='app'){
+  try {pat=await config.get('ULTRON_MAHORAGA_CONNECTION1026');}
+  catch {pat=null;}
+ }
  if(pat!==undefined && pat!==null && pat!==''){
   if(typeof pat!=='string'||!/^github_pat_[A-Za-z0-9_]{20,}$/.test(pat))
    throw Error('mahoraga-pat-invalid');
@@ -101,6 +110,7 @@ async function appClient(config,transport=fetch,deadlineAt=Date.now()+ACTION_DEA
    },deadlineAt,requestTimeoutMs);
   };
  }
+ if(mode==='pat')throw Error('mahoraga-pat-unavailable');
  const [clientId,installationId,key] = await Promise.all([
    config.get('ULTRON_MAHORAGA_GITHUB_APP_CLIENT_ID'),
    config.get('ULTRON_MAHORAGA_GITHUB_APP_INSTALLATION_ID'),
