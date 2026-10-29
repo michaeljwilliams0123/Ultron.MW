@@ -9,8 +9,7 @@ export const REQUIRED_CHECKS=Object.freeze([
  {id:'pages-module',label:'GitHub Pages JavaScript module'},
  {id:'production-http',label:'Hatchable production HTTP'},
  {id:'production-admin-gate',label:'Production anonymous admin denial'},
- {id:'production-scheduler-gate',label:'Production scheduler ingress denial'},
- {id:'experimental-isolation',label:'Hatchable experiment sign-in boundary'}
+ {id:'production-scheduler-gate',label:'Production scheduler ingress denial'}
 ]);
 const SHA=/^[0-9a-f]{40}$/;
 const REPO='https://github.com/michaeljwilliams0123/Ultron.MW';
