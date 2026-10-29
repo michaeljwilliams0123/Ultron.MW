@@ -18,8 +18,8 @@ owner browser actions, GitBook sync, or external writes are operational.
 Every run independently reads the canonical GitHub main commit, the matching
 main-push Verify job result, deployed Pages HTTP/embedded exact source SHA and
 JavaScript module, production Hatchable landing page, production anonymous
-admin denial, production scheduler ingress denial, and experiment public
-sign-in boundary. No POST, browser login, provider token use, workflow
+admin denial, and production scheduler ingress denial. The retired Hatchable
+experiment is never contacted by this Action. No POST, browser login, provider token use, workflow
 dispatch, comment creation, merge or secret read is performed.
 
 ## Outcome vocabulary
@@ -144,3 +144,9 @@ The live script uses anonymous GETs for public endpoints and an optional
 or requested. It prints a compact status, generates a detailed Markdown
 summary and machine-readable sanitized JSON, and exits nonzero only on an
 observed public degradation.
+
+## Single production Hatchable runtime — October 29, 2026
+
+[Consolidation and native App acceptance evidence](HATCHABLE-SINGLE-PRODUCTION-2026-10-29.md) records production v18, one active hourly scheduler, retired experimental v14 with durable owner pause and redirect, and an independently verified GitHub App-bot write/readback from a locally held credential. The hosted experiment's PEM admission failed before a write; it is **not** proof of a functioning hosted App installation. Only the PAT-backed production service remains active. The experiment project record remains available for rollback but has no cron and no independent application landing page.
+
+The acceptance collector now makes **eight** required public-surface observations. No routine CI job should depend on the retired project's availability, visibility or permanent existence. This reduction is intentional and does not relax production's anonymous access gates or assert private capability acceptance.
