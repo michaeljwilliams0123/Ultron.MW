@@ -1,0 +1,49 @@
+name: Ultron live acceptance audit
+on:
+  workflow_run:
+    workflows: ["Ultron core verification"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '27 9 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ultron-live-readonly-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Validate audit syntax and invariants
+        run: |
+          node --check src/live-acceptance-audit.mjs
+          node --check scripts/live-acceptance-audit.mjs
+          node --test test/live-acceptance-audit.test.mjs
+      - name: Observe exact GitHub main, Pages, and Hatchable boundaries
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/live-acceptance-audit.mjs
+      - name: Publish non-sensitive evidence artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: live-public-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/live-acceptance/
+          if-no-files-found: warn
+          retention-days: 14
