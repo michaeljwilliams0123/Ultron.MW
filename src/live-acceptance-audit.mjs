@@ -9,7 +9,10 @@ export const REQUIRED_CHECKS=Object.freeze([
  {id:'pages-module',label:'GitHub Pages JavaScript module'},
  {id:'production-http',label:'Hatchable production HTTP'},
  {id:'production-admin-gate',label:'Production anonymous admin denial'},
- {id:'production-scheduler-gate',label:'Production scheduler ingress denial'}
+ {id:'production-scheduler-gate',label:'Production scheduler ingress denial'},
+ {id:'production-cloud-status',label:'Production public cloud status'},
+ {id:'production-cloud-cors',label:'Pages origin cloud access'},
+ {id:'production-cloud-foreign-origin',label:'Foreign origin cloud isolation'}
 ]);
 const SHA=/^[0-9a-f]{40}$/;
 const REPO='https://github.com/michaeljwilliams0123/Ultron.MW';

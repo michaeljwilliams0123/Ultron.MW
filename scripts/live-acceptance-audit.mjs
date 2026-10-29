@@ -4,22 +4,27 @@
 import {mkdir,writeFile,appendFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {evaluateAcceptance,parsePagesRevision,renderAcceptanceMarkdown} from '../src/live-acceptance-audit.mjs';
+import {parseCloudStatus} from '../docs/core/cloud-status.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const API='https://api.github.com/repos/'+REPO;
 const PAGES='https://michaeljwilliams0123.github.io/Ultron.MW/';
 const PRODUCTION='https://ultron-mw-cloud.hatchable.site';
+const PAGES_ORIGIN=new URL(PAGES).origin;
 
-async function request(url,{json=false,github=false}={}){
- const headers={'user-agent':'ultron-live-acceptance/1.0','accept':json?'application/vnd.github+json':'text/html'};
+async function request(url,{json=false,github=false,origin}={}){
+ const headers={'user-agent':'ultron-live-acceptance/1.0',
+  'accept':json?(github?'application/vnd.github+json':'application/json'):'text/html'};
+ if(origin)headers.origin=origin;
  if(github&&process.env.GITHUB_TOKEN)headers.authorization='Bearer '+process.env.GITHUB_TOKEN;
  try {
   const response=await fetch(url,{redirect:'follow',headers,signal:AbortSignal.timeout(12000)});
   const body=await response.text();
-  if(body.length>450000)return {status:response.status,error:'response-over-limit'};
-  if(!json)return {status:response.status,body};
-  try{return {status:response.status,body:JSON.parse(body)};}
-  catch{return {status:response.status,error:'invalid-json'};}
+  const meta={status:response.status,allowOrigin:response.headers.get('access-control-allow-origin')};
+  if(body.length>450000)return {...meta,error:'response-over-limit'};
+  if(!json)return {...meta,body};
+  try{return {...meta,body:JSON.parse(body)};}
+  catch{return {...meta,error:'invalid-json'};}
  } catch{return {status:null,error:'request-unavailable'};}
 }
 const observation=(id,status,detail)=>({id,status,detail});
@@ -45,9 +50,11 @@ export async function collectLiveChecks(){
   verify.conclusion==='success'?'pass':'fail',
   !verify?'Exact-main push Verify not present in returned window':
   'Exact-main run '+verify.id+' '+verify.status+'/'+verify.conclusion));
- const [page,module,production,admin,tick]=await Promise.all([
+ const [page,module,production,admin,tick,cloud,foreignCloud]=await Promise.all([
   request(PAGES),request(PAGES+'app.js'),request(PRODUCTION+'/'),
-  request(PRODUCTION+'/api/brain/control'),request(PRODUCTION+'/api/brain/tick')
+  request(PRODUCTION+'/api/brain/control'),request(PRODUCTION+'/api/brain/tick'),
+  request(PRODUCTION+'/api/brain/status-public',{json:true,origin:PAGES_ORIGIN}),
+  request(PRODUCTION+'/api/brain/status-public',{json:true,origin:'https://ultron-audit.invalid'})
  ]);
  checks.push(httpCheck('pages-http',page,[200]));
  const deployed=parsePagesRevision(page.body);
@@ -59,6 +66,19 @@ export async function collectLiveChecks(){
  checks.push(httpCheck('production-http',production,[200]));
  checks.push(httpCheck('production-admin-gate',admin,[401,403]));
  checks.push(httpCheck('production-scheduler-gate',tick,[404]));
+ let cloudState=null;
+ if(cloud.status===200&&!cloud.error){
+  try{cloudState=parseCloudStatus(cloud.body);}catch{/* Invalid status is an observed failure. */}
+ }
+ checks.push(observation('production-cloud-status',cloud.status===null?'unknown':
+  cloudState?'pass':'fail',cloudState?'Validated public cloud status: '+cloudState.status:
+  cloud.status===null?'Cloud status unavailable':'Cloud status HTTP/schema invalid'));
+ checks.push(observation('production-cloud-cors',cloud.status===null?'unknown':
+  cloud.status===200&&cloud.allowOrigin===PAGES_ORIGIN?'pass':'fail',
+  cloud.status===null?'Cloud status unavailable':'Canonical Pages origin must be allowed exactly'));
+ checks.push(observation('production-cloud-foreign-origin',foreignCloud.status===null?'unknown':
+  foreignCloud.status===200&&foreignCloud.allowOrigin===null?'pass':'fail',
+  foreignCloud.status===null?'Foreign-origin probe unavailable':'Foreign origin must receive no allow-origin header'));
  return {sourceSha,checks,observedAt:new Date().toISOString()};
 }
 
