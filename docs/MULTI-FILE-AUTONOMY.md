@@ -1,12 +1,14 @@
 # Ultron general-purpose multi-file source generation
 
+**Owner autonomy:** With `OWNER_MODE=1` / `ULTRON_AUTONOMY=1` / `ULTRON_VELOCITY=1`, policy budgets rise to **up to 12** explicitly named existing files and larger byte caps (`src/owner-autonomy.mjs`). Baseline remains 2–4 files / 18 KB total when flags are off. Runtime `pr-brain-multifile` must import the same limits to enforce them.
+
 Use an owner-authored PR comment:
 
     @ultron implement files docs/a.md, src/b.mjs: improve the shared behavior in both files
 
 This route runs a pinned, free CPU model once per existing source file (with a bounded corrective retry if needed), preflights every proposed edit, commits **all** changes in one exact-head GitHub transaction, and dispatches the full Verify suite. If exact-head Verify independently fails, the existing PR brain attempts one atomic inverse commit and verifies the restored head. Pending verification is never reported as passed.
 
-For now the route supports **2–4 explicitly named existing files** with a combined source context budget of 18 KB. A missing, ambiguous, or unsafe source path aborts before any mutation. New code modules and API/MCP connector files are created through existing separate generator commands. This is broadening code generation, not unrestricted authority, unattended root shell, arbitrary third-party credential creation, or proof that a small model reliably solves all development objectives.
+A missing, ambiguous, or unsafe source path aborts before any mutation. New code modules and API/MCP connector files are created through existing separate generator commands. This is broadening code generation **for the owner**, not unrestricted authority, unattended root shell, arbitrary third-party credential creation, or proof that a small model reliably solves all development objectives.
 
 CI on a PR branch must independently confirm functional correctness. No inference response alone counts as execution evidence.
 
@@ -17,3 +19,7 @@ When the owner states an explicit single-word request such as 'from pending to v
 ## Corrective model prompting
 
 For an explicit `from OLD to NEW` request, select the unique source line that contains OLD, prompt with the exact requested edit, and retry the model once with targeted correction when the first valid-looking patch misses the objective. An anchored `AFTER:` response is parsed without relaxing source/path guards. The existing deterministic Markdown-only substitution remains an explicitly disclosed last resort. All commits still require exact-context preflight, atomic GitHub writes, independent full Verify, and inverse rollback where appropriate.
+
+## Governance cross-link
+
+Doctrine: [OWNER-AUTONOMY.md](./OWNER-AUTONOMY.md)
