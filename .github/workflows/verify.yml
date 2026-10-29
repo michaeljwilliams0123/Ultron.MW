@@ -45,7 +45,7 @@ jobs:
       - name: PostgreSQL-backed acceptance replay and conflict checks
         env:
           ULTRON_POSTGRES_TEST: '1'
-        run: node --test --test-concurrency=1 test/hatchable-acceptance-postgres.test.mjs test/hatchable-heldout-postgres.test.mjs test/hatchable-owner-stop-postgres.test.mjs
+        run: node --test --test-concurrency=1 test/hatchable-acceptance-postgres.test.mjs test/hatchable-heldout-postgres.test.mjs test/hatchable-owner-stop-postgres.test.mjs test/hatchable-completion-readback-postgres.test.mjs
   fixed-comparison:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

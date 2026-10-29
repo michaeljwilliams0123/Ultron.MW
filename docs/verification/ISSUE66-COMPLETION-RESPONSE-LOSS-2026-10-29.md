@@ -26,6 +26,8 @@ Only then may the worker return `status: done` with `readback: committed`. If an
 4. Fenced generation stored in the completion receipt.
 5. Existing paused-worker, heartbeat-fencing, stale-owner and attempt-limit cases.
 
+The exact readback SQL is also exercised against **ephemeral PostgreSQL 16** in `test/hatchable-completion-readback-postgres.test.mjs`, added to the protected Verify workflow. It validates the committed row-and-receipt match and rejection of a stale fence, wrong result/objective, tampered receipt, unfinished task and missing receipt. This test uses an isolated CI schema, never the production database.
+
 ## Unfinished release acceptance
 
 This source improvement and green CI **do not** demonstrate an actual production database outage, a true process crash, an external provider write with uncertain response, independent site readback, or owner-device-offline execution. They must be exercised under #66's existing production-safe acceptance contract with a single bounded task, zero unapproved spend, independent durable readbacks and no replay of existing `uncertain` Mahoraga actions. Do not mark #66 complete based on this PR alone.
