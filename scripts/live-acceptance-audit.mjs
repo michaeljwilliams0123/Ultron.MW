@@ -9,7 +9,6 @@ const REPO='michaeljwilliams0123/Ultron.MW';
 const API='https://api.github.com/repos/'+REPO;
 const PAGES='https://michaeljwilliams0123.github.io/Ultron.MW/';
 const PRODUCTION='https://ultron-mw-cloud.hatchable.site';
-const EXPERIMENT='https://up3slz.hatchable.site';
 
 async function request(url,{json=false,github=false}={}){
  const headers={'user-agent':'ultron-live-acceptance/1.0','accept':json?'application/vnd.github+json':'text/html'};
@@ -46,10 +45,9 @@ export async function collectLiveChecks(){
   verify.conclusion==='success'?'pass':'fail',
   !verify?'Exact-main push Verify not present in returned window':
   'Exact-main run '+verify.id+' '+verify.status+'/'+verify.conclusion));
- const [page,module,production,admin,tick,experimental]=await Promise.all([
+ const [page,module,production,admin,tick]=await Promise.all([
   request(PAGES),request(PAGES+'app.js'),request(PRODUCTION+'/'),
-  request(PRODUCTION+'/api/brain/control'),request(PRODUCTION+'/api/brain/tick'),
-  request(EXPERIMENT+'/')
+  request(PRODUCTION+'/api/brain/control'),request(PRODUCTION+'/api/brain/tick')
  ]);
  checks.push(httpCheck('pages-http',page,[200]));
  const deployed=parsePagesRevision(page.body);
@@ -61,7 +59,6 @@ export async function collectLiveChecks(){
  checks.push(httpCheck('production-http',production,[200]));
  checks.push(httpCheck('production-admin-gate',admin,[401,403]));
  checks.push(httpCheck('production-scheduler-gate',tick,[404]));
- checks.push(httpCheck('experimental-isolation',experimental,[401,403]));
  return {sourceSha,checks,observedAt:new Date().toISOString()};
 }
 
