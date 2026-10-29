@@ -15,20 +15,16 @@
     .eyebrow{font-size:12px;font-weight:750;letter-spacing:.17em;color:#96b7ff}
     h1{font-size:clamp(37px,6vw,60px);line-height:1.08;letter-spacing:-.035em;margin:18px 0}
     .intro{font-size:17px;color:#b5c2dd;line-height:1.6;max-width:720px}
-    .cards{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:35px}
+    .cards{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;margin-top:35px;max-width:700px}
     .card{background:#101b2f;border:1px solid #324362;border-radius:17px;padding:25px}
     .card h2{font-size:19px;margin:0 0 10px}
     .card p{font-size:14px;color:#b8c5de;line-height:1.6}
     .button{display:inline-block;background:#5a86ff;color:#06132d;text-decoration:none;
       font-weight:750;border-radius:10px;padding:12px 16px;margin:12px 8px 0 0}
     .outline{background:transparent;color:#dee8ff;border:1px solid #59729b}
-    .note{font-size:13px;color:#a3b4ce;line-height:1.6;margin-top:20px}
-    descope-wc{display:block;min-height:250px;margin-top:15px}
-    .status{margin-top:14px;font-size:13px;color:#a9c0e2}
     .small{font-size:12px;color:#96a8c9}
     @media(max-width:690px){.cards{grid-template-columns:1fr}.shell{padding:30px 18px}}
   </style>
-  <script defer src="https://descopecdn.com/npm/@descope/web-component@4.4.11/dist/index.js"></script>
 </head>
 <body>
   <main class="shell">
@@ -43,26 +39,7 @@
         <a class="button outline" href="https://hatchable.com/console/projects/ultron-mw-cloud/setup">Owner setup</a>
         <p class="small">The cloud API is not a public interactive dashboard. Owner-only functions remain protected by Hatchable access controls.</p>
       </div>
-      <div class="card">
-        <h2>Descope identity sign-in</h2>
-        <p>Optional sign-in using the existing Descope <strong>sign-in</strong> flow. This authenticates an identity; it does not grant permission to call Ultron's privileged APIs.</p>
-        <descope-wc project-id="P3L7irCEJ6yLtlWrWjhabW5B7E0g" flow-id="sign-in"></descope-wc>
-        <div id="identity-status" class="status" role="status" aria-live="polite">Descope login is separate from Hatchable owner access.</div>
-      </div>
     </section>
-    <p class="note">Security boundary: an identity login on this page cannot create Mahoraga issues, dispatch workflows, read private cloud tasks, or bypass Hatchable owner authentication. Server-side Descope session validation and owner-subject authorization must be implemented and tested before any privileged API route can accept a Descope token.</p>
   </main>
-  <script>
-    (() => {
-      const flow = document.querySelector('descope-wc');
-      const status = document.getElementById('identity-status');
-      flow.addEventListener('success', () => {
-        status.textContent = 'Descope sign-in completed. Cloud API access still requires separate owner authorization.';
-      });
-      flow.addEventListener('error', () => {
-        status.textContent = 'Descope sign-in unavailable. Check the configured flow and allowed domain in the Descope console.';
-      });
-    })();
-  </script>
 </body>
 </html>

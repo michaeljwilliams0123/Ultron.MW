@@ -85,6 +85,12 @@
   <section class="panel hidden" id="pane-systems">
   <h2>Execution & owner actions</h2>
   <p class="muted" id="system-state">Default: GitHub Pages + GitHub-hosted Actions and durable GitHub Issue receipts. No fixed machine or localhost port.</p>
+  <section class="evolution-controls" id="hatchable-cloud" aria-label="Hosted cloud brain">
+    <strong>Hatchable production — inside Ultron.MW</strong>
+    <p class="muted">This read-only view checks the persistent PostgreSQL-backed cloud runtime. Owner operations, task content, tokens, and approvals remain restricted to authenticated backend routes.</p>
+    <p class="muted" id="hatchable-cloud-status" role="status" aria-live="polite">Open Systems or select Refresh to read current cloud status.</p>
+    <button type="button" id="hatchable-refresh">Refresh cloud status</button>
+  </section>
   <p class="muted"><strong>Cloud owner feedback:</strong> reply to a completed GitHub task Issue with the exact three-line rating shown on its receipt. That owner-authenticated comment triggers an evidence evaluation on GitHub-hosted Actions; it cannot execute extra tools or add permissions.</p>
   <p class="muted"><strong>Cloud actions:</strong> Create PR to main drafts a documentation proposal, or a bounded source PR when an exact-main implementation manifest is supplied. Neither route auto-merges. Read-only commands: /help, /system status, /repo inspect, /learning status. Unsupported steps are blocked. GitHub Actions is not an always-on LLM server. <a href="https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/cloud-objective.yml" target="_blank" rel="noopener noreferrer">Cloud workflow</a></p>
   <p class="muted">Optional legacy local adapter — not required for cloud jobs:</p>

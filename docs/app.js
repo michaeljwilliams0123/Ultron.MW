@@ -2,6 +2,29 @@
   const { createCloudTaskUrl } = await import('./core/cloud-submit.mjs');
   const { createCloudPrUrl } = await import('./core/cloud-pr-submit.mjs');
   const { CODEX_AUTHORS } = await import('./core/codex-authors.mjs');
+  const { fetchCloudStatus } = await import('./core/cloud-status.mjs');
+  let cloudStatusLoaded = false;
+  async function refreshHostedCloud() {
+    const status = document.getElementById('hatchable-cloud-status');
+    const button = document.getElementById('hatchable-refresh');
+    if (!status || !button) return;
+    button.disabled = true;
+    status.textContent = 'Checking live cloud runtime…';
+    try {
+      const result = await fetchCloudStatus();
+      cloudStatusLoaded = true;
+      const last = result.lastEventAt ? ' · Last ledger event: ' + result.lastEventAt : ' · No ledger event reported';
+      status.textContent = 'Cloud runtime: ' + result.status +
+        ' · Scheduler: configured hourly · Observed: ' + result.observedAt + last;
+    } catch {
+      status.textContent = 'Cloud status could not be verified. No backend action was submitted.';
+    } finally { button.disabled = false; }
+  }
+  document.getElementById('hatchable-refresh')?.addEventListener('click', refreshHostedCloud);
+  document.querySelector('[data-tab="systems"]')?.addEventListener('click', () => {
+    if (!cloudStatusLoaded) void refreshHostedCloud();
+  });
+
   const $ = id => document.getElementById(id);
   for (const author of CODEX_AUTHORS) {
     const card = document.createElement('article');
