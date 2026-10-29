@@ -56,9 +56,13 @@ real credential revocation, hosted production interruption, owner-device-offline
 operation, or full issues #66/#67 acceptance. No historic uncertain production
 action is replayed.
 
-Production fault injection through dynamically evaluated fetched source was
+An initial production test through dynamically evaluated fetched source was
 rejected by automatic approval review because it could expose credentials or
-cause live side effects. This acceptance uses isolated CI instead. Deployment
-of the reviewed fix, if performed, uses the ordinary versioned Hatchable file
-and deployment tools after protected source checks; it does not enable a fault
-injection endpoint or load arbitrary source at runtime.
+cause live side effects. The initial acceptance therefore used isolated CI.
+After the owner explicitly approved the bounded live test, the reviewed v22
+adapter passed real GitHub acknowledgement-loss recovery and real PostgreSQL
+observation-reply-loss readback using one owned canary. The test issue was
+independently verified and closed. See the [live acceptance record](LIVE-MAHORAGA-ACCEPTANCE-2026-10-29.md)
+for exact IDs, source hashes, controls and the remaining acceptance boundaries.
+The reviewed fix was deployed through the ordinary versioned Hatchable tools;
+no fault injection endpoint or arbitrary runtime source loader was deployed.
