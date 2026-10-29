@@ -77,7 +77,8 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
      return json({
      token:'fixture-installation-token',expires_at:new Date(Date.now()+3600000).toISOString(),
      repositories:[{id:1343333190,full_name:'michaeljwilliams0123/mahoraga'}],
-     permissions:{contents:'read',issues:'write',actions:'write'}});
+     permissions:{actions:'write',administration:'write',contents:'write',issues:'write',
+       pull_requests:'write'}});
    }
    if(path.endsWith('/mahoraga'))return json({
      id:1343333190,full_name:'michaeljwilliams0123/mahoraga',
@@ -344,6 +345,11 @@ test('App installation lane remains compatible when PAT is absent',async()=>{
  const result=await execute(f);
  assert.equal(result.state,'observed');
  assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,1);
+ assert.deepEqual(f.calls.find(x=>x.path.endsWith('/access_tokens')).body,{
+   repository_ids:[1343333190],
+   permissions:{actions:'write',administration:'write',contents:'write',issues:'write',
+     pull_requests:'write'}
+ });
 });
 
 
