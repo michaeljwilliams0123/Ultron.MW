@@ -18,7 +18,7 @@ configuration was not changed.
 | Pinned target main | `5f584f43341c62696bbc4ece1b392062632a654f` |
 | New action key | `ultron:approved-response-loss-20261029-v1` |
 | Durable action / task | **5 / 382** |
-| Admission time | **1:53:49 p.m. EDT**, October 29 (`2026-10-29T17:53:49.346581Z`) |
+| Durable send checkpoint | **1:53:49 p.m. EDT**, October 29 (`2026-10-29T17:53:49.346581Z`) |
 | Harmless test issue | [Mahoraga #1184](https://github.com/michaeljwilliams0123/mahoraga/issues/1184) |
 | Independently observed GitHub actor | `michaeljwilliams0123` |
 
