@@ -1,15 +1,12 @@
 #!/usr/bin/env node
 /**
  * Ultron Council — owner-first deterministic debate + action plan.
- * Zero live model calls. Advisory authority only (no merge/deploy).
- *
- * Env:
- *   TITLE, BODY, ITEM_NUMBER, IS_PR
- *   OWNER_MODE=1 / ULTRON_AUTONOMY=1 / ULTRON_VELOCITY=1
+ * Includes multi-turn inter-self dialogue transcripts.
  */
 import { writeFileSync } from 'node:fs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
 import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
+import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
 
 const ownerMode = ownerAutonomyEnabled();
 const limits = autonomyLimits();
@@ -68,6 +65,14 @@ const receipt = deliberatePlan(plan, {
   observedAt,
 });
 
+const dialogue = buildInterSelfDialogue({
+  mode: 'active',
+  objective: title,
+  decision: receipt.decision,
+  dissent: knownUnknowns,
+  observedAt,
+});
+
 const hold = receipt.decision !== 'proceed' || flags.security;
 const status = hold
   ? 'HOLD — OWNER REVIEW REQUIRED'
@@ -110,6 +115,7 @@ ${body || '(empty body)'}
 
 ## System framing
 - Deterministic GrokBot council (advisory-only)
+- Multi-turn inter-self dialogue attached
 - modelInvocations=0 · creditCost=0
 - Flags: ${Object.entries(flags).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}
 `;
@@ -145,10 +151,12 @@ const stage4 = `# Ultron Council Report
 
 ### Summary
 **Ultron works for the owner, not the other way around.**  
-Owner-first deterministic deliberation with action board. Authority remains advisory.
+Owner-first deterministic deliberation with inter-self dialogue and action board.
 
 ### Selves
 ${selves}
+
+${formatDialogueMarkdown(dialogue)}
 
 ### Action board (for owner)
 ${actions.map((a, i) => `${i + 1}. ${a}`).join('\n')}
@@ -161,7 +169,7 @@ ${actions.map((a, i) => `${i + 1}. ${a}`).join('\n')}
 - [${hold ? 'x' : ' '}] Block auto-proceed
 
 ---
-*Ultron Council · deterministic GrokBot · owner-autonomy doctrine*
+*Ultron Council · multi-turn inter-self dialogue · owner-autonomy doctrine*
 `;
 
 writeFileSync('RFC_DRAFT.md', stage1);
@@ -174,10 +182,11 @@ writeFileSync('council-receipt.json', JSON.stringify({
   flags,
   status,
   actions,
+  dialogue,
 }, null, 2));
 
 console.log(status);
 console.log('fingerprint', receipt.fingerprint);
+console.log('dialogueTurns', dialogue.turnCount);
 console.log('ownerMode', ownerMode);
 console.log('policy', limits.mode);
-console.log('actions', actions.length);
