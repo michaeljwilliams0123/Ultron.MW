@@ -278,10 +278,25 @@ async function reconcile(db,get,row) {
      WHERE id=$1 AND state='sent'`,[row.id]);
    return {ok:true,state:'uncertain',id:row.id,taskId:row.task_id,key:row.action_key};
  }
- const saved=await db.query(`UPDATE mahoraga_actions
-   SET state='observed',result=$2::jsonb,updated_at=now()
-   WHERE id=$1 AND state IN ('sent','uncertain','observed') RETURNING id,state,result`,
-   [row.id,JSON.stringify(result)]);
+ let saved;
+ try {
+   saved=await db.query(`UPDATE mahoraga_actions
+     SET state='observed',result=$2::jsonb,updated_at=now()
+     WHERE id=$1 AND state IN ('sent','uncertain','observed') RETURNING id,state,result`,
+     [row.id,JSON.stringify(result)]);
+ } catch(error) {
+   // A committed observation can outlive its database-driver reply. Confirm
+   // the exact immutable action and provider result through a separate read;
+   // uncertainty never authorizes a second external dispatch.
+   const committed=await db.query(`SELECT id,state,result FROM mahoraga_actions WHERE id=$1
+     AND task_id=$2 AND action_key=$3 AND operation=$4 AND request=$5::jsonb
+     AND state='observed' AND result=$6::jsonb`,
+     [row.id,row.task_id,row.action_key,row.operation,
+       JSON.stringify(row.request),JSON.stringify(result)]);
+   if(committed.rows.length!==1)throw error;
+   return {ok:true,state:'observed',id:row.id,taskId:row.task_id,
+     key:row.action_key,result:committed.rows[0].result,readback:'committed'};
+ }
  return {ok:true,state:saved.rows[0]?.state || 'uncertain',id:row.id,taskId:row.task_id,
    key:row.action_key,result:saved.rows[0]?.result || null};
 }

@@ -53,7 +53,7 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
      row.state='sent';row.attempt_started_at=new Date().toISOString();
      return {rows:[{...row}]};
    }
-   if(sql.includes("state='observed'")){
+   if(sql.includes("SET state='observed'")){
      row.state='observed';row.result=JSON.parse(params[1]);
      return {rows:[{id:row.id,state:row.state,result:row.result}]};
    }
@@ -154,6 +154,48 @@ test('lost GitHub write response is not replayed after a new invocation',async()
  assert.equal((await execute(f)).state,'observed');
  assert.equal(f.issues.length,1);
  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+});
+test('lost observation commit reply is independently confirmed without another provider write',async()=>{
+ const f=fixture({pat:true});
+ const query=f.db.query.bind(f.db);
+ let dropped=false,readbacks=0;
+ f.db.query=async(sql,params)=>{
+  if(sql.includes('result=$6::jsonb'))readbacks++;
+  const result=await query(sql,params);
+  if(sql.includes("SET state='observed'")&&!dropped){
+   dropped=true;
+   throw Error('injected-observation-reply-loss');
+  }
+  return result;
+ };
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(result.readback,'committed');
+ assert.equal(result.result.number,1);
+ assert.equal(readbacks,1);
+ assert.equal(f.rows.get(KEY).state,'observed');
+ assert.equal((await execute(f)).reused,true);
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+});
+test('missing or unavailable observation readback stays uncertain without replay',async()=>{
+ for(const unavailable of [false,true]){
+  const f=fixture({pat:true});
+  const query=f.db.query.bind(f.db);
+  f.db.query=async(sql,params)=>{
+   if(sql.includes('result=$6::jsonb')){
+    if(unavailable)throw Error('injected-readback-unavailable');
+    return {rows:[]};
+   }
+   const result=await query(sql,params);
+   if(sql.includes("SET state='observed'"))throw Error('injected-observation-reply-loss');
+   return result;
+  };
+  const first=await execute(f);
+  assert.equal(first.state,'uncertain');
+  assert.equal(first.readback,undefined);
+  assert.equal((await execute(f)).reused,true);
+  assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
+ }
 });
 test('a stalled preflight read times out before the durable send checkpoint',async()=>{
  const f=fixture({pat:true});
