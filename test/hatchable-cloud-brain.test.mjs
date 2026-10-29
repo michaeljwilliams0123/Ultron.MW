@@ -39,7 +39,11 @@ function fakeRunnerDb({complete=true,claimed=true,completionReject=false,failure
  return {statements,async query(sql,params=[]){
   statements.push({sql,params});
   if(sql.includes("'lease-recovered'")||sql.includes("'attempt-limit'"))return {rows:[]};
-  if(sql.includes("'claimed'"))return {rows:claimed?[{id:7,objective:'repo.inspect',attempts:1}]:[]};
+  if(sql.includes("'claimed'"))return {rows:claimed?[{id:7,objective:'repo.inspect',attempts:1,fencing_generation:1}]:[]};
+  // Completion response loss requires one independent, read-only postcondition query.
+  // This failure fixture never committed the completion, so the readback is empty.
+  if(sql.includes('FROM brain_tasks')&&sql.includes('last_result=$3::jsonb'))
+   return {rows:[]};
   if(sql.includes("'observed'")){
    if(completionReject)throw Error('simulated-completion-write-failure');
    return {rows:complete?[{id:7}]:[]};
@@ -92,7 +96,7 @@ test('cloud: completion persistence rejection remains uncertain, not an objectiv
  const db=fakeRunnerDb({completionReject:true});
  const result=await runOne({db,browser:{}});
  assert.deepEqual(result,{status:'completion-uncertain',task_id:7,objective:'repo.inspect'});
- assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,1);
+ assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")&&x.sql.includes("INSERT INTO brain_events")).length,1);
  assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,0);
 });
 test('cloud: uncertain completion does not immediately replay an already claimed objective',async()=>{
@@ -108,7 +112,7 @@ test('cloud: uncertain completion does not immediately replay an already claimed
  const next=await runOne({db,browser:{}});
  assert.equal(next.status,'idle');
  assert.equal(claims,2);
- assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,1);
+ assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")&&x.sql.includes("INSERT INTO brain_events")).length,1);
  assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,0);
 });
 test('cloud: real objective execution failure remains lease-fenced and journaled',async()=>{
@@ -122,7 +126,7 @@ export async function executeObjective(){throw Error('real-objective-failure');}
  assert.equal(result.status,'failed');
  assert.equal(result.next_status,'queued');
  assert.match(result.reason,/real-objective-failure/);
- assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,0);
+ assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")&&x.sql.includes("INSERT INTO brain_events")).length,0);
  const failure=db.statements.filter(x=>x.sql.includes("'failed'"));
  assert.equal(failure.length,1);
  assert.match(failure[0].sql,/owner_token=\$2 AND status='leased' AND lease_until>now\(\)/);
@@ -321,7 +325,7 @@ test('cloud: GitHub 403 is a lease-fenced failure with bounded retry and later s
   assert.equal(failed.next_status,'queued');
   assert.equal(db.state.attempts,1);
   assert.deepEqual(db.events,['claimed','failed']);
-  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,0);
+  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")&&x.sql.includes("INSERT INTO brain_events")).length,0);
   db.advance(15*60*1000-1);
   const early=await runGithub({db,browser:{}});
   assert.equal(early.status,'idle','must not re-claim during 15-minute backoff');
@@ -349,7 +353,7 @@ test('cloud: GitHub 403 after lease expiry cannot forge a failed or observed rec
   assert.equal(result.status,'lost-lease');
   assert.equal(db.state.attempts,1);
   assert.deepEqual(db.events,['claimed']);
-  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")).length,0);
+  assert.equal(db.statements.filter(x=>x.sql.includes("'observed'")&&x.sql.includes("INSERT INTO brain_events")).length,0);
   assert.equal(db.statements.filter(x=>x.sql.includes("'failed'")).length,1,
    'the fenced failure statement may execute but cannot insert a receipt');
  }finally{globalThis.fetch=originalFetch;}

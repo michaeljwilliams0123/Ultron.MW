@@ -91,3 +91,61 @@ test('migration adds nonnegative persistent fencing state without erasing old re
  assert.match(migration,/VALIDATE CONSTRAINT brain_tasks_fencing_generation_nonnegative/);
  assert.doesNotMatch(migration,/DROP TABLE|TRUNCATE|DELETE FROM brain_events/i);
 });
+
+
+async function completionResponseLost({committed=false,readbackThrows=false}={}){
+ const {runOne}=await loadRunner(successfulCore);
+ const db=fakeDatabase();
+ const original=db.query.bind(db);
+ let completionAttempts=0,readbacks=0;
+ db.query=async(sql,params=[])=>{
+  if(sql.includes('FROM brain_tasks') && sql.includes('last_result=$3::jsonb')){
+   readbacks++;
+   assert.match(sql,/status='done'/);
+   assert.ok(sql.includes('fencing_generation=$2'));
+   assert.ok(sql.includes('EXISTS (SELECT 1 FROM brain_events'));
+   assert.match(sql,/event_type='observed'/);
+   assert.match(sql,/fencingGeneration/);
+   assert.deepEqual(params,[7,2,JSON.stringify({source:'fixture',objective:'repo.inspect'}),'repo.inspect']);
+   if(readbackThrows)throw Error('database-readback-unavailable');
+   return {rows:committed?[{id:7}]:[]};
+  }
+  if(sql.includes("'observed'")){
+   completionAttempts++;
+   // Driver lost the completion response: the SQL may or may not have committed.
+   throw Error('database-completion-response-lost');
+  }
+  return original(sql,params);
+ };
+ const result=await runOne({db,browser:{}});
+ return {result,completionAttempts,readbacks};
+}
+
+test('completion response lost AFTER database commit is confirmed without rerunning',async()=>{
+ const {result,completionAttempts,readbacks}=await completionResponseLost({committed:true});
+ assert.equal(result.status,'done');
+ assert.equal(result.readback,'committed');
+ assert.equal(result.summary.objective,'repo.inspect');
+ assert.equal(completionAttempts,1);
+ assert.equal(readbacks,1);
+});
+
+test('completion response lost BEFORE commit remains uncertain without premature replay',async()=>{
+ const {result,completionAttempts,readbacks}=await completionResponseLost({committed:false});
+ assert.equal(result.status,'completion-uncertain');
+ assert.equal(completionAttempts,1);
+ assert.equal(readbacks,1);
+});
+
+test('an unavailable independent completion readback cannot turn uncertainty into success',async()=>{
+ const {result,readbacks}=await completionResponseLost({committed:true,readbackThrows:true});
+ assert.equal(result.status,'completion-uncertain');
+ assert.equal(readbacks,1);
+});
+
+test('observed completion receipt includes the fenced generation for independent correlation',async()=>{
+ const {runOne}=await loadRunner(successfulCore),db=fakeDatabase();
+ assert.equal((await runOne({db,browser:{}})).status,'done');
+ const observed=db.queries.find(x=>x.sql.includes("'observed'"));
+ assert.ok(observed.sql.includes("'fencingGeneration',$6::bigint"));
+});
