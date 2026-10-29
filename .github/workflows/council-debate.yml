@@ -64,35 +64,70 @@ jobs:
       - name: Extract context (owner-first)
         env:
           EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          DISPATCH_IS_PR: ${{ inputs.is_pr }}
+          DISPATCH_ITEM: ${{ inputs.item_number }}
+          DISPATCH_OWNER_MODE: ${{ inputs.owner_mode }}
         run: |
           set -euo pipefail
           OWNER_MODE=0
-          if [ "${{ github.actor }}" = "michaeljwilliams0123" ]; then
+          if [ "$ACTOR" = "michaeljwilliams0123" ]; then
             OWNER_MODE=1
           fi
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "${{ inputs.owner_mode }}" = "1" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "${DISPATCH_OWNER_MODE:-0}" = "1" ]; then
             OWNER_MODE=1
           fi
           echo "OWNER_MODE=$OWNER_MODE" >> "$GITHUB_ENV"
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
             echo "IS_PR=true" >> "$GITHUB_ENV"
-            echo "ITEM_NUMBER=${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
-            { echo "TITLE<<EOF"; echo "${{ github.event.pull_request.title }}"; echo "EOF"; } >> "$GITHUB_ENV"
-            { echo "BODY<<EOF"; echo "${{ github.event.pull_request.body }}"; echo "EOF"; } >> "$GITHUB_ENV"
+            echo "ITEM_NUMBER=${PR_NUMBER}" >> "$GITHUB_ENV"
+            {
+              echo "TITLE<<EOF"
+              printf '%s\n' "${PR_TITLE}"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
+            {
+              echo "BODY<<EOF"
+              printf '%s\n' "${PR_BODY}"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
           elif [ "$EVENT_NAME" = "issues" ]; then
             echo "IS_PR=false" >> "$GITHUB_ENV"
-            echo "ITEM_NUMBER=${{ github.event.issue.number }}" >> "$GITHUB_ENV"
-            { echo "TITLE<<EOF"; echo "${{ github.event.issue.title }}"; echo "EOF"; } >> "$GITHUB_ENV"
-            { echo "BODY<<EOF"; echo "${{ github.event.issue.body }}"; echo "EOF"; } >> "$GITHUB_ENV"
+            echo "ITEM_NUMBER=${ISSUE_NUMBER}" >> "$GITHUB_ENV"
+            {
+              echo "TITLE<<EOF"
+              printf '%s\n' "${ISSUE_TITLE}"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
+            {
+              echo "BODY<<EOF"
+              printf '%s\n' "${ISSUE_BODY}"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
           elif [ "$EVENT_NAME" = "issue_comment" ]; then
             echo "IS_PR=false" >> "$GITHUB_ENV"
-            echo "ITEM_NUMBER=${{ github.event.issue.number }}" >> "$GITHUB_ENV"
-            { echo "TITLE<<EOF"; echo "${{ github.event.issue.title }}"; echo "EOF"; } >> "$GITHUB_ENV"
-            { echo "BODY<<EOF"; echo "${{ github.event.comment.body }}"; echo "EOF"; } >> "$GITHUB_ENV"
+            echo "ITEM_NUMBER=${ISSUE_NUMBER}" >> "$GITHUB_ENV"
+            {
+              echo "TITLE<<EOF"
+              printf '%s\n' "${ISSUE_TITLE}"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
+            {
+              echo "BODY<<EOF"
+              printf '%s\n' "${COMMENT_BODY}"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
           else
-            echo "IS_PR=${{ inputs.is_pr }}" >> "$GITHUB_ENV"
-            echo "ITEM_NUMBER=${{ inputs.item_number }}" >> "$GITHUB_ENV"
+            echo "IS_PR=${DISPATCH_IS_PR:-false}" >> "$GITHUB_ENV"
+            echo "ITEM_NUMBER=${DISPATCH_ITEM}" >> "$GITHUB_ENV"
             echo "TITLE=Owner council dispatch" >> "$GITHUB_ENV"
             echo "BODY=workflow_dispatch owner-first" >> "$GITHUB_ENV"
           fi

@@ -6,7 +6,6 @@
  * Env:
  *   TITLE, BODY, ITEM_NUMBER, IS_PR
  *   OWNER_MODE=1          — treat as owner request (lower friction, richer plan)
- *   ULTRON_VELOCITY=1     — softer evidence floors if velocity module present
  */
 import { writeFileSync } from 'node:fs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
@@ -53,9 +52,6 @@ const plan = {
   status: 'ready',
   steps: [
     { index: 0, command: '/repo inspect', kind: 'read-only', status: 'ready' },
-    ...(flags.infra
-      ? [{ index: 1, command: '/repo ci', kind: 'read-only', status: 'ready' }]
-      : []),
   ],
   executable: true,
   mode: 'read-only',
