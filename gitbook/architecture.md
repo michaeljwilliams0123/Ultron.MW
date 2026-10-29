@@ -29,3 +29,11 @@ The Pages UI is static: cloud objectives route to owner-confirmed GitHub actions
 * [`src/heartbeat-ledger.mjs`](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/src/heartbeat-ledger.mjs) — bounded local standby evidence; not a cloud daemon.
 
 Detailed source: [architecture notes](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/ARCHITECTURE.md).
+
+## Single hosted brain (October 29, 2026)
+
+The only **active Hatchable runtime** is [Ultron MW Cloud Brain](https://ultron-mw-cloud.hatchable.site/) (production v18, one hourly scheduled task). The former experimental project is paused, has no scheduled task, and redirects its application landing page to production. Historical test data remains in that separate retained project; it was not merged into production because test fixtures are not production work. [Read the source-linked retirement evidence](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/verification/HATCHABLE-SINGLE-PRODUCTION-2026-10-29.md).
+
+The owner-generated Mahoraga Native PR Operator private key passed an independent local GitHub App authentication test and a one-repository scoped App-bot issue create/readback/close canary ([Mahoraga #1183](https://github.com/michaeljwilliams0123/mahoraga/issues/1183)). The **Hatchable-hosted experimental key configuration failed a PEM signing preflight** before any external write, so this is not acceptance of hosted App-only execution. Production deliberately preserves its functioning PAT-first authentication; neither the private key nor installation tokens are stored in GitHub source or public UI.
+
+The scheduled public acceptance audit checks **production only**, not the retired experiment. Green public observations do not assert private multi-provider authority, owner browser transfers, or independently measured learning improvement.
