@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parsePagesRevision, evaluateAcceptance, renderAcceptanceMarkdown
+  REQUIRED_CHECKS, parsePagesRevision, evaluateAcceptance, renderAcceptanceMarkdown
 } from '../src/live-acceptance-audit.mjs';
 
 const PASS = [
@@ -12,8 +12,7 @@ const PASS = [
   {id:'pages-module',status:'pass',detail:'HTTP 200'},
   {id:'production-http',status:'pass',detail:'HTTP 200'},
   {id:'production-admin-gate',status:'pass',detail:'Anonymous access refused (401)'},
-  {id:'production-scheduler-gate',status:'pass',detail:'External execution refused (404)'},
-  {id:'experimental-isolation',status:'pass',detail:'Not public'}
+  {id:'production-scheduler-gate',status:'pass',detail:'External execution refused (404)'}
 ];
 const SHA='ee620f2dec1d41a5b283a46286d9f5446fad622f';
 
@@ -62,4 +61,12 @@ test('markdown is an inspectable summary with evidence boundaries and canonical 
   assert.match(report,/issues\/67/);
   assert.match(report,/issues\/65/);
   assert.doesNotMatch(report,/private access confirmed|complete autonomous acceptance/i);
+});
+
+test('one production Hatchable surface is checked without calling the retired experiment',async()=>{
+ assert.equal(REQUIRED_CHECKS.length,8);
+ assert.equal(REQUIRED_CHECKS.some(x=>x.id==='experimental-isolation'),false);
+ const script=await readFile(new URL('../scripts/live-acceptance-audit.mjs',import.meta.url),'utf8');
+ assert.doesNotMatch(script,/up3slz|EXPERIMENT|experimental-isolation/);
+ assert.match(script,/ultron-mw-cloud\\.hatchable\\.site/);
 });
