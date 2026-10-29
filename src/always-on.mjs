@@ -3,6 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import { deliberatePlan } from './grokbot-governor.mjs';
+import { buildInterSelfDialogue } from './inter-self-dialogue.mjs';
 
 const IDLE_PLAN = Object.freeze({
   objective: 'standby: wait for owner',
@@ -11,7 +12,7 @@ const IDLE_PLAN = Object.freeze({
   steps: [{
     index: 0,
     description: 'Maintain multi-self standby and heartbeat',
-    command: '/system status',
+    command: '/repo inspect',
     kind: 'read-only',
     status: 'ready',
   }],
@@ -22,7 +23,7 @@ const IDLE_PLAN = Object.freeze({
 
 /**
  * Produce an inspectable standby receipt for idle / always-on ticks.
- * Does not execute tools or grant authority.
+ * Includes multi-turn inter-self dialogue transcript.
  */
 export function standbyTick({
   observedAt = new Date().toISOString(),
@@ -35,6 +36,12 @@ export function standbyTick({
     materialConflictCount: 0,
     observedAt,
   });
+  const dialogue = buildInterSelfDialogue({
+    mode: 'standby',
+    objective: IDLE_PLAN.objective,
+    decision: cognition.decision,
+    observedAt,
+  });
   const core = {
     schemaVersion: 1,
     kind: 'ultron-standby-receipt',
@@ -43,7 +50,8 @@ export function standbyTick({
     reason: String(reason).slice(0, 200),
     observedAt,
     selvesActive: cognition.participants.map(p => p.individualId || p.displayName),
-    crossTalk: 'Multi-self council remains active in advisory standby; no owner objective pending.',
+    crossTalk: dialogue.transcript,
+    dialogue,
     cognitionFingerprint: cognition.fingerprint,
     authority: {
       source: 'ultron-capability-registry',
@@ -56,7 +64,10 @@ export function standbyTick({
   };
   return Object.freeze({
     ...core,
-    fingerprint: createHash('sha256').update(JSON.stringify(core)).digest('hex'),
+    fingerprint: createHash('sha256').update(JSON.stringify({
+      ...core,
+      dialogue: dialogue.fingerprint,
+    })).digest('hex'),
   });
 }
 
