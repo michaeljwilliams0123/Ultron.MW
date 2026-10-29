@@ -5,17 +5,19 @@
  *
  * Env:
  *   TITLE, BODY, ITEM_NUMBER, IS_PR
- *   OWNER_MODE=1          — treat as owner request (lower friction, richer plan)
+ *   OWNER_MODE=1 / ULTRON_AUTONOMY=1 / ULTRON_VELOCITY=1
  */
 import { writeFileSync } from 'node:fs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
+import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
 
-const MAX_BODY = 8000;
+const ownerMode = ownerAutonomyEnabled();
+const limits = autonomyLimits();
+const MAX_BODY = limits.maxBodyChars;
 const title = String(process.env.TITLE || 'untitled').slice(0, 240);
 const body = String(process.env.BODY || '').slice(0, MAX_BODY);
 const item = String(process.env.ITEM_NUMBER || '0');
 const isPr = process.env.IS_PR === 'true';
-const ownerMode = process.env.OWNER_MODE === '1' || process.env.OWNER_MODE === 'true';
 const observedAt = new Date().toISOString();
 
 const lower = `${title}\n${body}`.toLowerCase();
@@ -41,8 +43,8 @@ if (flags.autonomy && !ownerMode) {
   evidenceCoverage = Math.min(evidenceCoverage, 0.55);
 }
 if (ownerMode && !flags.security) {
-  evidenceCoverage = Math.max(evidenceCoverage, 0.75);
-  calibratedConfidence = Math.max(calibratedConfidence, 0.7);
+  evidenceCoverage = Math.max(evidenceCoverage, limits.governorMinEvidence);
+  calibratedConfidence = Math.max(calibratedConfidence, limits.governorMinConfidence);
   knownUnknowns = knownUnknowns.filter(u => u !== 'autonomy-expansion-needs-owner');
 }
 
@@ -86,7 +88,7 @@ if (isPr) {
 }
 actions.push('Reply with `@ultron implement …` or open a labeled `feature` follow-up if code work is required.');
 if (flags.multiFile) {
-  actions.push('Prefer `implement files path1,path2: objective` for bounded multi-file work (velocity caps apply).');
+  actions.push(`Prefer implement-files with up to ${limits.maxFiles} paths under owner autonomy.`);
 }
 if (flags.infra) {
   actions.push('Keep workflow actions SHA-pinned; do not float major tags.');
@@ -95,13 +97,13 @@ if (flags.security) {
   actions.push('Strip secrets/credentials from the proposal body; re-run council after sanitizing.');
 }
 if (ownerMode) {
-  actions.push('Owner mode active: council prioritizes execution planning over gatekeeping.');
+  actions.push('Owner autonomy active: council prioritizes execution planning over gatekeeping.');
 }
-actions.push('Promote durable outcomes into `docs/council_precedents.md` via a normal reviewed PR (workflow does not push main).');
+actions.push('Promote durable outcomes into docs/council_precedents.md via a reviewed PR (workflow does not push main).');
 
 const stage1 = `# Stage 1 — Architect framing
 **Target:** #${item} — ${title}
-**Kind:** ${isPr ? 'pull_request' : 'issue'} · **Owner mode:** ${ownerMode ? 'yes' : 'no'}
+**Kind:** ${isPr ? 'pull_request' : 'issue'} · **Owner mode:** ${ownerMode ? 'yes' : 'no'} · **Policy:** ${limits.mode}
 
 ## Proposal (bounded)
 ${body || '(empty body)'}
@@ -129,7 +131,7 @@ ${flags.autonomy ? '5. Autonomy-expansion language present — confirm owner int
 
 const stage3 = `# Stage 3 — Architect rebuttal / refinement
 1. Memory updates stay comment + artifact; owner promotes precedents in a reviewed PR.
-2. Owner mode lowers friction for planning without removing syntax/CI floors on code paths.
+2. Owner autonomy lowers friction for planning without removing syntax/CI floors on code paths.
 3. Security holds always win over velocity.
 `;
 
@@ -142,7 +144,8 @@ const stage4 = `# Ultron Council Report
 **Governor decision:** \`${receipt.decision}\`
 
 ### Summary
-Owner-first deterministic deliberation. Authority remains advisory; Ultron surfaces a concrete action board so **you** spend less time fighting gates.
+**Ultron works for the owner, not the other way around.**  
+Owner-first deterministic deliberation with action board. Authority remains advisory.
 
 ### Selves
 ${selves}
@@ -153,12 +156,12 @@ ${actions.map((a, i) => `${i + 1}. ${a}`).join('\n')}
 ### Directives
 - [x] Comment-only feedback (no main push)
 - [x] Body truncated to ${MAX_BODY} chars
-- [${ownerMode ? 'x' : ' '}] Owner mode
+- [${ownerMode ? 'x' : ' '}] Owner autonomy (${limits.mode})
 - [${flags.security ? 'x' : ' '}] Security hold
 - [${hold ? 'x' : ' '}] Block auto-proceed
 
 ---
-*Ultron Council · deterministic GrokBot · works for the owner, not the other way around*
+*Ultron Council · deterministic GrokBot · owner-autonomy doctrine*
 `;
 
 writeFileSync('RFC_DRAFT.md', stage1);
@@ -167,6 +170,7 @@ writeFileSync('FINAL_SYNTHESIS.md', stage4);
 writeFileSync('council-receipt.json', JSON.stringify({
   ...receipt,
   ownerMode,
+  limits,
   flags,
   status,
   actions,
@@ -175,4 +179,5 @@ writeFileSync('council-receipt.json', JSON.stringify({
 console.log(status);
 console.log('fingerprint', receipt.fingerprint);
 console.log('ownerMode', ownerMode);
+console.log('policy', limits.mode);
 console.log('actions', actions.length);
