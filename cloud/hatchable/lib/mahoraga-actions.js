@@ -12,6 +12,10 @@ const ACTION_DEADLINE_MS = 24000;
 const ISSUE_PAGE_SIZE = 100;
 const ISSUE_SCAN_BATCH_SIZE = 4;
 const MAX_ISSUE_PAGES = 40;
+const INSTALLATION_PERMISSIONS = Object.freeze({
+  actions:'write',administration:'write',contents:'write',issues:'write',
+  pull_requests:'write'
+});
 
 async function githubJson(transport,url,init,deadlineAt,requestTimeoutMs,errorCode) {
  const remaining=deadlineAt-Date.now();
@@ -121,16 +125,18 @@ async function appClient(config,transport=fetch,deadlineAt=Date.now()+ACTION_DEA
    method:'POST',redirect:'error',headers:{...HEADERS,Authorization:'Bearer '+await jwt(clientId,key),
      'Content-Type':'application/json'},
    body:JSON.stringify({repository_ids:[REPO_ID],
-     permissions:{contents:'read',issues:'write',actions:'write'}})},
+     permissions:INSTALLATION_PERMISSIONS})},
    deadlineAt,requestTimeoutMs,'app-installation-admission-denied');
  const expiry = Date.parse(value.expires_at || '');
  if(typeof value.token !== 'string' || value.token.length < 16 ||
    !Number.isFinite(expiry) || expiry < Date.now()+60000 ||
    value.repositories?.length !== 1 || value.repositories[0].id !== REPO_ID ||
    value.repositories[0].full_name !== REPO ||
-   value.permissions?.contents !== 'read' ||
+   value.permissions?.administration !== 'write' ||
+   value.permissions?.contents !== 'write' ||
    value.permissions?.issues !== 'write' ||
-   value.permissions?.actions !== 'write')
+   value.permissions?.actions !== 'write' ||
+   value.permissions?.pull_requests !== 'write')
    throw Error('app-token-repository-or-grant-mismatch');
  return async (path,method='GET',body) => {
    if(!/^\/[a-zA-Z0-9/?=&._-]*$/.test(path) || path.includes('..') ||
