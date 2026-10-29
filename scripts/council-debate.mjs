@@ -1,35 +1,66 @@
 #!/usr/bin/env node
 /**
- * Deterministic Ultron Council debate report (zero-credit, advisory-only).
- * No live model calls. Uses GrokBot governor when a plan-like objective is present.
+ * Ultron Council — owner-first deterministic debate + action plan.
+ * Zero live model calls. Advisory authority only (no merge/deploy).
+ *
+ * Env:
+ *   TITLE, BODY, ITEM_NUMBER, IS_PR
+ *   OWNER_MODE=1          — treat as owner request (lower friction, richer plan)
+ *   ULTRON_VELOCITY=1     — softer evidence floors if velocity module present
  */
 import { writeFileSync } from 'node:fs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
 
-const MAX_BODY = 3000;
-const title = (process.env.TITLE || 'untitled').slice(0, 240);
-const body = (process.env.BODY || '').slice(0, MAX_BODY);
-const item = process.env.ITEM_NUMBER || '0';
+const MAX_BODY = 8000;
+const title = String(process.env.TITLE || 'untitled').slice(0, 240);
+const body = String(process.env.BODY || '').slice(0, MAX_BODY);
+const item = String(process.env.ITEM_NUMBER || '0');
 const isPr = process.env.IS_PR === 'true';
+const ownerMode = process.env.OWNER_MODE === '1' || process.env.OWNER_MODE === 'true';
 const observedAt = new Date().toISOString();
+
+const lower = `${title}\n${body}`.toLowerCase();
+const flags = {
+  security: ['secret', 'credential', 'token', 'password', 'bypass security', 'fail-open', 'delete main', 'force push'].some(k => lower.includes(k)),
+  autonomy: ['autonomy', 'always-on', 'unattended', 'self-merge', 'auto-merge'].some(k => lower.includes(k)),
+  multiFile: ['multi-file', 'multifile', 'across the codebase', 'refactor'].some(k => lower.includes(k)),
+  infra: ['workflow', 'github actions', 'ci', 'deploy'].some(k => lower.includes(k)),
+};
+
+const large = body.length > 2000;
+let evidenceCoverage = flags.security ? 0.35 : large ? 0.65 : 0.9;
+let calibratedConfidence = flags.security ? 0.3 : 0.85;
+let knownUnknowns = [];
+let materialConflictCount = 0;
+if (flags.security) {
+  knownUnknowns.push('security-sensitive-language');
+  materialConflictCount += 1;
+}
+if (flags.autonomy && !ownerMode) {
+  knownUnknowns.push('autonomy-expansion-needs-owner');
+  materialConflictCount += 1;
+  evidenceCoverage = Math.min(evidenceCoverage, 0.55);
+}
+if (ownerMode && !flags.security) {
+  evidenceCoverage = Math.max(evidenceCoverage, 0.75);
+  calibratedConfidence = Math.max(calibratedConfidence, 0.7);
+  knownUnknowns = knownUnknowns.filter(u => u !== 'autonomy-expansion-needs-owner');
+}
 
 const plan = {
   objective: title.slice(0, 200),
   strategy: 'routing-v2',
   status: 'ready',
-  steps: [{ index: 0, command: '/repo inspect', kind: 'read-only', status: 'ready' }],
+  steps: [
+    { index: 0, command: '/repo inspect', kind: 'read-only', status: 'ready' },
+    ...(flags.infra
+      ? [{ index: 1, command: '/repo ci', kind: 'read-only', status: 'ready' }]
+      : []),
+  ],
   executable: true,
   mode: 'read-only',
   autonomous: false,
 };
-
-const lower = (title + '\n' + body).toLowerCase();
-const risky = ['secret', 'credential', 'bypass', 'fail-open', 'delete main', 'force push'].some(k => lower.includes(k));
-const large = body.length > 1500;
-const evidenceCoverage = risky ? 0.4 : large ? 0.7 : 0.9;
-const calibratedConfidence = risky ? 0.35 : 0.8;
-const knownUnknowns = risky ? ['security-sensitive-language'] : [];
-const materialConflictCount = risky ? 1 : 0;
 
 const receipt = deliberatePlan(plan, {
   evidenceCoverage,
@@ -39,64 +70,113 @@ const receipt = deliberatePlan(plan, {
   observedAt,
 });
 
-const decision = receipt.decision === 'proceed' && !risky ? 'APPROVED WITH CONSTRAINTS' : 'HOLD — OWNER REVIEW REQUIRED';
-const selves = (receipt.participants || []).map(p => `- **${p.role || p.id || 'self'}**: ${p.stance || p.conclusion || 'noted'}`).join('\n') || '- (see receipt)';
+const hold = receipt.decision !== 'proceed' || flags.security;
+const status = hold
+  ? 'HOLD — OWNER REVIEW REQUIRED'
+  : ownerMode
+    ? 'OWNER-READY — PROCEED WITH CONSTRAINTS'
+    : 'APPROVED WITH CONSTRAINTS';
 
-const architect = `# Architectural Proposal Brief
+const selves = (receipt.participants || []).map((p) => {
+  const name = p.displayName || p.role || p.id || 'self';
+  const stance = p.stance || p.conclusion || p.summary || 'noted';
+  return `- **${name}**: ${String(stance).slice(0, 240)}`;
+}).join('\n') || '- (see receipt)';
+
+const actions = [];
+if (isPr) {
+  actions.push('Review exact-head Verify on this PR before merge.');
+  actions.push('If Verify is green and scope matches intent, squash-merge when ready.');
+}
+actions.push('Reply with `@ultron implement …` or open a labeled `feature` follow-up if code work is required.');
+if (flags.multiFile) {
+  actions.push('Prefer `implement files path1,path2: objective` for bounded multi-file work (velocity caps apply).');
+}
+if (flags.infra) {
+  actions.push('Keep workflow actions SHA-pinned; do not float major tags.');
+}
+if (flags.security) {
+  actions.push('Strip secrets/credentials from the proposal body; re-run council after sanitizing.');
+}
+if (ownerMode) {
+  actions.push('Owner mode active: council prioritizes execution planning over gatekeeping.');
+}
+actions.push('Promote durable outcomes into `docs/council_precedents.md` via a normal reviewed PR (workflow does not push main).');
+
+const stage1 = `# Stage 1 — Architect framing
 **Target:** #${item} — ${title}
-**Kind:** ${isPr ? 'pull_request' : 'issue'}
+**Kind:** ${isPr ? 'pull_request' : 'issue'} · **Owner mode:** ${ownerMode ? 'yes' : 'no'}
 
-## Summary
+## Proposal (bounded)
 ${body || '(empty body)'}
 
-## Framing
-- Deterministic GrokBot council (advisory-only, modelInvocations=0)
-- No paid provider calls in this workflow
+## System framing
+- Deterministic GrokBot council (advisory-only)
+- modelInvocations=0 · creditCost=0
+- Flags: ${Object.entries(flags).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}
 `;
 
-const critique = `## Council Crucible Critique Matrix
+const stage2 = `# Stage 2 — Crucible (Red Team + Pragmatist)
 
-### Red Team (security & failure modes)
-1. **Concurrency:** Parallel runs must not race-write institutional memory on main.
-2. **Context overflow:** Issue/PR bodies are capped at ${MAX_BODY} characters before deliberation.
-3. **Permissions:** This workflow must not push to protected main; comment-only feedback.
-${risky ? '4. **Flagged language:** Security-sensitive terms detected in title/body — hold for owner review.' : ''}
+### Red Team
+1. Concurrent runs must not race-write institutional memory on main.
+2. Bodies capped at ${MAX_BODY} characters.
+3. No automatic push to protected main from this workflow.
+${flags.security ? '4. Security-sensitive language detected — mandatory owner review.' : ''}
+${flags.autonomy ? '5. Autonomy-expansion language present — confirm owner intent.' : ''}
 
-### Pragmatist (ops & velocity)
-1. **CI cost:** Full debate is label-gated (\`feature\` / \`proposal\`) or PR events only when configured.
-2. **Noise:** Report is bounded; raw receipt is collapsible.
-3. **Authority:** Decision is advisory — does not merge, deploy, or expand capability registry.
+### Pragmatist
+1. Prefer label-gated or owner-triggered runs to control CI cost.
+2. Keep reports bounded; full receipt is an artifact.
+3. Decision is advisory — does not merge, deploy, or widen capability registry by itself.
 `;
 
-const synthesis = `# Ultron Council Debate Report
+const stage3 = `# Stage 3 — Architect rebuttal / refinement
+1. Memory updates stay comment + artifact; owner promotes precedents in a reviewed PR.
+2. Owner mode lowers friction for planning without removing syntax/CI floors on code paths.
+3. Security holds always win over velocity.
+`;
+
+const stage4 = `# Ultron Council Report
 
 **Target:** #${item} — ${title}  
-**Status:** ${decision}  
+**Status:** **${status}**  
 **Observed:** ${observedAt}  
-**Fingerprint:** \`${receipt.fingerprint}\`
-
----
+**Fingerprint:** \`${receipt.fingerprint}\`  
+**Governor decision:** \`${receipt.decision}\`
 
 ### Summary
-Deterministic multi-self deliberation over the proposal text.  
-**Decision:** \`${receipt.decision}\` · **Authority:** advisory-only · **Credits:** 0 · **Model invocations:** 0
+Owner-first deterministic deliberation. Authority remains advisory; Ultron surfaces a concrete action board so **you** spend less time fighting gates.
 
 ### Selves
 ${selves}
 
+### Action board (for owner)
+${actions.map((a, i) => `${i + 1}. ${a}`).join('\n')}
+
 ### Directives
-- [x] Label-gate full debate where applicable (\`feature\` / \`proposal\`)
-- [x] Comment-only feedback (no automatic push to main)
-- [x] Body truncated to ${MAX_BODY} characters
-- [${risky ? 'x' : ' '}] Owner security review required
+- [x] Comment-only feedback (no main push)
+- [x] Body truncated to ${MAX_BODY} chars
+- [${ownerMode ? 'x' : ' '}] Owner mode
+- [${flags.security ? 'x' : ' '}] Security hold
+- [${hold ? 'x' : ' '}] Block auto-proceed
 
 ---
-*Generated by Ultron Council (deterministic GrokBot) — not a live xAI Grok integration*
+*Ultron Council · deterministic GrokBot · works for the owner, not the other way around*
 `;
 
-writeFileSync('RFC_DRAFT.md', architect);
-writeFileSync('CRITIQUE_MATRIX.md', critique);
-writeFileSync('FINAL_SYNTHESIS.md', synthesis);
-writeFileSync('council-receipt.json', JSON.stringify(receipt, null, 2));
-console.log(decision);
+writeFileSync('RFC_DRAFT.md', stage1);
+writeFileSync('CRITIQUE_MATRIX.md', stage2 + '\n' + stage3);
+writeFileSync('FINAL_SYNTHESIS.md', stage4);
+writeFileSync('council-receipt.json', JSON.stringify({
+  ...receipt,
+  ownerMode,
+  flags,
+  status,
+  actions,
+}, null, 2));
+
+console.log(status);
 console.log('fingerprint', receipt.fingerprint);
+console.log('ownerMode', ownerMode);
+console.log('actions', actions.length);

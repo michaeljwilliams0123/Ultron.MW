@@ -2,18 +2,24 @@ name: Ultron Council Multi-Agent Debate Loop
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [opened, labeled, edited]
   pull_request:
     types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       item_number:
-        description: 'Issue or PR number for manual debate'
+        description: 'Issue or PR number'
         required: true
       is_pr:
-        description: 'true if PR, false if issue'
+        description: 'true if PR'
         required: true
         default: 'false'
+      owner_mode:
+        description: 'Owner-first planning (1/0)'
+        required: false
+        default: '1'
 
 permissions:
   contents: read
@@ -29,12 +35,18 @@ jobs:
       (
         github.event_name == 'workflow_dispatch' ||
         github.event_name == 'pull_request' ||
-        (github.event_name == 'issues' &&
-          (contains(join(github.event.issue.labels.*.name, ','), 'feature') ||
-           contains(join(github.event.issue.labels.*.name, ','), 'proposal')))
+        (github.event_name == 'issues' && (
+          github.event.sender.login == 'michaeljwilliams0123' ||
+          contains(join(github.event.issue.labels.*.name, ','), 'feature') ||
+          contains(join(github.event.issue.labels.*.name, ','), 'proposal') ||
+          contains(join(github.event.issue.labels.*.name, ','), 'council')
+        )) ||
+        (github.event_name == 'issue_comment' &&
+          github.event.comment.user.login == 'michaeljwilliams0123' &&
+          contains(github.event.comment.body, '/council'))
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
@@ -49,63 +61,59 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Extract context
-        id: context
+      - name: Extract context (owner-first)
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          OWNER_MODE=0
+          if [ "${{ github.actor }}" = "michaeljwilliams0123" ]; then
+            OWNER_MODE=1
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "${{ inputs.owner_mode }}" = "1" ]; then
+            OWNER_MODE=1
+          fi
+          echo "OWNER_MODE=$OWNER_MODE" >> "$GITHUB_ENV"
+
           if [ "$EVENT_NAME" = "pull_request" ]; then
             echo "IS_PR=true" >> "$GITHUB_ENV"
             echo "ITEM_NUMBER=${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
-            {
-              echo "TITLE<<EOF"
-              echo "${{ github.event.pull_request.title }}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
-            {
-              echo "BODY<<EOF"
-              echo "${{ github.event.pull_request.body }}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
+            { echo "TITLE<<EOF"; echo "${{ github.event.pull_request.title }}"; echo "EOF"; } >> "$GITHUB_ENV"
+            { echo "BODY<<EOF"; echo "${{ github.event.pull_request.body }}"; echo "EOF"; } >> "$GITHUB_ENV"
           elif [ "$EVENT_NAME" = "issues" ]; then
             echo "IS_PR=false" >> "$GITHUB_ENV"
             echo "ITEM_NUMBER=${{ github.event.issue.number }}" >> "$GITHUB_ENV"
-            {
-              echo "TITLE<<EOF"
-              echo "${{ github.event.issue.title }}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
-            {
-              echo "BODY<<EOF"
-              echo "${{ github.event.issue.body }}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
+            { echo "TITLE<<EOF"; echo "${{ github.event.issue.title }}"; echo "EOF"; } >> "$GITHUB_ENV"
+            { echo "BODY<<EOF"; echo "${{ github.event.issue.body }}"; echo "EOF"; } >> "$GITHUB_ENV"
+          elif [ "$EVENT_NAME" = "issue_comment" ]; then
+            echo "IS_PR=false" >> "$GITHUB_ENV"
+            echo "ITEM_NUMBER=${{ github.event.issue.number }}" >> "$GITHUB_ENV"
+            { echo "TITLE<<EOF"; echo "${{ github.event.issue.title }}"; echo "EOF"; } >> "$GITHUB_ENV"
+            { echo "BODY<<EOF"; echo "${{ github.event.comment.body }}"; echo "EOF"; } >> "$GITHUB_ENV"
           else
             echo "IS_PR=${{ inputs.is_pr }}" >> "$GITHUB_ENV"
             echo "ITEM_NUMBER=${{ inputs.item_number }}" >> "$GITHUB_ENV"
-            echo "TITLE=Manual council debate" >> "$GITHUB_ENV"
-            echo "BODY=workflow_dispatch" >> "$GITHUB_ENV"
+            echo "TITLE=Owner council dispatch" >> "$GITHUB_ENV"
+            echo "BODY=workflow_dispatch owner-first" >> "$GITHUB_ENV"
           fi
 
-      - name: Run deterministic council debate
+      - name: Run owner-first council debate
         run: |
           node --check src/grokbot-governor.mjs
           node --check scripts/council-debate.mjs
           node scripts/council-debate.mjs
 
-      - name: Post council report
+      - name: Post council report + action board
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          IS_PR: ${{ env.IS_PR }}
           ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const synthesis = fs.readFileSync('FINAL_SYNTHESIS.md', 'utf8').slice(0, 60000);
-            const critique = fs.readFileSync('CRITIQUE_MATRIX.md', 'utf8').slice(0, 20000);
-            const body = `${synthesis}\n\n<details><summary><b>View Council Critique Matrix</b></summary>\n\n${critique}\n\n</details>`;
+            const critique = fs.readFileSync('CRITIQUE_MATRIX.md', 'utf8').slice(0, 25000);
+            const body = `${synthesis}\n\n<details><summary><b>Stages 2–3 (Crucible + Rebuttal)</b></summary>\n\n${critique}\n\n</details>`;
             const itemNumber = parseInt(process.env.ITEM_NUMBER, 10);
             if (!Number.isFinite(itemNumber) || itemNumber < 1) {
               core.setFailed('Missing ITEM_NUMBER');
@@ -117,6 +125,16 @@ jobs:
               issue_number: itemNumber,
               body,
             });
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: itemNumber,
+                labels: ['council-reviewed'],
+              });
+            } catch (e) {
+              core.info('Label council-reviewed skipped: ' + e.message);
+            }
 
       - name: Upload receipt artifact
         if: always()
@@ -129,4 +147,4 @@ jobs:
             RFC_DRAFT.md
             council-receipt.json
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 30
