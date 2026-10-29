@@ -22,6 +22,15 @@ admin denial, and production scheduler ingress denial. The retired Hatchable
 experiment is never contacted by this Action. No POST, browser login, provider token use, workflow
 dispatch, comment creation, merge or secret read is performed.
 
+The **11 required checks** also validate the production `/api/brain/status-public`
+JSON with the same parser as the UI, require the exact canonical Pages
+allow-origin header, and require no allow-origin header for a separate foreign
+origin. These are two credential-free GETs to the existing production route.
+A working landing page cannot hide a broken status API or browser access rule.
+Network unavailability stays unknown; observed HTTP/schema/CORS violations fail.
+The foreign-origin header probe checks server policy; the separate real-browser
+acceptance remains necessary to prove browser behavior.
+
 ## Outcome vocabulary
 
 - `observed-healthy` — every *public* observation matched. This **never**
