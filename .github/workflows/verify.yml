@@ -61,6 +61,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+      - name: Reject accidental acceptance-issue closure references
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-protected-issue-closures.mjs
       - name: Evaluate fixed cases on exact base and candidate sources
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
