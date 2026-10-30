@@ -4,6 +4,14 @@ Ultron is an independent, single-owner execution platform with a GitHub-hosted r
 
 **Console:** https://michaeljwilliams0123.github.io/Ultron.MW/
 
+### Design principles
+
+- **Single owner, explicit authority.** Models, prior conversation, issue text, and learned suggestions cannot grant authority. Deterministic code owns identity checks, command admission, planning bounds, state transitions, receipt validation, and rollback.
+- **Evidence over claims.** Catalogues and manifests describe implementation support (`implemented`). Live readiness is marked `not-probed` until independently observed. Learning and promotion require held-out improvement and fail closed on missing or regressing evidence.
+- **Advisory cognition only.** The GrokBot council (seven fixed cognitive selves) produces deterministic, zero-credit, non-executable deliberation receipts. It cannot widen capabilities, invoke models, spend credits, or execute plans.
+- **Fail closed.** Incomplete audits, mismatched SHAs, unsupported objectives, and uncertain side-effects block or require owner reconciliation rather than proceeding.
+- **Public data is public.** Repository, task Issues, receipts, and Pages source are public. Do not place credentials or confidential material in them.
+
 **Named Codex authors:** The console displays **Mike's Codex** and **Destiny's
 Codex**, stable author fingerprints and separate route status. Use
 `/codex destiny-codex <public task>` to request the enrolled Work lane through
@@ -24,7 +32,7 @@ For independent GitHub and Work execution evidence, see [Codex lane evidence](do
 | Routing improvement | Shared core and local ledger | Fixed held-out routing evaluation and rollback | Policy selection, not model training or general intelligence |
 | Experience suggestions | Local owner-action ledger | Verified, rated outcomes inform suggestions | Minimum 16 distinct outcomes; chronological holdout; no new action authority |
 | Improvement disposition | Native deterministic evaluator | Binds source/artifact/receipt lineage to comparable development and held-out results | Selection only; publication and live gain remain separate GitHub evidence |
-| Cognitive governance | Local planning | Fixed GrokBot council, metacognition, counterfactual simulation and dissent-preserving synthesis | Deterministic, zero-credit and advisory; no new action authority |
+| Cognitive governance | Local planning | Fixed seven-self GrokBot council, metacognition, counterfactual simulation and dissent-preserving synthesis | Deterministic, zero-credit and advisory; no new action authority |
 | Owner actions | Paired local Node | Bounded notes; optional documentation draft adapter | Draft adapter disabled by default; no shell, merge, or deployment permission |
 
 The deterministic tool catalogue is defined once in [`docs/core/capabilities.mjs`](docs/core/capabilities.mjs). Router, local executor and cloud executor consume it. `/help` includes the cloud manifest; local `GET /api/capabilities` includes the local manifest. `implemented` describes source support; `liveReadiness: not-probed` explicitly avoids claiming a deployment or connected provider was verified.
@@ -83,7 +91,7 @@ The shared router evaluates immutable `routing-v1` and `routing-v2` against labe
 
 Promotion has a separate incumbent-governed commit receipt. The currently accepted routing policy runs the fixed evaluator, names the rollback version, proves the measured threshold and records that capability authority is unchanged. A candidate cannot approve itself or reuse the receipt after the accepted version changes. This is a policy-artifact commit boundary, not permission to promote code, deploy, merge, or train model weights.
 
-Every locally saved plan and every GitHub cloud outcome also carries a deterministic GrokBot deliberation receipt. Three fixed cognitive profiles—Builder, Skeptic and Steward—calibrate evidence, simulate uncertainty and preserve material dissent. The receipt records zero model invocations and zero credit cost and remains non-executable. These structures are an inspectable operational self-model; they are not evidence that Ultron is sentient, conscious or generally intelligent.
+Every locally saved plan and every GitHub cloud outcome also carries a deterministic GrokBot deliberation receipt. Seven fixed cognitive selves—Builder, Skeptic, Steward, Predictor, Generator, Sentinel, and Companion—calibrate evidence, simulate counterfactual uncertainty, and preserve material dissent. The receipt records zero model invocations and zero credit cost and remains non-executable. These structures are an inspectable operational self-model; they are not evidence that Ultron is sentient, conscious, or generally intelligent.
 
 The hosted `council.review` lane separately records versioned per-role assessment receipts against the exact source SHA and durable task/event IDs. Its verifier, sentinel, planner and skeptic remain deterministic role profiles, not independent votes. Assessment persistence is atomic with lease-fenced task completion in the existing SQL ledger. An independent reviewer counts only when a separate, fresh `independent-reviewer-attested` ledger event is read back and matches the reviewer, objective, source and trusted verifier. A fail-closed gate rejects missing, replayed, malformed, stale, contradictory, provider-blocked, unobserved, failed-held-out or source/runtime-mismatched evidence; even a complete result is only eligible to enter the protected PR path and cannot execute, merge or deploy. See [`docs/verification/ISSUE68-COUNCIL-EVIDENCE-2026-10-24.md`](docs/verification/ISSUE68-COUNCIL-EVIDENCE-2026-10-24.md).
 
@@ -147,59 +155,7 @@ rating:helpful
 
 Change `rating:helpful` to `rating:not-helpful` if the result was not useful. The Actions receipt supplies the exact run ID and attempt. Only a comment from the configured repository owner, on that owner-created task Issue, later than a matching bot-authored receipt, can qualify. Any other comment, forged digest, mismatched exact-main evidence, unverified attempt, unsupported or multi-step outcome does **not** become a training label. Public Issues/comments should contain no private or client data.
 
-An owner feedback comment starts the **existing** GitHub Actions workflow, which evaluates the existing ledger and writes results to that run's summary; the workflow does **not** create a code change, merge anything, dispatch shell commands from comments, or grant new action authority. The optional `/learning status` command uses that same evidence. Workflows remain ephemeral and quota-limited.
-
-The evaluator compares a cautious command-recommendation policy against baseline using the latest chronological quarter as holdout. A candidate needs at least **16 distinct owner-rated tasks**, six positive and four negative older training labels, positive/negative later labels, at least five percentage points measured improvement, **zero new wrong cautions**, and no broadened permission. Insufficient, unchanged, invalid or regressing evidence causes no validated suggestion. An accepted *suggestion* is recomputed from GitHub history, not trained model weights or a self-editing model; it never blocks or runs a tool. The cloud ledger is public and mutable, so this is owner-reported usefulness, not independently adjudicated outcome quality.
-
-**One system, no extra infrastructure:** the old local-only experience evaluator remains for explicitly paired local tests. Cloud feedback uses existing Issues, one cloud evaluator and the same Pages interface. It does not create another agent, SaaS plan, database, browser login, paid AI provider, or SD009WC7 dependency.
-
-## Native code-implementation PR routing
-
-The same **Create PR to main** action accepts a structured, owner-authored JSON manifest and opens a GitHub Issue headed `[Ultron PR] Implement code`. Unlike a plain-language objective, this route **commits real source files** and opens a normal PR against `main` using the existing GitHub Actions executor. No separate API service or PC is required.
-
-```json
-{
-  "objective": "Improve a routing heuristic",
-  "baseSha": "<current 40-character main commit SHA>",
-  "changes": [
-    {"path": "src/brain.mjs", "before": "<exact original substring>", "after": "<replacement substring>"}
-  ]
-}
-```
-
-Up to eight distinct source-file edits or creations (`{"path":"src/new.mjs","create":"<complete contents>"}`) are supported. The JSON must be submitted **as public text** through the authenticated owner Issue. The executor checks current `main` against `baseSha`, rereads source, applies each exact once-only context replacement, creates a single atomic tree/commit, independently verifies the resulting branch/PR/files, dispatches head verification, and posts a receipt. A changed `main` or ambiguous patch fails instead of silently applying an incorrect edit. Branch names are unique per Issue and are not force-updated.
-
-**Boundaries:** This structured Issue route executes already-authored source changes. GitHub Pages never generates code; a separate owner-only PR conversation lane can ask a pinned small CPU model to propose bounded single-file or explicitly named 2–4-file edits on admitted branches. Neither route grants unrestricted natural-language coding authority. No permissions are self-granted, no security gate is bypassed, no automatic merge or deployment is performed, and verification remains observable. Reward and learning loops should score measured task completion and successful recovery, **not** the evasion of access controls or test failures. These are implementation routes, not claims of SGI or AGI.
-
-## Operational self-awareness (self-observation, not consciousness)
-
-Use **Self scan → PR** or enter `/self scan` in the console to open the native GitHub Actions self-scan workflow (owner presses **Run workflow**). Source observations create or update a single actionable report PR targeting `main` rather than an Issue. The hourly schedule runs the same publisher. Each report binds current `main`, source tree, observed route-source blobs and a fingerprint, then explicitly identifies **unknown** live runtime, provider and independent-learning readiness. On local Node the report uses a local content digest rather than pretending to know the canonical Git commit. A self-scan is not autonomous code generation, live inference, subjective awareness, or proof that AI intelligence improved. See [Mahoraga's source-grounded failure lessons](docs/MAHORAGA-SELF-OBSERVATION-LESSONS.md).
-
-## Self-scan findings PR lifecycle
-
-- Workflow: [Ultron self-scan to PR](https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/self-scan-pr.yml). This is the only scheduled self-scan publisher; the legacy issue-based hourly schedule is removed.
-- Verified source snapshot: scan compares exact GitHub `main` SHA, source-tree SHA, route-file blob SHAs, and rechecks `main`. Report includes the observed SHA, timestamp, check results, material gaps and proposed follow-ups.
-- Publication: creates `reports/self-scan/current.md` in a separate `ultron/self-scan-*` branch, creates a non-draft PR with base `main`, and dispatches the existing Verify workflow.
-- Noise control: identical material findings generate no new branch or PR, an open scan PR is refreshed with changed findings, and identical findings already merged on `main` are not republished. The generated report file is excluded from the scan inventory fingerprint so its own merge cannot trigger a recurring loop.
-- Credentials: GitHub Actions grants contents/pull-requests/actions write only to this workflow; GitHub Pages receives no API token. The scan never creates Issues, never auto-merges, and does not pretend the scan is a software repair or AGI proof.
-
-## Ultron PR conversation brain
-
-Ultron PRs now support owner-authored `@ultron` conversation comments on ordinary PR threads and inline review comments, powered by the existing GitHub Actions runtime. Commands include `@ultron status`, `@ultron findings`, `@ultron next`, `@ultron address <finding-code>`, `@ultron verify`, `@ultron rescan`, and an explicitly supplied exact-head `@ultron patch` manifest to commit source fixes on the current PR branch and run Verify. Replies are posted on that PR; no Issues, new services, hosted model charges, or automatic merges are needed. It stores context in GitHub comments and will not describe unverified model activity as intelligence. See [PR Conversation Brain](docs/PR-CONVERSATION-BRAIN.md).
-
-## Closed-loop PR cognition (GitHub native)
-
-Comment `@ultron implement src/target.mjs: <description>` on an open Ultron PR for one source-grounded patch, or `@ultron implement files docs/a.md, src/b.mjs: <objective>` for 2–4 explicitly named existing files. A pinned public Qwen2.5-0.5B-Instruct ONNX model runs on the hosted Actions CPU without a paid inference API. The branch must contain current `main` with zero commits behind, and every output must pass exact-context/path validation before one atomic commit is published. Ambiguous context, oversized files, invalid code, or stale branches are rejected. The small CPU model is experimental, not an assurance of autonomous coding competence.
-
-After `@ultron verify`, explicit patch or accepted model-generated change, the existing Verify workflow runs. The original PR conversation worker reads the newly launched exact-head Verify run, waits for its terminal result within a bounded window, and replies with the independently observed conclusion and run URL (or marks it pending). GitHub PR comments hold the conversation and CI receipts; no new Issues, private external services, forced pushes, autonomous merges or production rollout.
-
-See [PR Conversation Brain](docs/PR-CONVERSATION-BRAIN.md) for commands and boundaries.
-
-## Exact-head CI closure and self-evidence
-
-Ultron does not rely solely on GitHub chaining a `workflow_run` event after its own GITHUB_TOKEN dispatch. During `@ultron verify`, a valid source patch, or an accepted CPU model edit, the PR brain correlates a newly started Verify run to its precise branch and commit. It polls for an independently read-back terminal result, then replies with the actual conclusion and Actions run URL, or explicitly reports pending. The redundant completion-webhook feedback workflow was retired after a permissions failure; the direct PR conversation polling route is now authoritative.
-
-The hourly self-scan now also reads exact-current-main Verify metadata and distinguishes observed passing/failing CI from missing evidence. This can actually eliminate the `ci-head-unobserved` finding after an independently checked run; it does **not** imply production/runtime/learning readiness. See [PR Conversation Brain](docs/PR-CONVERSATION-BRAIN.md).
+An owner feedback comment starts the **existing** GitHub Actions workflow, which evaluates the existing ledger and writes results to that run's summary; the workflow does **not** create a code change, merge any PR, or alter capability authority. Measured recommendation learning remains suggestion-only and requires the same held-out thresholds described under Learning boundaries.
 
 ## Bounded self-healing for model-generated changes
 
