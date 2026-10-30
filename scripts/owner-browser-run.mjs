@@ -23,6 +23,7 @@ async function main() {
     throw Error('Usage: node scripts/owner-browser-run.mjs <private-plan.json>');
 
   // Reject CI, redirected stdin/output and simulated terminal consent.
+  // Headed Chrome may take focus; give the owner time to return to this terminal.
   const approveOnce = createOwnerConsoleAuthorizer({ timeoutMs: 120000 });
   const verifyGithubOwner = createGitHubCliOwnerVerifier({
     ownerLogin: process.env.ULTRON_COMPUTER_GITHUB_OWNER,
