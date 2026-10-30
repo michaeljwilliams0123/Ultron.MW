@@ -1,0 +1,176 @@
+name: Ultron Council Multi-Agent Debate Loop
+
+on:
+  issues:
+    types: [opened, labeled, edited]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      item_number:
+        description: 'Issue or PR number'
+        required: true
+      is_pr:
+        description: 'true if PR'
+        required: true
+        default: 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ultron-council-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  council-debate:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'pull_request' ||
+        (github.event_name == 'issues' && (
+          github.event.sender.login == 'michaeljwilliams0123' ||
+          contains(join(github.event.issue.labels.*.name, ','), 'feature') ||
+          contains(join(github.event.issue.labels.*.name, ','), 'proposal') ||
+          contains(join(github.event.issue.labels.*.name, ','), 'council')
+        )) ||
+        (github.event_name == 'issue_comment' &&
+          github.event.comment.user.login == 'michaeljwilliams0123' &&
+          contains(github.event.comment.body, '/council'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      # Payload via context in JS — never embed issue body expressions in YAML (workflow-security).
+      - name: Extract context (owner-first, hardened)
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const dir = path.join(process.env.RUNNER_TEMP, 'ultron-council');
+            fs.mkdirSync(dir, { recursive: true });
+            const actor = context.actor || '';
+            const ownerMode = actor === 'michaeljwilliams0123' ? '1' : '0';
+            let title = '';
+            let body = '';
+            let itemNumber = 0;
+            let isPr = 'false';
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request || {};
+              title = String(pr.title || '');
+              body = String(pr.body || '');
+              itemNumber = Number(pr.number) || 0;
+              isPr = 'true';
+            } else if (context.eventName === 'issues') {
+              const issue = context.payload.issue || {};
+              title = String(issue.title || '');
+              body = String(issue.body || '');
+              itemNumber = Number(issue.number) || 0;
+            } else if (context.eventName === 'issue_comment') {
+              const issue = context.payload.issue || {};
+              const comment = context.payload.comment || {};
+              title = String(issue.title || '');
+              body = String(comment.body || '');
+              itemNumber = Number(issue.number) || 0;
+            } else {
+              title = 'Owner council dispatch';
+              body = 'workflow_dispatch owner-first';
+              itemNumber = Number(context.payload.inputs && context.payload.inputs.item_number) || 0;
+              isPr = String((context.payload.inputs && context.payload.inputs.is_pr) || 'false');
+            }
+            fs.writeFileSync(path.join(dir, 'title.txt'), title.slice(0, 240));
+            fs.writeFileSync(path.join(dir, 'body.txt'), body.slice(0, 8000));
+            core.exportVariable('OWNER_MODE', ownerMode);
+            core.exportVariable('IS_PR', isPr);
+            core.exportVariable('ITEM_NUMBER', String(itemNumber));
+            core.exportVariable('TITLE_FILE', path.join(dir, 'title.txt'));
+            core.exportVariable('BODY_FILE', path.join(dir, 'body.txt'));
+
+      - name: Run owner-first council debate
+        id: debate
+        env:
+          TITLE_FILE: ${{ env.TITLE_FILE }}
+          BODY_FILE: ${{ env.BODY_FILE }}
+          ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
+          IS_PR: ${{ env.IS_PR }}
+          OWNER_MODE: ${{ env.OWNER_MODE }}
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/council-debate.mjs ]; then
+            echo "Council script not on trusted main yet (pre-merge). Skipping execute."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+          # shellcheck disable=SC2155
+          TITLE=$(head -c 240 "$TITLE_FILE" 2>/dev/null || true)
+          # shellcheck disable=SC2155
+          BODY=$(head -c 8000 "$BODY_FILE" 2>/dev/null || true)
+          export TITLE BODY
+          node --check src/grokbot-governor.mjs
+          node --check scripts/council-debate.mjs
+          node scripts/council-debate.mjs
+
+      - name: Post council report + action board
+        if: steps.debate.outputs.skipped != 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const synthesis = fs.readFileSync('FINAL_SYNTHESIS.md', 'utf8').slice(0, 60000);
+            const critique = fs.readFileSync('CRITIQUE_MATRIX.md', 'utf8').slice(0, 25000);
+            const body = `${synthesis}\n\n<details><summary><b>Stages 2–3 (Crucible + Rebuttal)</b></summary>\n\n${critique}\n\n</details>`;
+            const itemNumber = parseInt(process.env.ITEM_NUMBER, 10);
+            if (!Number.isFinite(itemNumber) || itemNumber < 1) {
+              core.setFailed('Missing ITEM_NUMBER');
+              return;
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: itemNumber,
+              body,
+            });
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: itemNumber,
+                labels: ['council-reviewed'],
+              });
+            } catch (e) {
+              core.info('Label council-reviewed skipped: ' + e.message);
+            }
+
+      - name: Upload receipt artifact
+        if: always() && steps.debate.outputs.skipped != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: council-debate-${{ github.run_id }}
+          path: |
+            FINAL_SYNTHESIS.md
+            CRITIQUE_MATRIX.md
+            RFC_DRAFT.md
+            council-receipt.json
+          if-no-files-found: ignore
+          retention-days: 30
