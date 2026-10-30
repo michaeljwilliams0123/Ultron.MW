@@ -2,8 +2,7 @@ name: Ultron hosted objective
 on:
   issues:
     types: [opened]
-  issue_comment:
-    types: [created]
+  workflow_call:
   workflow_dispatch:
     inputs:
       objective:
