@@ -148,7 +148,15 @@ test('CLI reports deleted tracked paths and both file and parent symlink boundar
   }
   const outside = join(root, 'outside.txt');
   await writeFile(outside, 'https://private-destination.example/credential');
-  await symlink(outside, join(root, 'src/link.mjs'));
+  try { await symlink(outside, join(root, 'src/link.mjs')); }
+  catch (error) {
+    // Unprivileged Windows users may not create symlinks. Keep the security
+    // regression active on Linux CI and privileged Windows hosts; never
+    // weaken its assertions or replace real links with ordinary files.
+    if (process.platform === 'win32' && ['EPERM', 'EACCES'].includes(error?.code))
+      return t.skip('Windows account lacks symlink creation privilege; Linux CI covers this test');
+    throw error;
+  }
   await mkdir(join(root, 'cloud'));
   await writeFile(join(root, 'cloud/endpoint.mjs'), '');
   execFileSync('git', ['init', '-q'], { cwd: root });

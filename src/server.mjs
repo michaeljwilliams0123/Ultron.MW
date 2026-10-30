@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { readFile, mkdir, rename, writeFile, unlink } from 'node:fs/promises';
+import { readFile, mkdir, rename, writeFile, unlink, access } from 'node:fs/promises';
+import { setTimeout as pause } from 'node:timers/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { summarizeLearningEvidence } from './learning.mjs';
@@ -52,7 +53,7 @@ async function readJson(req) {
   catch { throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 }); }
 }
 
-export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = (process.env.ULTRON_ENABLE_HF === '1' ? createHuggingFace() : createLocalOllama()), alwaysOn = isAlwaysOnEnabled(), gateway = createActionGateway({ root }), ownerKey = makeSessionKey(), githubDraftEnabled = process.env.ULTRON_ENABLE_GITHUB_DRAFT === '1' } = {}) {
+export async function startLocalServer({ root = defaultRoot, statePath = resolve(root, '.local', 'state.json'), port = Number(process.env.ULTRON_PORT ?? 4782), provider = (process.env.ULTRON_ENABLE_HF === '1' ? createHuggingFace() : createLocalOllama()), alwaysOn = isAlwaysOnEnabled(), gateway = createActionGateway({ root }), ownerKey = makeSessionKey(), githubDraftEnabled = process.env.ULTRON_ENABLE_GITHUB_DRAFT === '1', renameState = rename } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid local port');
   let state = { objectives: [], receipts: [], plans: [], conversations: [], ownerJobs: [],
     experience: { active: null, history: [], assessments: [], lastEvidence: null },
@@ -96,7 +97,18 @@ export async function startLocalServer({ root = defaultRoot, statePath = resolve
       const temp = statePath + '.' + randomUUID() + '.pending';
       try {
         await writeFile(temp, JSON.stringify(next, null, 2), { flag: 'wx', mode: 0o600 });
-        await rename(temp, statePath);
+        for (let attempt = 0; ; attempt++) {
+          try { await renameState(temp, statePath); break; }
+          catch (error) {
+            // On Windows, antivirus/indexing can briefly lock the target state
+            // during atomic replacement. Retry the *same* pending file only:
+            // never regenerate a transaction or modify committed state here.
+            if (attempt >= 5 || !['EPERM', 'EACCES', 'EBUSY'].includes(error?.code))
+              throw error;
+            try { await access(temp); } catch { throw error; }
+            await pause(25 * (attempt + 1));
+          }
+        }
       } catch (error) {
         await unlink(temp).catch(() => {});
         throw error;
