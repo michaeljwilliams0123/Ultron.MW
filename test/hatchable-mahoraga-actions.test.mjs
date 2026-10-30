@@ -522,7 +522,7 @@ test('explicit auto credential mode preserves legacy PAT-first behavior',async()
 
 test('App token carrying unrelated elevated grants is rejected before any issue POST',async()=>{
  const f=fixture({pat:false,appPermissions:{
-  actions:'write',contents:'write',issues:'write',
+  actions:'write',contents:'read',issues:'write',
   administration:'write',pull_requests:'write'
  }});
  const result=await execute(f);
