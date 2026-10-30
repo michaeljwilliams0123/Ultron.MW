@@ -1,5 +1,11 @@
 # Native owner-browser execution — no Railway
 
+**Current acceptance:** the live [issue #65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65)
+body is the closure contract. It requires one supervised controlled-app workflow
+and the remaining negative checks. See [current dispositions](ACCEPTANCE-STATUS.md).
+Earlier private-account, two-site, PC-offline and hosted-browser requirements
+are outside this milestone; technical consent and no-replay checks remain.
+
 **Scope:** A local owner-operated entry point to the existing Ultron computer
 executor. GitHub Pages remains the single frontend. GitHub Actions remains
 CI, bounded PR work and on-demand jobs. No hosting changes or billing.
@@ -12,8 +18,8 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
   synthetic proof into authenticated production acceptance.
 - GitHub Actions runners are ephemeral; they are not always-on processes,
   durable browsers or a substitute for owner sessions.
-- Issue #66 remains open for PC-offline operation, persistent hosted leases,
-  authenticated Pages-to-runtime transport, MFA and production readback.
+- Issue #66 is closed for bounded hosted recovery and owner stop. The browser
+  remains PC-dependent; an authenticated Pages command bridge is separate work.
 - No Railway, Cloudflare, Vercel or hosted browser is provisioned here.
 
 ## Owner preparation on an authorized local computer
@@ -23,7 +29,7 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
 2. Install optional Playwright only in the local checkout, without a committed
    package/lockfile change:
 
-       npm install --no-save --package-lock=false playwright
+       npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
        npx playwright install chromium
 
    **Windows alternative:** When Google Chrome is already installed, skip the
@@ -59,6 +65,10 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
        set ULTRON_COMPUTER_GITHUB_OWNER=michaeljwilliams0123
        node scripts/owner-browser-run.mjs "C:\private\ultron-read-plan.json"
 
+   For the active #65 acceptance run also set `ULTRON_COMPUTER_HEADED=1`
+   and the approved upload/download roots described in the
+   [owner acceptance runbook](verification/OWNER-BROWSER-ACCEPTANCE.md).
+
 5. Interactive click/type/keypress steps display plan ID, full fingerprint,
    origin, selector, assertion names (NOT assertion values), and, for
    typing, the length but NEVER the contents of the value. Expected matches
@@ -93,8 +103,9 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
   the random terminal challenge proves separate local interactive consent.
   Neither alone proves a browser's external service sign-in. A real GitHub
   login form causes an owner-takeover stop; the owner must manually complete
-  MFA before the browser can proceed. The actual user-authenticated takeover
-  run remains pending; do not mark issue #65 complete.
+  MFA before the browser can proceed when that private-account capability is
+  used. Private-account takeover is outside the current local-fixture #65
+  milestone; its genuine owner consent and transfer readback are still pending.
 - Press Ctrl+C, close the terminal, or decline the challenge to stop.
   If an effect is uncertain, inspect the destination before any retry.
 - **New Chrome session checkpoint handling:** A stopped run may leave a
@@ -106,13 +117,14 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
   those require owner reconciliation first.
 - The owner's PC must stay on to execute this runner. PC-offline continuity is
   not available, and no zero-cost always-on hosting is claimed.
-- Removing this draft PR/runner leaves Pages, GitLab recovery, protected main,
-  Verify, and the existing executor unchanged.
+- Stopping this local runner leaves the separate GitHub and Hatchable lanes
+  under their own controls.
 
-## Open acceptance: issues #65 and #66
+## Remaining acceptance: issue #65
 
-Still required: owner-authenticated session, browser takeover/MFA pause,
-visual screenshot/DOM grounding, real authorized post-submit readback, external
-redirect/credential-prompt negatives, disconnect-mid-write reconciliation,
-reliable owner kill switch and durable PC-offline runtime if required.
-Choosing a hosted service requires a separate pricing and authorization decision.
+Follow the issue's four steps: owner-run setup, one generated canary transfer
+with independently refreshed receiver/download digests and a single-write
+count, the missing expiry/revocation/changed-input/interruption cases, and a
+sanitized evidence summary before closure. Reuse earlier negative observations
+while relevant code and configuration remain unchanged. Any future hosted
+browser requires a separate scope and authorization decision.

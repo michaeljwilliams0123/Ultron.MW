@@ -1,5 +1,10 @@
 # Fresh owner browser acceptance — issue #65
 
+**Scope authority:** the live [issue #65 body](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65)
+defines the four-step closure contract and supersedes older issue comments,
+plans and broader runbook requirements. This file supplies technical setup.
+See [current issue dispositions](../ACCEPTANCE-STATUS.md).
+
 The canonical entrypoint is `scripts/owner-browser-run.mjs`. It requires the
 owner's real local terminal, an independently authenticated GitHub CLI account,
 an isolated Playwright browser and a separate randomized approval for each
@@ -47,8 +52,8 @@ Do not replay the previous GitHub comment canary.
 
 ## Operator actions and readbacks
 
-Use two owner-approved websites or isolated test applications and a fresh test
-record. Navigate, enter the generated marker, upload its bounded canary, submit
+Use one owner-approved controlled test application and a fresh test record.
+Navigate, enter the generated marker, upload its bounded canary, submit
 once, then independently refresh/read the persisted receiver record. Verify
 the receiver's complete bytes, SHA-256 and single-write count. Download a
 generated receipt to an empty approved destination and independently hash the
@@ -68,6 +73,12 @@ an unresolved write. Keep the uncertain run's evidence intact.
 
 ## Negative acceptance to record separately
 
+For the current milestone, finish the missing expiry/revocation, changed
+file/request and interrupted-submit cases named in #65. Reuse recorded real
+denial/origin/credential/stale-selector cases while unchanged. The table also
+documents driver behaviors for broader scenarios; it does not add multi-window,
+private-account or long-page live acceptance gates to the current issue.
+
 | Case | Required independent observation |
 | --- | --- |
 | Owner denial, expiration or revocation | No action dispatch and zero receiver mutations |
@@ -86,8 +97,7 @@ screenshots containing account data, raw checkpoint files, typed contents or
 private URLs. Label local fixture, public canary and private-account results
 separately. Source CI alone does not close #65.
 
-At preparation time the current assistant runtime has no installed Chrome
-binary, authenticated `gh` executable, or owner-operated terminal. The managed
-Hatchable Puppeteer allowlist cannot run this Playwright transfer driver. The
-remaining live step therefore needs the authorized host and direct operator
-participation; this document is a runbook, not a completed acceptance record.
+The remaining live step requires the authorized host and direct operator
+participation. An agent session without the owner's actual terminal consent
+cannot complete it. Determine host/runtime availability at execution time;
+this runbook is setup guidance, not a completed acceptance record.

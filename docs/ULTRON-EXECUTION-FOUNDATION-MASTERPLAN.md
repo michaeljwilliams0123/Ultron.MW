@@ -1,5 +1,11 @@
 # Ultron.MW — Unified Cognitive Execution and Evolution Plan
 
+**Historical design baseline:** this plan records the October 21 proposal and
+its then-current issue state. Current milestone scope and closure follow the
+live issue bodies linked in [acceptance status](ACCEPTANCE-STATUS.md), especially
+#65's four-step supervised local-fixture contract. Broader roadmap requirements
+below do not reopen completed milestones or add gates to that contract.
+
 **Baseline:** GitHub main f5569d54e48feefc73cee062acf2f34df4d0d51f, observed 2026-10-21.
 **Authority:** michaeljwilliams0123/Ultron.MW, protected main; this is a proposed migration/implementation contract, NOT evidence of AGI, SGI, superintelligence, live desktop/browser control, deployed services, connected providers or model training.
 **Preferred outcome:** One UI, one authoritative repo, one objective and receipt history, many pluggable EXECUTION environments; no duplicate advisory-control planes.

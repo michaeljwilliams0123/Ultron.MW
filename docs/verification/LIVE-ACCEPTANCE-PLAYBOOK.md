@@ -48,69 +48,31 @@ The workflow does not close issues, replay uncertain writes, mutate production
 data, automatically create branches, auto-merge PRs, or install a second UI.
 A positive GET does not prove a connected secret or a real external mutation.
 
-## Issues: executable next evidence to collect
+## Current issue dispositions — October 30, 2026
 
-### #67 — capability and external-write authority (P1)
+The live issue bodies govern closure; [the dated acceptance summary](../ACCEPTANCE-STATUS.md)
+links their scopes and evidence. This public audit does not adjudicate issue
+closure. Its broad `productionReadiness: not-accepted` field can coexist with
+accepted bounded milestones supported by separate owner-authenticated receipts.
 
-Current October 28 independent production SQL showed **2 observed**, **1
-uncertain**, **1 prepared** Mahoraga actions; `capability_attempts` and
-`brain_authority_grants` both had 0 rows. The hourly scan keeps the
-ambiguous action alive for readback without re-sending it. These are audit
-observations, not promises that they will stay at those counts.
+| Issue | Disposition | Operator action |
+| --- | --- | --- |
+| [#65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65) | P2, open; owner session needed | Follow its four steps using `scripts/owner-browser-run.mjs` and the setup runbook. One controlled test app, real owner consent, transfer/readback and the missing negatives define this milestone. |
+| [#66](https://github.com/michaeljwilliams0123/Ultron.MW/issues/66) | Closed, completed | Preserve the accepted recovery and pause/resume receipts; investigate a new observed defect specifically. |
+| [#67](https://github.com/michaeljwilliams0123/Ultron.MW/issues/67) | Closed, completed | Scoped PAT connector accepted; live App identity, general delegation and another provider remain separate capabilities. |
+| [#68](https://github.com/michaeljwilliams0123/Ultron.MW/issues/68) | Closed, not planned | Keep the baseline and promotion protections; reopen for a concrete candidate and bounded value evaluation. |
+| [#69](https://github.com/michaeljwilliams0123/Ultron.MW/issues/69) | Closed, completed | Retain routes with platform/history consumers. A future removal requires its own evidence and PR. |
 
-1. On an authenticated Hatchable owner session, read only `id, operation,
-   state, attempt_started_at, last_scanned_at` from `mahoraga_actions`.
-2. For the uncertain `issue.create`, compare its stored keyed marker with the
-   independently retrieved Mahoraga issue page(s) and expected actor. Never
-   issue another POST on `sent`/`uncertain`; absence in a truncated result is
-   not evidence that no write occurred.
-3. Bind authorized, separate provider identities to their *actual* scopes,
-   receipt paths, and revocation state. Show two independently authenticated
-   provider operations, one approved minimal write, and negative
-   cross-provider/denied-action cases. Persist non-secret typed receipts.
-4. Inspect the `prepared` action's eligibility and stop status before taking
-   any action. A stale prepared action must not monopolize backlog scanning.
-5. Resolve #67 only when live actor identity, scope, idempotency, response-loss
-   reconciliation, stop/revocation, and two-provider acceptance are evidenced.
-
-### #65 — authenticated browser execution (P1)
-
-The real Playwright path remains `scripts/owner-browser-run.mjs`, with
-`docs/verification/OWNER-BROWSER-ACCEPTANCE.md` as its operator runbook.
-The Hatchable managed Chromium render is an important *read-only* success,
-but not a substitute for owner-operated browser approval, MFA takeover,
-upload/download and independent persisted destination readback.
-Do not silently switch this run to cloud Puppeteer if required Playwright APIs
-are unavailable. Do not put credentials, cookies, screenshots or private plans
-in public Actions artifacts.
-
-### #66 — hosted recovery (P2)
-
-The Hatchable experiment v9 → injected-failure v10 → exact-restoration v11
-drill and database rollback proved useful bounded outcomes.
-Still collect a distinct crash/restart, uncertain remote-write response-loss,
-owner device offline and explicit budget/retention acceptance run. Preserve
-production v16 and rollback boundaries during experiment validation.
-
-### #68 — evaluated learning (P1)
-
-`held-out-acceptance.yml` supports explicit frozen baseline/candidate SHA
-comparison. Separately record independently scored novel tasks, their
-prediction-before-result time, comparable cost, negative cases, and promotion
-provenance. A deterministic standby tick or a CI-only seeded dataset does not
-prove new cognitive capability or always-running inference.
-
-### #69 — source-to-runtime and UI parity (P2)
-
-Use `scripts/audit-route-references.mjs`,
-`scripts/verify-hatchable-parity.mjs`,
-`docs/verification/ROUTING-RUNTIME-2026-10-28.md`, and
-`docs/verification/ROUTE-CONSUMERS-2026-10-28.md`. Existing runtime
-evidence found 38 matching production/experiment files, no safe deletion
-candidates, and no authenticated GitBook sync readback. Do not remove platform
-routed files merely because they lack JavaScript import edges.
+The owner's current scopes supersede older two-provider, private-account,
+PC-offline, physical-hosted-kill and mandatory-route-deletion closure language.
+Historical evidence records keep their original dates and limitations.
+Sent/uncertain external effects stay readback-only; neither a status summary
+nor an issue closure authorizes replay or expands runtime permissions.
 
 ## Single-interface architecture and follow-on implementation
+
+The command bridge below is optional future architecture, not a dependency
+for the accepted #66/#67 scopes or the current #65 local-fixture milestone.
 
 GitHub Pages is the canonical static UI. Its current hosted execution buttons
 open owner-confirmed native GitHub Issues/Actions. Hatchable provides durable
@@ -135,7 +97,9 @@ authorization and positive/negative API acceptance on the experiment.
   administration-access boundary immediately; do not bypass to force green.
 - Production scheduler GET not 404: investigate route access configuration.
 - External state `uncertain`: authoritative readback ONLY, never blind retry.
-- Scheduled checks green but external acceptance unknown: retain #65–#69 open.
+- Scheduled checks green but a capability's acceptance unknown: consult its
+  live issue contract and record the exact missing evidence. Preserve already
+  accepted scoped decisions; a new degradation needs specific incident evidence.
 - Site temporarily inaccessible: report an incomplete observation, not a
   fabricated healthy response.
 
