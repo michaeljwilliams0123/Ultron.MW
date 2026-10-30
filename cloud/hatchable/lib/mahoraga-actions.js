@@ -12,9 +12,10 @@ const ACTION_DEADLINE_MS = 24000;
 const ISSUE_PAGE_SIZE = 100;
 const ISSUE_SCAN_BATCH_SIZE = 4;
 const MAX_ISSUE_PAGES = 40;
+// Downscope installation tokens to the two supported operations only.
+// metadata:read may be returned automatically by GitHub.
 const INSTALLATION_PERMISSIONS = Object.freeze({
-  actions:'write',administration:'write',contents:'write',issues:'write',
-  pull_requests:'write'
+  actions:'write',contents:'read',issues:'write'
 });
 
 async function githubJson(transport,url,init,deadlineAt,requestTimeoutMs,errorCode) {
@@ -132,11 +133,12 @@ async function appClient(config,transport=fetch,deadlineAt=Date.now()+ACTION_DEA
    !Number.isFinite(expiry) || expiry < Date.now()+60000 ||
    value.repositories?.length !== 1 || value.repositories[0].id !== REPO_ID ||
    value.repositories[0].full_name !== REPO ||
-   value.permissions?.administration !== 'write' ||
-   value.permissions?.contents !== 'write' ||
+   value.permissions?.contents !== 'read' ||
    value.permissions?.issues !== 'write' ||
    value.permissions?.actions !== 'write' ||
-   value.permissions?.pull_requests !== 'write')
+   Object.entries(value.permissions || {}).some(([permission,level]) =>
+     permission === 'metadata' ? level !== 'read' :
+       INSTALLATION_PERMISSIONS[permission] !== level))
    throw Error('app-token-repository-or-grant-mismatch');
  return async (path,method='GET',body) => {
    if(!/^\/[a-zA-Z0-9/?=&._-]*$/.test(path) || path.includes('..') ||

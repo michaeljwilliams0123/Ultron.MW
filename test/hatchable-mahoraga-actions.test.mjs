@@ -14,7 +14,7 @@ const input={key:KEY,operation:'issue.create',
 function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
  pauseDuringPreflight=false,pat=false,authMode=null,githubAppPem=false,loseClaim=false,
  claimConflict=false,verifyConclusion='success',verifyStatus='completed',
- duplicateVerify=false,bareVerifyPath=false}={}){
+ duplicateVerify=false,bareVerifyPath=false,appPermissions=null}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
  let stopped=paused,claimLost=loseClaim;
  const config={async get(name){
@@ -77,8 +77,7 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
      return json({
      token:'fixture-installation-token',expires_at:new Date(Date.now()+3600000).toISOString(),
      repositories:[{id:1343333190,full_name:'michaeljwilliams0123/mahoraga'}],
-     permissions:{actions:'write',administration:'write',contents:'write',issues:'write',
-       pull_requests:'write'}});
+     permissions:appPermissions || {actions:'write',contents:'read',issues:'write'}});
    }
    if(path.endsWith('/mahoraga'))return json({
      id:1343333190,full_name:'michaeljwilliams0123/mahoraga',
@@ -389,8 +388,7 @@ test('App installation lane remains compatible when PAT is absent',async()=>{
  assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,1);
  assert.deepEqual(f.calls.find(x=>x.path.endsWith('/access_tokens')).body,{
    repository_ids:[1343333190],
-   permissions:{actions:'write',administration:'write',contents:'write',issues:'write',
-     pull_requests:'write'}
+   permissions:{actions:'write',contents:'read',issues:'write'}
  });
 });
 
@@ -520,4 +518,35 @@ test('explicit auto credential mode preserves legacy PAT-first behavior',async()
  const result=await execute(f);
  assert.equal(result.state,'observed');
  assert.equal(f.calls.filter(x=>x.path.endsWith('/access_tokens')).length,0);
+});
+
+test('App token carrying unrelated elevated grants is rejected before any issue POST',async()=>{
+ const f=fixture({pat:false,appPermissions:{
+  actions:'write',contents:'read',issues:'write',
+  administration:'write',pull_requests:'write'
+ }});
+ const result=await execute(f);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'app-token-repository-or-grant-mismatch');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
+ assert.equal(f.issues.length,0);
+});
+
+test('App token lacking workflow-dispatch authority cannot dispatch',async()=>{
+ const f=fixture({pat:false,appPermissions:{actions:'read',contents:'read',issues:'write'}});
+ const action={key:'ultron:verify-scoped-95',operation:'verify.dispatch',
+  input:{ref:'mahoraga/control',expectedHeadSha:'b'.repeat(40)}};
+ const result=await execute(f,action);
+ assert.equal(result.state,'prepared');
+ assert.equal(result.error,'app-token-repository-or-grant-mismatch');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/dispatches')).length,0);
+});
+
+test('GitHub mandatory metadata read permission does not widen App authority',async()=>{
+ const f=fixture({pat:false,appPermissions:{
+  actions:'write',contents:'read',issues:'write',metadata:'read'
+ }});
+ const result=await execute(f);
+ assert.equal(result.state,'observed');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,1);
 });
