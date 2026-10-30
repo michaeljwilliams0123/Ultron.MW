@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile, rename, realpath, open, unlink } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, realpath, open, unlink, access } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -8,7 +9,9 @@ const ID = /^[a-z0-9][a-z0-9_.-]{0,79}$/i;
  * A supervisor must own leases before multi-process/cloud execution.
  * No browser cookies, passwords, screenshots or typed values are persisted.
  */
-export function createFileComputerStore(directory) {
+export function createFileComputerStore(directory, { renameFile = rename, pause = sleep } = {}) {
+  if (typeof renameFile !== 'function' || typeof pause !== 'function')
+    throw TypeError('Checkpoint replacement requires callable file primitives');
   if (typeof directory !== 'string' || !directory.trim())
     throw TypeError('A checkpoint directory is required');
   const root = resolve(directory);
@@ -64,11 +67,17 @@ export function createFileComputerStore(directory) {
       const temporary = target + '.' + randomUUID() + '.pending';
       await writeFile(temporary, JSON.stringify(state, null, 2) + '\n',
         { flag: 'wx', mode: 0o600 });
-      try { await rename(temporary, target); }
-      catch (error) {
-        // A pending file is intentionally retained as an uncertainty signal.
-        // Caller must not dispatch an action if checkpointing failed.
-        throw error;
+      for (let retries = 0; ; retries++) {
+        try { await renameFile(temporary, target); break; }
+        catch (error) {
+          // Windows may briefly deny replacement while another process scans the
+          // existing checkpoint. Retry only if the new pending file still exists:
+          // an ambiguous or permanent failure must retain its evidence.
+          if (retries >= 3 || !['EPERM', 'EACCES', 'EBUSY'].includes(error?.code))
+            throw error;
+          try { await access(temporary); } catch { throw error; }
+          await pause(25 * (retries + 1));
+        }
       }
     },
   };
