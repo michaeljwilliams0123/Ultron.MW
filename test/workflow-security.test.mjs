@@ -23,9 +23,20 @@ test('all workflow actions are SHA-pinned and checkout never persists credential
   for(const name of await readdir(directory)){
     if(!/\.ya?ml$/.test(name))continue;
     const source=await readFile(new URL(name,directory),'utf8');
-    for(const [,action] of source.matchAll(/\buses:\s*([^\s#]+)/g))
-      assert.match(action,/^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/,name);
-    assert.match(source,/persist-credentials: false/,name);
+    const allowedLocal=new Set([
+      './.github/workflows/cloud-objective.yml',
+      './.github/workflows/pr-brain.yml',
+      './.github/workflows/council-debate.yml'
+    ]);
+    for(const [,action] of source.matchAll(/\buses:\s*([^\s#]+)/g)){
+      if(action.startsWith('./')){
+        // Only same-repository, explicit reusable workflows are permitted.
+        // External actions remain required to use immutable 40-digit SHA pins.
+        assert.ok(allowedLocal.has(action),name+': unapproved local reusable workflow '+action);
+      }else assert.match(action,/^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/,name);
+    }
+    if(/\buses:\s*actions\/checkout@/.test(source))
+      assert.match(source,/persist-credentials: false/,name);
     assert.doesNotMatch(source,/\$\{\{\s*github\.event\.(?:issue\.body|inputs\.objective)/,name);
   }
 });
