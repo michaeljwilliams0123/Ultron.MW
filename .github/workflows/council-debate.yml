@@ -16,10 +16,6 @@ on:
         description: 'true if PR'
         required: true
         default: 'false'
-      owner_mode:
-        description: 'Owner-first planning (1/0)'
-        required: false
-        default: '1'
 
 permissions:
   contents: read
@@ -52,16 +48,18 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      # Trusted checkout: always run scripts from main tip — never PR-head JS.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: main
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
 
-      - name: Extract context (owner-first)
+      # File-based payload: avoid GITHUB_ENV injection from untrusted title/body.
+      - name: Extract context (owner-first, hardened)
         env:
           EVENT_NAME: ${{ github.event_name }}
           ACTOR: ${{ github.actor }}
@@ -74,66 +72,57 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
           DISPATCH_IS_PR: ${{ inputs.is_pr }}
           DISPATCH_ITEM: ${{ inputs.item_number }}
-          DISPATCH_OWNER_MODE: ${{ inputs.owner_mode }}
         run: |
           set -euo pipefail
+          # OWNER_MODE only when actor is the repository owner (ignore dispatch input).
           OWNER_MODE=0
           if [ "$ACTOR" = "michaeljwilliams0123" ]; then
             OWNER_MODE=1
           fi
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "${DISPATCH_OWNER_MODE:-0}" = "1" ]; then
-            OWNER_MODE=1
-          fi
           echo "OWNER_MODE=$OWNER_MODE" >> "$GITHUB_ENV"
+
+          mkdir -p "$RUNNER_TEMP/ultron-council"
+          TITLE_FILE="$RUNNER_TEMP/ultron-council/title.txt"
+          BODY_FILE="$RUNNER_TEMP/ultron-council/body.txt"
+          : > "$TITLE_FILE"
+          : > "$BODY_FILE"
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
             echo "IS_PR=true" >> "$GITHUB_ENV"
             echo "ITEM_NUMBER=${PR_NUMBER}" >> "$GITHUB_ENV"
-            {
-              echo "TITLE<<EOF"
-              printf '%s\n' "${PR_TITLE}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
-            {
-              echo "BODY<<EOF"
-              printf '%s\n' "${PR_BODY}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
+            printf '%s' "${PR_TITLE}" > "$TITLE_FILE"
+            printf '%s' "${PR_BODY}" > "$BODY_FILE"
           elif [ "$EVENT_NAME" = "issues" ]; then
             echo "IS_PR=false" >> "$GITHUB_ENV"
             echo "ITEM_NUMBER=${ISSUE_NUMBER}" >> "$GITHUB_ENV"
-            {
-              echo "TITLE<<EOF"
-              printf '%s\n' "${ISSUE_TITLE}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
-            {
-              echo "BODY<<EOF"
-              printf '%s\n' "${ISSUE_BODY}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
+            printf '%s' "${ISSUE_TITLE}" > "$TITLE_FILE"
+            printf '%s' "${ISSUE_BODY}" > "$BODY_FILE"
           elif [ "$EVENT_NAME" = "issue_comment" ]; then
             echo "IS_PR=false" >> "$GITHUB_ENV"
             echo "ITEM_NUMBER=${ISSUE_NUMBER}" >> "$GITHUB_ENV"
-            {
-              echo "TITLE<<EOF"
-              printf '%s\n' "${ISSUE_TITLE}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
-            {
-              echo "BODY<<EOF"
-              printf '%s\n' "${COMMENT_BODY}"
-              echo "EOF"
-            } >> "$GITHUB_ENV"
+            printf '%s' "${ISSUE_TITLE}" > "$TITLE_FILE"
+            printf '%s' "${COMMENT_BODY}" > "$BODY_FILE"
           else
             echo "IS_PR=${DISPATCH_IS_PR:-false}" >> "$GITHUB_ENV"
             echo "ITEM_NUMBER=${DISPATCH_ITEM}" >> "$GITHUB_ENV"
-            echo "TITLE=Owner council dispatch" >> "$GITHUB_ENV"
-            echo "BODY=workflow_dispatch owner-first" >> "$GITHUB_ENV"
+            printf '%s' "Owner council dispatch" > "$TITLE_FILE"
+            printf '%s' "workflow_dispatch owner-first" > "$BODY_FILE"
           fi
 
+          echo "TITLE_FILE=$TITLE_FILE" >> "$GITHUB_ENV"
+          echo "BODY_FILE=$BODY_FILE" >> "$GITHUB_ENV"
+
       - name: Run owner-first council debate
+        env:
+          TITLE_FILE: ${{ env.TITLE_FILE }}
+          BODY_FILE: ${{ env.BODY_FILE }}
+          ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
+          IS_PR: ${{ env.IS_PR }}
+          OWNER_MODE: ${{ env.OWNER_MODE }}
         run: |
+          set -euo pipefail
+          export TITLE="$(head -c 240 "$TITLE_FILE" 2>/dev/null || true)"
+          export BODY="$(head -c 8000 "$BODY_FILE" 2>/dev/null || true)"
           node --check src/grokbot-governor.mjs
           node --check scripts/council-debate.mjs
           node scripts/council-debate.mjs
