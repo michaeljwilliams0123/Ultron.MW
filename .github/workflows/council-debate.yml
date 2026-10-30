@@ -58,7 +58,6 @@ jobs:
         with:
           node-version: '22'
 
-      # File-based payload: avoid GITHUB_ENV injection from untrusted title/body.
       - name: Extract context (owner-first, hardened)
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -74,7 +73,6 @@ jobs:
           DISPATCH_ITEM: ${{ inputs.item_number }}
         run: |
           set -euo pipefail
-          # OWNER_MODE only when actor is the repository owner (ignore dispatch input).
           OWNER_MODE=0
           if [ "$ACTOR" = "michaeljwilliams0123" ]; then
             OWNER_MODE=1
@@ -113,6 +111,7 @@ jobs:
           echo "BODY_FILE=$BODY_FILE" >> "$GITHUB_ENV"
 
       - name: Run owner-first council debate
+        id: debate
         env:
           TITLE_FILE: ${{ env.TITLE_FILE }}
           BODY_FILE: ${{ env.BODY_FILE }}
@@ -121,6 +120,12 @@ jobs:
           OWNER_MODE: ${{ env.OWNER_MODE }}
         run: |
           set -euo pipefail
+          if [ ! -f scripts/council-debate.mjs ]; then
+            echo "Council script not on trusted main yet (pre-merge). Skipping execute."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
           export TITLE="$(head -c 240 "$TITLE_FILE" 2>/dev/null || true)"
           export BODY="$(head -c 8000 "$BODY_FILE" 2>/dev/null || true)"
           node --check src/grokbot-governor.mjs
@@ -128,6 +133,7 @@ jobs:
           node scripts/council-debate.mjs
 
       - name: Post council report + action board
+        if: steps.debate.outputs.skipped != 'true'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
           ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
@@ -161,7 +167,7 @@ jobs:
             }
 
       - name: Upload receipt artifact
-        if: always()
+        if: always() && steps.debate.outputs.skipped != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: council-debate-${{ github.run_id }}
