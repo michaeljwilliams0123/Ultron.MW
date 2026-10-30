@@ -57,57 +57,51 @@ jobs:
         with:
           node-version: '22'
 
+      # Payload via context in JS — never embed issue body expressions in YAML (workflow-security).
       - name: Extract context (owner-first, hardened)
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          ACTOR: ${{ github.actor }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
-          DISPATCH_IS_PR: ${{ inputs.is_pr }}
-          DISPATCH_ITEM: ${{ inputs.item_number }}
-        run: |
-          set -euo pipefail
-          OWNER_MODE=0
-          if [ "$ACTOR" = "michaeljwilliams0123" ]; then
-            OWNER_MODE=1
-          fi
-          echo "OWNER_MODE=$OWNER_MODE" >> "$GITHUB_ENV"
-
-          mkdir -p "$RUNNER_TEMP/ultron-council"
-          TITLE_FILE="$RUNNER_TEMP/ultron-council/title.txt"
-          BODY_FILE="$RUNNER_TEMP/ultron-council/body.txt"
-          : > "$TITLE_FILE"
-          : > "$BODY_FILE"
-
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "IS_PR=true" >> "$GITHUB_ENV"
-            echo "ITEM_NUMBER=${PR_NUMBER}" >> "$GITHUB_ENV"
-            printf '%s' "${PR_TITLE}" > "$TITLE_FILE"
-            printf '%s' "${PR_BODY}" > "$BODY_FILE"
-          elif [ "$EVENT_NAME" = "issues" ]; then
-            echo "IS_PR=false" >> "$GITHUB_ENV"
-            echo "ITEM_NUMBER=${ISSUE_NUMBER}" >> "$GITHUB_ENV"
-            printf '%s' "${ISSUE_TITLE}" > "$TITLE_FILE"
-            printf '%s' "${ISSUE_BODY}" > "$BODY_FILE"
-          elif [ "$EVENT_NAME" = "issue_comment" ]; then
-            echo "IS_PR=false" >> "$GITHUB_ENV"
-            echo "ITEM_NUMBER=${ISSUE_NUMBER}" >> "$GITHUB_ENV"
-            printf '%s' "${ISSUE_TITLE}" > "$TITLE_FILE"
-            printf '%s' "${COMMENT_BODY}" > "$BODY_FILE"
-          else
-            echo "IS_PR=${DISPATCH_IS_PR:-false}" >> "$GITHUB_ENV"
-            echo "ITEM_NUMBER=${DISPATCH_ITEM}" >> "$GITHUB_ENV"
-            printf '%s' "Owner council dispatch" > "$TITLE_FILE"
-            printf '%s' "workflow_dispatch owner-first" > "$BODY_FILE"
-          fi
-
-          echo "TITLE_FILE=$TITLE_FILE" >> "$GITHUB_ENV"
-          echo "BODY_FILE=$BODY_FILE" >> "$GITHUB_ENV"
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const dir = path.join(process.env.RUNNER_TEMP, 'ultron-council');
+            fs.mkdirSync(dir, { recursive: true });
+            const actor = context.actor || '';
+            const ownerMode = actor === 'michaeljwilliams0123' ? '1' : '0';
+            let title = '';
+            let body = '';
+            let itemNumber = 0;
+            let isPr = 'false';
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request || {};
+              title = String(pr.title || '');
+              body = String(pr.body || '');
+              itemNumber = Number(pr.number) || 0;
+              isPr = 'true';
+            } else if (context.eventName === 'issues') {
+              const issue = context.payload.issue || {};
+              title = String(issue.title || '');
+              body = String(issue.body || '');
+              itemNumber = Number(issue.number) || 0;
+            } else if (context.eventName === 'issue_comment') {
+              const issue = context.payload.issue || {};
+              const comment = context.payload.comment || {};
+              title = String(issue.title || '');
+              body = String(comment.body || '');
+              itemNumber = Number(issue.number) || 0;
+            } else {
+              title = 'Owner council dispatch';
+              body = 'workflow_dispatch owner-first';
+              itemNumber = Number(context.payload.inputs && context.payload.inputs.item_number) || 0;
+              isPr = String((context.payload.inputs && context.payload.inputs.is_pr) || 'false');
+            }
+            fs.writeFileSync(path.join(dir, 'title.txt'), title.slice(0, 240));
+            fs.writeFileSync(path.join(dir, 'body.txt'), body.slice(0, 8000));
+            core.exportVariable('OWNER_MODE', ownerMode);
+            core.exportVariable('IS_PR', isPr);
+            core.exportVariable('ITEM_NUMBER', String(itemNumber));
+            core.exportVariable('TITLE_FILE', path.join(dir, 'title.txt'));
+            core.exportVariable('BODY_FILE', path.join(dir, 'body.txt'));
 
       - name: Run owner-first council debate
         id: debate
