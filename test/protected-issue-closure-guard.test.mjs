@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {findProtectedIssueClosures, inspectPullRequestClosureClaims} from '../scripts/check-protected-issue-closures.mjs';
 
 test('detects GitHub issue closing keywords even when negated in prose',()=>{
@@ -38,4 +39,9 @@ test('inspects PR title, body and new commit messages',()=>{
 
 test('identifies implicit additional IDs in a closing-keyword list',()=>{
  assert.deepEqual(findProtectedIssueClosures('Close #65, #66 and #67').map(x=>x.issue),[65,66,67]);
+});
+
+test('rechecks PR body edits before a protected squash merge',()=>{
+ const workflow=readFileSync(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8');
+ assert.match(workflow,/pull_request:\s*\n\s*types:\s*\[[^\]]*\bedited\b[^\]]*\]/);
 });
