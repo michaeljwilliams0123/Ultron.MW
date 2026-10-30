@@ -48,7 +48,6 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      # Trusted checkout: always run scripts from main tip — never PR-head JS.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
@@ -126,8 +125,10 @@ jobs:
             exit 0
           fi
           echo "skipped=false" >> "$GITHUB_OUTPUT"
-          export TITLE="$(head -c 240 "$TITLE_FILE" 2>/dev/null || true)"
-          export BODY="$(head -c 8000 "$BODY_FILE" 2>/dev/null || true)"
+          TITLE="$(head -c 240 "$TITLE_FILE" 2>/dev/null || true)"
+          BODY="$(head -c 8000 "$BODY_FILE" 2>/dev/null || true)"
+          export TITLE
+          export BODY
           node --check src/grokbot-governor.mjs
           node --check scripts/council-debate.mjs
           node scripts/council-debate.mjs
