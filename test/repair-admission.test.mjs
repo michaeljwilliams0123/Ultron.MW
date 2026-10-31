@@ -50,6 +50,7 @@ test('denies invented, stale, cross-repository or overprivileged identity', () =
     { installationId: 0 },
     { expiresAt: '2026-10-31T16:59:00Z' },
     { permissions: { ...identity().permissions, administration: 'write' } },
+    { permissions: { ...identity().permissions, administration: undefined } },
     { permissions: { metadata: 'read', contents: 'read',
       pull_requests: 'write', checks: 'read' } },
   ]) assert.throws(() => admit({ identityEvidence: { ...identity(), ...patch } }),
