@@ -151,6 +151,7 @@ jobs:
           ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
           IS_PR: ${{ env.IS_PR }}
           OWNER_MODE: ${{ env.OWNER_MODE }}
+          ORIGINAL_SECURITY_SIGNAL: ${{ env.ORIGINAL_SECURITY_SIGNAL }}
         run: |
           set -euo pipefail
           if [ ! -f scripts/council-debate.mjs ]; then
