@@ -71,6 +71,9 @@ jobs:
             let body = '';
             let itemNumber = 0;
             let isPr = 'false';
+            let originalIssueBody = '';
+            let securitySignal = false;
+            const riskWords = ['secret','credential','token','password','bypass security','fail-open','delete main','force push'];
             if (context.eventName === 'pull_request') {
               const pr = context.payload.pull_request || {};
               title = String(pr.title || '');
@@ -87,6 +90,7 @@ jobs:
               const comment = context.payload.comment || {};
               title = String(issue.title || '');
               body = String(comment.body || '');
+              originalIssueBody = String(issue.body || '');
               itemNumber = Number(issue.number) || 0;
               isPr = issue.pull_request ? 'true' : 'false';
             } else if (context.eventName === 'workflow_dispatch') {
@@ -107,8 +111,7 @@ jobs:
               title = String(target.title || '');
               body = String(target.body || '').slice(0,6000);
               const fullBody = String(target.body || '').toLowerCase();
-              const riskWords = ['secret','credential','token','password','bypass security','fail-open','delete main','force push'];
-              let securitySignal = riskWords.some(word=>
+              securitySignal = riskWords.some(word=>
                 title.toLowerCase().includes(word) || fullBody.includes(word));
               // Include the latest genuine owner update when available, but
               // never replace the authoritative issue/PR title and body.
@@ -137,10 +140,17 @@ jobs:
                     ownerUpdate;
                 }
               }
-              core.exportVariable('ORIGINAL_SECURITY_SIGNAL',securitySignal?'1':'0');
             } else {
               throw Error('Council dispatch event unsupported');
             }
+            // Security classification applies to every trigger, including
+            // the original issue body on owner-comment events. Classify
+            // before title/body display clipping; no event may inherit a
+            // missing signal merely because it bypassed workflow_dispatch.
+            securitySignal = securitySignal || riskWords.some(word =>
+              [title,body,originalIssueBody].some(value =>
+                String(value).toLowerCase().includes(word)));
+            core.exportVariable('ORIGINAL_SECURITY_SIGNAL',securitySignal?'1':'0');
             fs.writeFileSync(path.join(dir, 'title.txt'), title.slice(0, 240));
             fs.writeFileSync(path.join(dir, 'body.txt'), body.slice(0, 8000));
             core.exportVariable('OWNER_MODE', ownerMode);
