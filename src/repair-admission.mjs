@@ -1,31 +1,31 @@
+import {
+ assertUnifiedGitHubIdentity,parseInstant,ULTRON_GITHUB_PRINCIPAL,
+} from './github-principal-policy.mjs';
+
 /**
- * Repair App admission policy, not a GitHub transport or permission grant.
+ * Unified GitHub App repair admission policy, not a transport or permission grant.
  * Callers must supply authenticated installation-token readback, a durable
  * authorization/stop snapshot, and independently observed GitHub base/head
  * state before any external write. No model response can create those facts.
  */
 const REPO = 'michaeljwilliams0123/Ultron.MW';
-const REPOSITORY_ID = 1424939667;
 const SHA = /^[a-f0-9]{40}$/;
 const BRANCH = /^ultron\/repair-[a-z0-9][a-z0-9-]{2,63}$/;
 const KEY = /^repair:[a-z0-9][a-z0-9-]{7,90}$/;
 const PATH = /^(src|test)\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/;
 const PLAN_KEYS = new Set(['schema','owner','objective','repository',
   'baseSha','branch','allowedPaths','idempotencyKey','maxAttempts',
-  'maxCostCents','expiresAt']);
+  'maxCostCents','paidFallback','expiresAt']);
 const STEP_KEYS = new Set(['operation','repository','branch','baseSha',
   'path','idempotencyKey','attempt']);
 const STEPS = new Set(['branch.create','branch.update','pr.create',
   'pr.update','pr.comment']);
-const GRANTS = Object.freeze({metadata:'read',contents:'write',
-  pull_requests:'write',checks:'read',issues:'write'});
-const OPTIONAL_GRANTS = Object.freeze({actions:'read'});
+const STEP_PROFILES = Object.freeze(Object.fromEntries([...STEPS]
+  .map(operation=>[operation,'repair.'+operation])));
 const admissions = new WeakSet();
 
 function timestamp(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value))
-    return NaN;
-  return Date.parse(value);
+  return parseInstant(value);
 }
 function stopped(controls) {
   return !controls || controls.paused !== false || controls.revoked !== false;
@@ -36,25 +36,14 @@ function cleanPath(path) {
     !path.includes('\\') && !path.includes('%') &&
     !path.includes('//');
 }
-function assertIdentity(evidence, now) {
-  const valid = evidence && typeof evidence === 'object' &&
-    evidence.source === 'github-installation-token-readback' &&
-    evidence.verified === true && evidence.principal === 'repair-app' &&
-    evidence.repository === REPO &&
-    evidence.repositoryId === REPOSITORY_ID &&
-    Number.isSafeInteger(evidence.installationId) && evidence.installationId > 0 &&
-    typeof evidence.actorRef === 'string' &&
-    /^github-app:[a-z0-9][a-z0-9-]{2,70}$/.test(evidence.actorRef) &&
-    Number.isFinite(timestamp(evidence.expiresAt)) &&
-    timestamp(evidence.expiresAt) > now &&
-    evidence.permissions && typeof evidence.permissions === 'object' &&
-    !Array.isArray(evidence.permissions) &&
-    Object.entries(GRANTS).every(([key,right]) =>
-      evidence.permissions[key] === right) &&
-    Object.entries(evidence.permissions).every(([key,right]) =>
-      Object.hasOwn(GRANTS,key) ? GRANTS[key] === right :
-        Object.hasOwn(OPTIONAL_GRANTS,key) && OPTIONAL_GRANTS[key] === right);
-  if (!valid) throw Error('Repair App identity readback invalid');
+function assertIdentity(evidence, now, operation) {
+  try {
+    return assertUnifiedGitHubIdentity(evidence,{
+      operation,now:new Date(now).toISOString(),
+    });
+  } catch {
+    throw Error('Unified GitHub App identity readback invalid');
+  }
 }
 function assertPlan(plan, now) {
   const expiry = timestamp(plan?.expiresAt);
@@ -75,7 +64,8 @@ function assertPlan(plan, now) {
     !KEY.test(plan.idempotencyKey || '') ||
     !Number.isSafeInteger(plan.maxAttempts) ||
     plan.maxAttempts < 1 || plan.maxAttempts > 3 ||
-    plan.maxCostCents !== 0 || !Number.isFinite(expiry) ||
+    plan.maxCostCents !== 0 || plan.paidFallback !== false ||
+    !Number.isFinite(expiry) ||
     expiry <= now || expiry > now + 24 * 60 * 60 * 1000)
     throw Error('Repair plan rejected');
 }
@@ -89,18 +79,19 @@ export function admitRepairTask({plan,identityEvidence,controls,now} = {}) {
   if (!Number.isFinite(instant) || stopped(controls))
     throw Error('Repair admission paused or revoked');
   assertPlan(plan, instant);
-  assertIdentity(identityEvidence, instant);
+  const verifiedIdentity=assertIdentity(identityEvidence, instant, 'identity.read');
   const identity = Object.freeze({
-    principal:'repair-app',actorRef:identityEvidence.actorRef,
-    installationId:identityEvidence.installationId,
-    repositoryId:identityEvidence.repositoryId,
+    principal:ULTRON_GITHUB_PRINCIPAL,actorRef:verifiedIdentity.actorRef,
+    installationId:verifiedIdentity.installationId,
+    repositoryId:verifiedIdentity.repositoryId,
   });
   const admission = Object.freeze({
     schema:'ultron.repair.admission.v1',owner:plan.owner,
     objective:plan.objective,repository:REPO,baseSha:plan.baseSha,
     branch:plan.branch,allowedPaths:Object.freeze([...plan.allowedPaths]),
     idempotencyKey:plan.idempotencyKey,maxAttempts:plan.maxAttempts,
-    maxCostCents:0,expiresAt:new Date(timestamp(plan.expiresAt)).toISOString(),
+    maxCostCents:0,paidFallback:false,
+    expiresAt:new Date(timestamp(plan.expiresAt)).toISOString(),
     identity,
   });
   admissions.add(admission);
@@ -119,7 +110,7 @@ export function assertRepairStep(admission,step,{
     stopped(controls) || instant >= timestamp(admission.expiresAt))
     throw Error('Repair step denied: admission stopped or expired');
   try {
-    assertIdentity(identityEvidence, instant);
+    assertIdentity(identityEvidence, instant, STEP_PROFILES[step?.operation]);
   } catch {
     throw Error('Repair step denied: identity readback invalid');
   }
@@ -138,5 +129,6 @@ export function assertRepairStep(admission,step,{
         ? !admission.allowedPaths.includes(step.path)
         : step.path !== undefined))
     throw Error('Repair step denied: operation or scope mismatch');
-  return Object.freeze({admitted:true,operation:step.operation,attempt:step.attempt});
+  return Object.freeze({admitted:true,operation:step.operation,
+    tokenProfile:STEP_PROFILES[step.operation],attempt:step.attempt});
 }
