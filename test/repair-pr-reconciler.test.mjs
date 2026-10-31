@@ -262,10 +262,8 @@ test('wrong or missing prepared SHA fails closed before PR dispatch',async()=>{
     const pending=await runRepairPR(args({ledger,service,task}));
     assert.equal(pending.status,'reconcile-required');
     service.prepareCommit();
-    if(bad===undefined){
-      const still=await runRepairPR(args({ledger,service,task}));
-      assert.equal(still.status,'reconcile-required');
-    }else await assert.rejects(runRepairPR(args({ledger,service,task})),/branch readback identity mismatch/);
+    await assert.rejects(runRepairPR(args({ledger,service,task})),
+      /branch readback identity mismatch/);
     assert.equal(service.calls.pr,0);
   }
 });
