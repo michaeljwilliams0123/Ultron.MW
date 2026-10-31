@@ -130,3 +130,21 @@ test('protected evaluator accepts the unified operation-scoped identity fixture'
  const wrongPrincipal=result.caseResults.find(row=>row.id==='heldout-deny-admin-principal');
  assert.equal(wrongPrincipal.candidate.score,1);
 });
+
+
+test('candidate global mutation cannot influence score arithmetic',async()=>{
+ const candidate=[
+  'globalThis.Number = () => 1;',
+  "export function admitRepairTask(){throw Error('invalid always');}",
+  "export function assertRepairStep(){throw Error('invalid always');}"
+ ].join('\n');
+ const original=globalThis.Number;
+ try{
+  const result=await evaluateRepairPair({
+   baseSource:source,candidateSource:candidate,baseSha:sha('a'),candidateSha:sha('c')
+  });
+  assert.equal(result.summary.candidateScore,0,
+   'candidate code must not be able to replace the scorer Number function');
+  assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
+ }finally{globalThis.Number=original;}
+});
