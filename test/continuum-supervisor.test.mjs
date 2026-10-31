@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {CONTINUUM_ISSUES, selectCouncilReviews} from '../src/continuum-supervisor.mjs';
+import {CONTINUUM_ISSUES, selectCouncilReviews, readCouncilActivity} from '../src/continuum-supervisor.mjs';
 
 const now='2026-11-01T12:00:00Z';
 const item=(number,extra={})=>({number,state:'open',lastReviewAt:null,lastMeaningfulAt:'2026-10-31T12:00:00Z',...extra});
@@ -53,4 +53,47 @@ test('supervisor grants only actions dispatch, never administration or secret ac
   assert.doesNotMatch(yml,/administration: write|contents: write|issues: write|pull-requests: write|secrets: inherit|OPENAI_API_KEY|pull_request_target/);
   assert.match(yml,/council-debate\.yml/);
   assert.match(yml,/src\/continuum-supervisor\.mjs/);
+});
+
+test('scan backward past the final comment page to find last genuine council report',async()=>{
+  const bot=(at)=>({user:{login:'github-actions[bot]'},body:'# Ultron Council Report\nreview',created_at:at});
+  const owner=(at)=>({user:{login:'michaeljwilliams0123'},body:'Owner changed scope',created_at:at});
+  const pages={3:[{user:{login:'someone'},body:'noise'}],2:[owner('2026-10-31T09:00:00Z'),bot('2026-10-31T10:00:00Z')],1:[bot('2026-10-30T08:00:00Z')]};
+  const calls=[];
+  const result=await readCouncilActivity({
+    issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
+    owner:'michaeljwilliams0123',
+    fetchPage:async page=>{calls.push(page);return pages[page]||[];}
+  });
+  assert.deepEqual(calls,[3,2]);
+  assert.equal(result.complete,true);
+  assert.equal(result.lastReviewAt,'2026-10-31T10:00:00Z');
+  assert.equal(result.lastMeaningfulAt,'2026-10-29T08:00:00Z');
+});
+
+test('owner change after older report is retained even across page boundary',async()=>{
+  const result=await readCouncilActivity({
+    issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
+    owner:'michaeljwilliams0123',
+    fetchPage:async page=>page===3?[{user:{login:'michaeljwilliams0123'},body:'Change',created_at:'2026-10-31T11:00:00Z'}]:
+      page===2?[{user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z'}]:[]
+  });
+  assert.equal(result.complete,true);
+  assert.equal(result.lastMeaningfulAt,'2026-10-31T11:00:00Z');
+});
+
+test('never treat a truncated comment history as no review',async()=>{
+  const result=await readCouncilActivity({
+    issue:{comments:1100,created_at:'2026-10-29T08:00:00Z'},
+    owner:'michaeljwilliams0123',maxPages:2,
+    fetchPage:async()=>[]
+  });
+  assert.equal(result.complete,false);
+});
+
+test('manual council dispatch fetches actual issue context, not generic placeholder text',()=>{
+  const yml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
+  assert.match(yml,/github\.rest\.issues\.get/);
+  assert.match(yml,/context\.eventName === 'workflow_dispatch'/);
+  assert.doesNotMatch(yml,/body = 'workflow_dispatch owner-first'/);
 });
