@@ -47,6 +47,13 @@ function instant(value){
  return Date.parse(value);
 }
 function validWorkflow(name){return typeof name==='string'&&ALLOWED_WORKFLOWS.has(name);}
+function runWorkflowAllowed(run){
+ // GitHub run.path identifies the workflow file for rerun/cancel requests.
+ // Missing paths or unexpected refs/paths cannot authorize a mutation.
+ if(typeof run?.path!=='string')return false;
+ const match=/^\.github\/workflows\/([a-zA-Z0-9._-]+)$/.exec(run.path);
+ return Boolean(match && validWorkflow(match[1]));
+}
 function positiveId(n){return Number.isSafeInteger(n)&&n>0;}
 function requiredExpectedRun(plan,kind){
  return exactKeys(plan.expected,kind==='cancel'?['runAttempt','headSha','status']:
@@ -146,12 +153,12 @@ function assertPrecondition(plan,observed){
  switch(plan.operation){
   case 'actions.dispatch':ok=observed?.state==='active';break;
   case 'actions.rerun_failed':
-   ok=observed?.status==='completed' &&
+   ok=runWorkflowAllowed(observed)&&observed?.status==='completed' &&
     observed.conclusion===plan.expected.conclusion &&
     observed.run_attempt===plan.expected.runAttempt &&
     observed.head_sha===plan.expected.headSha;break;
   case 'actions.cancel':
-   ok=observed?.status===plan.expected.status &&
+   ok=runWorkflowAllowed(observed)&&observed?.status===plan.expected.status &&
     observed.run_attempt===plan.expected.runAttempt &&
     observed.head_sha===plan.expected.headSha;break;
   case 'actions.enable':
