@@ -79,3 +79,20 @@ test('malformed new Repair coordinator never scores security negatives as succes
   assert.equal(execution.length>=8,true);
   assert.equal(execution.every(x=>x.candidate.score===0),true);
 });
+
+
+test('protected evaluator executes relative policy dependency for a candidate',async()=>{
+ const imported="import {trusted} from './github-principal-policy.mjs';\nif(!trusted) throw Error('policy missing');\n"+source;
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:imported,baseSha:sha('a'),candidateSha:sha('b'),
+  candidatePolicySource:'export const trusted = true;',
+ });
+ assert.equal(result.summary.candidateScore,result.summary.baselineScore,
+  'an admitted candidate with a valid local policy import must be evaluated');
+ assert.notEqual(result.baselineArtifactSha256,result.candidateArtifactSha256);
+ const missing=await evaluateRepairPair({
+  baseSource:source,candidateSource:imported,baseSha:sha('a'),candidateSha:sha('c'),
+ });
+ assert.equal(missing.summary.candidateScore,0,
+  'a candidate importing a policy without the source must fail closed');
+});
