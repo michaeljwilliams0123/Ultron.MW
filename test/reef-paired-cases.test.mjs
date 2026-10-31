@@ -6,6 +6,9 @@ import { readFile } from 'node:fs/promises';
 
 const sha = x => x.repeat(40);
 const source = await readFile(new URL('../src/repair-admission.mjs', import.meta.url), 'utf8');
+const policy = await readFile(new URL('../src/github-principal-policy.mjs', import.meta.url), 'utf8');
+const evaluate = args => evaluateRepairPair({...args,
+  basePolicySource:policy,candidatePolicySource:policy});
 
 test('pinned repair benchmark has disjoint development and held-out security cases', () => {
   assert.equal(REPAIR_CASES.length >= 8, true);
@@ -16,7 +19,7 @@ test('pinned repair benchmark has disjoint development and held-out security cas
 });
 
 test('same source gives no claimed improvement or independent Reef acceptance', async () => {
-  const result = await evaluateRepairPair({
+  const result = await evaluate({
     baseSource: source, candidateSource: source, baseSha: sha('a'), candidateSha: sha('b'),
   });
   assert.equal(result.schema, 'ultron.reef-paired-policy-benchmark.v1');
@@ -30,10 +33,13 @@ test('same source gives no claimed improvement or independent Reef acceptance', 
 });
 
 test('critical security regression is observed on actual candidate module behavior', async () => {
-  const altered = source.replace("const STEPS = new Set(['branch.create','branch.update','pr.create',",
-    "const STEPS = new Set(['pr.merge','branch.create','branch.update','pr.create',");
+  const altered = source
+    .replace("const STEPS = new Set(['branch.create','branch.update','pr.create',",
+      "const STEPS = new Set(['pr.merge','branch.create','branch.update','pr.create',")
+    .replace(".map(operation=>[operation,'repair.'+operation])));",
+      ".map(operation=>[operation,operation==='pr.merge'?'repair.pr.create':'repair.'+operation])));");
   assert.notEqual(altered, source);
-  const result = await evaluateRepairPair({
+  const result = await evaluate({
     baseSource: source, candidateSource: altered, baseSha: sha('a'), candidateSha: sha('c'),
   });
   const prohibited = result.caseResults.find(x => x.id === 'heldout-forbid-merge');
@@ -44,10 +50,10 @@ test('critical security regression is observed on actual candidate module behavi
 });
 
 test('invalid source lineage or malformed candidate cannot be counted as success', async () => {
-  await assert.rejects(() => evaluateRepairPair({
+  await assert.rejects(() => evaluate({
     baseSource: source, candidateSource: source, baseSha: 'main', candidateSha: sha('b'),
   }), /lineage/);
-  const result = await evaluateRepairPair({
+  const result = await evaluate({
     baseSource: source, candidateSource: 'export const broken = true;', baseSha: sha('a'), candidateSha: sha('b'),
   });
   assert.equal(result.summary.candidateScore, 0);
@@ -56,7 +62,7 @@ test('invalid source lineage or malformed candidate cannot be counted as success
 
 test('protected evaluator measures actual Repair coordinator episodes, not just admission', async()=>{
   const validCandidate=`export const createMemoryRepairLedger=()=>({});\nexport async function runRepairPR(){return {status:'complete'};}`;
-  const result=await evaluateRepairPair({
+  const result=await evaluate({
     baseSource:source,candidateSource:source,
     baseSha:sha('a'),candidateSha:sha('b'),
     baseExecutorSource:null,candidateExecutorSource:validCandidate,
@@ -70,7 +76,7 @@ test('protected evaluator measures actual Repair coordinator episodes, not just 
 });
 
 test('malformed new Repair coordinator never scores security negatives as success', async()=>{
-  const report=await evaluateRepairPair({
+  const report=await evaluate({
     baseSource:source,candidateSource:source,
     baseSha:sha('a'),candidateSha:sha('b'),
     baseExecutorSource:null,candidateExecutorSource:'export function broken ( {',

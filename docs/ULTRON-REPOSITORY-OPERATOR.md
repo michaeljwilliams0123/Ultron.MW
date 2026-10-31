@@ -1,6 +1,6 @@
 # Ultron Repository Operator decision record
 
-Status: **accepted target architecture; implementation pending**
+Status: **accepted target architecture; source implementation partial and not deployed**
 
 Recorded: October 31, 2026
 
@@ -41,7 +41,7 @@ authoritative 35-item decision register. They reconcile as follows:
 | One modular Node.js coordinator | **Evolve.** Preserve one logical coordinator; move durable operational ownership to the Hatchable control plane instead of multiplying coordinators. |
 | PostgreSQL durable database | **Retain.** It becomes the authoritative task/action/event ledger. |
 | Unified capability broker | **Retain and deepen.** All Repair, Admin, local, and provider operations enter through versioned capability contracts. |
-| Separate worker identities with narrow permissions | **Retain and make explicit.** Repair and Admin are separate GitHub Apps with different admission paths. |
+| Separate worker identities with narrow permissions | **Evolve without weakening.** One GitHub App installation supplies a stable actor, while every operation receives a separately down-scoped token profile and authorization path. |
 | Event-driven work plus periodic reconciliation | **Retain.** Reconciliation may observe uncertain work but cannot blindly replay a possible mutation. |
 | Models propose; deterministic authorization controls effects | **Retain.** Planner or learned output cannot mint authority or approve itself. |
 | Measured candidate promotion | **Retain.** Learning consumes verified trajectories and remains behind independent held-out evaluation. |
@@ -53,21 +53,27 @@ is superseded as the **target** by Q4. Pages removal is not authorized by this
 record: it requires live Hatchable feature/security parity, owner acceptance,
 rollback, consumer inventory, and a distinct cleanup pull request.
 
-## Operator identity split
+## Unified principal, separated authority
 
-The logical operator uses two separately installed GitHub App principals. A
-single permanent admin credential would let an ordinary repair path change the
-controls that judge its work, so it is not accepted.
+The logical operator uses one repository-installed GitHub App principal,
+`ultron-github-app`. Consolidating the actor does not create a permanent admin
+session. Each operation is admitted independently and receives a newly minted,
+repository-scoped installation token containing only that operation's exact
+permission profile. A broad token carrying the App's full installed grants is
+rejected.
 
-| Principal | Normal availability | Intended authority | Explicitly excluded |
+| Operation class | Authorization | Runtime token profile | Explicitly excluded |
 | --- | --- | --- | --- |
-| Repair App | Standing, repository-scoped, revocable | Create/update `ultron/*` branches and PRs, comment on its work, observe checks, and dispatch only an admitted Verify workflow | Protected-main writes, merge, deployment, rules/settings, webhooks, installations, visibility, billing, and Admin App invocation |
-| Admin App | Unavailable until fresh owner step-up | One exact, short-lived, version-checked repository administration plan with independent readback and rollback | General repair, scheduled use, planner escalation, broad cross-repository authority, and reusable omnibus admin sessions |
+| Repair branch/PR work | Revocable standing owner grant plus bounded repair plan | Exactly the required branch, pull-request or issue-comment permission; no admin permission | Protected-main writes, merge, deployment, settings, webhooks, visibility, billing |
+| Check observation and exact-head Verify dispatch | Revocable standing grant plus pinned branch/head precondition | `metadata:read`, the minimum read permission, and `actions:write` only for dispatch | Arbitrary workflow names, floating refs, merge or release authority |
+| Workflow state, repository settings and webhook operations | Fresh independent owner step-up bound to the exact plan digest, installation, expiry and one-use idempotency key | Only the named Actions, Administration or Webhooks permission | Planner escalation, reusable omnibus sessions, ruleset bypass, secrets, credential or billing changes |
 
-Source declarations or masked setup values do not prove either identity is
-ready. Runtime admission requires the expected installation, repository, actor,
-effective permissions, expiry, and revocation state to be independently read
-back without exposing credential material.
+Source declarations or masked setup values do not prove the principal is ready.
+Runtime admission requires the expected installation, repository, actor,
+operation, effective token permissions, expiry and revocation state to be
+independently read back without exposing credential material. Exact-head CI and
+an independent approving reviewer remain separate protected-release evidence;
+the App cannot review its own work and this contract exposes no merge route.
 
 ## Canonical execution lifecycle
 
@@ -75,8 +81,9 @@ back without exposing credential material.
    class, and requested outcome to one durable task ID.
 2. **Plan** — produce a bounded plan with allowed paths/capabilities, expected
    postconditions, attempt/time/cost budgets, and rollback.
-3. **Authorize** — deterministic policy admits the Repair App or requests a
-   separately scoped Admin step-up. Model text never supplies authorization.
+3. **Authorize** — deterministic policy selects one exact operation profile;
+   high-impact operations require a separately verified owner step-up. Model
+   text never supplies authorization.
 4. **Execute** — persist the intended operation and idempotency key before any
    external write, then dispatch within its declared scope.
 5. **Verify** — independently observe GitHub object identity, branch/PR head,
@@ -91,8 +98,8 @@ back without exposing credential material.
 | Priority | Deliverable | Exit gate |
 | --- | --- | --- |
 | P0 | Decision/current-state correction | Documentation distinguishes present state, accepted target, contradictions, and transition gates. |
-| P0 | [Repair App loop](https://github.com/michaeljwilliams0123/Ultron.MW/issues/168) | One seeded failure reaches an exact-head verified PR with bounded repair and no duplicate effects. |
-| P1 | [Admin App step-up](https://github.com/michaeljwilliams0123/Ultron.MW/issues/169) | A reversible admin canary requires fresh step-up; every non-admin path is denied. |
+| P0 | [Repair loop](https://github.com/michaeljwilliams0123/Ultron.MW/issues/168) | One seeded failure reaches an exact-head verified PR with bounded repair and no duplicate effects. |
+| P1 | [High-impact operation step-up](https://github.com/michaeljwilliams0123/Ultron.MW/issues/169) | A reversible admin canary uses the same principal but requires fresh step-up and an exact down-scoped token; every routine path is denied. |
 | P1 | [Hatchable UI cutover](https://github.com/michaeljwilliams0123/Ultron.MW/issues/170) | Full lifecycle, identity visibility, owner stop, recovery, security negatives, and rollback pass live acceptance. |
 | P2 | Route consolidation | Only specifically proven superseded routes retire; no safe deletions remains a valid outcome. |
 
@@ -115,9 +122,9 @@ the repository, public issues, PRs, or receipts.
 
 ## Decision frontier after implementation
 
-The next choices are deliberately deferred until the Repair App supplies real
+The next choices are deliberately deferred until the repair lane supplies real
 evidence: the exact minimum GitHub App grant set; which CI/review failures are
 eligible for autonomous repair; the per-objective attempt/time/cost ceilings;
-which repository administration operations justify Admin App support; and the
+which repository administration operations justify step-up support; and the
 measured Hatchable/Pages parity window required before retirement. Those are
 deployment and policy decisions, not permission to guess from source.

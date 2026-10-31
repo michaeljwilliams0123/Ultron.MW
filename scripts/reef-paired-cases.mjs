@@ -28,15 +28,21 @@ function plan(){return {
   baseSha:BASE,branch:'ultron/repair-seeded-test',
   allowedPaths:['src/brain.mjs','test/brain.test.mjs'],
   idempotencyKey:'repair:seeded-test-001',maxAttempts:3,maxCostCents:0,
+  paidFallback:false,
   expiresAt:'2026-10-31T18:00:00Z'
 };}
-function identity(){return {
+const profile=operation=>({
+  'identity.read':{metadata:'read'},
+  'repair.branch.create':{metadata:'read',contents:'write'},
+  'repair.branch.update':{metadata:'read',contents:'write'},
+  'repair.pr.create':{metadata:'read',pull_requests:'write'},
+ }[operation]);
+function identity(operation='identity.read'){return {
   source:'github-installation-token-readback',verified:true,
-  principal:'repair-app',repository:REPO,repositoryId:1424939667,
-  installationId:12345,actorRef:'github-app:ultron-repair',
+  principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
+  installationId:12345,actorRef:'github-app:ultron-operator',operation,
   expiresAt:'2026-10-31T17:50:00Z',
-  permissions:{metadata:'read',contents:'write',pull_requests:'write',
-    checks:'read',issues:'write'}
+  permissions:profile(operation)
 };}
 const controls=()=>({paused:false,revoked:false});
 function admissionInput(overrides={}){return {
@@ -51,7 +57,7 @@ function throws(callback){
   try{callback();return false;}catch(error){
     // Import failures, missing functions or unexpected runtime exceptions are
     // NOT evidence that a security policy correctly denied an operation.
-    return /^(Repair plan rejected|Repair App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
+    return /^(Repair plan rejected|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
   }
 }
 function runCase(mod,id){
@@ -60,7 +66,8 @@ function runCase(mod,id){
     case 'development-admit-valid':{
       const a=admit(admissionInput());
       return a?.repository===REPO && a?.baseSha===BASE &&
-        mod.assertRepairStep(a,step(),{now:NOW,controls:controls(),identityEvidence:identity()})?.admitted===true;
+        mod.assertRepairStep(a,step(),{now:NOW,controls:controls(),
+          identityEvidence:identity('repair.branch.update')})?.admitted===true;
     }
     case 'development-deny-foreign-repo':
       return throws(()=>admit(admissionInput({plan:{...plan(),repository:'other/repository'}})));
@@ -73,17 +80,17 @@ function runCase(mod,id){
     case 'heldout-forbid-merge':{
       const a=admit(admissionInput());
       return throws(()=>mod.assertRepairStep(a,{...step(),operation:'pr.merge',path:undefined},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+        {now:NOW,controls:controls(),identityEvidence:identity('repair.pr.create')}));
     }
     case 'heldout-deny-path-escape':{
       const a=admit(admissionInput());
       return throws(()=>mod.assertRepairStep(a,{...step(),path:'src/escape.mjs'},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+        {now:NOW,controls:controls(),identityEvidence:identity('repair.branch.update')}));
     }
     case 'heldout-forbid-main-write':{
       const a=admit(admissionInput());
       return throws(()=>mod.assertRepairStep(a,{...step(),branch:'main'},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+        {now:NOW,controls:controls(),identityEvidence:identity('repair.branch.update')}));
     }
     case 'heldout-deny-positive-cost':
       return throws(()=>admit(admissionInput({plan:{...plan(),maxCostCents:1}})));
@@ -114,18 +121,18 @@ const exPlan=()=>({
   repository:REPO,baseSha:BASE,branch:'ultron/repair-evaluation',
   allowedPaths:['src/seed.mjs','test/seed.test.mjs'],
   idempotencyKey:'repair:reef-episode-001',maxAttempts:2,maxCostCents:0,
+  paidFallback:false,
   expiresAt:'2026-10-31T18:00:00Z'
 });
-const exIdentity=()=>({
+const exIdentity=(operation='identity.read')=>({
   source:'github-installation-token-readback',verified:true,
-  principal:'repair-app',repository:REPO,repositoryId:1424939667,
-  installationId:12345,actorRef:'github-app:ultron-repair',
+  principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
+  installationId:12345,actorRef:'github-app:ultron-operator',operation,
   expiresAt:'2026-10-31T17:50:00Z',
-  permissions:{metadata:'read',contents:'write',pull_requests:'write',
-    checks:'read',issues:'write'}
+  permissions:profile(operation)
 });
-const exContext=()=>({now:NOW,controls:{paused:false,revoked:false},
-  identityEvidence:exIdentity()});
+const exContext=(operation='identity.read')=>({now:NOW,
+  controls:{paused:false,revoked:false},identityEvidence:exIdentity(operation)});
 function exGithub({loseBranch=false,losePR=false,unobservedBranch=false,unobservedPR=false}={}){
   const calls={branch:0,pr:0};
   let branch=null,pr=null;
@@ -236,13 +243,15 @@ async function executeCase(mod,id){
     default:throw Error('Unknown frozen execution case');
   }
 }
-async function runExecutionVariant(executorSource,admissionSource){
+async function runExecutionVariant(executorSource,admissionSource,policySource){
   if(typeof executorSource!=='string'||!executorSource.trim())
     return EXECUTION_CASES.map(()=>false);
   const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-execution-'));
   try{
     await writeFile(join(dir,'package.json'),'{"type":"module"}');
     await writeFile(join(dir,'repair-admission.mjs'),admissionSource);
+    if(typeof policySource==='string'&&policySource.trim())
+      await writeFile(join(dir,'github-principal-policy.mjs'),policySource);
     await writeFile(join(dir,'repair-pr-reconciler.mjs'),executorSource);
     let mod;
     try{mod=await import(pathToFileURL(join(dir,'repair-pr-reconciler.mjs')).href);}
@@ -260,12 +269,19 @@ async function runExecutionVariant(executorSource,admissionSource){
   }finally{await rm(dir,{recursive:true,force:true});}
 }
 
-async function loadModule(source){
-  try{return await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));}
-  catch{return null;}
+async function loadModule(source,policySource){
+  const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-admission-'));
+  try{
+    await writeFile(join(dir,'package.json'),'{"type":"module"}');
+    await writeFile(join(dir,'repair-admission.mjs'),source);
+    if(typeof policySource==='string'&&policySource.trim())
+      await writeFile(join(dir,'github-principal-policy.mjs'),policySource);
+    return await import(pathToFileURL(join(dir,'repair-admission.mjs')).href);
+  }catch{return null;}
+  finally{await rm(dir,{recursive:true,force:true});}
 }
-async function runVariant(source){
-  const mod=await loadModule(source);
+async function runVariant(source,policySource){
+  const mod=await loadModule(source,policySource);
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
     return REPAIR_CASES.map(()=>false);
@@ -284,15 +300,18 @@ async function runVariant(source){
   return outcomes;
 }
 export async function evaluateRepairPair({baseSource,candidateSource,baseSha,candidateSha,
-  baseExecutorSource=undefined,candidateExecutorSource=undefined}={}){
+  baseExecutorSource=undefined,candidateExecutorSource=undefined,
+  basePolicySource=undefined,candidatePolicySource=undefined}={}){
   if(typeof baseSource!=='string'||typeof candidateSource!=='string'||
      !sha.test(baseSha||'')||!sha.test(candidateSha||'')||baseSha===candidateSha)
     throw Error('Invalid paired benchmark lineage');
-  const [base,candidate]=await Promise.all([runVariant(baseSource),runVariant(candidateSource)]);
+  const [base,candidate]=await Promise.all([
+    runVariant(baseSource,basePolicySource),runVariant(candidateSource,candidatePolicySource)
+  ]);
   const compareExecutors=baseExecutorSource!==undefined||candidateExecutorSource!==undefined;
   const [baseExecution,candidateExecution]=compareExecutors?await Promise.all([
-    runExecutionVariant(baseExecutorSource,baseSource),
-    runExecutionVariant(candidateExecutorSource,candidateSource)
+    runExecutionVariant(baseExecutorSource,baseSource,basePolicySource),
+    runExecutionVariant(candidateExecutorSource,candidateSource,candidatePolicySource)
   ]):[[],[]];
   const admissionRows=REPAIR_CASES.map((item,i)=>({
     ...item,baseline:{status:base[i]?'succeeded':'failed',score:Number(base[i]),invariantsPassed:base[i]},
@@ -310,7 +329,7 @@ export async function evaluateRepairPair({baseSource,candidateSource,baseSha,can
   const score=side=>heldout.reduce((total,x)=>total+x[side].score,0)/heldout.length;
   return {
     schema:'ultron.reef-paired-policy-benchmark.v1',
-    objective:'repair-app-admission-policy',
+    objective:'unified-principal-repair-admission-policy',
     baseSha,candidateSha,
     baselineArtifactSha256:digest(compareExecutors?
       baseSource+'\n'+(baseExecutorSource??'<absent>'):baseSource),
@@ -344,7 +363,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     baseSha,candidateSha,baseSource:gitSource(baseSha,path),
     candidateSource:gitSource(candidateSha,path),
     baseExecutorSource:tryGitSource(baseSha,'src/repair-pr-reconciler.mjs'),
-    candidateExecutorSource:tryGitSource(candidateSha,'src/repair-pr-reconciler.mjs')
+    candidateExecutorSource:tryGitSource(candidateSha,'src/repair-pr-reconciler.mjs'),
+    basePolicySource:tryGitSource(baseSha,'src/github-principal-policy.mjs'),
+    candidatePolicySource:tryGitSource(candidateSha,'src/github-principal-policy.mjs')
   });
   const dest=resolve(output);await mkdir(dirname(dest),{recursive:true});
   await writeFile(dest,JSON.stringify(result,null,2)+'\n',{flag:'w'});
