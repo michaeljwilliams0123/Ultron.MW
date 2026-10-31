@@ -17,6 +17,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - name: Verify the zero-paid, ephemeral runner environment
         shell: bash
         run: |
@@ -31,7 +32,8 @@ jobs:
         run: |
           set -euo pipefail
           source "$RUNNER_TEMP/reef-venv/bin/activate"
-          python -m unittest discover -s test -p test_reef_ci_probe.py -v
+          python -m unittest discover -s test -p 'test_reef*.py' -v
+          node --test test/reef-paired-cases.test.mjs
       - name: Install and verify fixed upstream Reef wheel
         shell: bash
         run: |
@@ -51,11 +53,43 @@ jobs:
           set -euo pipefail
           source "$RUNNER_TEMP/reef-venv/bin/activate"
           python scripts/reef_ci_probe.py
+      - name: Evaluate base and candidate Repair App policy against actual checked-in cases
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          evaluator="scripts/reef-paired-cases.mjs"
+          if git cat-file -e "${BASE_SHA}:scripts/reef-paired-cases.mjs" 2>/dev/null; then
+            git show "${BASE_SHA}:scripts/reef-paired-cases.mjs" > "$RUNNER_TEMP/reef-paired-base.mjs"
+            evaluator="$RUNNER_TEMP/reef-paired-base.mjs"
+            echo "BASE_EVALUATOR_USED=true" >> "$GITHUB_ENV"
+          else
+            # First bootstrap PR: candidate-authored evaluator is never
+            # evidence of an independent held-out evaluator.
+            echo "BASE_EVALUATOR_USED=false" >> "$GITHUB_ENV"
+          fi
+          node "$evaluator" "$BASE_SHA" "$HEAD_SHA" artifacts/reef-paired-source-benchmark.json
+      - name: Report independently observed case scores to real Reef receipts
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/reef-venv/bin/activate"
+          python scripts/reef_paired_feedback.py
       - name: Upload runtime-only evidence, never credentials or logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: reef-runtime-probe-${{ github.sha }}-${{ github.run_attempt }}
-          path: artifacts/reef-runtime-probe.json
+          path: |
+            artifacts/reef-runtime-probe.json
+            artifacts/reef-paired-source-benchmark.json
+            artifacts/reef-paired-feedback.json
           if-no-files-found: ignore
           retention-days: 7
