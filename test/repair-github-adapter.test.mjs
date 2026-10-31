@@ -51,7 +51,7 @@ test('branch readback has exact ref and object SHA',async()=>{
 test('PR readback is restricted to exactly one owner-owned open PR',async()=>{
  const {operator,calls}=stub(),g=createRepairGitHubAdapter({operator});
  const got=await g.findPR({repository:REPO,branch:BRANCH,base:'main'});
- assert.deepEqual(got,{number:176,repo:REPO,head:BRANCH,base:'main',
+ assert.deepEqual(got,{number:176,repo:REPO,head:BRANCH,headSha:SHA,base:'main',
    title:'repair: accepted seeded test',body:'<!-- ultron-repair:'+ '1'.repeat(64) +' -->',draft:false});
  assert.match(calls[0].path,/head=michaeljwilliams0123:ultron\/repair-seeded-case/);
  assert.match(calls[0].path,/state=all/);
