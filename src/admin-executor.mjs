@@ -200,6 +200,17 @@ function verifiedPostcondition(plan,observed){
   default:return false; // asynchronous results need separate evidence
  }
 }
+async function markOrResidual(services,record,response){
+ try{
+  await services.ledger.mark(record);
+  return Object.freeze(response);
+ }catch{
+  // A write may have succeeded even though its ledger receipt failed.
+  // Preserve an unknown outcome, never surface a retryable exception.
+  return Object.freeze({...response,state:'reconcile-required',ledgerMarkFailed:true});
+ }
+}
+
 /**
  * An authorized executable path, not a planner grant.
  * Services come from trusted runtime construction and have interfaces:
@@ -245,14 +256,16 @@ export async function executeAdminOperation(plan,services){
    if(verifiedPostcondition(plan,after))state='verified';
    else state='reconcile-required';
   }
-  await services.ledger.mark({...intent,state,dispatchStatus:code});
-  return Object.freeze({state,operation:plan.operation,
-   idempotencyKey:plan.idempotencyKey,planDigest:validation.planDigest});
- }catch{
+  return markOrResidual(services,{...intent,state,dispatchStatus:code},
+   {state,operation:plan.operation,idempotencyKey:plan.idempotencyKey,
+    planDigest:validation.planDigest});
+ }catch(error){
   // The effect may have committed. Never automatically repeat a POST/PATCH/PUT.
-  await services.ledger.mark({...intent,state:'reconcile-required'});
-  return Object.freeze({state:'reconcile-required',
-   operation:plan.operation,reason:'write-outcome-unknown',
-   idempotencyKey:plan.idempotencyKey});
+  const status=Number(error?.status);
+  return markOrResidual(services,{...intent,state:'reconcile-required',
+   errorName:String(error?.name??'Error').slice(0,80),
+   ...(Number.isInteger(status)&&status>=400&&status<=599?{dispatchStatus:status}:{})},
+   {state:'reconcile-required',operation:plan.operation,
+    reason:'write-outcome-unknown',idempotencyKey:plan.idempotencyKey});
  }
 }
