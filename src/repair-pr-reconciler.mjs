@@ -111,8 +111,25 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
       baseSha:admission.baseSha,idempotencyKey:key,attempt:1,
     },next);
   }
-  if(entry.phase==='complete')
+  if(['branch-confirmed','pr-dispatch','complete'].includes(entry.phase)){
+    // Completion and resumption are observations, not permanent authority:
+    // out-of-band deletion or a changed branch ref invalidates stale receipts.
+    const branch=await github.getBranch({
+      repository:admission.repository,branch:admission.branch
+    });
+    if(!branch)return result(entry,admission,marker,'reconcile-required');
+    if(!branchVerified(branch,admission))
+      throw Error('Repair branch readback identity mismatch');
+  }
+  if(entry.phase==='complete'){
+    const pr=await github.findPR({
+      repository:admission.repository,branch:admission.branch,base:'main'
+    });
+    if(!pr)return result(entry,admission,marker,'reconcile-required');
+    if(!prVerified(pr,admission,marker)||pr.number!==entry.prNumber)
+      throw Error('Repair PR readback identity mismatch');
     return result(entry,admission,marker,'complete');
+  }
 
   if(entry.phase==='reserved'){
     // An existing unclaimed branch is not proof that this Repair App created it.
