@@ -5,8 +5,7 @@ on:
     types: [opened, labeled, edited]
   pull_request:
     types: [opened, synchronize, reopened]
-  issue_comment:
-    types: [created]
+  workflow_call:
   workflow_dispatch:
     inputs:
       item_number:

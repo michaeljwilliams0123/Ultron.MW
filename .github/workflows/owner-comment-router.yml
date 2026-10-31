@@ -1,0 +1,49 @@
+name: Ultron owner comment router
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  cloud-feedback:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event.comment.user.login == 'michaeljwilliams0123' &&
+      github.event.issue.user.login == 'michaeljwilliams0123' &&
+      startsWith(github.event.comment.body, 'ULTRON_FEEDBACK_V1') &&
+      startsWith(github.event.issue.body, 'ULTRON_CLOUD_V1')
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/cloud-objective.yml
+    secrets: inherit
+
+  pr-conversation:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event.comment.user.login == 'michaeljwilliams0123' &&
+      github.event.issue.pull_request != null &&
+      github.event.issue.state == 'open' &&
+      !startsWith(github.event.comment.body, '@coderabbitai')
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    uses: ./.github/workflows/pr-brain.yml
+    secrets: inherit
+
+  council-command:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event.comment.user.login == 'michaeljwilliams0123' &&
+      contains(github.event.comment.body, '/council')
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    uses: ./.github/workflows/council-debate.yml
+    secrets: inherit
