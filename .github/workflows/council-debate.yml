@@ -107,7 +107,8 @@ jobs:
               body = String(target.body || '').slice(0,6000);
               const fullBody = String(target.body || '').toLowerCase();
               const riskWords = ['secret','credential','token','password','bypass security','fail-open','delete main','force push'];
-              let securitySignal = riskWords.some(word=>fullBody.includes(word));
+              let securitySignal = riskWords.some(word=>
+                title.toLowerCase().includes(word) || fullBody.includes(word));
               // Include the latest genuine owner update when available, but
               // never replace the authoritative issue/PR title and body.
               if (isPr === 'false') {
