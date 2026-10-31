@@ -84,3 +84,154 @@ test('existing working customization points are still present and usable',()=>{
  assert.equal(typeof generateIntegrationFiles,'function');
  assert.equal(typeof createCapabilityBroker,'function');
 });
+
+
+test('a repaired formerly failing capability is an advancement rather than invisible preservation',()=>{
+ const result=classifyMutation({
+  baseline:[observed('council.reason',false),observed('owner.workbench')],
+  candidate:[observed('council.reason'),observed('owner.workbench')]
+ });
+ assert.equal(result.classification,'ADVANCEMENT');
+ assert.deepEqual(result.recovered,['council.reason']);
+ assert.deepEqual(result.preserved,['owner.workbench']);
+ assert.deepEqual(result.regressed,[]);
+});
+
+test('a newly introduced failing capability is not counted as preserved or advancement',()=>{
+ const result=classifyMutation({
+  baseline:[observed('owner.workbench')],
+  candidate:[observed('owner.workbench'),observed('new.model.adapter',false)]
+ });
+ assert.equal(result.classification,'INCONCLUSIVE');
+ assert.deepEqual(result.added,[]);
+ assert.deepEqual(result.failed,['new.model.adapter']);
+ assert.deepEqual(result.preserved,['owner.workbench']);
+});
+
+test('an existing known failure is not silently mislabeled as a healthy unchanged system',()=>{
+ const result=classifyMutation({
+  baseline:[observed('owner.workbench',false)],
+  candidate:[observed('owner.workbench',false)]
+ });
+ assert.equal(result.classification,'INCONCLUSIVE');
+ assert.deepEqual(result.failed,['owner.workbench']);
+ assert.deepEqual(result.preserved,[]);
+ assert.equal(result.releaseEligible,false);
+});
+
+test('a previously failing case without a candidate measurement stays inconclusive',()=>{
+ const result=classifyMutation({
+  baseline:[observed('council.reason',false)],
+  candidate:[]
+ });
+ assert.equal(result.classification,'INCONCLUSIVE');
+ assert.deepEqual(result.unverified,['council.reason']);
+ assert.equal(result.releaseEligible,false);
+});
+
+test('empty case sets cannot prove anything was preserved',()=>{
+ const result=classifyMutation({baseline:[],candidate:[]});
+ assert.equal(result.classification,'INCONCLUSIVE');
+ assert.equal(result.releaseEligible,false);
+});
+
+test('regression takes priority over a recovered capability and an added capability',()=>{
+ const result=classifyMutation({
+  baseline:[
+   observed('owner.workbench'),observed('outer.loop'),
+   observed('council.reason',false)
+  ],
+  candidate:[
+   observed('owner.workbench',false),observed('outer.loop'),
+   observed('council.reason'),observed('new.research.adapter')
+  ]
+ });
+ assert.equal(result.classification,'REGRESSION');
+ assert.deepEqual(result.regressed,['owner.workbench']);
+ assert.deepEqual(result.recovered,['council.reason']);
+ assert.deepEqual(result.added,['new.research.adapter']);
+ assert.equal(result.releaseEligible,false);
+});
+
+test('a case with missing baseline evidence cannot be called a verified advancement',()=>{
+ const result=classifyMutation({
+  baseline:[{id:'owner.workbench',passed:true}],
+  candidate:[observed('owner.workbench'),observed('new.research.adapter')]
+ });
+ assert.equal(result.classification,'INCONCLUSIVE');
+ assert.deepEqual(result.unverified,['owner.workbench']);
+ assert.deepEqual(result.added,['new.research.adapter']);
+});
+
+test('input receipts with whitespace and nonstring evidence cannot establish success',()=>{
+ for(const evidenceId of ['   ',null,0,{},false]){
+  const result=classifyMutation({
+   baseline:[observed('owner.workbench')],
+   candidate:[observed('owner.workbench'),{id:'new.adapter',passed:true,evidenceId}]
+  });
+  assert.equal(result.classification,'INCONCLUSIVE');
+  assert.deepEqual(result.unverified,['new.adapter']);
+ }
+});
+
+test('baseline duplicate cases fail closed rather than masking earlier behavior',()=>{
+ assert.throws(()=>classifyMutation({
+  baseline:[observed('owner.workbench'),observed('owner.workbench',false)],
+  candidate:[observed('owner.workbench')]
+ }),/duplicate/i);
+});
+
+test('nonarrays and malformed case ids fail closed',()=>{
+ for(const args of [
+  undefined,{baseline:null,candidate:[]},{baseline:[],candidate:{}},
+  {baseline:[],candidate:[{id:'__proto__',passed:true,evidenceId:'test'}]},
+  {baseline:[],candidate:[{id:'ok.case',passed:1,evidenceId:'test'}]}
+ ]){
+  assert.throws(()=>classifyMutation(args),/invalid/i);
+ }
+});
+
+test('classification remains invariant under case ordering and output is immutable',()=>{
+ const a=[observed('outer.loop'),observed('owner.workbench'),observed('council.reason',false)];
+ const b=[observed('new.adapter'),observed('council.reason'),
+  observed('owner.workbench'),observed('outer.loop')];
+ const direct=classifyMutation({baseline:a,candidate:b});
+ const reversed=classifyMutation({baseline:[...a].reverse(),candidate:[...b].reverse()});
+ assert.deepEqual(reversed,direct);
+ assert.equal(direct.classification,'ADVANCEMENT');
+ assert.ok(Object.isFrozen(direct));
+ for(const key of ['preserved','added','recovered','regressed','failed','unverified'])
+  assert.ok(Object.isFrozen(direct[key]),key);
+ assert.deepEqual(direct.recovered,['council.reason']);
+});
+
+test('exhaustive two-feature mutation matrix never calls a lost working feature advancement',()=>{
+ const feature=['owner.workbench','outer.loop'];
+ const states=[undefined,false,true];
+ for(const baseA of [false,true]){
+  for(const baseB of [false,true]){
+   for(const nextA of states){
+    for(const nextB of states){
+     const baseline=[observed(feature[0],baseA),observed(feature[1],baseB)];
+     const candidate=[nextA===undefined?null:observed(feature[0],nextA),
+      nextB===undefined?null:observed(feature[1],nextB)].filter(Boolean);
+     const result=classifyMutation({baseline,candidate});
+     const hasRegression=(baseA&&!nextA)||(baseB&&!nextB);
+     if(hasRegression)assert.equal(result.classification,'REGRESSION',
+      JSON.stringify({baseA,baseB,nextA,nextB}));
+     assert.equal(result.releaseEligible,false);
+    }
+   }
+  }
+ }
+});
+
+test('large custom capability sets preserve all features without truncation',()=>{
+ const baseline=Array.from({length:256},(_,i)=>observed('custom.feature.'+String(i).padStart(3,'0')));
+ const candidate=[...baseline,observed('new.large.adapter')];
+ const result=classifyMutation({baseline,candidate});
+ assert.equal(result.classification,'ADVANCEMENT');
+ assert.equal(result.preserved.length,256);
+ assert.deepEqual(result.added,['new.large.adapter']);
+ assert.deepEqual(result.regressed,[]);
+});
