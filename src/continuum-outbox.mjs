@@ -20,9 +20,9 @@ function validate(contract,now){
   const c=contract;
   if(!c||typeof c!=='object'||Array.isArray(c)||
     !Number.isSafeInteger(c.taskId)||c.taskId<1||
-    !IDENTIFIER.test(c.objectiveId||'')||
-    !IDENTIFIER.test(c.deliveryId||'')||
-    !IDENTIFIER.test(c.idempotencyKey||'')||
+    typeof c.objectiveId!=='string'||!IDENTIFIER.test(c.objectiveId)||
+    typeof c.deliveryId!=='string'||!IDENTIFIER.test(c.deliveryId)||
+    typeof c.idempotencyKey!=='string'||!IDENTIFIER.test(c.idempotencyKey)||
     c.repository!==REPO||
     !SHA.test(c.sourceSha||'')||
     !DIGEST.test(c.authoritySha||'')||
