@@ -50,7 +50,7 @@ export async function readCouncilActivity({
     for(let i=comments.length-1;i>=0;i--){
       const c=comments[i];
       if(!lastOwnerAt&&c?.user?.login===owner&&
-        !/^\\s*\\/council\\b/.test(c.body||''))lastOwnerAt=c.created_at;
+        !/^\s*\/council\b/.test(c.body||''))lastOwnerAt=c.created_at;
       if(!lastReviewAt&&c?.user?.login==='github-actions[bot]'&&
         c.body?.startsWith('# Ultron Council Report'))lastReviewAt=c.created_at;
     }
