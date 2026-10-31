@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { evaluateRepairPair, REPAIR_CASES } from '../scripts/reef-paired-cases.mjs';
+import { evaluateRepairPair, REPAIR_CASES, selectNodePermissionFlag } from '../scripts/reef-paired-cases.mjs';
 import { readFile } from 'node:fs/promises';
 
 const sha = x => x.repeat(40);
@@ -288,4 +288,14 @@ test('candidate cannot forge valid signed successes by replacing crypto and fs E
  assert.equal(result.summary.candidateScore,0,
   'candidate cannot use mutable Node built-in exports as signing oracle');
  assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
+});
+
+
+test('Reef enforces permissions on both Node 20 and newer Node runtimes',()=>{
+ assert.equal(selectNodePermissionFlag(new Set(['--experimental-permission'])),
+  '--experimental-permission');
+ assert.equal(selectNodePermissionFlag(new Set(['--permission','--experimental-permission'])),
+  '--permission');
+ assert.equal(selectNodePermissionFlag(new Set(['--permission'])),'--permission');
+ assert.throws(()=>selectNodePermissionFlag(new Set()),/permission flag unavailable/);
 });
