@@ -163,3 +163,21 @@ test('Admin v1 does not disable mandatory core Verify workflow',()=>{
  const plan={...base('actions.disable',{workflow:'verify.yml'}),expected:{state:'active'}};
  assert.throws(()=>validateAdminPlan(plan,NOW),/plan|scope|operation/);
 });
+
+
+test('rerun and cancel are denied for non-allowlisted workflow runs before any admin mutation',async()=>{
+ for(const [operation,expected] of [
+  ['actions.rerun_failed',{runAttempt:1,headSha:SHA,conclusion:'failure'}],
+  ['actions.cancel',{runAttempt:1,headSha:SHA,status:'in_progress'}]
+ ]){
+  const input={...base(operation),expected};
+  for(const path of ['.github/workflows/untrusted-deploy.yml','other/verify.yml',null]){
+   const readback={path,status:operation==='actions.cancel'?'in_progress':'completed',
+    conclusion:'failure',run_attempt:1,head_sha:SHA};
+   const {services,calls,records}=harness(input,{readback});
+   await assert.rejects(executeAdminOperation(input,services),/precondition/i);
+   assert.equal(calls.filter(x=>x.method!=='GET').length,0);
+   assert.equal(records.length,0);
+  }
+ }
+});
