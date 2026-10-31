@@ -175,3 +175,52 @@ test('changed branch head after confirmation denies PR dispatch or stale complet
  await assert.rejects(runRepairPR(args({ledger,service})),/branch readback identity mismatch/);
  assert.equal(service.calls.pr,1);
 });
+
+test('stale reserved snapshot from concurrent loser adopts its own completed ledger, not a foreign-branch error',async()=>{
+ const ledger=createMemoryRepairLedger(),service=fakeGitHub();
+ await runRepairPR(args({ledger,service}));
+ const stale={...ledger,claim:async({key,fingerprint})=>({
+   claimed:false,entry:{key,fingerprint,phase:'reserved',prNumber:null}
+ })};
+ const second=await runRepairPR(args({ledger:stale,service}));
+ assert.equal(second.status,'complete');
+ assert.equal(service.calls.branch,1);
+ assert.equal(service.calls.pr,1);
+});
+
+test('stale branch-confirmed snapshot from concurrent loser never redelivers PR',async()=>{
+ const ledger=createMemoryRepairLedger(),service=fakeGitHub();
+ await runRepairPR(args({ledger,service}));
+ const stale={...ledger,claim:async({key,fingerprint})=>({
+   claimed:false,entry:{key,fingerprint,phase:'branch-confirmed',prNumber:null}
+ })};
+ const second=await runRepairPR(args({ledger:stale,service}));
+ assert.equal(second.status,'complete');
+ assert.equal(service.calls.pr,1);
+});
+
+test('fresh owner pause between branch confirmation and PR blocks new PR write',async()=>{
+ const ledger=createMemoryRepairLedger(),service=fakeGitHub();
+ let readCount=0;
+ const readContext=async()=>{
+   readCount++;
+   return readCount>=3?{...context(),controls:{paused:true,revoked:false}}:context();
+ };
+ await assert.rejects(
+   runRepairPR(args({ledger,service,readContext})),/Repair step denied/
+ );
+ assert.equal(service.calls.branch,1);
+ assert.equal(service.calls.pr,0);
+ assert.equal((await ledger.get(plan().idempotencyKey)).phase,'branch-confirmed');
+});
+
+test('fresh identity swap before branch dispatch blocks all mutations',async()=>{
+ const ledger=createMemoryRepairLedger(),service=fakeGitHub();
+ let n=0;
+ const readContext=async()=>++n===1?context():{
+   ...context(),identityEvidence:{...identity(),installationId:98765}
+ };
+ await assert.rejects(runRepairPR(args({ledger,service,readContext})),/Repair step denied/);
+ assert.equal(service.calls.branch,0);
+ assert.equal(service.calls.pr,0);
+});
