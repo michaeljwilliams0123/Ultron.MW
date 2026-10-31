@@ -17,3 +17,36 @@ CREATE TABLE IF NOT EXISTS repair_pr_attempts (
 );
 CREATE INDEX IF NOT EXISTS repair_pr_attempts_pending_idx
   ON repair_pr_attempts(phase,updated_at) WHERE phase<>'complete';
+
+-- Final write fence: ordinary application SQL must not delete or rewind
+-- an externally dispatched idempotency record. Grant the runtime role only
+-- SELECT/INSERT/UPDATE; use a distinct migration owner for DDL. Superusers
+-- and table owners remain privileged and must be governed separately.
+CREATE OR REPLACE FUNCTION repair_pr_attempts_fence()
+RETURNS trigger AS $repair_fence$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'repair_pr_attempts deletion denied';
+  END IF;
+  IF NEW.attempt_key IS DISTINCT FROM OLD.attempt_key OR
+     NEW.fingerprint IS DISTINCT FROM OLD.fingerprint OR
+     NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'repair_pr_attempts identity immutable';
+  END IF;
+  IF NOT (
+      (OLD.phase = 'reserved' AND NEW.phase = 'branch-dispatch') OR
+      (OLD.phase = 'branch-dispatch' AND NEW.phase = 'branch-confirmed') OR
+      (OLD.phase = 'branch-confirmed' AND NEW.phase = 'pr-dispatch') OR
+      (OLD.phase = 'pr-dispatch' AND NEW.phase = 'complete')
+  ) THEN
+    RAISE EXCEPTION 'repair_pr_attempts transition denied';
+  END IF;
+  RETURN NEW;
+END;
+$repair_fence$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS repair_pr_attempts_fence_trigger
+  ON repair_pr_attempts;
+CREATE TRIGGER repair_pr_attempts_fence_trigger
+  BEFORE UPDATE OR DELETE ON repair_pr_attempts
+  FOR EACH ROW EXECUTE FUNCTION repair_pr_attempts_fence();
