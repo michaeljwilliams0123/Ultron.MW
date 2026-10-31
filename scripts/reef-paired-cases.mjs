@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
-import { execFile,execFileSync } from 'node:child_process';
-import { promisify } from 'node:util';
+import { createHash,createHmac,randomBytes,timingSafeEqual } from 'node:crypto';
+import { spawn,execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { writeFile,readFile,mkdir,mkdtemp,rm } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,7 +11,35 @@ const BASE='a'.repeat(40);
 const NOW='2026-10-31T17:00:00.000Z';
 const sha=/^[a-f0-9]{40}$/;
 const digest=x=>createHash('sha256').update(x).digest('hex');
-const execFileAsync=promisify(execFile);
+const observationMac=(key,observation)=>createHmac('sha256',key)
+ .update(JSON.stringify(observation)).digest('hex');
+// Key travels over one-use stdin before importing candidate code. Candidate
+// stdout is not evidence; only a message with the trusted runner MAC qualifies.
+function spawnObservedChild(inputPath,key,cwd){
+ return new Promise((resolve,reject)=>{
+  const child=spawn(process.execPath,[
+   fileURLToPath(import.meta.url),'--reef-child',inputPath
+  ],{cwd,stdio:['pipe','pipe','ignore'],
+    env:{PATH:process.env.PATH||'',HOME:cwd,NODE_ENV:'test'}});
+  let output='',killed=false;
+  const timer=setTimeout(()=>{killed=true;child.kill('SIGKILL');},30000);
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data',part=>{
+   output+=part;
+   if(Buffer.byteLength(output,'utf8')>65536){
+    killed=true;child.kill('SIGKILL');
+   }
+  });
+  child.stdin.on('error',()=>{}); // early candidate exit must fail on close
+  child.stdin.end(key.toString('hex'));
+  child.once('error',error=>{clearTimeout(timer);reject(error);});
+  child.once('close',(code,signal)=>{
+   clearTimeout(timer);
+   if(killed||code!==0||signal)reject(Error('Reef child failed'));
+   else resolve(output);
+  });
+ });
+}
 // Every behavior-affecting source is digest-bound with an explicit absence marker.
 const artifactDigest=(admission,executor,policy)=>digest(JSON.stringify([
  admission,
@@ -299,7 +327,8 @@ async function loadModule(source,policySource){
 async function runVariant(source,policySource){
   const mod=await loadModule(source,policySource);
   const unified=typeof policySource==='string'&&
-    /export\s+const\s+ULTRON_GITHUB_PRINCIPAL\s*=/.test(policySource);
+    (/export\s+const\s+ULTRON_GITHUB_PRINCIPAL\s*=/.test(policySource)||
+     /export\s*\{[^}]*\bULTRON_GITHUB_PRINCIPAL\b[^}]*\}/.test(policySource));
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
     return REPAIR_CASES.map(()=>false);
@@ -325,17 +354,21 @@ async function runIsolatedVariant(source,policySource,executorSource,includeExec
   const file=join(dir,'input.json');
   await writeFile(file,JSON.stringify({source,policySource,executorSource,includeExecutors}),
    {mode:0o600});
-  const {stdout}=await execFileAsync(process.execPath,
-   [fileURLToPath(import.meta.url),'--reef-child',file],
-   {cwd:dir,timeout:30000,maxBuffer:65536,
-    env:{PATH:process.env.PATH||'',HOME:dir,NODE_ENV:'test'}});
-  const value=JSON.parse(stdout.trim());
+  const key=randomBytes(32);
+  const stdout=await spawnObservedChild(file,key,dir);
+  const envelope=JSON.parse(stdout.trim());
+  const value=envelope?.observation;
   const valid=(rows,n)=>Array.isArray(rows)&&rows.length===n&&
    rows.every(x=>typeof x==='boolean');
   if(!valid(value?.admission,REPAIR_CASES.length)||
-     !valid(value?.execution,includeExecutors?EXECUTION_CASES.length:0))
+     !valid(value?.execution,includeExecutors?EXECUTION_CASES.length:0)||
+     typeof envelope?.signature!=='string'||
+     !/^[a-f0-9]{64}$/.test(envelope.signature))
+    return failed();
+  const expected=observationMac(key,value);
+  if(!timingSafeEqual(Buffer.from(envelope.signature,'hex'),Buffer.from(expected,'hex')))
    return failed();
-  return {admission:value.admission,execution:value.execution};
+  return value;
  }catch{return failed();}
  finally{await rm(dir,{recursive:true,force:true});}
 }
@@ -396,11 +429,18 @@ function tryGitSource(revision,path){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href&&
    process.argv[2]==='--reef-child'){
+ // Consume stdin fully before loading candidate code: never place the MAC key
+ // in command arguments, environment variables, or candidate-readable files.
+ const keyHex=readFileSync(0,'utf8').trim();
+ if(!/^[a-f0-9]{64}$/.test(keyHex))throw Error('Invalid evaluator observation key');
+ const observationKey=Buffer.from(keyHex,'hex');
  const input=JSON.parse(await readFile(process.argv[3],'utf8'));
  const admission=await runVariant(input.source,input.policySource);
  const execution=input.includeExecutors?
   await runExecutionVariant(input.executorSource,input.source,input.policySource):[];
- process.stdout.write(JSON.stringify({admission,execution})+'\n');
+ const observation={admission,execution};
+ const signature=observationMac(observationKey,observation);
+ process.stdout.write(JSON.stringify({observation,signature})+'\n');
 }else if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
   const path='src/repair-admission.mjs';
