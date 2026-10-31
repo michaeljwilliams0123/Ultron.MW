@@ -45,12 +45,15 @@ function assertAdapter({ledger,github,readContext}){
 }
 function branchVerified(value,admission){
   return value && value.repo===admission.repository &&
-    value.ref===admission.branch && value.sha===admission.baseSha;
+    value.ref===admission.branch &&
+    (value.sha===admission.baseSha ||
+      (admission.preparedHeadSha && value.sha===admission.preparedHeadSha));
 }
 function prVerified(value,admission,marker){
   return value && Number.isSafeInteger(value.number) && value.number>0 &&
     value.repo===admission.repository &&
     value.head===admission.branch && value.base==='main' &&
+    value.headSha===admission.preparedHeadSha &&
     value.draft===false && typeof value.body==='string' &&
     value.body.includes(marker) && typeof value.title==='string' &&
     value.title===titleFor(admission);
@@ -63,6 +66,7 @@ function result(entry,admission,marker,status){
     schema:'ultron.repair.pr-reconciliation.v1',
     status,phase:entry.phase,objective:admission.objective,
     repository:admission.repository,baseSha:admission.baseSha,
+    preparedHeadSha:admission.preparedHeadSha,
     branch:admission.branch,idempotencyKey:admission.idempotencyKey,
     fingerprint:entry.fingerprint,prNumber:entry.prNumber||null,prMarker:marker,
     independentlyObserved:false,liveGitHubVerified:false,
@@ -86,6 +90,7 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
   const fingerprint=sha256({
     owner:admission.owner,objective:admission.objective,
     repository:admission.repository,baseSha:admission.baseSha,
+    preparedHeadSha:admission.preparedHeadSha,
     branch:admission.branch,allowedPaths:admission.allowedPaths,
     maxAttempts:admission.maxAttempts,maxCostCents:admission.maxCostCents,
     expiresAt:admission.expiresAt,
@@ -119,10 +124,11 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
     if(!branch)return false;
     if(!branchVerified(branch,admission))
       throw Error('Repair branch readback identity mismatch');
-    return true;
+    return branch;
   }
   async function confirmComplete(){
-    if(!await confirmBranch())
+    const branch=await confirmBranch();
+    if(!branch || !admission.preparedHeadSha || branch.sha!==admission.preparedHeadSha)
       return result(entry,admission,marker,'reconcile-required');
     const pr=await github.findPR({
       repository:admission.repository,branch:admission.branch,base:'main'
@@ -171,8 +177,11 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
     entry=await reRead();
   }
   if(entry.phase==='branch-confirmed'){
-    if(!await confirmBranch())
+    const branch=await confirmBranch();
+    if(!branch || !admission.preparedHeadSha || branch.sha!==admission.preparedHeadSha)
       return result(entry,admission,marker,'reconcile-required');
+    // Commit preparation is an independently authorized external worker step.
+    // Never send GitHub a PR write while the branch still equals the base.
     const foreign=await github.findPR({
       repository:admission.repository,branch:admission.branch,base:'main'
     });
