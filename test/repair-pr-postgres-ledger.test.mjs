@@ -48,7 +48,7 @@ test('Postgres CAS advances exact expected phases and stores PR number',async()=
     ['branch-confirmed','pr-dispatch'],['pr-dispatch','complete']]){
     assert.equal(await ledger.advance({key:KEY,fingerprint:A,from,to,
       ...(to==='complete'?{prNumber:78}:{})}),true);
-    assert.equal(await ledger.advance({key:KEY,fingerprint:A,from,to}),false);
+    assert.equal(await ledger.advance({key:KEY,fingerprint:A,from,to,\n      ...(to==='complete'?{prNumber:78}:{})}),false);
   }
   const receipt=await ledger.get(KEY);
   assert.equal(receipt.phase,'complete');
