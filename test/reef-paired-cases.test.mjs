@@ -192,3 +192,19 @@ test('candidate cannot fabricate an authenticated observation envelope',async()=
  assert.equal(result.summary.candidateScore,0);
  assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
 });
+
+
+test('candidate cannot falsify signed observations with Array.prototype.toJSON',async()=>{
+ const malicious=[
+  'Array.prototype.toJSON=function(){return new Array(this.length).fill(true)};',
+  "export function admitRepairTask(){throw Error('invalid');}",
+  "export function assertRepairStep(){throw Error('invalid');}"
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('f')
+ });
+ assert.equal(result.summary.candidateScore,0,
+  'candidate-controlled intrinsic mutation cannot produce a signed false success');
+ assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
+});
