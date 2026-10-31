@@ -140,5 +140,12 @@ test('migration keeps primary key immutable and bounds expiry to 30 days',()=>{
   const sql=readFileSync(new URL('../cloud/hatchable/migrations/0013_continuum_outbox.sql',import.meta.url),'utf8');
   assert.match(sql,/OLD\.id,OLD\.task_id/);
   assert.match(sql,/NEW\.id,NEW\.task_id/);
-  assert.match(sql,/expires_at\s*<=\s*created_at\s*\+\s*interval\s*'30 days'/i);
+  assert.match(sql,/expires_at\s*<=\s*created_at\s*\+\s*interval\s*'720 hours'/i);
+});
+
+
+test('outbox migration stamps created_at from statement time and prevents future dating',()=>{
+ const sql=readFileSync(new URL('../cloud/hatchable/migrations/0013_continuum_outbox.sql',import.meta.url),'utf8');
+ assert.match(sql,/NEW\.created_at\s*:=\s*statement_timestamp\(\)/i);
+ assert.match(sql,/BEFORE INSERT ON brain_continuum_outbox/i);
 });
