@@ -42,6 +42,14 @@ const ROUTES=Object.freeze({
  ],
 });
 
+const ALLOWED_REPOSITORY_SETTINGS=new Set(['allow_squash_merge','delete_branch_on_merge']);
+function settingsBodyAllowed(operation,method,data){
+ if(operation!=='repository.settings.update'||method!=='PATCH')return true;
+ if(!data||typeof data!=='object'||Array.isArray(data))return false;
+ const keys=Object.keys(data);
+ return keys.length===1&&ALLOWED_REPOSITORY_SETTINGS.has(keys[0])&&
+  typeof data[keys[0]]==='boolean';
+}
 function exactPermissions(actual,expected){
  return actual&&typeof actual==='object'&&!Array.isArray(actual)&&
   Object.keys(actual).length===Object.keys(expected).length&&
@@ -64,7 +72,8 @@ export function createUnifiedGitHubTransport({
  return Object.freeze({
   request:async(operation,method,path,data)=>{
    if(typeof operation!=='string'||typeof method!=='string'||
-     !routeAllowed(operation,method,path)||path.includes('?')||path.includes('#')||
+     !routeAllowed(operation,method,path)||!settingsBodyAllowed(operation,method,data)||
+     path.includes('?')||path.includes('#')||
      path.includes('%')||path.includes('\\')||/[\r\n]/.test(path)||
      path.split('/').some(segment=>segment==='.'||segment==='..'))
     throw Error('Unified GitHub transport operation, path or method denied');
