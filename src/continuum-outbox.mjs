@@ -40,7 +40,9 @@ function validate(contract,now){
 }
 function same(existing,expected){
   return FIELDS.every(key=>{
-    const actual=key==='expiresAt'?iso(existing[key]):existing[key];
+    const actual=key==='expiresAt'?iso(existing[key]):
+      ['taskId','leaseGeneration','maxPaidCents'].includes(key)?
+        Number(existing[key]):existing[key];
     return actual===expected[key];
   });
 }
