@@ -59,6 +59,9 @@ test('C01 outbox enforces durable dedupe, immutable identity, zero cost and forw
   await assert.rejects(sql(`UPDATE brain_continuum_outbox
     SET authority_sha=repeat('d',64) WHERE delivery_id='continuum-delivery-0001'`),
     /immutable identity/);
+  await assert.rejects(sql(`UPDATE brain_continuum_outbox
+    SET id=id+1000,state='reconcile-required'
+    WHERE delivery_id='continuum-delivery-0001'`),/immutable identity/);
   assert.equal(await sql(`UPDATE brain_continuum_outbox
     SET state='reconcile-required' WHERE delivery_id='continuum-delivery-0001'
     AND source_sha=repeat('a',40) AND lease_generation=3 RETURNING state`),'');
@@ -72,4 +75,9 @@ test('C01 outbox enforces durable dedupe, immutable identity, zero cost and forw
     WHERE delivery_id='continuum-delivery-0001'`),/deletion forbidden/);
   assert.equal(await sql(`SELECT count(*) FROM brain_continuum_outbox
     WHERE state='reconcile-required'`),'1');
+  const overlong=insert().replace('continuum-delivery-0001','continuum-delivery-0031')
+    .replace('continuum:delivery:0001','continuum:delivery:0031')
+    .replace("interval '1 day'","interval '31 days'");
+  await assert.rejects(sql(overlong),/check constraint/);
+
 });
