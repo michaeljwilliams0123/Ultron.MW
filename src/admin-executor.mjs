@@ -72,8 +72,11 @@ export function validateAdminPlan(plan,now){
  const p=plan.params;
  switch(plan.operation){
   case 'actions.dispatch':
-   ok=exactKeys(p,['workflow','ref']) && validWorkflow(p.workflow) &&
-    p.ref==='main'&&exactKeys(plan.expected,[]);break;
+   ok=validWorkflow(p?.workflow)&&p.ref==='main'&&
+    exactKeys(plan.expected,[])&&
+    (p.workflow==='council-debate.yml'
+     ? exactKeys(p,['workflow','ref','itemNumber'])&&positiveId(p.itemNumber)
+     : exactKeys(p,['workflow','ref']));break;
   case 'actions.rerun_failed':
    ok=exactKeys(p,['runId'])&&positiveId(p.runId)&&
     requiredExpectedRun(plan,'rerun');break;
@@ -83,6 +86,7 @@ export function validateAdminPlan(plan,now){
   case 'actions.enable':
   case 'actions.disable':
    ok=exactKeys(p,['workflow'])&&validWorkflow(p.workflow)&&
+    !(plan.operation==='actions.disable'&&p.workflow==='verify.yml')&&
     exactKeys(plan.expected,['state']) &&
     (plan.operation==='actions.enable'
      ?plan.expected.state==='disabled_manually'
@@ -164,7 +168,8 @@ function mutation(plan){
  switch(plan.operation){
   case 'actions.dispatch':
    return {method:'POST',path:REST+'/actions/workflows/'+p.workflow+'/dispatches',
-    data:{ref:'main',inputs:{}}};
+    data:{ref:'main',inputs:p.workflow==='council-debate.yml'
+     ? {item_number:String(p.itemNumber),is_pr:'false'}:{}}};
   case 'actions.rerun_failed':
    return {method:'POST',path:REST+'/actions/runs/'+p.runId+'/rerun-failed-jobs'};
   case 'actions.cancel':
