@@ -1,15 +1,17 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { execFile,execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
+import { writeFile,readFile,mkdir,mkdtemp,rm } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL,fileURLToPath } from 'node:url';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const BASE='a'.repeat(40);
 const NOW='2026-10-31T17:00:00.000Z';
 const sha=/^[a-f0-9]{40}$/;
 const digest=x=>createHash('sha256').update(x).digest('hex');
+const execFileAsync=promisify(execFile);
 // Every behavior-affecting source is digest-bound with an explicit absence marker.
 const artifactDigest=(admission,executor,policy)=>digest(JSON.stringify([
  admission,
@@ -315,19 +317,42 @@ async function runVariant(source,policySource){
   }
   return outcomes;
 }
+async function runIsolatedVariant(source,policySource,executorSource,includeExecutors){
+ const failed=()=>({admission:REPAIR_CASES.map(()=>false),
+  execution:includeExecutors?EXECUTION_CASES.map(()=>false):[]});
+ const dir=await mkdtemp(join(tmpdir(),'ultron-reef-worker-'));
+ try{
+  const file=join(dir,'input.json');
+  await writeFile(file,JSON.stringify({source,policySource,executorSource,includeExecutors}),
+   {mode:0o600});
+  const {stdout}=await execFileAsync(process.execPath,
+   [fileURLToPath(import.meta.url),'--reef-child',file],
+   {cwd:dir,timeout:30000,maxBuffer:65536,
+    env:{PATH:process.env.PATH||'',HOME:dir,NODE_ENV:'test'}});
+  const value=JSON.parse(stdout.trim());
+  const valid=(rows,n)=>Array.isArray(rows)&&rows.length===n&&
+   rows.every(x=>typeof x==='boolean');
+  if(!valid(value?.admission,REPAIR_CASES.length)||
+     !valid(value?.execution,includeExecutors?EXECUTION_CASES.length:0))
+   return failed();
+  return {admission:value.admission,execution:value.execution};
+ }catch{return failed();}
+ finally{await rm(dir,{recursive:true,force:true});}
+}
+
 export async function evaluateRepairPair({baseSource,candidateSource,baseSha,candidateSha,
   baseExecutorSource=undefined,candidateExecutorSource=undefined,
   basePolicySource=undefined,candidatePolicySource=undefined}={}){
   if(typeof baseSource!=='string'||typeof candidateSource!=='string'||
      !sha.test(baseSha||'')||!sha.test(candidateSha||'')||baseSha===candidateSha)
     throw Error('Invalid paired benchmark lineage');
-  const [base,candidate]=await Promise.all([
-    runVariant(baseSource,basePolicySource),runVariant(candidateSource,candidatePolicySource)]);
   const compareExecutors=baseExecutorSource!==undefined||candidateExecutorSource!==undefined;
-  const [baseExecution,candidateExecution]=compareExecutors?await Promise.all([
-    runExecutionVariant(baseExecutorSource,baseSource,basePolicySource),
-    runExecutionVariant(candidateExecutorSource,candidateSource,candidatePolicySource)
-  ]):[[],[]];
+  const [baseline,candidateResult]=await Promise.all([
+   runIsolatedVariant(baseSource,basePolicySource,baseExecutorSource,compareExecutors),
+   runIsolatedVariant(candidateSource,candidatePolicySource,candidateExecutorSource,compareExecutors)
+  ]);
+  const base=baseline.admission,candidate=candidateResult.admission;
+  const baseExecution=baseline.execution,candidateExecution=candidateResult.execution;
   const admissionRows=REPAIR_CASES.map((item,i)=>({
     ...item,baseline:{status:base[i]?'succeeded':'failed',score:Number(base[i]),invariantsPassed:base[i]},
     candidate:{status:candidate[i]?'succeeded':'failed',score:Number(candidate[i]),invariantsPassed:candidate[i]}
@@ -369,7 +394,14 @@ function tryGitSource(revision,path){
   try{return gitSource(revision,path);}
   catch(error){if(error?.status===128)return undefined;throw error;}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href&&
+   process.argv[2]==='--reef-child'){
+ const input=JSON.parse(await readFile(process.argv[3],'utf8'));
+ const admission=await runVariant(input.source,input.policySource);
+ const execution=input.includeExecutors?
+  await runExecutionVariant(input.executorSource,input.source,input.policySource):[];
+ process.stdout.write(JSON.stringify({admission,execution})+'\n');
+}else if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
   const path='src/repair-admission.mjs';
   const result=await evaluateRepairPair({
