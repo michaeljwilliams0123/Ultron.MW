@@ -21,6 +21,10 @@ const fakeDb=()=>{
       const [taskId,objectiveId,deliveryId,idempotencyKey,repository,sourceSha,
         authoritySha,requestSha,leaseGeneration,expiresAt,effect,maxPaidCents]=params;
       if(entries.has(deliveryId))return {rows:[]};
+      if([...entries.values()].some(row=>row.idempotencyKey===idempotencyKey)){
+        if(/ON CONFLICT DO NOTHING/.test(sql))return {rows:[]};
+        throw Error('duplicate key value violates unique constraint');
+      }
       const row={taskId,objectiveId,deliveryId,idempotencyKey,repository,sourceSha,
         authoritySha,requestSha,leaseGeneration,expiresAt,effect,maxPaidCents,state:'pending'};
       entries.set(deliveryId,row);
@@ -45,7 +49,7 @@ test('reserve atomically records a zero-cost, source-and-fence-bound intent befo
   assert.deepEqual(r,{created:true,deliveryId:contract().deliveryId,state:'pending'});
   const sql=db.statements[0];
   assert.match(sql.sql,/INSERT INTO brain_continuum_outbox/);
-  assert.match(sql.sql,/ON CONFLICT\(delivery_id\) DO NOTHING/);
+  assert.match(sql.sql,/ON CONFLICT DO NOTHING/);
   assert.equal(sql.params[11],0);
   assert.equal(db.statements.length,1);
   assert.equal(typeof outbox.dispatch,'undefined');
@@ -121,4 +125,20 @@ test('migration fences identity, forbids deletion and enforces monotonic state',
   assert.match(sql,/CREATE TRIGGER.*continuum_outbox_guard/is);
   assert.match(sql,/TG_OP = 'DELETE'/);
   assert.match(sql,/OLD\.state = 'pending'.*NEW\.state = 'reconcile-required'/s);
+});
+
+
+test('reused idempotency key with a new delivery is a stable conflict, never a raw SQL error',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  await outbox.reserve(contract());
+  await assert.rejects(outbox.reserve({...contract(),deliveryId:'continuum-delivery-0002'}),
+    /continuum-outbox-delivery-conflict/);
+  assert.equal(db.entries.size,1);
+});
+
+test('migration keeps primary key immutable and bounds expiry to 30 days',()=>{
+  const sql=readFileSync(new URL('../cloud/hatchable/migrations/0013_continuum_outbox.sql',import.meta.url),'utf8');
+  assert.match(sql,/OLD\.id,OLD\.task_id/);
+  assert.match(sql,/NEW\.id,NEW\.task_id/);
+  assert.match(sql,/expires_at\s*<=\s*created_at\s*\+\s*interval\s*'30 days'/i);
 });
