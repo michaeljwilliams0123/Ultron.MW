@@ -5,8 +5,8 @@
 Ultron.MW is the authoritative repository and release boundary. Ultron has one owner, one interface and one coordinator. Historical predecessor repositories confer no runtime permissions and supply no required infrastructure. New adapters must justify their scope with executable acceptance evidence.
 
 The [dated acceptance summary](ACCEPTANCE-STATUS.md) links the current issue
-contracts. The live #65 body governs its remaining supervised browser workflow;
-historical design plans and public-audit labels do not expand that milestone.
+dispositions. Issue #65 completed its scoped supervised local-fixture workflow;
+historical design plans and public-audit labels do not expand that acceptance.
 
 The owner's objective is input data. Models, prior conversation, issue text and learned suggestions cannot grant authority. Deterministic code owns identity checks, command admission, bounded planning, state transitions, receipt validation and rollback.
 
@@ -18,11 +18,17 @@ The owner's objective is input data. Models, prior conversation, issue text and 
 | GitHub source proposals | Admitted owner issue/PR request or self-scan | Bounded branch/PR writes with exact-head verification | Repository commits, PR and Actions receipts |
 | Hatchable backend | Owner-gated API and configured scheduler | Bounded tasks, owner stop and scoped Mahoraga issue/Verify actions | PostgreSQL tasks, actions and event receipts |
 | Local Node | Loopback UI and same-origin requests | Four read-only commands; separately paired owner actions | Atomic plaintext local state and bounded notes |
-| Supervised local browser | Owner-operated terminal and isolated Playwright | Per-action local consent, fixed origins and verifiable postconditions | Private checkpoints; #65 acceptance pending |
+| Supervised local browser | Owner-operated terminal and isolated Playwright | Per-action local consent, fixed origins and verifiable postconditions | Private checkpoints; #65 scoped local-fixture acceptance completed |
 | Browser model | Explicit WebGPU activation | Unverified text only | Ephemeral by default; opt-in encrypted vault |
 | Local model | Explicit Ollama setting and observed readiness | At most one allowlisted read-only tool per response | Plaintext local conversation and separate tool receipt |
 
-Pages is the primary console. It hosts no server, API token, background worker or privileged transport. A cloud task leaves Pages for GitHub confirmation. Optional local Node serves the same files; neither cloud tasks nor Pages need the owner's PC online. No authenticated remote bridge to the local runtime is implemented.
+Pages is the current primary console. It hosts no server, API token, background worker or privileged transport. A cloud task leaves Pages for GitHub confirmation. Optional local Node serves the same files; neither cloud tasks nor Pages need the owner's PC online. No authenticated remote bridge to the local runtime is implemented.
+
+The accepted [Repository Operator target](ULTRON-REPOSITORY-OPERATOR.md) moves
+the owner operational workflow to Hatchable while GitHub remains the source,
+PR, CI and protected-merge backend. That target is not deployed by its decision
+record. Pages remains transitional until Hatchable passes feature/security
+parity, live owner acceptance and rollback, followed by a distinct cleanup PR.
 
 ## Shared capability contract
 

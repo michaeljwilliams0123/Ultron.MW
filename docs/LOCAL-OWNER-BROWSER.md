@@ -1,13 +1,16 @@
 # Native owner-browser execution — no Railway
 
 **Current acceptance:** the live [issue #65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65)
-body is the closure contract. It requires one supervised controlled-app workflow
-and the remaining negative checks. See [current dispositions](ACCEPTANCE-STATUS.md).
+body and final sanitized receipt record completed scoped acceptance for one
+supervised controlled-app workflow and its required negative checks. See
+[current dispositions](ACCEPTANCE-STATUS.md).
 Earlier private-account, two-site, PC-offline and hosted-browser requirements
 are outside this milestone; technical consent and no-replay checks remain.
 
 **Scope:** A local owner-operated entry point to the existing Ultron computer
-executor. GitHub Pages remains the single frontend. GitHub Actions remains
+executor. GitHub Pages remains the current frontend while the accepted
+[Repository Operator target](ULTRON-REPOSITORY-OPERATOR.md) awaits its gated
+Hatchable cutover. GitHub Actions remains
 CI, bounded PR work and on-demand jobs. No hosting changes or billing.
 
 ## Why this route
@@ -65,8 +68,8 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
        set ULTRON_COMPUTER_GITHUB_OWNER=michaeljwilliams0123
        node scripts/owner-browser-run.mjs "C:\private\ultron-read-plan.json"
 
-   For the active #65 acceptance run also set `ULTRON_COMPUTER_HEADED=1`
-   and the approved upload/download roots described in the
+   To reproduce the completed #65 acceptance scope, also set
+   `ULTRON_COMPUTER_HEADED=1` and the approved upload/download roots described in the
    [owner acceptance runbook](verification/OWNER-BROWSER-ACCEPTANCE.md).
 
 5. Interactive click/type/keypress steps display plan ID, full fingerprint,
@@ -106,8 +109,8 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
   Neither alone proves a browser's external service sign-in. A real GitHub
   login form causes an owner-takeover stop; the owner must manually complete
   MFA before the browser can proceed when that private-account capability is
-  used. Private-account takeover is outside the current local-fixture #65
-  milestone; its genuine owner consent and transfer readback are still pending.
+  used. Private-account takeover is outside the completed local-fixture #65
+  milestone and requires separate acceptance.
 - Press Ctrl+C, close the terminal, or decline the challenge to stop.
   If an effect is uncertain, inspect the destination before any retry.
 - **New Chrome session checkpoint handling:** A stopped run may leave a
@@ -122,11 +125,12 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
 - Stopping this local runner leaves the separate GitHub and Hatchable lanes
   under their own controls.
 
-## Remaining acceptance: issue #65
+## Completed acceptance and future scope
 
-Follow the issue's four steps: owner-run setup, one generated canary transfer
-with independently refreshed receiver/download digests and a single-write
-count, the missing expiry/revocation/changed-input/interruption cases, and a
-sanitized evidence summary before closure. Reuse earlier negative observations
-while relevant code and configuration remain unchanged. Any future hosted
-browser requires a separate scope and authorization decision.
+Issue #65 completed its four steps: owner-run setup, one generated canary
+transfer with independently refreshed receiver/download digests and a
+single-write count, expiry/revocation/changed-input/interruption cases, and a
+sanitized evidence summary. Reuse that evidence only while relevant code and
+configuration remain unchanged. Any future hosted browser, private-account
+takeover or broader application scope requires a separate authorization and
+acceptance decision.

@@ -48,7 +48,7 @@ The workflow does not close issues, replay uncertain writes, mutate production
 data, automatically create branches, auto-merge PRs, or install a second UI.
 A positive GET does not prove a connected secret or a real external mutation.
 
-## Current issue dispositions — October 30, 2026
+## Current issue dispositions — October 31, 2026
 
 The live issue bodies govern closure; [the dated acceptance summary](../ACCEPTANCE-STATUS.md)
 links their scopes and evidence. This public audit does not adjudicate issue
@@ -57,7 +57,7 @@ accepted bounded milestones supported by separate owner-authenticated receipts.
 
 | Issue | Disposition | Operator action |
 | --- | --- | --- |
-| [#65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65) | P2, open; owner session needed | Follow its four steps using `scripts/owner-browser-run.mjs` and the setup runbook. One controlled test app, real owner consent, transfer/readback and the missing negatives define this milestone. |
+| [#65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65) | Closed, completed | Preserve the scoped controlled-app receipt and its negative/no-replay evidence; investigate a new observed defect specifically. |
 | [#66](https://github.com/michaeljwilliams0123/Ultron.MW/issues/66) | Closed, completed | Preserve the accepted recovery and pause/resume receipts; investigate a new observed defect specifically. |
 | [#67](https://github.com/michaeljwilliams0123/Ultron.MW/issues/67) | Closed, completed | Scoped PAT connector accepted; live App identity, general delegation and another provider remain separate capabilities. |
 | [#68](https://github.com/michaeljwilliams0123/Ultron.MW/issues/68) | Closed, not planned | Keep the baseline and promotion protections; reopen for a concrete candidate and bounded value evaluation. |
@@ -71,21 +71,22 @@ nor an issue closure authorizes replay or expands runtime permissions.
 
 ## Single-interface architecture and follow-on implementation
 
-The command bridge below is optional future architecture, not a dependency
-for the accepted #66/#67 scopes or the current #65 local-fixture milestone.
+The command bridge below is historical optional architecture, not a dependency
+for the accepted #65–#67 scopes.
 
-GitHub Pages is the canonical static UI. Its current hosted execution buttons
-open owner-confirmed native GitHub Issues/Actions. Hatchable provides durable
-PostgreSQL queue and execution APIs, but the landing page is not itself an
-authenticated Pages→Hatchable command bridge. Descope sign-in and Hatchable
-collaborator administration are separate identity planes.
+GitHub Pages is the current static UI. Its hosted execution buttons open
+owner-confirmed native GitHub Issues/Actions. Hatchable provides durable
+PostgreSQL queue and execution APIs, but the landing page is not yet the
+accepted [Repository Operator](../ULTRON-REPOSITORY-OPERATOR.md) control plane.
+Descope sign-in and Hatchable collaborator administration are separate identity
+planes. The target is a gated Hatchable cutover, not a privileged token embedded
+in Pages.
 
-To provide one *effective* UI without a second frontend: implement a
-short-lived, server-side authorized handoff with independently verified owner
-identity, CSRF/origin checks, scoped commands, durable task IDs, stop and
-status readback, and no token in Pages JavaScript, public issues, local storage
-or query strings. Before any new control bridge, demonstrate exact request
-authorization and positive/negative API acceptance on the experiment.
+The target Hatchable UI must use independently verified owner identity,
+CSRF/origin checks, scoped commands, durable task IDs, stop and status readback,
+and no credential in Pages JavaScript, public issues, local storage or query
+strings. Keep Pages transitional until live parity, negative security evidence
+and rollback succeed.
 
 ## Incident decisions
 

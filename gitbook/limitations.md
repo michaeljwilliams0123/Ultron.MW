@@ -10,7 +10,7 @@ description: "Known unknowns, safeguards and readiness for GitBook publication."
 * The browser vault is device-local and opt-in; do not imply cross-device automatic sync.
 * GitLab mirror workflow results are dated observations; inspect the exact source and destination SHAs before relying on a recovery copy.
 * The [#69 closure record](https://github.com/michaeljwilliams0123/Ultron.MW/issues/69#issuecomment-6512838638) records authenticated GitBook Git Sync and matching handbook blobs on October 29. A later documentation edit needs a fresh sync/readback before claiming the new revision is published.
-* The current browser milestone is [#65's four-step supervised local-fixture acceptance](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65). Private-account MFA and an always-on browser are separate capabilities.
+* [#65's four-step supervised local-fixture acceptance](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65) is complete. Private-account MFA, broader sites and an always-on browser are separate capabilities.
 * [Current dispositions](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/ACCEPTANCE-STATUS.md) record accepted #66/#67 scopes and deferred learning research. Public health checks do not expand those scopes.
 
 ## Checklist after a handbook source change

@@ -2,9 +2,9 @@
 
 Ultron is an independent, single-owner execution platform with one shared interface, GitHub-hosted workflows, an existing Hatchable backend, optional device inference, and evidence-gated routing improvements. Its capability and release decisions are defined by this repository. Mahoraga supplies historical design references and an optional, separately authorized issue/Verify connector; it supplies no implicit authority or required core infrastructure.
 
-**Acceptance:** [current issue dispositions and evidence boundaries](docs/ACCEPTANCE-STATUS.md). Issue #65's live four-step owner-session checklist defines the remaining browser milestone; older plans and runbooks do not add closure requirements.
+**Acceptance:** [current issue dispositions and evidence boundaries](docs/ACCEPTANCE-STATUS.md). Issue #65 completed its scoped supervised local-fixture milestone; broader browser or operator authority requires separate evidence.
 
-**Console:** https://michaeljwilliams0123.github.io/Ultron.MW/
+**Current console:** https://michaeljwilliams0123.github.io/Ultron.MW/. The accepted [Repository Operator target](docs/ULTRON-REPOSITORY-OPERATOR.md) moves the owner operational workflow to Hatchable only after live cutover and rollback evidence.
 
 **Named Codex authors:** The console displays **Mike's Codex** and **Destiny's
 Codex**, stable author fingerprints and separate route status. Use
@@ -19,7 +19,7 @@ For independent GitHub and Work execution evidence, see [Codex lane evidence](do
 | Capability | Environment | Implemented behavior | Evidence boundary |
 |---|---|---|---|
 | Read-only objectives | GitHub Actions | Read-only commands, at most three steps; hosted issue receipts | `/repo inspect` observed on issue #10 at the reviewed baseline; other paths have automated coverage |
-| Durable hosted work | Existing Hatchable backend | PostgreSQL tasks/events, bounded recovery, owner stop and a scoped Mahoraga connector | #66/#67 accepted within their recorded scopes; active local browser acceptance remains in #65 |
+| Durable hosted work | Existing Hatchable backend | PostgreSQL tasks/events, bounded recovery, owner stop and a scoped Mahoraga connector | #65–#67 are accepted only within their recorded scopes; broader operator authority remains separate |
 | Hourly self-scan PR | GitHub Actions | At minute 17 scans current `main` and creates or refreshes one report PR only when findings change | No Issues; skipped cron runs are not evidence of health |
 | Local tools | Loopback Node | Same shared commands, persisted objectives and receipts | Automated HTTP coverage; owner-device acceptance outstanding |
 | Model responses | Optional Ollama or browser WebGPU | Bounded, unverified generated text | Provider availability is checked at activation; no hosted cloud LLM |

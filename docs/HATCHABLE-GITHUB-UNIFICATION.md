@@ -1,8 +1,14 @@
 # GitHub + Hatchable unified Ultron.MW control surface
 
-## Decision
+## Current implementation and accepted target
 
-GitHub Pages at `https://michaeljwilliams0123.github.io/Ultron.MW/` is the only owner-facing Ultron UI. GitHub `main` is the canonical source and change-review authority. Hatchable production `proj_A6GCXRSKizko` is the sole active durable backend. No new hosting provider or paid workload is introduced.
+GitHub Pages at `https://michaeljwilliams0123.github.io/Ultron.MW/` is the current owner-facing Ultron UI. GitHub `main` is the canonical source and change-review authority. Hatchable production `proj_A6GCXRSKizko` is the sole active durable backend. No new hosting provider or paid workload is introduced.
+
+The accepted [Repository Operator decision](ULTRON-REPOSITORY-OPERATOR.md)
+supersedes Pages-only UI as the target: Hatchable becomes the sole owner-facing
+operational interface, while GitHub remains the development and protected
+release backend. Until live parity, security, owner acceptance and rollback are
+proven, Pages remains the current transitional interface and is not deleted.
 
 GitHub Pages **cannot execute server functions, securely hold an admin token, or replace managed PostgreSQL / the Hatchable scheduler**. It is deliberately a static user interface, not a privileged proxy.
 

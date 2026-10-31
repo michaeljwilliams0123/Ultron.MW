@@ -9,7 +9,7 @@ description: "Ultron architecture with explicit cloud, local and evidence bounda
 | --- | --- | --- |
 | GitHub protected `main` | Canonical source and release lineage | Source and merge authority |
 | GitHub Actions | Read-only cloud objectives, PR conversation, scan and exact-head Verify | Bounded owner-authorized workflows |
-| GitHub Pages | Static UI and public command preflight | No API secrets or privileged backend |
+| GitHub Pages | Transitional static UI and public command preflight | No API secrets or privileged backend |
 | Optional loopback Node runtime | Local state and paired owner actions | Separate local-only owner confirmation |
 | Existing Hatchable backend | Durable bounded tasks, stop control and scoped Mahoraga issue/Verify actions | Owner/admin and scheduler route gates; PostgreSQL receipts |
 | GitLab secondary project | Imported recovery copy | No independent production changes |
@@ -20,6 +20,11 @@ description: "Ultron architecture with explicit cloud, local and evidence bounda
 GitHub `main` is authoritative. The capability manifest in [`docs/core/capabilities.mjs`](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/core/capabilities.mjs) is metadata rather than proof of provider readiness. Source routing, admission and evidence should remain distinct.
 
 The Pages UI is static: cloud objectives route to owner-confirmed GitHub actions or issues; it cannot silently mint credentials or perform privileged server-side requests. The local server is optional and no direct authenticated public bridge into it has been proven.
+
+The accepted [Repository Operator target](repository-operator.md) moves the
+owner operational workflow to Hatchable. GitHub remains the canonical source,
+PR, CI and protected-merge backend. Pages stays transitional until live parity,
+security, owner acceptance and rollback are proven.
 
 ## Source modules worth knowing
 
@@ -41,6 +46,7 @@ The October 30 scoped #67 acceptance verified configured `auto` mode selecting
 the PAT actor for the fixed Mahoraga issue/Verify lane. Narrow GitHub App grants
 were deployed, but live hosted App identity, generalized delegation and a
 second provider remain unaccepted. #66 separately accepted bounded hosted
-recovery and owner stop; local browser acceptance remains with #65.
+recovery and owner stop; #65 completed its scoped supervised local-fixture
+browser acceptance.
 
 The scheduled public acceptance audit checks **production only**, not the retired experiment. Green public observations do not assert private multi-provider authority, owner browser transfers, or independently measured learning improvement.
