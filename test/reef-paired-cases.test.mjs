@@ -53,3 +53,29 @@ test('invalid source lineage or malformed candidate cannot be counted as success
   assert.equal(result.summary.candidateScore, 0);
   assert.equal(result.summary.criticalRegressions > 0, true);
 });
+
+test('protected evaluator measures actual Repair coordinator episodes, not just admission', async()=>{
+  const validCandidate=`export const createMemoryRepairLedger=()=>({});\nexport async function runRepairPR(){return {status:'complete'};}`;
+  const result=await evaluateRepairPair({
+    baseSource:source,candidateSource:source,
+    baseSha:sha('a'),candidateSha:sha('b'),
+    baseExecutorSource:null,candidateExecutorSource:validCandidate,
+  });
+  const execution=result.caseResults.filter(x=>x.id.startsWith('episode-'));
+  assert.equal(execution.length>=8,true);
+  assert.equal(execution.every(x=>x.baseline.score===0),true);
+  assert.equal(execution.some(x=>x.candidate.score===0),true,
+    'a forged always-complete coordinator must fail held-out cases');
+  assert.equal(result.eligibleForMerge,false);
+});
+
+test('malformed new Repair coordinator never scores security negatives as success', async()=>{
+  const report=await evaluateRepairPair({
+    baseSource:source,candidateSource:source,
+    baseSha:sha('a'),candidateSha:sha('b'),
+    baseExecutorSource:null,candidateExecutorSource:'export function broken ( {',
+  });
+  const execution=report.caseResults.filter(x=>x.id.startsWith('episode-'));
+  assert.equal(execution.length>=8,true);
+  assert.equal(execution.every(x=>x.candidate.score===0),true);
+});
