@@ -93,3 +93,29 @@ test('network and HTTP failures surface as non-retryable transport errors',async
   await assert.rejects(transport.request(operation,'POST',path),/outcome unknown|HTTP 403/);
  }
 });
+
+
+test('settings write body is narrowly admitted before requesting an admin token',async()=>{
+ let minted=0,sent=0;
+ const transport=createUnifiedGitHubTransport({
+  expectedInstallationId:9123,clock:()=> '2026-10-31T20:00:00Z',
+  getToken:async()=>{minted++;return token('repository.settings.update');},
+  fetchImpl:async()=>{sent++;return {ok:true,status:200};}
+ });
+ for(const data of [
+  {visibility:'private'},{visibility:'public'}, {security_and_analysis:{}},
+  {allow_squash_merge:true,visibility:'private'},
+  {delete_branch_on_merge:'yes'}, {}, [],null
+ ]){
+  await assert.rejects(
+   transport.request('repository.settings.update','PATCH',ROOT,data),/denied/i
+  );
+ }
+ assert.equal(minted,0);
+ assert.equal(sent,0);
+ for(const data of [{allow_squash_merge:true},{delete_branch_on_merge:false}]){
+  await transport.request('repository.settings.update','PATCH',ROOT,data);
+ }
+ assert.equal(minted,2);
+ assert.equal(sent,2);
+});
