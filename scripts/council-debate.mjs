@@ -19,7 +19,7 @@ const observedAt = new Date().toISOString();
 
 const lower = `${title}\n${body}`.toLowerCase();
 const flags = {
-  security: ['secret', 'credential', 'token', 'password', 'bypass security', 'fail-open', 'delete main', 'force push'].some(k => lower.includes(k)),
+  security: process.env.ORIGINAL_SECURITY_SIGNAL === '1' || ['secret', 'credential', 'token', 'password', 'bypass security', 'fail-open', 'delete main', 'force push'].some(k => lower.includes(k)),
   autonomy: ['autonomy', 'always-on', 'unattended', 'self-merge', 'auto-merge'].some(k => lower.includes(k)),
   multiFile: ['multi-file', 'multifile', 'across the codebase', 'refactor'].some(k => lower.includes(k)),
   infra: ['workflow', 'github actions', 'ci', 'deploy'].some(k => lower.includes(k)),

@@ -88,11 +88,52 @@ jobs:
               title = String(issue.title || '');
               body = String(comment.body || '');
               itemNumber = Number(issue.number) || 0;
+            } else if (context.eventName === 'workflow_dispatch') {
+              const inputs = context.payload.inputs || {};
+              itemNumber = Number(inputs.item_number);
+              isPr = String(inputs.is_pr || 'false');
+              if (!Number.isSafeInteger(itemNumber) || itemNumber < 1 ||
+                  !['true','false'].includes(isPr))
+                throw Error('Council dispatch target invalid');
+              const selector = {owner:context.repo.owner,repo:context.repo.repo};
+              const response = isPr === 'true'
+                ? await github.rest.pulls.get({...selector,pull_number:itemNumber})
+                : await github.rest.issues.get({...selector,issue_number:itemNumber});
+              const target = response.data;
+              if (isPr === 'false' && target.pull_request)
+                throw Error('Council dispatch target type mismatch');
+              if (target.state !== 'open') throw Error('Council dispatch target not open');
+              title = String(target.title || '');
+              body = String(target.body || '').slice(0,6000);
+              const fullBody = String(target.body || '').toLowerCase();
+              const riskWords = ['secret','credential','token','password','bypass security','fail-open','delete main','force push'];
+              core.exportVariable('ORIGINAL_SECURITY_SIGNAL',riskWords.some(word=>fullBody.includes(word))?'1':'0');
+              // Include the latest genuine owner update when available, but
+              // never replace the authoritative issue/PR title and body.
+              if (isPr === 'false') {
+                const total = Math.max(1,Math.ceil((target.comments || 0)/100));
+                let latestOwner = null;
+                for (let page=total;page>=1&&page>total-10;page--) {
+                  const response = await github.rest.issues.listComments({
+                    ...selector,issue_number:itemNumber,per_page:100,page
+                  });
+                  latestOwner = [...response.data].reverse().find(comment =>
+                    comment.user?.login === 'michaeljwilliams0123' &&
+                    !/^\s*\/council\b/.test(comment.body || ''));
+                  if (latestOwner) break;
+                }
+                if (latestOwner) {
+                  const ownerUpdate = '\n\nLatest owner update:\n' +
+                    String(latestOwner.body || '').slice(0,1800);
+                  // A workflow-dispatched run uses a bot actor ('0' is truthy).
+                  // Reserve room inside the actual debate parser's baseline cap.
+                  const bodyLimit = ownerMode === '1' ? 8000 : 3000;
+                  body = body.slice(0,Math.max(0,bodyLimit-ownerUpdate.length)) +
+                    ownerUpdate;
+                }
+              }
             } else {
-              title = 'Owner council dispatch';
-              body = 'workflow_dispatch owner-first';
-              itemNumber = Number(context.payload.inputs && context.payload.inputs.item_number) || 0;
-              isPr = String((context.payload.inputs && context.payload.inputs.is_pr) || 'false');
+              throw Error('Council dispatch event unsupported');
             }
             fs.writeFileSync(path.join(dir, 'title.txt'), title.slice(0, 240));
             fs.writeFileSync(path.join(dir, 'body.txt'), body.slice(0, 8000));
@@ -110,6 +151,7 @@ jobs:
           ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
           IS_PR: ${{ env.IS_PR }}
           OWNER_MODE: ${{ env.OWNER_MODE }}
+          ORIGINAL_SECURITY_SIGNAL: ${{ env.ORIGINAL_SECURITY_SIGNAL }}
         run: |
           set -euo pipefail
           if [ ! -f scripts/council-debate.mjs ]; then
@@ -121,7 +163,7 @@ jobs:
           # shellcheck disable=SC2155
           TITLE=$(head -c 240 "$TITLE_FILE" 2>/dev/null || true)
           # shellcheck disable=SC2155
-          BODY=$(head -c 8000 "$BODY_FILE" 2>/dev/null || true)
+          BODY=$(cat "$BODY_FILE")
           export TITLE BODY
           node --check src/grokbot-governor.mjs
           node --check scripts/council-debate.mjs
