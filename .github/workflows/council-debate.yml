@@ -100,6 +100,8 @@ jobs:
                 ? await github.rest.pulls.get({...selector,pull_number:itemNumber})
                 : await github.rest.issues.get({...selector,issue_number:itemNumber});
               const target = response.data;
+              if (isPr === 'false' && target.pull_request)
+                throw Error('Council dispatch target type mismatch');
               if (target.state !== 'open') throw Error('Council dispatch target not open');
               title = String(target.title || '');
               body = String(target.body || '').slice(0,6000);
@@ -117,9 +119,15 @@ jobs:
                     !/^\s*\/council\b/.test(comment.body || ''));
                   if (latestOwner) break;
                 }
-                if (latestOwner)
-                  body += '\n\nLatest owner update:\n' +
+                if (latestOwner) {
+                  const ownerUpdate = '\n\nLatest owner update:\n' +
                     String(latestOwner.body || '').slice(0,1800);
+                  // A workflow-dispatched run uses a bot actor ('0' is truthy).
+                  // Reserve room inside the actual debate parser's baseline cap.
+                  const bodyLimit = ownerMode === '1' ? 8000 : 3000;
+                  body = body.slice(0,Math.max(0,bodyLimit-ownerUpdate.length)) +
+                    ownerUpdate;
+                }
               }
             } else {
               throw Error('Council dispatch event unsupported');
