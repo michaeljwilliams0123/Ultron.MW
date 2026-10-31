@@ -72,11 +72,26 @@ export function createUnifiedGitHubTransport({
  return Object.freeze({
   request:async(operation,method,path,data)=>{
    if(typeof operation!=='string'||typeof method!=='string'||
-     !routeAllowed(operation,method,path)||!settingsBodyAllowed(operation,method,data)||
+     !routeAllowed(operation,method,path)||
      path.includes('?')||path.includes('#')||
      path.includes('%')||path.includes('\\')||/[\r\n]/.test(path)||
      path.split('/').some(segment=>segment==='.'||segment==='..'))
     throw Error('Unified GitHub transport operation, path or method denied');
+   // Freeze the exact wire body before any async token issuance. Validation
+   // and dispatch must inspect the same bytes, not a mutable caller object.
+   let serializedBody;
+   try{
+    if(data!==undefined){
+     serializedBody=JSON.stringify(data);
+     if(typeof serializedBody!=='string')throw Error('unserializable');
+    }
+    if(operation==='repository.settings.update'&&method==='PATCH'&&
+       (!serializedBody||
+        !settingsBodyAllowed(operation,method,JSON.parse(serializedBody))))
+     throw Error('unapproved settings');
+   }catch{
+    throw Error('Unified GitHub transport operation, path or method denied');
+   }
    const permissions=requiredTokenPermissions(operation);
    const grant=await getToken({operation,repositoryId:ULTRON_REPOSITORY_ID,
     permissions});
@@ -89,12 +104,12 @@ export function createUnifiedGitHubTransport({
     throw Error('Unified GitHub transport token profile unavailable');
    const headers={Accept:'application/vnd.github+json',
     Authorization:'Bearer '+grant.token,'X-GitHub-Api-Version':'2026-03-10'};
-   if(data!==undefined)headers['Content-Type']='application/json';
+   if(serializedBody!==undefined)headers['Content-Type']='application/json';
    let response;
    try{
     response=await fetchImpl('https://api.github.com'+path,{
      method,headers,redirect:'error',
-     ...(data===undefined?{}:{body:JSON.stringify(data)}),
+     ...(serializedBody===undefined?{}:{body:serializedBody}),
      signal:AbortSignal.timeout(15000),
     });
    }catch{throw Error('Unified GitHub transport outcome unknown; reconcile external state');}
