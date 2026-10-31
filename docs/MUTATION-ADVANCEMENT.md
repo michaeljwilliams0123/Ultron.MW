@@ -16,6 +16,10 @@ The native Node test suite includes `test/mutation-evolution.test.mjs`, which:
   integration builder, and their existing tests importable and usable.
 - Treats unchanged passing cases as `PRESERVED`, not a reason for deletion.
 - Treats a new passing case with no baseline regression as `ADVANCEMENT`.
+- Treats restored formerly failing capabilities as `recovered` advancements.
+- Tracks newly failing and still-failing candidate cases in `failed` and
+  reports `INCONCLUSIVE` rather than claiming the system is healthy.
+- Rejects empty or unmeasured case sets as proof of preservation.
 - Treats missing or failing formerly passing cases as `REGRESSION`, even
   when other new features work.
 - Treats missing evidence pointers as `INCONCLUSIVE`, never as proof.
