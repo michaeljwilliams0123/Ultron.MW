@@ -4,6 +4,10 @@
 
 Ultron.MW is the authoritative repository and release boundary. Ultron has one owner, one interface and one coordinator. Historical predecessor repositories confer no runtime permissions and supply no required infrastructure. New adapters must justify their scope with executable acceptance evidence.
 
+The [dated acceptance summary](ACCEPTANCE-STATUS.md) links the current issue
+contracts. The live #65 body governs its remaining supervised browser workflow;
+historical design plans and public-audit labels do not expand that milestone.
+
 The owner's objective is input data. Models, prior conversation, issue text and learned suggestions cannot grant authority. Deterministic code owns identity checks, command admission, bounded planning, state transitions, receipt validation and rollback.
 
 ## Current execution lanes
@@ -11,7 +15,10 @@ The owner's objective is input data. Models, prior conversation, issue text and 
 | Lane | Entry | Authority | Persistence |
 |---|---|---|---|
 | GitHub cloud | Owner-authenticated marked issue, manual dispatch, or fixed schedule | Four read-only commands; receipt comment write | Public issue/comment; Actions run and summary |
+| GitHub source proposals | Admitted owner issue/PR request or self-scan | Bounded branch/PR writes with exact-head verification | Repository commits, PR and Actions receipts |
+| Hatchable backend | Owner-gated API and configured scheduler | Bounded tasks, owner stop and scoped Mahoraga issue/Verify actions | PostgreSQL tasks, actions and event receipts |
 | Local Node | Loopback UI and same-origin requests | Four read-only commands; separately paired owner actions | Atomic plaintext local state and bounded notes |
+| Supervised local browser | Owner-operated terminal and isolated Playwright | Per-action local consent, fixed origins and verifiable postconditions | Private checkpoints; #65 acceptance pending |
 | Browser model | Explicit WebGPU activation | Unverified text only | Ephemeral by default; opt-in encrypted vault |
 | Local model | Explicit Ollama setting and observed readiness | At most one allowlisted read-only tool per response | Plaintext local conversation and separate tool receipt |
 
@@ -23,11 +30,11 @@ Pages is the primary console. It hosts no server, API token, background worker o
 
 A manifest is implementation metadata, not proof of a running deployment. `liveReadiness: not-probed` remains explicit. Optional model and owner-action readiness are checked by their existing adapters rather than inferred from a catalogue entry.
 
-## Cloud task lifecycle
+## GitHub issue-task lifecycle
 
 The console validates a single line of at most 1,000 characters, preflights every step with the shared router, and submits only canonical command names. Unknown or mixed unsupported objectives never open a submission URL. Manually created issues still require the fixed marker, owner identity, exact title and supported plan before any command executes. Raw issue text is never evaluated as shell code.
 
-The hosted workflow is limited to Ultron's repository. Owner identity is required for issue and dispatch events; scheduled input is a hardcoded repository inspection. The executor must match freshly observed GitHub `main` before any task runs. Issue execution additionally requires a live, open issue whose owner, title and body still match the triggering event. Current `main` and that issue snapshot are checked again immediately before the receipt-comment mutation. Per-issue concurrency serializes issue runs; jobs have a three-minute timeout. There is no automatic retry scheduler or general task queue.
+The GitHub issue-task workflow is limited to Ultron's repository. Owner identity is required for issue and dispatch events; scheduled input is a hardcoded repository inspection. The executor must match freshly observed GitHub `main` before any task runs. Issue execution additionally requires a live, open issue whose owner, title and body still match the triggering event. Current `main` and that issue snapshot are checked again immediately before the receipt-comment mutation. Per-issue concurrency serializes issue runs; jobs have a three-minute timeout. This lane has no automatic retry scheduler. The separate Hatchable worker uses the durable PostgreSQL queue, bounded eligible retries and readback-only reconciliation for sent/uncertain external actions.
 
 Before execution, replay audit scans no more than ten pages of 100 comments. Only parsed bot-authored receipts matching issue identity and task digest affect the lifecycle. Success suppresses execution, a block is terminal, and failed or partial outcomes may consume at most three distinct Actions attempts. Duplicate receipt comments for one run attempt count once. An incomplete audit fails closed. Receipt v2 records attempt ordinal, limit, timestamps and retry disposition while the parser preserves v1 replay compatibility. A new receipt is posted and reread by its exact comment ID; the author and full body must match before success returns. Post-write uncertainty requires operator reconciliation. All current commands are read-only, so a bounded manual retry does not repeat repository mutations.
 
@@ -39,6 +46,7 @@ Receipts distinguish executor SHA, run attempt and run link from the inspected m
 |---|---|---|---|
 | Canonical cloud task and receipt | GitHub Issues | Public repository audience; no confidentiality | GitHub issue/comment lifecycle; deletion cannot retract prior copies |
 | Hosted status and logs | GitHub Actions | Repository visibility and GitHub access rules | Repository-configured Actions retention |
+| Hosted tasks, external attempts and control receipts | Hatchable PostgreSQL | Declared owner/admin or scheduler access by route | Persisted evidence; actual platform retention/billing remain unverified |
 | Local objectives, receipts and chats | `.local/state.json` | Plaintext; local file permissions | Bounded ledgers; owner can stop runtime and remove local state |
 | Local owner notes | Fixed local notes directory | Plaintext; owner filesystem access | Owner-managed files |
 | Browser history, ratings and plans | Opt-in browser vault | Passphrase-derived authenticated encryption | Bounded history; explicit vault deletion and encrypted import/export |
@@ -82,9 +90,9 @@ The council combines four lifted and adapted Mahoraga contracts:
 
 Each `grokbot-deliberation-receipt` is immutable, fingerprinted, zero-credit and advisory-only. A `proceed` decision means the plan is consistent with the currently implemented read-only allowlist and supplied evidence. It does not execute the plan or prove live readiness. A `hold` decision records the missing capability, evidence gap or conflict. See [`MAHORAGA-LIFT-SHIFT.md`](MAHORAGA-LIFT-SHIFT.md) for source-to-target provenance and deferred surfaces.
 
-CI runs for all PRs and main pushes. It performs a script-disabled lockfile install, verifies that the production dependency graph exactly matches the graph last audited clean in [run 39706366720](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/39706366720), smoke-tests the Transformers import, runs exact-head syntax and regression checks, validates all workflow syntax with checksum-pinned actionlint, and pins external actions to immutable SHAs. Dependency changes fail closed pending a fresh audit and baseline update; the fingerprint does not detect advisories published after the recorded audit. Verification has read-only repository permissions and no persisted Git credentials. GitHub read-back currently shows `main` protected with required `test` enforcement for non-admins; the full admin-only policy, failing-PR block, merge enforcement details and deployment activation still require separate live evidence.
+CI runs for all PRs and main pushes. It performs a script-disabled lockfile install, verifies that the production dependency graph exactly matches the graph last audited clean in [run 39706366720](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/39706366720), runs a fresh npm audit, smoke-tests the Transformers import, runs exact-head syntax and regression checks, validates all workflow syntax with checksum-pinned actionlint, and pins external actions to immutable SHAs. Dependency changes fail closed pending a fresh audit and baseline update; the fingerprint alone does not detect later advisories. Verification has read-only repository permissions and no persisted Git credentials. Repository protection is separately configured; its dated owner readbacks must be refreshed before a protected merge.
 
-Device/WebGPU/Ollama acceptance, sustained heartbeat reliability, an enforced failing-PR merge gate, real-task benchmark quality and deployment at the final merge SHA remain separate acceptance work. The dated baseline document tracks these boundaries.
+Device/WebGPU/Ollama readiness, sustained availability and real-task improvement claims need their own relevant live evidence. Current milestone dispositions follow [acceptance status](ACCEPTANCE-STATUS.md) and the live issue bodies; historical baseline limitations do not reopen completed scoped milestones.
 
 Provider integrations use the versioned broker in `src/capability-bindings.mjs`. A binding records an opaque provider identity reference, exact origins, operations/effects/scopes, expiration, credential reference and cost ceiling. Registration is not readiness: an adapter must independently report the matching identity and all required scopes. Writes require separate authorization; every execution uses an idempotency key and independent observation, and an uncertain result is held for reconciliation rather than replayed. The broker stores digests and receipt metadata, not credentials or provider response bodies. Live evidence and remaining P0–P2 boundaries are recorded in [`verification/EXECUTION-PRESSURE-TEST-2026-10-21.md`](verification/EXECUTION-PRESSURE-TEST-2026-10-21.md).
 
