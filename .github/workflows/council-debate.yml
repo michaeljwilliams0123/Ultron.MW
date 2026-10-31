@@ -159,7 +159,7 @@ jobs:
           # shellcheck disable=SC2155
           TITLE=$(head -c 240 "$TITLE_FILE" 2>/dev/null || true)
           # shellcheck disable=SC2155
-          BODY=$(head -c 8000 "$BODY_FILE" 2>/dev/null || true)
+          BODY=$(cat "$BODY_FILE")
           export TITLE BODY
           node --check src/grokbot-governor.mjs
           node --check scripts/council-debate.mjs
