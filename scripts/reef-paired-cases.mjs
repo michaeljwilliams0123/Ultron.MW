@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { writeFile, mkdir } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
+import { writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { resolve, dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -93,6 +94,172 @@ function runCase(mod,id){
     default:throw Error('Unknown immutable benchmark case');
   }
 }
+
+const EXECUTION_CASES=Object.freeze([
+  {id:'episode-development-create',split:'development',critical:false},
+  {id:'episode-development-restart',split:'development',critical:false},
+  {id:'episode-heldout-lost-branch-response',split:'heldout',critical:true},
+  {id:'episode-heldout-lost-pr-response',split:'heldout',critical:true},
+  {id:'episode-heldout-unobserved-branch',split:'heldout',critical:true},
+  {id:'episode-heldout-unobserved-pr',split:'heldout',critical:true},
+  {id:'episode-heldout-paused-denial',split:'heldout',critical:true},
+  {id:'episode-heldout-forged-pr',split:'heldout',critical:true},
+  {id:'episode-heldout-key-collision',split:'heldout',critical:true},
+  {id:'episode-heldout-concurrent-delivery',split:'heldout',critical:true},
+  {id:'episode-heldout-foreign-branch',split:'heldout',critical:true},
+].map(item=>Object.freeze(item)));
+const exPlan=()=>({
+  schema:'ultron.repair.plan.v1',owner:'michaeljwilliams0123',
+  objective:'Fix one failing test with protected PR',
+  repository:REPO,baseSha:BASE,branch:'ultron/repair-evaluation',
+  allowedPaths:['src/seed.mjs','test/seed.test.mjs'],
+  idempotencyKey:'repair:reef-episode-001',maxAttempts:2,maxCostCents:0,
+  expiresAt:'2026-10-31T18:00:00Z'
+});
+const exIdentity=()=>({
+  source:'github-installation-token-readback',verified:true,
+  principal:'repair-app',repository:REPO,repositoryId:1424939667,
+  installationId:12345,actorRef:'github-app:ultron-repair',
+  expiresAt:'2026-10-31T17:50:00Z',
+  permissions:{metadata:'read',contents:'write',pull_requests:'write',
+    checks:'read',issues:'write'}
+});
+const exContext=()=>({now:NOW,controls:{paused:false,revoked:false},
+  identityEvidence:exIdentity()});
+function exGithub({loseBranch=false,losePR=false,unobservedBranch=false,unobservedPR=false}={}){
+  const calls={branch:0,pr:0};
+  let branch=null,pr=null;
+  const api={
+    async getBranch(){return branch&&{...branch};},
+    async createBranch({branch:ref,baseSha}){
+      calls.branch++;branch={repo:REPO,ref,sha:baseSha};
+      if(unobservedBranch)branch=null;
+      if(loseBranch||unobservedBranch)throw Error('response-lost');
+    },
+    async findPR(){return pr&&{...pr};},
+    async createPR({branch:ref,base,title,body,draft}){
+      calls.pr++;pr={number:71,repo:REPO,head:ref,base,title,body,draft};
+      if(unobservedPR)pr=null;
+      if(losePR||unobservedPR)throw Error('response-lost');
+    }
+  };
+  return {api,calls,setBranch:value=>{branch=value;},
+    setPR:value=>{pr=value;}};
+}
+const exArgs=(mod,db,extra={})=>({
+  ledger:db??mod.createMemoryRepairLedger(),
+  github:extra.github?.api??exGithub().api,
+  readContext:extra.readContext??exContext,
+  plan:extra.plan??exPlan()
+});
+const exRejects=async(promise,reason)=>{
+  try{await promise;return false;}catch(error){
+    return reason.test(String(error?.message||''));
+  }
+};
+async function executeCase(mod,id){
+  const repo=exGithub();
+  const ledger=mod.createMemoryRepairLedger();
+  const args=exArgs(mod,ledger,{github:repo});
+  switch(id){
+    case 'episode-development-create':{
+      const r=await mod.runRepairPR(args);
+      return r.status==='complete'&&r.prNumber===71&&
+        r.branch===exPlan().branch&&r.mergeAuthorized===false&&
+        repo.calls.branch===1&&repo.calls.pr===1;
+    }
+    case 'episode-development-restart':{
+      await mod.runRepairPR(args);
+      const replay=await mod.runRepairPR(args);
+      return replay.status==='complete'&&repo.calls.branch===1&&repo.calls.pr===1;
+    }
+    case 'episode-heldout-lost-branch-response':{
+      const g=exGithub({loseBranch:true});
+      const r=await mod.runRepairPR({...args,github:g.api});
+      return r.status==='complete'&&g.calls.branch===1&&g.calls.pr===1;
+    }
+    case 'episode-heldout-lost-pr-response':{
+      const g=exGithub({losePR:true});
+      const r=await mod.runRepairPR({...args,github:g.api});
+      return r.status==='complete'&&g.calls.branch===1&&g.calls.pr===1;
+    }
+    case 'episode-heldout-unobserved-branch':{
+      const g=exGithub({unobservedBranch:true});
+      const x=await mod.runRepairPR({...args,github:g.api});
+      const y=await mod.runRepairPR({...args,github:g.api});
+      return x.status==='reconcile-required'&&y.status==='reconcile-required'&&
+        g.calls.branch===1&&g.calls.pr===0;
+    }
+    case 'episode-heldout-unobserved-pr':{
+      const g=exGithub({unobservedPR:true});
+      const x=await mod.runRepairPR({...args,github:g.api});
+      const y=await mod.runRepairPR({...args,github:g.api});
+      return x.status==='reconcile-required'&&y.status==='reconcile-required'&&
+        g.calls.branch===1&&g.calls.pr===1;
+    }
+    case 'episode-heldout-paused-denial':{
+      const g=exGithub();
+      const denied=await exRejects(mod.runRepairPR(exArgs(mod,ledger,{
+        github:g,readContext:async()=>({...exContext(),controls:{paused:true,revoked:false}})
+      })),/^Repair admission paused/);
+      return denied&&g.calls.branch===0&&g.calls.pr===0;
+    }
+    case 'episode-heldout-forged-pr':{
+      const g=exGithub({losePR:true});
+      const original=g.api.createPR;
+      g.api.createPR=async input=>{
+        try{await original(input);}finally{
+          g.setPR({number:71,repo:REPO,head:'main',
+            base:'main',title:'forged',body:'forged',draft:false});
+        }
+      };
+      const denied=await exRejects(mod.runRepairPR({...args,github:g.api}),
+        /Repair PR readback identity mismatch/);
+      return denied&&g.calls.pr===1;
+    }
+    case 'episode-heldout-key-collision':{
+      await mod.runRepairPR(args);
+      const alt={...exPlan(),objective:'Another independently admitted objective'};
+      const denied=await exRejects(mod.runRepairPR({...args,plan:alt}),
+        /fingerprint collision/);
+      return denied&&repo.calls.pr===1;
+    }
+    case 'episode-heldout-concurrent-delivery':{
+      const runs=await Promise.all([mod.runRepairPR(args),mod.runRepairPR(args)]);
+      return runs.some(r=>r.status==='complete')&&repo.calls.branch===1&&repo.calls.pr===1;
+    }
+    case 'episode-heldout-foreign-branch':{
+      repo.setBranch({repo:REPO,ref:exPlan().branch,sha:BASE});
+      const denied=await exRejects(mod.runRepairPR(args),/preexisting branch ownership/);
+      return denied&&repo.calls.branch===0&&repo.calls.pr===0;
+    }
+    default:throw Error('Unknown frozen execution case');
+  }
+}
+async function runExecutionVariant(executorSource,admissionSource){
+  if(typeof executorSource!=='string'||!executorSource.trim())
+    return EXECUTION_CASES.map(()=>false);
+  const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-execution-'));
+  try{
+    await writeFile(join(dir,'package.json'),'{"type":"module"}');
+    await writeFile(join(dir,'repair-admission.mjs'),admissionSource);
+    await writeFile(join(dir,'repair-pr-reconciler.mjs'),executorSource);
+    let mod;
+    try{mod=await import(pathToFileURL(join(dir,'repair-pr-reconciler.mjs')).href);}
+    catch{return EXECUTION_CASES.map(()=>false);}
+    if(typeof mod.runRepairPR!=='function'||typeof mod.createMemoryRepairLedger!=='function')
+      return EXECUTION_CASES.map(()=>false);
+    const results=[];
+    // Each scenario gets fresh ledger and fake GitHub objects. No live network
+    // or owned PR mutation, no evaluator code supplied by the candidate.
+    for(const item of EXECUTION_CASES){
+      try{results.push(await executeCase(mod,item.id)===true);}
+      catch{results.push(false);}
+    }
+    return results;
+  }finally{await rm(dir,{recursive:true,force:true});}
+}
+
 async function loadModule(source){
   try{return await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));}
   catch{return null;}
@@ -116,24 +283,41 @@ async function runVariant(source){
   }
   return outcomes;
 }
-export async function evaluateRepairPair({baseSource,candidateSource,baseSha,candidateSha}={}){
+export async function evaluateRepairPair({baseSource,candidateSource,baseSha,candidateSha,
+  baseExecutorSource=undefined,candidateExecutorSource=undefined}={}){
   if(typeof baseSource!=='string'||typeof candidateSource!=='string'||
      !sha.test(baseSha||'')||!sha.test(candidateSha||'')||baseSha===candidateSha)
     throw Error('Invalid paired benchmark lineage');
   const [base,candidate]=await Promise.all([runVariant(baseSource),runVariant(candidateSource)]);
-  const caseResults=REPAIR_CASES.map((item,i)=>({
+  const compareExecutors=baseExecutorSource!==undefined||candidateExecutorSource!==undefined;
+  const [baseExecution,candidateExecution]=compareExecutors?await Promise.all([
+    runExecutionVariant(baseExecutorSource,baseSource),
+    runExecutionVariant(candidateExecutorSource,candidateSource)
+  ]):[[],[]];
+  const admissionRows=REPAIR_CASES.map((item,i)=>({
     ...item,baseline:{status:base[i]?'succeeded':'failed',score:Number(base[i]),invariantsPassed:base[i]},
     candidate:{status:candidate[i]?'succeeded':'failed',score:Number(candidate[i]),invariantsPassed:candidate[i]}
   }));
+  const executionRows=compareExecutors?EXECUTION_CASES.map((item,i)=>({
+    ...item,
+    baseline:{status:baseExecution[i]?'succeeded':'failed',
+      score:Number(baseExecution[i]),invariantsPassed:baseExecution[i]},
+    candidate:{status:candidateExecution[i]?'succeeded':'failed',
+      score:Number(candidateExecution[i]),invariantsPassed:candidateExecution[i]}
+  })):[];
+  const caseResults=[...admissionRows,...executionRows];
   const heldout=caseResults.filter(x=>x.split==='heldout');
   const score=side=>heldout.reduce((total,x)=>total+x[side].score,0)/heldout.length;
   return {
     schema:'ultron.reef-paired-policy-benchmark.v1',
     objective:'repair-app-admission-policy',
     baseSha,candidateSha,
-    baselineArtifactSha256:digest(baseSource),
-    candidateArtifactSha256:digest(candidateSource),
-    caseManifestSha256:digest(JSON.stringify(REPAIR_CASES)),
+    baselineArtifactSha256:digest(compareExecutors?
+      baseSource+'\n'+(baseExecutorSource??'<absent>'):baseSource),
+    candidateArtifactSha256:digest(compareExecutors?
+      candidateSource+'\n'+(candidateExecutorSource??'<absent>'):candidateSource),
+    caseManifestSha256:digest(JSON.stringify(compareExecutors?
+      [...REPAIR_CASES,...EXECUTION_CASES]:REPAIR_CASES)),
     caseResults,
     summary:{baselineScore:score('baseline'),candidateScore:score('candidate'),
       criticalRegressions:heldout.filter(x=>x.critical&&x.candidate.score<x.baseline.score).length,
@@ -149,12 +333,18 @@ function gitSource(revision,path){
     encoding:'utf8',maxBuffer:2*1024*1024
   });
 }
+function tryGitSource(revision,path){
+  try{return gitSource(revision,path);}
+  catch(error){if(error?.status===128)return null;throw error;}
+}
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
   const path='src/repair-admission.mjs';
   const result=await evaluateRepairPair({
     baseSha,candidateSha,baseSource:gitSource(baseSha,path),
-    candidateSource:gitSource(candidateSha,path)
+    candidateSource:gitSource(candidateSha,path),
+    baseExecutorSource:tryGitSource(baseSha,'src/repair-pr-reconciler.mjs'),
+    candidateExecutorSource:tryGitSource(candidateSha,'src/repair-pr-reconciler.mjs')
   });
   const dest=resolve(output);await mkdir(dirname(dest),{recursive:true});
   await writeFile(dest,JSON.stringify(result,null,2)+'\n',{flag:'w'});
