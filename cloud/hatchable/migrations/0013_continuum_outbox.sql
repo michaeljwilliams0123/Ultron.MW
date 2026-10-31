@@ -25,13 +25,13 @@ CREATE TABLE IF NOT EXISTS brain_continuum_outbox (
 -- that attempt to provide a future created_at to evade the expiry constraint.
 -- A statement-time stamp also avoids transaction-start skew for long transactions.
 CREATE OR REPLACE FUNCTION continuum_outbox_stamp() RETURNS trigger
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $$
 BEGIN
   NEW.created_at := statement_timestamp();
   NEW.updated_at := statement_timestamp();
   RETURN NEW;
 END;
-$;
+$$;
 DROP TRIGGER IF EXISTS continuum_outbox_stamp ON brain_continuum_outbox;
 CREATE TRIGGER continuum_outbox_stamp
   BEFORE INSERT ON brain_continuum_outbox
