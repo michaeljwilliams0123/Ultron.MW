@@ -18,6 +18,7 @@ const ROUTES=[
  ['POST',new RegExp('^'+ROOT+'/hooks/[1-9][0-9]*/pings$')],
 ];
 function routeAllowed(method,path){
+ if(path!==ROOT&&!path.startsWith(ROOT+'/'))return false;
  return ROUTES.some(([m,re])=>m===method&&re.test(path));
 }
 export function createAdminGitHubTransport({getToken,fetchImpl=globalThis.fetch}={}){
