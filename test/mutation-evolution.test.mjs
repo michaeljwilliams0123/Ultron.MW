@@ -235,3 +235,59 @@ test('large custom capability sets preserve all features without truncation',()=
  assert.deepEqual(result.added,['new.large.adapter']);
  assert.deepEqual(result.regressed,[]);
 });
+
+
+test('real owner-workbench and outer-loop operations remain executable and preserved',async()=>{
+ const calls=[];
+ const loop=new OuterLoopSession({sessionId:'preserved-execution'});
+ const out=await loop.executePlan({
+  summary:'Read owner-scoped issue and plan research',
+  steps:[
+   {id:'read',action:'github.issue.read',args:{number:42}},
+   {id:'research',action:'internet.search_plan',args:{query:'Ultron safety research'}}
+  ]
+ },{github:{request:async (verb,args)=>{
+  calls.push({verb,args});
+  return {title:'Preserved extension',number:args.number};
+ }}},{OWNER_MODE:'1'});
+ assert.equal(out.ok,true);
+ assert.equal(out.stepResults.length,2);
+ assert.equal(out.stepResults[0].result.title,'Preserved extension');
+ assert.equal(out.stepResults[1].ok,true);
+ assert.deepEqual(calls.map(x=>x.verb),['github.issue.read']);
+ const generated=generateIntegrationFiles({kind:'api',slug:'preserve-extension'});
+ assert.equal(generated.length,3);
+ const observations=[
+  observed('outer.loop',out.ok),
+  observed('owner.workbench',out.stepResults[0].ok),
+  observed('research.planner',out.stepResults[1].ok),
+  observed('integration.builder',generated.length===3)
+ ];
+ const result=classifyMutation({baseline:observations,candidate:[...observations]});
+ assert.equal(result.classification,'PRESERVED');
+ assert.deepEqual(result.regressed,[]);
+ assert.equal(result.preserved.length,4);
+});
+
+test('customization preserves owner gating and rejects unapproved execution before transport',async()=>{
+ let calls=0;
+ const disabled=await runWorkbenchOp({verb:'github.issue.read',number:1,env:{}},{
+  github:{request:async()=>{calls++;return {title:'unsafe'}}}
+ });
+ assert.equal(disabled.ok,false);
+ const loop=new OuterLoopSession({sessionId:'approval-gate'});
+ const unapproved=await loop.executePlan({
+  summary:'Approval required',
+  steps:[{action:'github.issue.comment',args:{number:1,body:'text'}}],
+  requires_human_approval:true
+ },{github:{request:async()=>{calls++;return {title:'unsafe'}}}},{OWNER_MODE:'1'});
+ assert.equal(unapproved.ok,false);
+ assert.equal(unapproved.error,'human-approval-required');
+ assert.equal(calls,0);
+ const result=classifyMutation({
+  baseline:[observed('owner.authorization.guard')],
+  candidate:[observed('owner.authorization.guard',!disabled.ok&&!unapproved.ok&&calls===0)]
+ });
+ assert.equal(result.classification,'PRESERVED');
+ assert.equal(result.releaseEligible,false);
+});
