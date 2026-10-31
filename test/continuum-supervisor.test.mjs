@@ -100,7 +100,7 @@ test('manual council dispatch fetches actual issue context, not generic placehol
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
-async function runDispatchExtraction({number=183,isPr='false',body='issue body',comments=[]}={}) {
+async function runDispatchExtraction({number=183,isPr='false',body='issue body',title='Roadmap',comments=[]}={}) {
   const yml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
   const match=yml.match(/- name: Extract context[^\n]*\n[\s\S]*?\n          script: \|\n([\s\S]*?)\n      - name: Run owner-first council debate/);
   assert.ok(match,'workflow extraction script exists');
@@ -113,7 +113,7 @@ async function runDispatchExtraction({number=183,isPr='false',body='issue body',
   const context={actor:'github-actions[bot]',eventName:'workflow_dispatch',repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'},payload:{inputs:{item_number:String(number),is_pr:isPr}}};
   const github={rest:{
     issues:{
-      get:async()=>({data:{number,state:'open',title:'Roadmap',body,comments:comments.length,...(number===196?{pull_request:{url:'https://api.github.com/pulls/196'}}:{})}}),
+      get:async()=>({data:{number,state:'open',title,body,comments:comments.length,...(number===196?{pull_request:{url:'https://api.github.com/pulls/196'}}:{})}}),
       listComments:async()=>({data:comments})
     },
     pulls:{get:async()=>({data:{number,state:'open',title:'PR',body}})}
@@ -212,4 +212,13 @@ test('hourly council supervisor isolates unreadable issue and dispatches a later
  assert.deepEqual(dispatched.map(x=>Number(x.inputs.item_number)),[184,185]);
  assert.equal(warnings.length,1);
  assert.match(warnings[0],/#183/);
+});
+
+
+test('full issue title risk word after display cap still marks original security context',async()=>{
+ const title='A'.repeat(240)+' credential';
+ assert.ok(title.length<=256);
+ const result=await runDispatchExtraction({title,body:'Routine planning update'});
+ assert.equal(result.exports.get('ORIGINAL_SECURITY_SIGNAL'),'1',
+  'the undisplayed suffix of a GitHub title must influence security hold');
 });
