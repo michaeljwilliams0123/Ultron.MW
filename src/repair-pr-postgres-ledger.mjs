@@ -1,0 +1,76 @@
+/**
+ * Crash-durable Repair App branch/PR intent ledger.
+ * Requires migration 0012_repair_pr_attempts.sql to have been applied to
+ * PostgreSQL. This adapter does not create credentials or deploy migrations.
+ */
+const KEY=/^repair:[a-z0-9][a-z0-9-]{7,90}$/;
+const HASH=/^[a-f0-9]{64}$/;
+const PHASES=new Set(['reserved','branch-dispatch','branch-confirmed','pr-dispatch','complete']);
+const NEXT=Object.freeze({
+ 'reserved':'branch-dispatch',
+ 'branch-dispatch':'branch-confirmed',
+ 'branch-confirmed':'pr-dispatch',
+ 'pr-dispatch':'complete',
+});
+function validateKey(key){
+  if(typeof key!=='string'||!KEY.test(key))
+    throw Error('Repair idempotency key invalid');
+}
+function validateFingerprint(fingerprint){
+  if(typeof fingerprint!=='string'||!HASH.test(fingerprint))
+    throw Error('Repair fingerprint invalid');
+}
+function normalize(row){
+  if(!row||typeof row!=='object'||!PHASES.has(row.phase)||
+    !HASH.test(row.fingerprint||''))throw Error('Repair persisted ledger row invalid');
+  return Object.freeze({
+    key:row.attempt_key,fingerprint:row.fingerprint,
+    phase:row.phase,prNumber:row.pr_number??null
+  });
+}
+export function createPostgresRepairLedger({db}={}){
+  if(typeof db?.query!=='function')
+    throw Error('PostgreSQL repair attempt connection required');
+  return Object.freeze({
+    async claim({key,fingerprint}={}){
+      validateKey(key);validateFingerprint(fingerprint);
+      const inserted=await db.query(`INSERT INTO repair_pr_attempts
+       (attempt_key,fingerprint,phase)
+       VALUES($1,$2,'reserved')
+       ON CONFLICT(attempt_key) DO NOTHING
+       RETURNING attempt_key,fingerprint,phase,pr_number`,[key,fingerprint]);
+      if(inserted.rows.length===1)
+        return {claimed:true,entry:normalize(inserted.rows[0])};
+      const existing=await db.query(`SELECT attempt_key,fingerprint,phase,pr_number
+        FROM repair_pr_attempts WHERE attempt_key=$1`,[key]);
+      if(existing.rows.length!==1)throw Error('Repair durable claim unavailable');
+      const entry=normalize(existing.rows[0]);
+      if(entry.fingerprint!==fingerprint)
+        throw Error('Repair idempotency fingerprint collision');
+      return {claimed:false,entry};
+    },
+    async get(key){
+      validateKey(key);
+      const found=await db.query(`SELECT attempt_key,fingerprint,phase,pr_number
+        FROM repair_pr_attempts WHERE attempt_key=$1`,[key]);
+      if(found.rows.length===0)return null;
+      if(found.rows.length!==1)throw Error('Repair durable readback conflict');
+      return normalize(found.rows[0]);
+    },
+    async advance({key,fingerprint,from,to,prNumber=null}={}){
+      validateKey(key);validateFingerprint(fingerprint);
+      if(!PHASES.has(from)||NEXT[from]!==to)
+        throw Error('Repair durable transition invalid');
+      if(to==='complete'
+        ? !Number.isSafeInteger(prNumber)||prNumber<1
+        : prNumber!==null)
+        throw Error('Repair PR number invalid');
+      const changed=await db.query(`UPDATE repair_pr_attempts
+        SET phase=$4,pr_number=COALESCE($5,pr_number),updated_at=now()
+        WHERE attempt_key=$1 AND fingerprint=$2 AND phase=$3
+        RETURNING attempt_key`,[key,fingerprint,from,to,prNumber]);
+      if(changed.rows.length>1)throw Error('Repair durable CAS conflict');
+      return changed.rows.length===1;
+    }
+  });
+}
