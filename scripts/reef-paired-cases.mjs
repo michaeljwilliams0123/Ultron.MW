@@ -18,10 +18,17 @@ const observationMac=(key,observation)=>createHmac('sha256',key)
 // stdout is not evidence; only a message with the trusted runner MAC qualifies.
 function spawnObservedChild(inputPath,key,cwd){
  return new Promise((resolve,reject)=>{
+  // Run candidate modules in an OS process with deny-by-default Node
+  // permissions. The evaluator source and its scratch directory are the only
+  // filesystem inputs. No child-process or worker permissions are granted.
+  // This is defense in depth, not a full malicious-code sandbox.
+  const runner=fileURLToPath(import.meta.url);
   const child=spawn(process.execPath,[
-   fileURLToPath(import.meta.url),'--reef-child',inputPath
+   '--permission','--allow-fs-read='+runner,'--allow-fs-read='+cwd,
+   '--allow-fs-write='+cwd,
+   runner,'--reef-child',inputPath
   ],{cwd,stdio:['pipe','pipe','ignore'],
-    env:{PATH:process.env.PATH||'',HOME:cwd,NODE_ENV:'test'}});
+    env:{PATH:process.env.PATH||'',HOME:cwd,TMPDIR:cwd,NODE_ENV:'test'}});
   let output='',killed=false;
   const timer=setTimeout(()=>{killed=true;child.kill('SIGKILL');},30000);
   child.stdout.setEncoding('utf8');
