@@ -10,6 +10,12 @@ const BASE='a'.repeat(40);
 const NOW='2026-10-31T17:00:00.000Z';
 const sha=/^[a-f0-9]{40}$/;
 const digest=x=>createHash('sha256').update(x).digest('hex');
+// Every behavior-affecting source is digest-bound with an explicit absence marker.
+const artifactDigest=(admission,executor,policy)=>digest(JSON.stringify([
+ admission,
+ executor===undefined?{present:false}:{present:true,value:executor},
+ policy===undefined?{present:false}:{present:true,value:policy}
+]));
 export const REPAIR_CASES=Object.freeze([
   {id:'development-admit-valid',split:'development',critical:false},
   {id:'development-deny-foreign-repo',split:'development',critical:false},
@@ -236,13 +242,15 @@ async function executeCase(mod,id){
     default:throw Error('Unknown frozen execution case');
   }
 }
-async function runExecutionVariant(executorSource,admissionSource){
+async function runExecutionVariant(executorSource,admissionSource,policySource){
   if(typeof executorSource!=='string'||!executorSource.trim())
     return EXECUTION_CASES.map(()=>false);
   const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-execution-'));
   try{
     await writeFile(join(dir,'package.json'),'{"type":"module"}');
     await writeFile(join(dir,'repair-admission.mjs'),admissionSource);
+    if(typeof policySource==='string'&&policySource.trim())
+      await writeFile(join(dir,'github-principal-policy.mjs'),policySource);
     await writeFile(join(dir,'repair-pr-reconciler.mjs'),executorSource);
     let mod;
     try{mod=await import(pathToFileURL(join(dir,'repair-pr-reconciler.mjs')).href);}
@@ -260,12 +268,19 @@ async function runExecutionVariant(executorSource,admissionSource){
   }finally{await rm(dir,{recursive:true,force:true});}
 }
 
-async function loadModule(source){
-  try{return await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));}
-  catch{return null;}
+async function loadModule(source,policySource){
+  const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-admission-'));
+  try{
+    await writeFile(join(dir,'package.json'),'{"type":"module"}');
+    await writeFile(join(dir,'repair-admission.mjs'),source);
+    if(typeof policySource==='string'&&policySource.trim())
+      await writeFile(join(dir,'github-principal-policy.mjs'),policySource);
+    return await import(pathToFileURL(join(dir,'repair-admission.mjs')).href);
+  }catch{return null;}
+  finally{await rm(dir,{recursive:true,force:true});}
 }
-async function runVariant(source){
-  const mod=await loadModule(source);
+async function runVariant(source,policySource){
+  const mod=await loadModule(source,policySource);
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
     return REPAIR_CASES.map(()=>false);
@@ -284,15 +299,17 @@ async function runVariant(source){
   return outcomes;
 }
 export async function evaluateRepairPair({baseSource,candidateSource,baseSha,candidateSha,
-  baseExecutorSource=undefined,candidateExecutorSource=undefined}={}){
+  baseExecutorSource=undefined,candidateExecutorSource=undefined,
+  basePolicySource=undefined,candidatePolicySource=undefined}={}){
   if(typeof baseSource!=='string'||typeof candidateSource!=='string'||
      !sha.test(baseSha||'')||!sha.test(candidateSha||'')||baseSha===candidateSha)
     throw Error('Invalid paired benchmark lineage');
-  const [base,candidate]=await Promise.all([runVariant(baseSource),runVariant(candidateSource)]);
+  const [base,candidate]=await Promise.all([
+    runVariant(baseSource,basePolicySource),runVariant(candidateSource,candidatePolicySource)]);
   const compareExecutors=baseExecutorSource!==undefined||candidateExecutorSource!==undefined;
   const [baseExecution,candidateExecution]=compareExecutors?await Promise.all([
-    runExecutionVariant(baseExecutorSource,baseSource),
-    runExecutionVariant(candidateExecutorSource,candidateSource)
+    runExecutionVariant(baseExecutorSource,baseSource,basePolicySource),
+    runExecutionVariant(candidateExecutorSource,candidateSource,candidatePolicySource)
   ]):[[],[]];
   const admissionRows=REPAIR_CASES.map((item,i)=>({
     ...item,baseline:{status:base[i]?'succeeded':'failed',score:Number(base[i]),invariantsPassed:base[i]},
@@ -312,10 +329,8 @@ export async function evaluateRepairPair({baseSource,candidateSource,baseSha,can
     schema:'ultron.reef-paired-policy-benchmark.v1',
     objective:'repair-app-admission-policy',
     baseSha,candidateSha,
-    baselineArtifactSha256:digest(compareExecutors?
-      baseSource+'\n'+(baseExecutorSource??'<absent>'):baseSource),
-    candidateArtifactSha256:digest(compareExecutors?
-      candidateSource+'\n'+(candidateExecutorSource??'<absent>'):candidateSource),
+    baselineArtifactSha256:artifactDigest(baseSource,baseExecutorSource,basePolicySource),
+    candidateArtifactSha256:artifactDigest(candidateSource,candidateExecutorSource,candidatePolicySource),
     caseManifestSha256:digest(JSON.stringify(compareExecutors?
       [...REPAIR_CASES,...EXECUTION_CASES]:REPAIR_CASES)),
     caseResults,
@@ -344,7 +359,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     baseSha,candidateSha,baseSource:gitSource(baseSha,path),
     candidateSource:gitSource(candidateSha,path),
     baseExecutorSource:tryGitSource(baseSha,'src/repair-pr-reconciler.mjs'),
-    candidateExecutorSource:tryGitSource(candidateSha,'src/repair-pr-reconciler.mjs')
+    candidateExecutorSource:tryGitSource(candidateSha,'src/repair-pr-reconciler.mjs'),
+    basePolicySource:tryGitSource(baseSha,'src/github-principal-policy.mjs'),
+    candidatePolicySource:tryGitSource(candidateSha,'src/github-principal-policy.mjs')
   });
   const dest=resolve(output);await mkdir(dirname(dest),{recursive:true});
   await writeFile(dest,JSON.stringify(result,null,2)+'\n',{flag:'w'});

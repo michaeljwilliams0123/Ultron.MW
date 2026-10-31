@@ -26,7 +26,9 @@ test('same source gives no claimed improvement or independent Reef acceptance', 
   assert.equal(result.heldoutCertified, false);
   assert.equal(result.reefRunVerified, false);
   assert.equal(result.eligibleForMerge, false);
-  assert.equal(result.baselineArtifactSha256, createHash('sha256').update(source).digest('hex'));
+  assert.equal(result.baselineArtifactSha256, createHash('sha256').update(JSON.stringify([
+    source,{present:false},{present:false}
+  ])).digest('hex'));
 });
 
 test('critical security regression is observed on actual candidate module behavior', async () => {
