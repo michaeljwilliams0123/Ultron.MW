@@ -220,3 +220,22 @@ test('workflow controls exclude nonexistent workflows and never disable core Ver
    expected:{state:'disabled_manually'}}),
  ]) assert.throws(()=>validateGitHubOperationPlan(input,NOW),/scope mismatch/);
 });
+
+
+test('final authorization clock is sampled after async identity read, not before',async()=>{
+ const input=plan();
+ const run=harness(input);
+ let now=NOW,identityReads=0,reservations=0;
+ run.services.clock=()=>now;
+ const originalIdentityRead=run.services.identity.read;
+ run.services.identity.read=async operation=>{
+  const result=await originalIdentityRead(operation);
+  if(++identityReads===2)now='2026-10-31T20:08:01Z';
+  return result;
+ };
+ const reserve=run.services.ledger.reserve;
+ run.services.ledger.reserve=async intent=>{reservations++;return reserve(intent)};
+ await assert.rejects(executeGitHubOperation(input,run.services),/expired|plan rejected|authorization/i);
+ assert.equal(reservations,0);
+ assert.equal(run.calls.filter(x=>x.method!=='GET').length,0);
+});
