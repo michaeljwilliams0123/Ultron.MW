@@ -52,7 +52,8 @@ function assertIdentity(evidence, now) {
     Object.entries(GRANTS).every(([key,right]) =>
       evidence.permissions[key] === right) &&
     Object.entries(evidence.permissions).every(([key,right]) =>
-      GRANTS[key] === right || OPTIONAL_GRANTS[key] === right);
+      Object.hasOwn(GRANTS,key) ? GRANTS[key] === right :
+        Object.hasOwn(OPTIONAL_GRANTS,key) && OPTIONAL_GRANTS[key] === right);
   if (!valid) throw Error('Repair App identity readback invalid');
 }
 function assertPlan(plan, now) {
