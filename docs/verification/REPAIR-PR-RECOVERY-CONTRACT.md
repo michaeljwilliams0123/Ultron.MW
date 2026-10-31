@@ -5,7 +5,7 @@ This source-only integration provides branch and pull-request create-or-reconcil
 ## Write sequence and durable state
 1. Reserve an objective-specific key and SHA-256 plan fingerprint in a CAS ledger.
 2. Record `branch-dispatch` **before** attempting to create the isolated branch. Reconcile from exact branch ref and base SHA; never blindly replay an uncertain write.
-3. Record `branch-confirmed` only on readback, and `pr-dispatch` **before** submitting a non-draft pull request to protected `main`.
+3. Record `branch-confirmed` only on readback. **Do not** dispatch `pr.create` on a base-only branch: an independently authorized code worker must prepare a real source commit first. The optional plan-bound `preparedHeadSha` must be a distinct 40-hex commit and match fresh branch readback. Without that commit, remain `reconcile-required` at `branch-confirmed`, without consuming a PR write attempt. This source-only precondition does not itself verify commit ancestry, changed paths, or external worker identity; those remain independent release gates. After preparation, record `pr-dispatch` **before** submitting a non-draft pull request to protected `main`. PR readback must include the exact prepared head SHA.
 4. Read the PR from GitHub, matching repository, exact branch, base, non-draft state, objective-specific title and deterministic SHA-256 comment marker. Commit `complete` with the observed PR number.
 5. On duplicate delivery or restart, retrieve the persisted state. An absent object after an unknown write remains `reconcile-required` and does not authorize a repeat mutation.
 
