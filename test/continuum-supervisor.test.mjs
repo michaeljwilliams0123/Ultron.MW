@@ -97,3 +97,41 @@ test('manual council dispatch fetches actual issue context, not generic placehol
   assert.match(yml,/context\.eventName === 'workflow_dispatch'/);
   assert.doesNotMatch(yml,/body = 'workflow_dispatch owner-first'/);
 });
+
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+async function runDispatchExtraction({number=183,isPr='false',body='issue body',comments=[]}={}) {
+  const yml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
+  const match=yml.match(/- name: Extract context[^\n]*\n[\s\S]*?\n          script: \|\n([\s\S]*?)\n      - name: Run owner-first council debate/);
+  assert.ok(match,'workflow extraction script exists');
+  const source=match[1].split('\n').map(line=>line.replace(/^ {12}/,'')).join('\n');
+  const files=new Map();
+  const exports=new Map();
+  const requireMock=(name)=>name==='fs'
+    ? {mkdirSync(){},writeFileSync(path,value){files.set(path,value);}}
+    : name==='path' ? {join:(...parts)=>parts.join('/')} : (()=>{throw Error('unexpected require');})();
+  const context={actor:'github-actions[bot]',eventName:'workflow_dispatch',repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'},payload:{inputs:{item_number:String(number),is_pr:isPr}}};
+  const github={rest:{
+    issues:{
+      get:async()=>({data:{number,state:'open',title:'Roadmap',body,comments:comments.length,...(number===196?{pull_request:{url:'https://api.github.com/pulls/196'}}:{})}}),
+      listComments:async()=>({data:comments})
+    },
+    pulls:{get:async()=>({data:{number,state:'open',title:'PR',body}})}
+  }};
+  const run=new AsyncFunction('require','process','context','github','core',source);
+  await run(requireMock,{env:{RUNNER_TEMP:'/tmp'}},context,github,{exportVariable:(key,value)=>exports.set(key,value)});
+  return {body:files.get('/tmp/ultron-council/body.txt'),exports};
+}
+
+test('manual council dispatch preserves newest owner change within 3000-char baseline',async()=>{
+  const result=await runDispatchExtraction({
+    body:'A'.repeat(6000),
+    comments:[{user:{login:'michaeljwilliams0123'},body:'LATEST-OWNER-CHANGE-REQUIRES-REVIEW'}]
+  });
+  assert.ok(result.body.length<=3000,'baseline truncation must not discard appended owner context');
+  assert.match(result.body,/LATEST-OWNER-CHANGE-REQUIRES-REVIEW/);
+});
+
+test('manual issue dispatch rejects a pull request number when is_pr=false',async()=>{
+  await assert.rejects(runDispatchExtraction({number:196,isPr:'false'}),/Council dispatch target type mismatch/);
+});
