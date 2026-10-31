@@ -6,7 +6,7 @@ const NOW='2026-11-01T12:00:00.000Z';
 const SHA='a'.repeat(40);
 const delivery='continuum:delivery-0001';
 const row=(extra={})=>({
-  deliveryId:delivery, sourceSha:SHA, leaseGeneration:7,
+  deliveryId:delivery, repository:'michaeljwilliams0123/Ultron.MW', sourceSha:SHA, leaseGeneration:7,
   state:'pending', effect:'advisory', maxPaidCents:0,
   expiresAt:'2026-11-01T11:59:00.000Z', ...extra
 });
