@@ -28,3 +28,38 @@ export function selectCouncilReviews(issues,{now=new Date().toISOString(),limit=
   eligible.sort((a,b)=>a.last-b.last||a.number-b.number);
   return Object.freeze(eligible.slice(0,limit).map(x=>x.number));
 }
+
+/** Read recent council/owner activity without assuming the last GitHub page
+ * contains the most recent council report. If history is truncated, hold
+ * dispatch rather than misclassify an existing review as absent.
+ */
+export async function readCouncilActivity({
+  issue,owner,fetchPage,maxPages=10
+}={}){
+  if(!issue||!Number.isSafeInteger(issue.comments)||issue.comments<0||
+    typeof issue.created_at!=='string'||typeof owner!=='string'||
+    typeof fetchPage!=='function'||!Number.isSafeInteger(maxPages)||
+    maxPages<1||maxPages>20)
+    throw Error('activity-input-invalid');
+  const lastPage=Math.max(1,Math.ceil(issue.comments/100));
+  let lastReviewAt=null,lastOwnerAt=null;
+  let page=lastPage,scanned=0;
+  for(;page>=1&&scanned<maxPages;page--,scanned++){
+    const comments=await fetchPage(page);
+    if(!Array.isArray(comments))throw Error('activity-page-invalid');
+    for(let i=comments.length-1;i>=0;i--){
+      const c=comments[i];
+      if(!lastOwnerAt&&c?.user?.login===owner&&
+        !/^\\s*\\/council\\b/.test(c.body||''))lastOwnerAt=c.created_at;
+      if(!lastReviewAt&&c?.user?.login==='github-actions[bot]'&&
+        c.body?.startsWith('# Ultron Council Report'))lastReviewAt=c.created_at;
+    }
+    // GitHub comments are ascending: all earlier pages predate this report.
+    if(lastReviewAt)break;
+  }
+  const complete=lastReviewAt!==null||page<1;
+  const lastMeaningfulAt=lastOwnerAt&&
+    (lastReviewAt===null||Date.parse(lastOwnerAt)>Date.parse(lastReviewAt))?
+      lastOwnerAt:issue.created_at;
+  return Object.freeze({complete,lastReviewAt,lastMeaningfulAt});
+}
