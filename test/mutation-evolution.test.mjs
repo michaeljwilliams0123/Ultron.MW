@@ -291,3 +291,117 @@ test('customization preserves owner gating and rejects unapproved execution befo
  assert.equal(result.classification,'PRESERVED');
  assert.equal(result.releaseEligible,false);
 });
+
+
+/* BRANCHA R2 — Branch A: Trustworthy measurements and anti-forgery. */
+test('case IDs must be primitive strings, never coerced arrays or objects',()=>{
+ for(const id of [['owner.workbench'],{toString:()=> 'owner.workbench'},new String('owner.workbench'),42]){
+  assert.throws(()=>classifyMutation({
+   baseline:[{id,passed:true,evidenceId:'baseline:verified'}],
+   candidate:[observed('owner.workbench')]
+  }),/invalid/i);
+ }
+});
+
+test('unverified baseline cannot establish regression when candidate is absent',()=>{
+ const out=classifyMutation({
+  baseline:[{id:'owner.workbench',passed:true,evidenceId:'  '}],
+  candidate:[]
+ });
+ assert.equal(out.classification,'INCONCLUSIVE');
+ assert.deepEqual(out.regressed,[]);
+ assert.deepEqual(out.unverified,['owner.workbench']);
+});
+
+test('unmeasured candidate failure is inconclusive rather than proven regression',()=>{
+ const out=classifyMutation({
+  baseline:[observed('owner.workbench')],
+  candidate:[{id:'owner.workbench',passed:false,evidenceId:null}]
+ });
+ assert.equal(out.classification,'INCONCLUSIVE');
+ assert.deepEqual(out.regressed,[]);
+ assert.deepEqual(out.unverified,['owner.workbench']);
+});
+
+test('unmeasured candidate success cannot prove working baseline preservation',()=>{
+ const out=classifyMutation({
+  baseline:[observed('owner.workbench')],
+  candidate:[{id:'owner.workbench',passed:true,evidenceId:''}]
+ });
+ assert.equal(out.classification,'INCONCLUSIVE');
+ assert.deepEqual(out.preserved,[]);
+ assert.deepEqual(out.unverified,['owner.workbench']);
+});
+
+test('recovery requires verified baseline and candidate observations',()=>{
+ const out=classifyMutation({
+  baseline:[{id:'council.reason',passed:false,evidenceId:''}],
+  candidate:[observed('council.reason')]
+ });
+ assert.equal(out.classification,'INCONCLUSIVE');
+ assert.deepEqual(out.recovered,[]);
+ assert.deepEqual(out.unverified,['council.reason']);
+});
+
+test('verified regression still wins when another capability is unmeasured',()=>{
+ const out=classifyMutation({
+  baseline:[observed('owner.workbench'),observed('council.reason')],
+  candidate:[observed('owner.workbench',false),{id:'council.reason',passed:true,evidenceId:''}]
+ });
+ assert.equal(out.classification,'REGRESSION');
+ assert.deepEqual(out.regressed,['owner.workbench']);
+ assert.deepEqual(out.unverified,['council.reason']);
+});
+
+/* BRANCHA R2 — Branch B: Recovery and time-ordered evolution. */
+test('recovery of a broken feature remains advancement with no new case IDs',()=>{
+ const r=classifyMutation({
+  baseline:[observed('council.reason',false)],
+  candidate:[observed('council.reason')]
+ });
+ assert.equal(r.classification,'ADVANCEMENT');
+ assert.deepEqual(r.recovered,['council.reason']);
+ assert.deepEqual(r.added,[]);
+});
+
+test('previously failed case omitted from candidate remains unmeasured',()=>{
+ const r=classifyMutation({
+  baseline:[observed('unhealthy.provider',false)],candidate:[]
+ });
+ assert.equal(r.classification,'INCONCLUSIVE');
+ assert.deepEqual(r.unverified,['unhealthy.provider']);
+});
+
+/* BRANCHA R2 — Branch C: Preserve established functionality at scale. */
+test('a thousand custom capabilities preserve identity and deterministic order',()=>{
+ const list=Array.from({length:1024},(_,i)=>observed('custom.'+String(i).padStart(4,'0')));
+ const out=classifyMutation({baseline:list,candidate:[...list].reverse()});
+ assert.equal(out.classification,'PRESERVED');
+ assert.equal(out.preserved.length,1024);
+ assert.deepEqual(out.regressed,[]);
+ assert.equal(out.releaseEligible,false);
+});
+
+test('classification never mutates owner-provided observation receipts',()=>{
+ const baseline=Object.freeze([Object.freeze(observed('owner.workbench'))]);
+ const candidate=Object.freeze([
+  Object.freeze(observed('owner.workbench')),
+  Object.freeze(observed('new.integration'))
+ ]);
+ const out=classifyMutation({baseline,candidate});
+ assert.equal(out.classification,'ADVANCEMENT');
+ assert.ok(Object.isFrozen(baseline));
+ assert.ok(Object.isFrozen(candidate));
+ assert.equal(candidate.length,2);
+});
+
+/* BRANCHA R2 — Branch D: Tested security remains a release gate. */
+test('passing new capability does not authorize external credentials or release',()=>{
+ const out=classifyMutation({
+  baseline:[observed('owner.workbench')],
+  candidate:[observed('owner.workbench'),observed('admin.capability')]
+ });
+ assert.equal(out.classification,'ADVANCEMENT');
+ assert.equal(out.releaseEligible,false);
+ assert.equal(out.independentSecurityApprovalRequired,true);
+});
