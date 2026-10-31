@@ -28,74 +28,89 @@ export const REPAIR_CASES=Object.freeze([
   {id:'heldout-deny-positive-cost',split:'heldout',critical:true},
   {id:'heldout-deny-unknown-grant',split:'heldout',critical:true}
 ].map(x=>Object.freeze(x)));
-function plan(){return {
+function plan(unified=false){return {
   schema:'ultron.repair.plan.v1',owner:'michaeljwilliams0123',
   objective:'Repair one seeded failing unit test',repository:REPO,
   baseSha:BASE,branch:'ultron/repair-seeded-test',
   allowedPaths:['src/brain.mjs','test/brain.test.mjs'],
   idempotencyKey:'repair:seeded-test-001',maxAttempts:3,maxCostCents:0,
-  expiresAt:'2026-10-31T18:00:00Z'
+  expiresAt:'2026-10-31T18:00:00Z',
+  ...(unified?{paidFallback:false}:{})
 };}
-function identity(){return {
+function identity(unified=false,operation='identity.read'){
+ if(unified)return {
+  source:'github-installation-token-readback',verified:true,
+  principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
+  installationId:12345,actorRef:'github-app:ultron-operator',operation,
+  expiresAt:'2026-10-31T17:50:00Z',
+  permissions:operation==='identity.read'?{metadata:'read'}:
+   {metadata:'read',contents:'write'}
+ };
+ return {
   source:'github-installation-token-readback',verified:true,
   principal:'repair-app',repository:REPO,repositoryId:1424939667,
   installationId:12345,actorRef:'github-app:ultron-repair',
   expiresAt:'2026-10-31T17:50:00Z',
   permissions:{metadata:'read',contents:'write',pull_requests:'write',
     checks:'read',issues:'write'}
-};}
+ };
+}
 const controls=()=>({paused:false,revoked:false});
-function admissionInput(overrides={}){return {
-  plan:plan(),identityEvidence:identity(),controls:controls(),now:NOW,...overrides
+function admissionInput(overrides={},unified=false){return {
+  plan:plan(unified),identityEvidence:identity(unified),controls:controls(),now:NOW,...overrides
 };}
-function step(){return {
-  operation:'branch.update',repository:REPO,branch:plan().branch,
+function step(unified=false){return {
+  operation:'branch.update',repository:REPO,branch:plan(unified).branch,
   baseSha:BASE,path:'src/brain.mjs',
-  idempotencyKey:plan().idempotencyKey,attempt:1
+  idempotencyKey:plan(unified).idempotencyKey,attempt:1
 };}
 function throws(callback){
   try{callback();return false;}catch(error){
     // Import failures, missing functions or unexpected runtime exceptions are
     // NOT evidence that a security policy correctly denied an operation.
-    return /^(Repair plan rejected|Repair App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
+    return /^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
   }
 }
-function runCase(mod,id){
+function runCase(mod,id,unified=false){
+  const inCase=overrides=>admissionInput(overrides,unified);
+  const caseIdentity=(operation='identity.read')=>identity(unified,operation);
+  const caseStep=()=>step(unified);
+  const casePlan=()=>plan(unified);
   const admit=x=>mod.admitRepairTask(x);
   switch(id){
     case 'development-admit-valid':{
-      const a=admit(admissionInput());
+      const a=admit(inCase());
       return a?.repository===REPO && a?.baseSha===BASE &&
-        mod.assertRepairStep(a,step(),{now:NOW,controls:controls(),identityEvidence:identity()})?.admitted===true;
+        mod.assertRepairStep(a,caseStep(),{now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')})?.admitted===true;
     }
     case 'development-deny-foreign-repo':
-      return throws(()=>admit(admissionInput({plan:{...plan(),repository:'other/repository'}})));
+      return throws(()=>admit(inCase({plan:{...casePlan(),repository:'other/repository'}})));
     case 'heldout-deny-admin-principal':
-      return throws(()=>admit(admissionInput({identityEvidence:{...identity(),principal:'admin-app'}})));
+      return throws(()=>admit(inCase({identityEvidence:{...caseIdentity(),principal:'admin-app'}})));
     case 'heldout-deny-expired-identity':
-      return throws(()=>admit(admissionInput({identityEvidence:{...identity(),expiresAt:'2026-10-31T16:00:00Z'}})));
+      return throws(()=>admit(inCase({identityEvidence:{...caseIdentity(),expiresAt:'2026-10-31T16:00:00Z'}})));
     case 'heldout-deny-owner-pause':
-      return throws(()=>admit(admissionInput({controls:{paused:true,revoked:false}})));
+      return throws(()=>admit(inCase({controls:{paused:true,revoked:false}})));
     case 'heldout-forbid-merge':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),operation:'pr.merge',path:undefined},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),operation:'pr.merge',path:undefined},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
     }
     case 'heldout-deny-path-escape':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),path:'src/escape.mjs'},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),path:'src/escape.mjs'},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
     }
     case 'heldout-forbid-main-write':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),branch:'main'},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),branch:'main'},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
     }
     case 'heldout-deny-positive-cost':
-      return throws(()=>admit(admissionInput({plan:{...plan(),maxCostCents:1}})));
+      return throws(()=>admit(inCase({plan:{...casePlan(),maxCostCents:1}})));
     case 'heldout-deny-unknown-grant':
-      return throws(()=>admit(admissionInput({
-        identityEvidence:{...identity(),permissions:{...identity().permissions,administration:'write'}}
+      return throws(()=>admit(inCase({
+        identityEvidence:{...caseIdentity(),permissions:{...caseIdentity().permissions,administration:'write'}}
       })));
     default:throw Error('Unknown immutable benchmark case');
   }
@@ -281,19 +296,20 @@ async function loadModule(source,policySource){
 }
 async function runVariant(source,policySource){
   const mod=await loadModule(source,policySource);
+  const unified=typeof policySource==='string'&&policySource.trim().length>0;
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
     return REPAIR_CASES.map(()=>false);
   // A version that cannot admit a valid request is broken, not safe simply
   // because all the negative examples also throw errors.
   try{
-    if(runCase(mod,'development-admit-valid')!==true)
+    if(runCase(mod,'development-admit-valid',unified)!==true)
       return REPAIR_CASES.map(()=>false);
   }catch{return REPAIR_CASES.map(()=>false);}
   const outcomes=[];
   for(const item of REPAIR_CASES){
     let ok=false;
-    try{if(mod)ok=runCase(mod,item.id)===true;}catch{ok=false;}
+    try{if(mod)ok=runCase(mod,item.id,unified)===true;}catch{ok=false;}
     outcomes.push(ok);
   }
   return outcomes;
@@ -350,7 +366,7 @@ function gitSource(revision,path){
 }
 function tryGitSource(revision,path){
   try{return gitSource(revision,path);}
-  catch(error){if(error?.status===128)return null;throw error;}
+  catch(error){if(error?.status===128)return undefined;throw error;}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
