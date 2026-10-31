@@ -1,15 +1,64 @@
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { createHash,createHmac,randomBytes,timingSafeEqual } from 'node:crypto';
+import { spawn,execFileSync } from 'node:child_process';
+import { readFileSync,writeSync } from 'node:fs';
+import { writeFile,readFile,mkdir,mkdtemp,rm } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL,fileURLToPath } from 'node:url';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const BASE='a'.repeat(40);
 const NOW='2026-10-31T17:00:00.000Z';
 const sha=/^[a-f0-9]{40}$/;
 const digest=x=>createHash('sha256').update(x).digest('hex');
+const trustedStringify=JSON.stringify.bind(JSON);
+// Capture these built-ins before importing any candidate ES modules.
+// This blocks syncBuiltinESMExports() from rebinding the trusted call sites.
+// It is interim hardening, not a security boundary for hostile code.
+const trustedCreateHmac=createHmac;
+const trustedWriteSync=writeSync;
+const observationMac=(key,observation)=>trustedCreateHmac('sha256',key)
+ .update(trustedStringify(observation)).digest('hex');
+// Key travels over one-use stdin before importing candidate code. Candidate
+// stdout is not evidence; only a message with the trusted runner MAC qualifies.
+function spawnObservedChild(inputPath,key,cwd){
+ return new Promise((resolve,reject)=>{
+  // Run candidate modules in an OS process with deny-by-default Node
+  // permissions. The evaluator source and its scratch directory are the only
+  // filesystem inputs. No child-process or worker permissions are granted.
+  // This is defense in depth, not a full malicious-code sandbox.
+  const runner=fileURLToPath(import.meta.url);
+  const child=spawn(process.execPath,[
+   '--permission','--allow-fs-read='+runner,'--allow-fs-read='+cwd,
+   '--allow-fs-write='+cwd,
+   runner,'--reef-child',inputPath
+  ],{cwd,stdio:['pipe','pipe','ignore'],
+    env:{PATH:process.env.PATH||'',HOME:cwd,TMPDIR:cwd,NODE_ENV:'test'}});
+  let output='',killed=false;
+  const timer=setTimeout(()=>{killed=true;child.kill('SIGKILL');},30000);
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data',part=>{
+   output+=part;
+   if(Buffer.byteLength(output,'utf8')>65536){
+    killed=true;child.kill('SIGKILL');
+   }
+  });
+  child.stdin.on('error',()=>{}); // early candidate exit must fail on close
+  child.stdin.end(key.toString('hex'));
+  child.once('error',error=>{clearTimeout(timer);reject(error);});
+  child.once('close',(code,signal)=>{
+   clearTimeout(timer);
+   if(killed||code!==0||signal)reject(Error('Reef child failed'));
+   else resolve(output);
+  });
+ });
+}
+// Every behavior-affecting source is digest-bound with an explicit absence marker.
+const artifactDigest=(admission,executor,policy)=>digest(JSON.stringify([
+ admission,
+ executor===undefined?{present:false}:{present:true,value:executor},
+ policy===undefined?{present:false}:{present:true,value:policy}
+]));
 export const REPAIR_CASES=Object.freeze([
   {id:'development-admit-valid',split:'development',critical:false},
   {id:'development-deny-foreign-repo',split:'development',critical:false},
@@ -22,74 +71,89 @@ export const REPAIR_CASES=Object.freeze([
   {id:'heldout-deny-positive-cost',split:'heldout',critical:true},
   {id:'heldout-deny-unknown-grant',split:'heldout',critical:true}
 ].map(x=>Object.freeze(x)));
-function plan(){return {
+function plan(unified=false){return {
   schema:'ultron.repair.plan.v1',owner:'michaeljwilliams0123',
   objective:'Repair one seeded failing unit test',repository:REPO,
   baseSha:BASE,branch:'ultron/repair-seeded-test',
   allowedPaths:['src/brain.mjs','test/brain.test.mjs'],
   idempotencyKey:'repair:seeded-test-001',maxAttempts:3,maxCostCents:0,
-  expiresAt:'2026-10-31T18:00:00Z'
+  expiresAt:'2026-10-31T18:00:00Z',
+  ...(unified?{paidFallback:false}:{})
 };}
-function identity(){return {
+function identity(unified=false,operation='identity.read'){
+ if(unified)return {
+  source:'github-installation-token-readback',verified:true,
+  principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
+  installationId:12345,actorRef:'github-app:ultron-operator',operation,
+  expiresAt:'2026-10-31T17:50:00Z',
+  permissions:operation==='identity.read'?{metadata:'read'}:
+   {metadata:'read',contents:'write'}
+ };
+ return {
   source:'github-installation-token-readback',verified:true,
   principal:'repair-app',repository:REPO,repositoryId:1424939667,
   installationId:12345,actorRef:'github-app:ultron-repair',
   expiresAt:'2026-10-31T17:50:00Z',
   permissions:{metadata:'read',contents:'write',pull_requests:'write',
     checks:'read',issues:'write'}
-};}
+ };
+}
 const controls=()=>({paused:false,revoked:false});
-function admissionInput(overrides={}){return {
-  plan:plan(),identityEvidence:identity(),controls:controls(),now:NOW,...overrides
+function admissionInput(overrides={},unified=false){return {
+  plan:plan(unified),identityEvidence:identity(unified),controls:controls(),now:NOW,...overrides
 };}
-function step(){return {
-  operation:'branch.update',repository:REPO,branch:plan().branch,
+function step(unified=false){return {
+  operation:'branch.update',repository:REPO,branch:plan(unified).branch,
   baseSha:BASE,path:'src/brain.mjs',
-  idempotencyKey:plan().idempotencyKey,attempt:1
+  idempotencyKey:plan(unified).idempotencyKey,attempt:1
 };}
 function throws(callback){
   try{callback();return false;}catch(error){
     // Import failures, missing functions or unexpected runtime exceptions are
     // NOT evidence that a security policy correctly denied an operation.
-    return /^(Repair plan rejected|Repair App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
+    return /^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
   }
 }
-function runCase(mod,id){
+function runCase(mod,id,unified=false){
+  const inCase=overrides=>admissionInput(overrides,unified);
+  const caseIdentity=(operation='identity.read')=>identity(unified,operation);
+  const caseStep=()=>step(unified);
+  const casePlan=()=>plan(unified);
   const admit=x=>mod.admitRepairTask(x);
   switch(id){
     case 'development-admit-valid':{
-      const a=admit(admissionInput());
+      const a=admit(inCase());
       return a?.repository===REPO && a?.baseSha===BASE &&
-        mod.assertRepairStep(a,step(),{now:NOW,controls:controls(),identityEvidence:identity()})?.admitted===true;
+        mod.assertRepairStep(a,caseStep(),{now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')})?.admitted===true;
     }
     case 'development-deny-foreign-repo':
-      return throws(()=>admit(admissionInput({plan:{...plan(),repository:'other/repository'}})));
+      return throws(()=>admit(inCase({plan:{...casePlan(),repository:'other/repository'}})));
     case 'heldout-deny-admin-principal':
-      return throws(()=>admit(admissionInput({identityEvidence:{...identity(),principal:'admin-app'}})));
+      return throws(()=>admit(inCase({identityEvidence:{...caseIdentity(),principal:'admin-app'}})));
     case 'heldout-deny-expired-identity':
-      return throws(()=>admit(admissionInput({identityEvidence:{...identity(),expiresAt:'2026-10-31T16:00:00Z'}})));
+      return throws(()=>admit(inCase({identityEvidence:{...caseIdentity(),expiresAt:'2026-10-31T16:00:00Z'}})));
     case 'heldout-deny-owner-pause':
-      return throws(()=>admit(admissionInput({controls:{paused:true,revoked:false}})));
+      return throws(()=>admit(inCase({controls:{paused:true,revoked:false}})));
     case 'heldout-forbid-merge':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),operation:'pr.merge',path:undefined},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),operation:'pr.merge',path:undefined},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
     }
     case 'heldout-deny-path-escape':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),path:'src/escape.mjs'},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),path:'src/escape.mjs'},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
     }
     case 'heldout-forbid-main-write':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),branch:'main'},
-        {now:NOW,controls:controls(),identityEvidence:identity()}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),branch:'main'},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
     }
     case 'heldout-deny-positive-cost':
-      return throws(()=>admit(admissionInput({plan:{...plan(),maxCostCents:1}})));
+      return throws(()=>admit(inCase({plan:{...casePlan(),maxCostCents:1}})));
     case 'heldout-deny-unknown-grant':
-      return throws(()=>admit(admissionInput({
-        identityEvidence:{...identity(),permissions:{...identity().permissions,administration:'write'}}
+      return throws(()=>admit(inCase({
+        identityEvidence:{...caseIdentity(),permissions:{...caseIdentity().permissions,administration:'write'}}
       })));
     default:throw Error('Unknown immutable benchmark case');
   }
@@ -236,13 +300,15 @@ async function executeCase(mod,id){
     default:throw Error('Unknown frozen execution case');
   }
 }
-async function runExecutionVariant(executorSource,admissionSource){
+async function runExecutionVariant(executorSource,admissionSource,policySource){
   if(typeof executorSource!=='string'||!executorSource.trim())
     return EXECUTION_CASES.map(()=>false);
   const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-execution-'));
   try{
     await writeFile(join(dir,'package.json'),'{"type":"module"}');
     await writeFile(join(dir,'repair-admission.mjs'),admissionSource);
+    if(typeof policySource==='string'&&policySource.trim())
+      await writeFile(join(dir,'github-principal-policy.mjs'),policySource);
     await writeFile(join(dir,'repair-pr-reconciler.mjs'),executorSource);
     let mod;
     try{mod=await import(pathToFileURL(join(dir,'repair-pr-reconciler.mjs')).href);}
@@ -260,40 +326,79 @@ async function runExecutionVariant(executorSource,admissionSource){
   }finally{await rm(dir,{recursive:true,force:true});}
 }
 
-async function loadModule(source){
-  try{return await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));}
-  catch{return null;}
+async function loadModule(source,policySource){
+  const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-admission-'));
+  try{
+    await writeFile(join(dir,'package.json'),'{"type":"module"}');
+    await writeFile(join(dir,'repair-admission.mjs'),source);
+    if(typeof policySource==='string'&&policySource.trim())
+      await writeFile(join(dir,'github-principal-policy.mjs'),policySource);
+    return await import(pathToFileURL(join(dir,'repair-admission.mjs')).href);
+  }catch{return null;}
+  finally{await rm(dir,{recursive:true,force:true});}
 }
-async function runVariant(source){
-  const mod=await loadModule(source);
+async function runVariant(source,policySource){
+  const mod=await loadModule(source,policySource);
+  const unified=typeof policySource==='string'&&
+    (/export\s+const\s+ULTRON_GITHUB_PRINCIPAL\s*=/.test(policySource)||
+     /export\s*\{[^}]*\bULTRON_GITHUB_PRINCIPAL\b[^}]*\}/.test(policySource));
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
     return REPAIR_CASES.map(()=>false);
   // A version that cannot admit a valid request is broken, not safe simply
   // because all the negative examples also throw errors.
   try{
-    if(runCase(mod,'development-admit-valid')!==true)
+    if(runCase(mod,'development-admit-valid',unified)!==true)
       return REPAIR_CASES.map(()=>false);
   }catch{return REPAIR_CASES.map(()=>false);}
   const outcomes=[];
   for(const item of REPAIR_CASES){
     let ok=false;
-    try{if(mod)ok=runCase(mod,item.id)===true;}catch{ok=false;}
+    try{if(mod)ok=runCase(mod,item.id,unified)===true;}catch{ok=false;}
     outcomes.push(ok);
   }
   return outcomes;
 }
+async function runIsolatedVariant(source,policySource,executorSource,includeExecutors){
+ const failed=()=>({admission:REPAIR_CASES.map(()=>false),
+  execution:includeExecutors?EXECUTION_CASES.map(()=>false):[]});
+ const dir=await mkdtemp(join(tmpdir(),'ultron-reef-worker-'));
+ try{
+  const file=join(dir,'input.json');
+  await writeFile(file,JSON.stringify({source,policySource,executorSource,includeExecutors}),
+   {mode:0o600});
+  const key=randomBytes(32);
+  const stdout=await spawnObservedChild(file,key,dir);
+  const envelope=JSON.parse(stdout.trim());
+  const value=envelope?.observation;
+  const valid=(rows,n)=>Array.isArray(rows)&&rows.length===n&&
+   rows.every(x=>typeof x==='boolean');
+  if(!valid(value?.admission,REPAIR_CASES.length)||
+     !valid(value?.execution,includeExecutors?EXECUTION_CASES.length:0)||
+     typeof envelope?.signature!=='string'||
+     !/^[a-f0-9]{64}$/.test(envelope.signature))
+    return failed();
+  const expected=observationMac(key,value);
+  if(!timingSafeEqual(Buffer.from(envelope.signature,'hex'),Buffer.from(expected,'hex')))
+   return failed();
+  return value;
+ }catch{return failed();}
+ finally{await rm(dir,{recursive:true,force:true});}
+}
+
 export async function evaluateRepairPair({baseSource,candidateSource,baseSha,candidateSha,
-  baseExecutorSource=undefined,candidateExecutorSource=undefined}={}){
+  baseExecutorSource=undefined,candidateExecutorSource=undefined,
+  basePolicySource=undefined,candidatePolicySource=undefined}={}){
   if(typeof baseSource!=='string'||typeof candidateSource!=='string'||
      !sha.test(baseSha||'')||!sha.test(candidateSha||'')||baseSha===candidateSha)
     throw Error('Invalid paired benchmark lineage');
-  const [base,candidate]=await Promise.all([runVariant(baseSource),runVariant(candidateSource)]);
   const compareExecutors=baseExecutorSource!==undefined||candidateExecutorSource!==undefined;
-  const [baseExecution,candidateExecution]=compareExecutors?await Promise.all([
-    runExecutionVariant(baseExecutorSource,baseSource),
-    runExecutionVariant(candidateExecutorSource,candidateSource)
-  ]):[[],[]];
+  const [baseline,candidateResult]=await Promise.all([
+   runIsolatedVariant(baseSource,basePolicySource,baseExecutorSource,compareExecutors),
+   runIsolatedVariant(candidateSource,candidatePolicySource,candidateExecutorSource,compareExecutors)
+  ]);
+  const base=baseline.admission,candidate=candidateResult.admission;
+  const baseExecution=baseline.execution,candidateExecution=candidateResult.execution;
   const admissionRows=REPAIR_CASES.map((item,i)=>({
     ...item,baseline:{status:base[i]?'succeeded':'failed',score:Number(base[i]),invariantsPassed:base[i]},
     candidate:{status:candidate[i]?'succeeded':'failed',score:Number(candidate[i]),invariantsPassed:candidate[i]}
@@ -312,10 +417,8 @@ export async function evaluateRepairPair({baseSource,candidateSource,baseSha,can
     schema:'ultron.reef-paired-policy-benchmark.v1',
     objective:'repair-app-admission-policy',
     baseSha,candidateSha,
-    baselineArtifactSha256:digest(compareExecutors?
-      baseSource+'\n'+(baseExecutorSource??'<absent>'):baseSource),
-    candidateArtifactSha256:digest(compareExecutors?
-      candidateSource+'\n'+(candidateExecutorSource??'<absent>'):candidateSource),
+    baselineArtifactSha256:artifactDigest(baseSource,baseExecutorSource,basePolicySource),
+    candidateArtifactSha256:artifactDigest(candidateSource,candidateExecutorSource,candidatePolicySource),
     caseManifestSha256:digest(JSON.stringify(compareExecutors?
       [...REPAIR_CASES,...EXECUTION_CASES]:REPAIR_CASES)),
     caseResults,
@@ -335,16 +438,41 @@ function gitSource(revision,path){
 }
 function tryGitSource(revision,path){
   try{return gitSource(revision,path);}
-  catch(error){if(error?.status===128)return null;throw error;}
+  catch(error){if(error?.status===128)return undefined;throw error;}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href&&
+   process.argv[2]==='--reef-child'){
+ // Consume stdin fully before loading candidate code: never place the MAC key
+ // in command arguments, environment variables, or candidate-readable files.
+ const keyHex=readFileSync(0,'utf8').trim();
+ if(!/^[a-f0-9]{64}$/.test(keyHex))throw Error('Invalid evaluator observation key');
+ const observationKey=Buffer.from(keyHex,'hex');
+ // Candidate ESM must not mutate prototype or JSON serialization used by
+ // the trusted runner to authenticate score observations.
+ // Cryptographic signing and final output are trusted harness operations.
+ // Protect their native prototypes before executing untrusted ESM.
+ const hmacPrototype=Object.getPrototypeOf(createHmac('sha256',observationKey));
+ for(const intrinsic of [Array.prototype,Object.prototype,Promise.prototype,
+  Buffer.prototype,hmacPrototype,JSON]){
+  Object.freeze(intrinsic);
+ }
+ const input=JSON.parse(await readFile(process.argv[3],'utf8'));
+ const admission=await runVariant(input.source,input.policySource);
+ const execution=input.includeExecutors?
+  await runExecutionVariant(input.executorSource,input.source,input.policySource):[];
+ const observation={admission,execution};
+ const signature=observationMac(observationKey,observation);
+ trustedWriteSync(1,trustedStringify({observation,signature})+'\n');
+}else if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
   const path='src/repair-admission.mjs';
   const result=await evaluateRepairPair({
     baseSha,candidateSha,baseSource:gitSource(baseSha,path),
     candidateSource:gitSource(candidateSha,path),
     baseExecutorSource:tryGitSource(baseSha,'src/repair-pr-reconciler.mjs'),
-    candidateExecutorSource:tryGitSource(candidateSha,'src/repair-pr-reconciler.mjs')
+    candidateExecutorSource:tryGitSource(candidateSha,'src/repair-pr-reconciler.mjs'),
+    basePolicySource:tryGitSource(baseSha,'src/github-principal-policy.mjs'),
+    candidatePolicySource:tryGitSource(candidateSha,'src/github-principal-policy.mjs')
   });
   const dest=resolve(output);await mkdir(dirname(dest),{recursive:true});
   await writeFile(dest,JSON.stringify(result,null,2)+'\n',{flag:'w'});
