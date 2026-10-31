@@ -233,3 +233,22 @@ test('owner council commands enter council workflow without conflicting PR-brain
   'owner /council command should not trigger nonadmitted PR-brain job');
  assert.match(councilRoute,/contains\(github\.event\.comment\.body, '\/council'\)/);
 });
+
+
+test('council routing matches leading commands, not incidental file paths',()=>{
+ const yml=readFileSync(new URL('../.github/workflows/owner-comment-router.yml',import.meta.url),'utf8');
+ const prRoute=yml.split('  pr-conversation:')[1]?.split('  council-command:')[0]||'';
+ const councilRoute=yml.split('  council-command:')[1]||'';
+ assert.ok(prRoute);
+ assert.ok(councilRoute);
+ assert.doesNotMatch(prRoute,/!contains\(github\.event\.comment\.body, '\/council'\)/);
+ assert.doesNotMatch(councilRoute,/contains\(github\.event\.comment\.body, '\/council'\)/);
+ assert.match(prRoute,/!startsWith\(github\.event\.comment\.body, '\/council'\)/);
+ assert.match(councilRoute,/startsWith\(github\.event\.comment\.body, '\/council'\)/);
+});
+
+test('owner issue_comment council reports retain pull request identity',()=>{
+ const yml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
+ const section=yml.split("} else if (context.eventName === 'issue_comment') {")[1]?.split("} else if (context.eventName === 'workflow_dispatch') {")[0]||'';
+ assert.match(section,/isPr\s*=\s*issue\.pull_request\s*\?\s*'true'\s*:\s*'false'/);
+});
