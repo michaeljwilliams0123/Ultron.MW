@@ -160,9 +160,18 @@ test('pause, revoke and unavailable control deny before GitHub access',async()=>
  }
 });
 
-test('authority expiry is rechecked immediately before reservation and write',async()=>{
- const input=plan(),run=harness(input,{clockValues:[NOW,'2026-10-31T20:08:01Z']});
- await assert.rejects(executeGitHubOperation(input,run.services),/expiry|authorization|identity/i);
+test('authorization expiry is rechecked immediately before reservation and write',async()=>{
+ const input=plan(),run=harness(input,{clockValues:[NOW,'2026-10-31T20:07:01Z']});
+ await assert.rejects(executeGitHubOperation(input,run.services),/authorization/i);
+ assert.equal(run.calls.filter(call=>call.method!=='GET').length,0);
+});
+
+test('identity expiry is independently rechecked before write',async()=>{
+ const input=plan(),run=harness(input,{
+  clockValues:[NOW,'2026-10-31T20:06:01Z'],
+  identity:{expiresAt:'2026-10-31T20:06:00Z'},
+ });
+ await assert.rejects(executeGitHubOperation(input,run.services),/identity/i);
  assert.equal(run.calls.filter(call=>call.method!=='GET').length,0);
 });
 
