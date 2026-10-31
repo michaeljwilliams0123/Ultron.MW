@@ -88,11 +88,41 @@ jobs:
               title = String(issue.title || '');
               body = String(comment.body || '');
               itemNumber = Number(issue.number) || 0;
+            } else if (context.eventName === 'workflow_dispatch') {
+              const inputs = context.payload.inputs || {};
+              itemNumber = Number(inputs.item_number);
+              isPr = String(inputs.is_pr || 'false');
+              if (!Number.isSafeInteger(itemNumber) || itemNumber < 1 ||
+                  !['true','false'].includes(isPr))
+                throw Error('Council dispatch target invalid');
+              const selector = {owner:context.repo.owner,repo:context.repo.repo};
+              const response = isPr === 'true'
+                ? await github.rest.pulls.get({...selector,pull_number:itemNumber})
+                : await github.rest.issues.get({...selector,issue_number:itemNumber});
+              const target = response.data;
+              if (target.state !== 'open') throw Error('Council dispatch target not open');
+              title = String(target.title || '');
+              body = String(target.body || '').slice(0,6000);
+              // Include the latest genuine owner update when available, but
+              // never replace the authoritative issue/PR title and body.
+              if (isPr === 'false') {
+                const total = Math.max(1,Math.ceil((target.comments || 0)/100));
+                let latestOwner = null;
+                for (let page=total;page>=1&&page>total-10;page--) {
+                  const response = await github.rest.issues.listComments({
+                    ...selector,issue_number:itemNumber,per_page:100,page
+                  });
+                  latestOwner = [...response.data].reverse().find(comment =>
+                    comment.user?.login === 'michaeljwilliams0123' &&
+                    !/^\\s*\\/council\\b/.test(comment.body || ''));
+                  if (latestOwner) break;
+                }
+                if (latestOwner)
+                  body += '\\n\\nLatest owner update:\\n' +
+                    String(latestOwner.body || '').slice(0,1800);
+              }
             } else {
-              title = 'Owner council dispatch';
-              body = 'workflow_dispatch owner-first';
-              itemNumber = Number(context.payload.inputs && context.payload.inputs.item_number) || 0;
-              isPr = String((context.payload.inputs && context.payload.inputs.is_pr) || 'false');
+              throw Error('Council dispatch event unsupported');
             }
             fs.writeFileSync(path.join(dir, 'title.txt'), title.slice(0, 240));
             fs.writeFileSync(path.join(dir, 'body.txt'), body.slice(0, 8000));
