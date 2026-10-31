@@ -76,9 +76,11 @@ CI, bounded PR work and on-demand jobs. No hosting changes or billing.
    Incorrect entry, terminal closure or expiry denies the step. Approval
    does not carry forward to another action.
 6. Inspect the receipt and independently refresh the target page if a write
-   occurred. The receipt contains digests and action metadata, not cookies,
-   passwords, typed values or screenshots. Local checkpoints live outside
-   Git under the home directory's .ultron-mw/browser-checkpoints/ folder.
+   occurred. After the first successful transfer and readback, re-enter the
+   same completed request and confirm that no second submission occurs. The
+   receipt contains digests and action metadata, not cookies, passwords, typed
+   values or screenshots. Local checkpoints live outside Git under the home
+   directory's .ultron-mw/browser-checkpoints/ folder.
 
 ## Security, limitations and rollback
 
