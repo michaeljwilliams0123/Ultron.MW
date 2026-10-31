@@ -135,3 +135,25 @@ test('manual council dispatch preserves newest owner change within 3000-char bas
 test('manual issue dispatch rejects a pull request number when is_pr=false',async()=>{
   await assert.rejects(runDispatchExtraction({number:196,isPr:'false'}),/Council dispatch target type mismatch/);
 });
+
+test('multibyte issue context survives the workflow byte transport and retains the latest owner update',async()=>{
+  const result=await runDispatchExtraction({
+    body:'界'.repeat(6000),
+    comments:[{user:{login:'michaeljwilliams0123'},body:'OWNER-UPDATE-UTF8-MUST-SURVIVE'}]
+  });
+  // Simulate the workflow's current shell byte cap before council-debate reads BODY.
+  const yml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
+  const transported=/BODY=\$\(head -c 8000/.test(yml)
+    ? Buffer.from(result.body,'utf8').subarray(0,8000).toString('utf8')
+    : result.body;
+  assert.match(transported.slice(0,3000),/OWNER-UPDATE-UTF8-MUST-SURVIVE/);
+});
+
+test('original full issue security context survives owner-update truncation',async()=>{
+  const result=await runDispatchExtraction({
+    body:'A'.repeat(5000)+' credential ',
+    comments:[{user:{login:'michaeljwilliams0123'},body:'routine formatting update'}]
+  });
+  assert.doesNotMatch(result.body,/credential/,'test must exercise a removed security keyword');
+  assert.equal(result.exports.get('ORIGINAL_SECURITY_SIGNAL'),'1');
+});
