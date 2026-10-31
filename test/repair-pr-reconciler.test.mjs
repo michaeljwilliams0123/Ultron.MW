@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { runRepairPR, createMemoryRepairLedger } from '../src/repair-pr-reconciler.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
-const SHA='a'.repeat(40);
+const SHA='a'.repeat(40), PREPARED='b'.repeat(40);
 const NOW='2026-10-31T17:00:00Z';
 const plan=()=>({
  schema:'ultron.repair.plan.v1',owner:'michaeljwilliams0123',
  objective:'Fix seeded failing unit test via bounded PR',repository:REPO,
- baseSha:SHA,branch:'ultron/repair-seeded-case',
+ baseSha:SHA,preparedHeadSha:PREPARED,branch:'ultron/repair-seeded-case',
  allowedPaths:['src/seed.mjs','test/seed.test.mjs'],
  idempotencyKey:'repair:seeded-pr-001',maxAttempts:2,maxCostCents:0,
  expiresAt:'2026-10-31T18:00:00Z'
@@ -21,23 +21,32 @@ const identity=()=>({
  permissions:{metadata:'read',contents:'write',pull_requests:'write',checks:'read',issues:'write'}
 });
 const context=()=>({now:NOW,controls:{paused:false,revoked:false},identityEvidence:identity()});
-function fakeGitHub({loseBranch=false,losePR=false}={}){
+function fakeGitHub({loseBranch=false,losePR=false,autoPrepare=true}={}){
  let branch=null,pr=null;
  const calls={branch:0,pr:0,reads:0};
  const github={
-   async getBranch(){calls.reads++;return branch&&{...branch};},
+   async getBranch(){
+     calls.reads++;
+     // Simulated *external* code worker: production must supply real commit
+     // provenance, not this test-only preparation shortcut.
+     if(branch&&autoPrepare&&branch.sha===SHA)branch={...branch,sha:PREPARED};
+     return branch&&{...branch};
+   },
    async createBranch({branch:ref,baseSha}) {
      calls.branch++;branch={repo:REPO,ref,sha:baseSha};
      if(loseBranch)throw Error('connection lost after GitHub accepted branch');
    },
    async findPR(){calls.reads++;return pr&&{...pr};},
    async createPR({branch:ref,base,title,body,draft}) {
-     calls.pr++;pr={number:71,repo:REPO,head:ref,base,title,body,draft};
+     calls.pr++;
+     if(!branch||branch.sha===SHA)throw Error('No commits between base and head');
+     pr={number:71,repo:REPO,head:ref,headSha:branch.sha,base,title,body,draft};
      if(losePR)throw Error('connection lost after GitHub accepted PR');
    }
  };
  return {github,calls, removeBranch(){branch=null;},removePR(){pr=null;},
-   setPR(value){pr=value;},setBranch(value){branch=value;}};
+   setPR(value){pr=value;},setBranch(value){branch=value;},
+   prepareCommit(){if(!branch)throw Error('branch missing');branch={...branch,sha:PREPARED};}};
 }
 function args({ledger=createMemoryRepairLedger(),service=fakeGitHub(),readContext=context,task=plan()}={}){
  return {ledger,github:service.github,readContext,plan:task};
@@ -225,11 +234,38 @@ test('fresh identity swap before branch dispatch blocks all mutations',async()=>
  assert.equal(service.calls.pr,0);
 });
 
-test('RED: base-only branch cannot be treated as a prepared commit or create a PR',async()=>{
-  const ledger=createMemoryRepairLedger(),service=fakeGitHub();
-  const receipt=await runRepairPR(args({ledger,service}));
-  assert.equal(receipt.status,'reconcile-required');
-  assert.equal(receipt.phase,'branch-confirmed');
+test('base-only branch remains pending until an external prepared commit is read back',async()=>{
+  const ledger=createMemoryRepairLedger(),service=fakeGitHub({autoPrepare:false});
+  const pending=await runRepairPR(args({ledger,service}));
+  assert.equal(pending.status,'reconcile-required');
+  assert.equal(pending.phase,'branch-confirmed');
   assert.equal(service.calls.branch,1);
   assert.equal(service.calls.pr,0,'never send GitHub a base-only PR write');
+  service.prepareCommit();
+  const complete=await runRepairPR(args({ledger,service}));
+  assert.equal(complete.status,'complete');
+  assert.equal(complete.preparedHeadSha,PREPARED);
+  assert.equal(service.calls.branch,1);
+  assert.equal(service.calls.pr,1);
+});
+
+test('wrong or missing prepared SHA fails closed before PR dispatch',async()=>{
+  for(const bad of [undefined,SHA,'c'.repeat(40)]){
+    const ledger=createMemoryRepairLedger(),service=fakeGitHub({autoPrepare:false});
+    const task=plan();
+    if(bad===undefined)delete task.preparedHeadSha;
+    else task.preparedHeadSha=bad;
+    if(bad===SHA){
+      await assert.rejects(runRepairPR(args({ledger,service,task})),/Repair plan/);
+      continue;
+    }
+    const pending=await runRepairPR(args({ledger,service,task}));
+    assert.equal(pending.status,'reconcile-required');
+    service.prepareCommit();
+    if(bad===undefined){
+      const still=await runRepairPR(args({ledger,service,task}));
+      assert.equal(still.status,'reconcile-required');
+    }else await assert.rejects(runRepairPR(args({ledger,service,task})),/branch readback identity mismatch/);
+    assert.equal(service.calls.pr,0);
+  }
 });
