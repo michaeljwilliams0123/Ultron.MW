@@ -37,7 +37,6 @@ export async function reconcileContinuumTick({
 }={}){
   const observedAt=clock(now);
   if(typeof outbox?.observe!=='function'||
-     typeof outbox?.markUnknown!=='function'||
      typeof listDue!=='function'||typeof readControl!=='function'||
      !Number.isSafeInteger(limit)||limit<1||limit>100)
     throw Error('continuum-recovery-input-invalid');
@@ -46,6 +45,10 @@ export async function reconcileContinuumTick({
   if(control?.paused!==false||control?.maxPaidCents!==0||
      control?.paidFallback!==false)
     return summary('held-zero-cost');
+  // A paused or metered run must fail closed before requiring write-capable
+  // storage; only an admitted reconciliation may require markUnknown.
+  if(typeof outbox.markUnknown!=='function')
+    throw Error('continuum-recovery-input-invalid');
   const ids=await listDue({now:observedAt,limit});
   if(!Array.isArray(ids)||ids.length>limit||
      ids.some(id=>typeof id!=='string'||!DELIVERY.test(id))||
