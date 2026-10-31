@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 
 if(process.env.ULTRON_POSTGRES_TEST==='1'){
  const ids=execFileSync('docker',
@@ -11,8 +12,16 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   {encoding:'utf8'}).trim().split('\n').filter(Boolean);
  assert.equal(ids.length,1,'exactly one ephemeral CI PostgreSQL container');
  const container=ids[0];
+ // Never run a destructive fixture against an existing shared application DB.
+ // An unpredictable newly created database is the sole test write target.
+ const scratchDb='ultron_repair_ci_'+randomBytes(8).toString('hex');
+ function admin(text){
+   return execFileSync('docker',['exec',container,'psql','-U','ultron','-d','postgres',
+     '-X','-q','-t','-A','-v','ON_ERROR_STOP=1','-c',text],
+     {encoding:'utf8',maxBuffer:1048576}).trim();
+ }
  function sql(text){
-   return execFileSync('docker',['exec',container,'psql','-U','ultron','-d','ultron',
+   return execFileSync('docker',['exec',container,'psql','-U','ultron','-d',scratchDb,
      '-X','-q','-t','-A','-v','ON_ERROR_STOP=1','-c',text],{
      encoding:'utf8',maxBuffer:1048576
    }).trim();
@@ -25,7 +34,8 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
  const migration=readFileSync(new URL('../cloud/hatchable/migrations/0012_repair_pr_attempts.sql',
    import.meta.url),'utf8');
  test('real PostgreSQL: CAS phase is monotone; identity rewrite and deletion are denied',()=>{
-   sql('DROP TABLE IF EXISTS repair_pr_attempts CASCADE;');
+   admin('CREATE DATABASE '+scratchDb);
+   try {
    sql(migration);
    // A generic SQL failure is not proof the intended ledger fence fired.
    assert.equal(rejects('SELECT 1/0',/repair_pr_attempts transition denied/),false);
@@ -55,6 +65,9 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
      WHERE attempt_key='${key}';`),'complete|7');
    assert.equal(rejects(`UPDATE repair_pr_attempts SET phase='pr-dispatch',pr_number=NULL
      WHERE attempt_key='${key}';`,/repair_pr_attempts transition denied/),true);
-   sql('DROP TABLE repair_pr_attempts; DROP FUNCTION repair_pr_attempts_fence();');
+   } finally {
+     // Remove only the random test database created above, even on failure.
+     admin('DROP DATABASE '+scratchDb+' WITH (FORCE)');
+   }
  });
 }
