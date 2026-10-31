@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createPostgresRepairLedger } from '../src/repair-pr-postgres-ledger.mjs';
 
 const KEY='repair:seeded-pr-001', A='a'.repeat(64), B='b'.repeat(64);
@@ -73,4 +74,12 @@ test('invalid IDs, SQL injection, missing PG adapter and wrong PR numbers are re
     to:'branch-dispatch',prNumber:99}),/PR number/);
   await assert.rejects(ledger.advance({key:KEY,fingerprint:A,from:'pr-dispatch',
     to:'complete',prNumber:0}),/PR number/);
+});
+
+
+test('live PostgreSQL repair fence test uses new disposable database, never drops shared table',()=>{
+ const script=readFileSync(new URL('./repair-pr-postgres-live.test.mjs',import.meta.url),'utf8');
+ assert.match(script,/CREATE DATABASE/);
+ assert.match(script,/ultron_repair_ci_/);
+ assert.doesNotMatch(script,/DROP TABLE IF EXISTS repair_pr_attempts CASCADE/i);
 });
