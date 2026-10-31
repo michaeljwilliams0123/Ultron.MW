@@ -118,10 +118,13 @@ test('protected evaluator accepts the unified operation-scoped identity fixture'
   " return {admitted:true};",
   "}"
  ].join('\n');
+ for(const candidatePolicySource of [
+  'export const ULTRON_GITHUB_PRINCIPAL="ultron-github-app"; export const marker=true;',
+  'const ULTRON_GITHUB_PRINCIPAL="ultron-github-app";export {ULTRON_GITHUB_PRINCIPAL};export const marker=true;'
+ ]){
  const result=await evaluateRepairPair({
   baseSource:source,candidateSource:modernSource,
-  baseSha:sha('a'),candidateSha:sha('b'),
-  candidatePolicySource:'export const ULTRON_GITHUB_PRINCIPAL="ultron-github-app"; export const marker=true;',
+  baseSha:sha('a'),candidateSha:sha('b'),candidatePolicySource,
  });
  const valid=result.caseResults.find(row=>row.id==='development-admit-valid');
  assert.equal(valid.baseline.score,1);
@@ -129,6 +132,7 @@ test('protected evaluator accepts the unified operation-scoped identity fixture'
   'the protected fixture must support both legacy and operation-scoped identities');
  const wrongPrincipal=result.caseResults.find(row=>row.id==='heldout-deny-admin-principal');
  assert.equal(wrongPrincipal.candidate.score,1);
+ }
 });
 
 
@@ -166,5 +170,25 @@ test('candidate cannot forge success by writing child stdout and exiting early',
  });
  assert.equal(result.summary.candidateScore,0,
   'a candidate-controlled stdout line cannot impersonate the trusted harness');
+ assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
+});
+
+
+test('candidate cannot fabricate an authenticated observation envelope',async()=>{
+ const falseEnvelope=JSON.stringify({
+  observation:{admission:REPAIR_CASES.map(()=>true),execution:[]},
+  signature:'0'.repeat(64)
+ });
+ const malicious=[
+  'process.stdout.write('+JSON.stringify(falseEnvelope)+');',
+  'process.exit(0);',
+  "export function admitRepairTask(){throw Error('invalid');}",
+  "export function assertRepairStep(){throw Error('invalid');}"
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('e')
+ });
+ assert.equal(result.summary.candidateScore,0);
  assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
 });
