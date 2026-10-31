@@ -84,7 +84,7 @@ test('lost PR response is reconciled without duplicate creation',async()=>{
 test('unobserved lost branch write remains uncertain even after restart',async()=>{
  const ledger=createMemoryRepairLedger(),service=fakeGitHub({loseBranch:true});
  const original=service.github.createBranch;
- service.github.createBranch=async params=>{await original(params);service.removeBranch();};
+ service.github.createBranch=async params=>{try{await original(params);}finally{service.removeBranch();}};
  const first=await runRepairPR(args({ledger,service}));
  assert.equal(first.status,'reconcile-required');
  assert.equal(first.phase,'branch-dispatch');
@@ -97,7 +97,7 @@ test('unobserved lost branch write remains uncertain even after restart',async()
 test('unobserved lost PR write is not replayed on restart',async()=>{
  const ledger=createMemoryRepairLedger(),service=fakeGitHub({losePR:true});
  const original=service.github.createPR;
- service.github.createPR=async params=>{await original(params);service.removePR();};
+ service.github.createPR=async params=>{try{await original(params);}finally{service.removePR();}};
  const first=await runRepairPR(args({ledger,service}));
  assert.equal(first.status,'reconcile-required');
  const second=await runRepairPR(args({ledger,service}));
@@ -137,7 +137,7 @@ test('preexisting foreign branch is not silently reused',async()=>{
 test('forged PR marker and altered head are rejected after lost response',async()=>{
  const ledger=createMemoryRepairLedger(),service=fakeGitHub({losePR:true});
  const original=service.github.createPR;
- service.github.createPR=async params=>{await original(params);service.setPR({number:71,repo:REPO,head:'main',base:'main',body:'forged',draft:false});};
+ service.github.createPR=async params=>{try{await original(params);}finally{service.setPR({number:71,repo:REPO,head:'main',base:'main',body:'forged',draft:false});}};
  await assert.rejects(runRepairPR(args({ledger,service})),/PR readback|identity mismatch/);
  assert.equal(service.calls.pr,1);
 });
