@@ -119,3 +119,34 @@ test('settings write body is narrowly admitted before requesting an admin token'
  assert.equal(minted,2);
  assert.equal(sent,2);
 });
+
+
+test('repository settings transport rejects toJSON smuggling before token issuance',async()=>{
+ let minted=0,sent=0;
+ const payload={allow_squash_merge:true};
+ Object.defineProperty(payload,'toJSON',{enumerable:false,value:()=>({visibility:'private'})});
+ const transport=createUnifiedGitHubTransport({
+  expectedInstallationId:9123,clock:()=> '2026-10-31T20:00:00Z',
+  getToken:async()=>{minted++;return token('repository.settings.update');},
+  fetchImpl:async()=>{sent++;return {ok:true,status:200};}
+ });
+ await assert.rejects(transport.request('repository.settings.update','PATCH',ROOT,payload),/denied/i);
+ assert.equal(minted,0);
+ assert.equal(sent,0);
+});
+
+test('validated repository settings body stays byte-identical across asynchronous token mint',async()=>{
+ const payload={allow_squash_merge:true};
+ const sent=[];
+ const transport=createUnifiedGitHubTransport({
+  expectedInstallationId:9123,clock:()=> '2026-10-31T20:00:00Z',
+  getToken:async()=>{
+   payload.allow_squash_merge=false;
+   payload.visibility='private';
+   return token('repository.settings.update');
+  },
+  fetchImpl:async(_url,init)=>{sent.push(init.body);return {ok:true,status:200};}
+ });
+ await transport.request('repository.settings.update','PATCH',ROOT,payload);
+ assert.deepEqual(sent,['{"allow_squash_merge":true}']);
+});
