@@ -240,3 +240,23 @@ test('candidate cannot forge a signed report by patching native Hmac and stdout'
   'candidate-origin native Hmac and stdout mutation cannot sign a forged passing observation');
  assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
 });
+
+
+test('untrusted candidate cannot leave inherited stdout alive and stall evaluator',async()=>{
+ const candidate=[
+  "import {spawn} from 'node:child_process';",
+  "spawn(process.execPath,['-e','setTimeout(()=>{},6000)'],",
+  " {stdio:['ignore','inherit','ignore']}).unref();",
+  'process.exit(0);',
+  "export function admitRepairTask(){throw Error('invalid');}",
+  "export function assertRepairStep(){throw Error('invalid');}"
+ ].join('\n');
+ const started=Date.now();
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:candidate,
+  baseSha:sha('a'),candidateSha:sha('c')
+ });
+ assert.equal(result.summary.candidateScore,0);
+ assert.ok(Date.now()-started<4000,
+  'an inherited stdout pipe must not hang the evaluator after candidate exit');
+});
