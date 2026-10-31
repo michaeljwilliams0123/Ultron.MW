@@ -229,9 +229,9 @@ test('owner council commands enter council workflow without conflicting PR-brain
  const prRoute=yml.split('  pr-conversation:')[1]?.split('  council-command:')[0];
  const councilRoute=yml.split('  council-command:')[1]||'';
  assert.ok(prRoute);
- assert.match(prRoute,/!contains\(github\.event\.comment\.body, '\/council'\)/,
+ assert.match(prRoute,/!startsWith\(github\.event\.comment\.body, '\/council'\)/,
   'owner /council command should not trigger nonadmitted PR-brain job');
- assert.match(councilRoute,/contains\(github\.event\.comment\.body, '\/council'\)/);
+ assert.match(councilRoute,/startsWith\(github\.event\.comment\.body, '\/council'\)/);
 });
 
 
