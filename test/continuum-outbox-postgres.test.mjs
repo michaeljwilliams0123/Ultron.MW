@@ -75,6 +75,20 @@ test('C01 outbox enforces durable dedupe, immutable identity, zero cost and forw
     WHERE delivery_id='continuum-delivery-0001'`),/deletion forbidden/);
   assert.equal(await sql(`SELECT count(*) FROM brain_continuum_outbox
     WHERE state='reconcile-required'`),'1');
+  // An arbitrary caller-supplied future creation date must not extend validity.
+  await sql(`INSERT INTO brain_continuum_outbox(
+    task_id,objective_id,delivery_id,idempotency_key,repository,source_sha,
+    authority_sha,request_sha,lease_generation,expires_at,effect,max_paid_cents,created_at)
+    SELECT task_id,objective_id,'continuum-delivery-2099','continuum:delivery:2099',
+      repository,source_sha,authority_sha,request_sha,lease_generation,
+      statement_timestamp()+interval '1 day',effect,0,
+      statement_timestamp()+interval '365 days'
+    FROM brain_continuum_outbox LIMIT 1`);
+  const timeDrift=Number(await sql(`SELECT ABS(EXTRACT(EPOCH FROM
+    (created_at-statement_timestamp())))::int
+    FROM brain_continuum_outbox
+    WHERE delivery_id='continuum-delivery-2099'`));
+  assert.ok(timeDrift<=20,'created_at must be actual database statement time');
   const overlong=insert().replace('continuum-delivery-0001','continuum-delivery-0031')
     .replace('continuum:delivery:0001','continuum:delivery:0031')
     .replace("interval '1 day'","interval '31 days'");
