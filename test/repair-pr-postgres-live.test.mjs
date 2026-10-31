@@ -25,6 +25,8 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
  test('real PostgreSQL: CAS phase is monotone; identity rewrite and deletion are denied',()=>{
    sql('DROP TABLE IF EXISTS repair_pr_attempts CASCADE;');
    sql(migration);
+   // A generic SQL failure is not proof the intended ledger fence fired.
+   assert.equal(rejects('SELECT 1/0',/repair_pr_attempts transition denied/),false);
    const key='repair:postgres-receipt-001',sha='a'.repeat(64);
    sql(`INSERT INTO repair_pr_attempts(attempt_key,fingerprint,phase)
      VALUES('${key}','${sha}','reserved');`);
