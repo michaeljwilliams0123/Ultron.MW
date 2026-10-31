@@ -12,7 +12,12 @@ const NOW='2026-10-31T17:00:00.000Z';
 const sha=/^[a-f0-9]{40}$/;
 const digest=x=>createHash('sha256').update(x).digest('hex');
 const trustedStringify=JSON.stringify.bind(JSON);
-const observationMac=(key,observation)=>createHmac('sha256',key)
+// Capture these built-ins before importing any candidate ES modules.
+// This blocks syncBuiltinESMExports() from rebinding the trusted call sites.
+// It is interim hardening, not a security boundary for hostile code.
+const trustedCreateHmac=createHmac;
+const trustedWriteSync=writeSync;
+const observationMac=(key,observation)=>trustedCreateHmac('sha256',key)
  .update(trustedStringify(observation)).digest('hex');
 // Key travels over one-use stdin before importing candidate code. Candidate
 // stdout is not evidence; only a message with the trusted runner MAC qualifies.
@@ -457,7 +462,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   await runExecutionVariant(input.executorSource,input.source,input.policySource):[];
  const observation={admission,execution};
  const signature=observationMac(observationKey,observation);
- writeSync(1,trustedStringify({observation,signature})+'\n');
+ trustedWriteSync(1,trustedStringify({observation,signature})+'\n');
 }else if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
   const path='src/repair-admission.mjs';
