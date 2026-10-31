@@ -224,3 +224,12 @@ test('fresh identity swap before branch dispatch blocks all mutations',async()=>
  assert.equal(service.calls.branch,0);
  assert.equal(service.calls.pr,0);
 });
+
+test('RED: base-only branch cannot be treated as a prepared commit or create a PR',async()=>{
+  const ledger=createMemoryRepairLedger(),service=fakeGitHub();
+  const receipt=await runRepairPR(args({ledger,service}));
+  assert.equal(receipt.status,'reconcile-required');
+  assert.equal(receipt.phase,'branch-confirmed');
+  assert.equal(service.calls.branch,1);
+  assert.equal(service.calls.pr,0,'never send GitHub a base-only PR write');
+});
