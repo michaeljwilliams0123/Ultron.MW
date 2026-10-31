@@ -25,3 +25,15 @@ The PostgreSQL persistence adapter and source-only migration `cloud/hatchable/mi
 - Permission denial at the real GitHub API for merge, main write, deployments and administration.
 
 No credential changes, paid inference, protected main writes or deployment are authorized by these source-only components.
+
+## GitHub App transport restrictions in this PR
+
+`src/repair-github-adapter.mjs` is an explicit four-method allowlist over `createGitHubAppOperator.request`:
+- `GET /git/ref/heads/ultron/repair-*` — authoritative branch ref and commit SHA readback; only genuine HTTP 404 is absence.
+- `POST /git/refs` — create a restricted branch from an exact 40-character base SHA.
+- `GET /pulls?state=all&head=...&base=main` — treat any unexpected, closed, draft, foreign, or duplicate PR readback as a conflict rather than recreating it.
+- `POST /pulls` — create a non-draft PR, pinned to protected `main`, using a deterministic 64-hex-character repair marker.
+
+The adapter exposes no generic `request`, protected-main update, merge, deployment, or GitHub settings operation. It uses the existing repository-scoped GitHub App transport, but does **not** independently mint installation tokens or prove the supplied operator was configured with a verified least-privilege grant. The real App token/permissions and live object readback must be observed by a separately authorized runtime before production use.
+
+**Stale completion fix:** A persisted `complete` ledger state is not sufficient on its own. On re-entry the coordinator checks the exact branch SHA, PR scope and marker again; missing objects are uncertain and changed objects are rejected without replaying writes.
