@@ -1,0 +1,80 @@
+name: Continuum Council Supervisor
+
+on:
+  schedule:
+    # Scans open roadmap issues hourly; dispatches at most two advisory reviews per pass.
+    - cron: '19 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: continuum-council-supervisor
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.repository == 'michaeljwilliams0123/Ultron.MW'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: read
+      actions: write
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Configure Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Select outstanding issues and dispatch bounded council reviews
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const {pathToFileURL}=require('node:url');
+            const path=require('node:path');
+            const {CONTINUUM_ISSUES,selectCouncilReviews}=await import(
+              pathToFileURL(path.join(process.env.GITHUB_WORKSPACE,'src/continuum-supervisor.mjs')).href
+            );
+            const owner=context.repo.owner;
+            const repo=context.repo.repo;
+            const master=await github.rest.issues.get({owner,repo,issue_number:182});
+            if(master.data.state!=='open'){
+              core.info('Continuum master issue closed; no additional dispatch.');
+              return;
+            }
+            const inputs=[];
+            for(const issue_number of CONTINUUM_ISSUES){
+              const {data:issue}=await github.rest.issues.get({owner,repo,issue_number});
+              const lastPage=Math.max(1,Math.ceil(issue.comments/100));
+              const {data:comments}=await github.rest.issues.listComments({
+                owner,repo,issue_number,per_page:100,page:lastPage
+              });
+              const reports=comments.filter(x=>
+                x.user?.login==='github-actions[bot]' &&
+                x.body?.startsWith('# Ultron Council Report'));
+              const meaningful=comments.filter(x=>
+                x.user?.login===owner &&
+                !/^\s*\/council\b/.test(x.body||''));
+              const lastReviewAt=reports.at(-1)?.created_at??null;
+              const lastMeaningfulAt=meaningful.at(-1)?.created_at??issue.created_at;
+              inputs.push({number:issue_number,state:issue.state,lastReviewAt,lastMeaningfulAt});
+            }
+            const picked=selectCouncilReviews(inputs,{now:new Date().toISOString(),limit:2,refreshHours:24});
+            for(const issue_number of picked){
+              await github.rest.actions.createWorkflowDispatch({
+                owner,repo,workflow_id:'council-debate.yml',ref:'main',
+                inputs:{item_number:String(issue_number),is_pr:'false'}
+              });
+              core.info('Dispatched advisory council review on #'+issue_number);
+            }
+            await core.summary.addHeading('Continuum Council Supervisor')
+              .addRaw('Open roadmap: #182; monitored: '+inputs.filter(x=>x.state==='open').length+
+                '; council reviews dispatched: '+picked.length+'; issue numbers: '+picked.join(', '))
+              .write();
