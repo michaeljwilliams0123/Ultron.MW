@@ -205,12 +205,13 @@ export async function executeGitHubOperation(input,services){
  assertPreconditions(plan,observed);
 
  // Re-check every expiring authority at the last safe point before reservation.
- const beforeReserve=services.clock();
- validateGitHubOperationPlan(plan,beforeReserve);
  const finalControls=await services.control.read();
  check(finalControls?.paused===false&&finalControls.revoked===false,
   'GitHub operations stopped before dispatch');
  const finalIdentityEvidence=await services.identity.read(plan.operation);
+ // Sample after asynchronous preflight reads so an expired grant never reserves.
+ const beforeReserve=services.clock();
+ validateGitHubOperationPlan(plan,beforeReserve);
  const finalIdentity=assertUnifiedGitHubIdentity(finalIdentityEvidence,
   {operation:plan.operation,now:beforeReserve});
  check(finalIdentity.installationId===identity.installationId&&
