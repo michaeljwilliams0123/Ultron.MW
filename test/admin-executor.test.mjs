@@ -32,7 +32,7 @@ function harness(plan,{readback,approval,identity,occupied=false,mutateFailure=f
   github:{
    request:async(method,path,data)=>{
     calls.push({method,path,data});
-    if(method==='GET')return readback??{status:'completed',conclusion:'failure',run_attempt:1,head_sha:SHA};
+    if(method==='GET')return (Array.isArray(readback)?readback.shift():readback)??{status:'completed',conclusion:'failure',run_attempt:1,head_sha:SHA};
     if(mutateFailure)throw Error('network timeout after possible write');
     return {status:201};
    }
@@ -122,7 +122,7 @@ test('reject unapproved repo admin settings and no unbounded payload',()=>{
 });
 test('reversible repo setting writes only when exact before-value matches',async()=>{
  const plan={...base('repository.settings.update',{setting:'delete_branch_on_merge',value:true}),expected:{value:false}};
- const {services,calls,records}=harness(plan,{readback:{delete_branch_on_merge:false}});
+ const {services,calls,records}=harness(plan,{readback:[{delete_branch_on_merge:false},{delete_branch_on_merge:true}]});
  const result=await executeAdminOperation(plan,services);
  assert.equal(result.state,'dispatched-unverified');
  assert.deepEqual(calls.map(x=>x.method),['GET','PATCH','GET']);
