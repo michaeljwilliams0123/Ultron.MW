@@ -7,7 +7,7 @@ description: "Evidence standards, protected release gates, current scoped accept
 
 The [current issue-disposition summary](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/ACCEPTANCE-STATUS.md)
 links the authoritative live contracts. [#65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65)
-is P2 and awaits its four-step owner-run local-fixture acceptance. #66/#67 are
+completed its scoped four-step owner-run local-fixture acceptance. #66/#67 are
 closed within their documented runtime/PAT scopes, #68 is not planned, and
 #69's no-safe-deletion audit is complete. Historical paragraphs below preserve
 what was observed at their dates; they do not add current closure requirements.
@@ -29,7 +29,7 @@ The production baseline after the recovery and heartbeat consolidation was `182c
 
 ## Historical baseline limits
 
-Authenticated interactive browser/mobile acceptance of the Pages console was not independently completed at that historical baseline. Current browser scope follows #65's local-fixture contract. Any future claim of learning improvement still requires independent evaluation; code, simulated cognitive receipts or green CI cannot substitute for that measurement.
+Authenticated interactive browser/mobile acceptance of the Pages console was not independently completed at that historical baseline. Issue #65 later completed its narrower supervised local-fixture contract; that does not retroactively prove historical Pages interaction or broader browser authority. Any future claim of learning improvement still requires independent evaluation; code, simulated cognitive receipts or green CI cannot substitute for that measurement.
 
 Candidate evaluation reports Accepted, Rejected, Blocked or Inconclusive. Accepted is only a selection result: protected GitHub publication and live post-release proof remain separate. Reef-assisted work is Blocked when plugin guidance exists without the actual Reef runtime and interaction record.
 
@@ -39,7 +39,7 @@ Permanent evidence: [release gate](https://github.com/michaeljwilliams0123/Ultro
 
 The current-source [live acceptance Action](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/40806324720), added in [PR #146](https://github.com/michaeljwilliams0123/Ultron.MW/pull/146), observed nine successful public readbacks against the same GitHub main SHA. Its `observed-healthy` label covers public GitHub/Pages/Hatchable surfaces only; `productionReadiness` remains `not-accepted`.
 
-A separately authenticated GitHub CLI account and Playwright 1.62.1 on an owner-authorized Windows host completed live Chrome 154 public-page navigation, including a real Learning-tab click, exact Pages SHA readback and production Hatchable link observation. Those public observations do not establish the real owner-approved transfer and independent persisted readback required by [Issue #65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65). Private-account MFA is a separate capability outside that issue's current milestone. See the [sanitized live evidence record](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/verification/OWNER-HOST-CLOUD-PARITY-2026-10-28.md).
+A separately authenticated GitHub CLI account and Playwright 1.62.1 on an owner-authorized Windows host completed live Chrome 154 public-page navigation, including a real Learning-tab click, exact Pages SHA readback and production Hatchable link observation. Those public observations did not establish the owner-approved transfer and independent persisted readback that [Issue #65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65) later completed under its narrower controlled-app scope. Private-account MFA remains separate. See the [sanitized historical evidence record](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/verification/OWNER-HOST-CLOUD-PARITY-2026-10-28.md).
 
 A separate [held-out evaluation run #40807976542](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/40807976542) scored the frozen baseline and candidate identically at 1.0 across 10 cases. The Action correctly failed the improvement gate; this is **not** evidence of new learning.
 

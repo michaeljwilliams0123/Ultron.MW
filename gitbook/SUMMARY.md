@@ -3,6 +3,7 @@
 ## Start here
 * [Ultron documentation](README.md)
 * [System architecture](architecture.md)
+* [Repository Operator target](repository-operator.md)
 
 ## Operations
 * [Owner commands and recovery](operations.md)

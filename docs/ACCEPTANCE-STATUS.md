@@ -1,4 +1,4 @@
-# Acceptance status — October 30, 2026
+# Acceptance status — October 31, 2026
 
 This is a dated navigation summary of the owner's issue decisions. The live
 issue bodies and later owner direction define scope and closure. Historical
@@ -7,26 +7,27 @@ requirements. Runtime authorization and protected verification remain enforced.
 
 | Issue | Disposition | Accepted boundary or next action |
 | --- | --- | --- |
-| [#65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65) | P2, open; owner session needed | Follow the issue's four steps: owner-run setup, one controlled-app transfer with independent readback, the missing negative checks, and sanitized evidence before closure. |
+| [#65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65) | Closed, completed | Supervised local-fixture acceptance on the owner host: one controlled-app transfer, independent readback, required negative checks, no duplicate submission, and a sanitized final receipt. This does not grant unattended, private-account, or broader browser authority. |
 | [#66](https://github.com/michaeljwilliams0123/Ultron.MW/issues/66) | Closed, completed | Bounded recovery and owner stop on the existing hosted runtime; the live pause/resume read task completed once. Physical hosted process death, a PC-offline browser and an SLA are outside that milestone. |
 | [#67](https://github.com/michaeljwilliams0123/Ultron.MW/issues/67) | Closed, completed | Scoped Mahoraga issue/Verify connector using the observed PAT actor and durable action ledger. Live App identity, the generalized delegation path and a second provider remain unaccepted. |
 | [#68](https://github.com/michaeljwilliams0123/Ultron.MW/issues/68) | Closed, not planned | Optional learning research. Reopen for a named candidate, useful task with baseline headroom, independent scoring and a bounded budget. |
 | [#69](https://github.com/michaeljwilliams0123/Ultron.MW/issues/69) | Closed, completed | Route audit with no proven safe deletions. A future retirement needs specific consumer, parity and rollback evidence. |
 
-## Browser acceptance path
+## Browser acceptance boundary
 
-Use [the live #65 checklist](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65)
-as the closure contract and [the owner-browser runbook](verification/OWNER-BROWSER-ACCEPTANCE.md)
-for setup. One supervised workflow on one controlled test application is enough.
-Retain genuine local owner identity/consent, isolated execution, origin fencing,
-independent persisted readback and protection against duplicate writes.
+The [completed #65 checklist](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65)
+and its final sanitized receipt establish one supervised workflow on one
+controlled test application. The [owner-browser runbook](verification/OWNER-BROWSER-ACCEPTANCE.md)
+remains setup guidance. Retain genuine local owner identity/consent, isolated
+execution, origin fencing, independent persisted readback and protection
+against duplicate writes.
 
-The remaining cases are expired/revoked approval, changed file/request and
-interruption after submit. Reuse previously recorded denial, foreign-origin,
-credential-takeover and stale-selector evidence while the relevant code and
-configuration remain unchanged. Private SaaS login/MFA, multi-site positive
-coverage, an always-on browser, a Pages command bridge and learning research
-are separate capabilities. A local-fixture result proves only that scope.
+The accepted cases include expired/revoked approval, changed file/request and
+interruption after submit, together with the retained denial, foreign-origin,
+credential-takeover and stale-selector evidence cited by the issue. Private SaaS
+login/MFA, multi-site positive coverage, an always-on browser, a Pages command
+bridge and learning research are separate capabilities. A local-fixture result
+proves only that scope.
 
 ## Runtime and evidence boundaries
 
