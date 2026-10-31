@@ -6,8 +6,8 @@ const REPO='michaeljwilliams0123/Ultron.MW', ID=1424939667;
 const BRANCH='ultron/repair-seeded-case', SHA='a'.repeat(40);
 const repo={id:ID,full_name:REPO};
 function pr(overrides={}){
- return {number:176,state:'open',draft:false,title:'repair: a test',
-   body:'<!-- ultron-repair:abc -->',head:{ref:BRANCH,sha:SHA,repo},
+ return {number:176,state:'open',draft:false,title:'repair: accepted seeded test',
+   body:'<!-- ultron-repair:'+ '1'.repeat(64) +' -->',head:{ref:BRANCH,sha:SHA,repo},
    base:{ref:'main',repo},...overrides};
 }
 function stub({branch={ref:'refs/heads/'+BRANCH,object:{type:'commit',sha:SHA}},
@@ -31,14 +31,14 @@ test('adapter creates only one authorized branch and one non-draft PR',async()=>
  const github=createRepairGitHubAdapter({operator});
  await github.createBranch({repository:REPO,branch:BRANCH,baseSha:SHA});
  await github.createPR({repository:REPO,branch:BRANCH,base:'main',draft:false,
-   title:'repair: fixed task',body:'<!-- ultron-repair:a -->'});
+   title:'repair: fixed seeded task',body:'<!-- ultron-repair:'+ '1'.repeat(64) +' -->'});
  assert.deepEqual(calls.map(x=>[x.method,x.path,x.permission]),[
    ['POST','/git/refs','contents:write'],
    ['POST','/pulls','pull_requests:write']
  ]);
  assert.deepEqual(calls[0].body,{ref:'refs/heads/'+BRANCH,sha:SHA});
  assert.deepEqual(calls[1].body,{head:BRANCH,base:'main',
-   title:'repair: fixed task',body:'<!-- ultron-repair:a -->',draft:false});
+   title:'repair: fixed seeded task',body:'<!-- ultron-repair:'+ '1'.repeat(64) +' -->',draft:false});
 });
 test('branch readback has exact ref and object SHA',async()=>{
  const {operator,calls}=stub();const g=createRepairGitHubAdapter({operator});
@@ -52,7 +52,7 @@ test('PR readback is restricted to exactly one owner-owned open PR',async()=>{
  const {operator,calls}=stub(),g=createRepairGitHubAdapter({operator});
  const got=await g.findPR({repository:REPO,branch:BRANCH,base:'main'});
  assert.deepEqual(got,{number:176,repo:REPO,head:BRANCH,base:'main',
-   title:'repair: a test',body:'<!-- ultron-repair:abc -->',draft:false});
+   title:'repair: accepted seeded test',body:'<!-- ultron-repair:'+ '1'.repeat(64) +' -->',draft:false});
  assert.match(calls[0].path,/head=michaeljwilliams0123:ultron\/repair-seeded-case/);
  assert.match(calls[0].path,/state=all/);
  const none=createRepairGitHubAdapter({operator:stub({prs:[]}).operator});
@@ -80,9 +80,9 @@ test('invalid repo, main branch, arbitrary mutation and malformed input never di
    ()=>g.createBranch({repository:REPO,branch:'ultron/repair-../main',baseSha:SHA}),
    ()=>g.createBranch({repository:REPO,branch:BRANCH,baseSha:'main'}),
    ()=>g.createPR({repository:REPO,branch:BRANCH,base:'other',draft:false,
-     title:'repair: task',body:'body'}),
+     title:'repair: seeded task resolution',body:'body'}),
    ()=>g.createPR({repository:REPO,branch:BRANCH,base:'main',draft:true,
-     title:'repair: task',body:'body'}),
+     title:'repair: seeded task resolution',body:'body'}),
    ()=>g.createPR({repository:REPO,branch:BRANCH,base:'main',draft:false,
      title:'bad title',body:'body'}),
  ]) await assert.rejects(bad(),/Repair GitHub/);
