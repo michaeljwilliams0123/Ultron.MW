@@ -157,3 +157,20 @@ test('original full issue security context survives owner-update truncation',asy
   assert.doesNotMatch(result.body,/credential/,'test must exercise a removed security keyword');
   assert.equal(result.exports.get('ORIGINAL_SECURITY_SIGNAL'),'1');
 });
+
+
+test('full latest owner update security keyword cannot be hidden after display truncation',async()=>{
+ const result=await runDispatchExtraction({
+  body:'Normal council request',
+  comments:[{user:{login:'michaeljwilliams0123'},body:'A'.repeat(2500)+' credential escalation'}]
+ });
+ assert.doesNotMatch(result.body,/credential escalation/);
+ assert.equal(result.exports.get('ORIGINAL_SECURITY_SIGNAL'),'1',
+  'risk scan must include entire owner-authored comment before truncation');
+});
+
+test('council title transport does not apply a second UTF-8 byte truncation',()=>{
+ const yml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
+ assert.doesNotMatch(yml,/TITLE=\$\(head -c 240/);
+ assert.match(yml,/TITLE=\$\(cat "\$TITLE_FILE"\)/);
+});
