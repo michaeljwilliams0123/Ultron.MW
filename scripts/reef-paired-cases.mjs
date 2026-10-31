@@ -19,6 +19,15 @@ const trustedCreateHmac=createHmac;
 const trustedWriteSync=writeSync;
 const observationMac=(key,observation)=>trustedCreateHmac('sha256',key)
  .update(trustedStringify(observation)).digest('hex');
+/** Select only an enforce-mode flag actually supported by this Node runtime.
+ * Node 20 uses --experimental-permission; newer supported runtimes use --permission.
+ * Never fall back to running evaluator children without a permissions model.
+ */
+export function selectNodePermissionFlag(allowed=process.allowedNodeEnvironmentFlags){
+ if(allowed?.has?.('--permission'))return '--permission';
+ if(allowed?.has?.('--experimental-permission'))return '--experimental-permission';
+ throw Error('Reef permission flag unavailable');
+}
 // Key travels over one-use stdin before importing candidate code. Candidate
 // stdout is not evidence; only a message with the trusted runner MAC qualifies.
 function spawnObservedChild(inputPath,key,cwd){
@@ -29,7 +38,7 @@ function spawnObservedChild(inputPath,key,cwd){
   // This is defense in depth, not a full malicious-code sandbox.
   const runner=fileURLToPath(import.meta.url);
   const child=spawn(process.execPath,[
-   '--permission','--allow-fs-read='+runner,'--allow-fs-read='+cwd,
+   selectNodePermissionFlag(),'--allow-fs-read='+runner,'--allow-fs-read='+cwd,
    '--allow-fs-write='+cwd,
    runner,'--reef-child',inputPath
   ],{cwd,stdio:['pipe','pipe','ignore'],
