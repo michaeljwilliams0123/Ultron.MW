@@ -296,7 +296,8 @@ async function loadModule(source,policySource){
 }
 async function runVariant(source,policySource){
   const mod=await loadModule(source,policySource);
-  const unified=typeof policySource==='string'&&policySource.trim().length>0;
+  const unified=typeof policySource==='string'&&
+    /export\s+const\s+ULTRON_GITHUB_PRINCIPAL\s*=/.test(policySource);
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
     return REPAIR_CASES.map(()=>false);
