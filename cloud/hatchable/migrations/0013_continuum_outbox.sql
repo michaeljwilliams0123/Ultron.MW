@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS brain_continuum_outbox (
     CHECK (state IN ('pending','reconcile-required')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT continuum_outbox_expiry CHECK (expires_at > created_at)
+  CONSTRAINT continuum_outbox_expiry CHECK (expires_at > created_at AND expires_at <= created_at + interval '30 days')
 );
 CREATE INDEX IF NOT EXISTS continuum_outbox_pending
   ON brain_continuum_outbox(state,expires_at,created_at)
@@ -33,11 +33,11 @@ BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'continuum outbox deletion forbidden';
   END IF;
-  IF (OLD.task_id,OLD.objective_id,OLD.delivery_id,OLD.idempotency_key,
+  IF (OLD.id,OLD.task_id,OLD.objective_id,OLD.delivery_id,OLD.idempotency_key,
       OLD.repository,OLD.source_sha,OLD.authority_sha,OLD.request_sha,
       OLD.lease_generation,OLD.expires_at,OLD.effect,OLD.max_paid_cents,OLD.created_at)
     IS DISTINCT FROM
-     (NEW.task_id,NEW.objective_id,NEW.delivery_id,NEW.idempotency_key,
+     (NEW.id,NEW.task_id,NEW.objective_id,NEW.delivery_id,NEW.idempotency_key,
       NEW.repository,NEW.source_sha,NEW.authority_sha,NEW.request_sha,
       NEW.lease_generation,NEW.expires_at,NEW.effect,NEW.max_paid_cents,NEW.created_at)
   THEN
