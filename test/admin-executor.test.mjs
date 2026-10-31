@@ -144,3 +144,22 @@ test('pause, revoked and unavailable control denies before external mutations',a
   assert.equal(calls.length,0);
  }
 });
+
+test('council dispatch binds an exact issue number and required inputs',async()=>{
+ const plan={...base('actions.dispatch',{workflow:'council-debate.yml',ref:'main',itemNumber:183}),expected:{}};
+ const {services,calls}=harness(plan,{readback:{state:'active'}});
+ const out=await executeAdminOperation(plan,services);
+ assert.equal(out.state,'dispatched-unverified');
+ assert.deepEqual(calls[1].data,{ref:'main',inputs:{item_number:'183',is_pr:'false'}});
+ for(const params of [
+  {workflow:'council-debate.yml',ref:'main'},
+  {workflow:'council-debate.yml',ref:'main',itemNumber:-1},
+  {workflow:'verify.yml',ref:'main',itemNumber:183},
+ ]){
+  assert.throws(()=>validateAdminPlan({...plan,params},NOW),/plan|scope|operation/);
+ }
+});
+test('Admin v1 does not disable mandatory core Verify workflow',()=>{
+ const plan={...base('actions.disable',{workflow:'verify.yml'}),expected:{state:'active'}};
+ assert.throws(()=>validateAdminPlan(plan,NOW),/plan|scope|operation/);
+});
