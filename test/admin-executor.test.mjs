@@ -181,3 +181,27 @@ test('rerun and cancel are denied for non-allowlisted workflow runs before any a
   }
  }
 });
+
+
+test('failure to persist unknown-write receipt never turns it into a retryable exception',async()=>{
+ const input=base();
+ const run=harness(input,{mutateFailure:true});
+ let marks=0;
+ run.services.ledger.mark=async()=>{marks++;throw Error('temporary db outage')};
+ const result=await executeAdminOperation(input,run.services);
+ assert.equal(result.state,'reconcile-required');
+ assert.equal(result.reason,'write-outcome-unknown');
+ assert.equal(result.ledgerMarkFailed,true);
+ assert.equal(run.calls.filter(x=>x.method==='POST').length,1);
+ assert.equal(marks,1);
+});
+
+test('successful GitHub effect with unavailable receipt ledger remains uncertain without replay',async()=>{
+ const input=base();
+ const run=harness(input);
+ run.services.ledger.mark=async()=>{throw Error('temporary db outage')};
+ const result=await executeAdminOperation(input,run.services);
+ assert.equal(result.state,'reconcile-required');
+ assert.equal(result.ledgerMarkFailed,true);
+ assert.equal(run.calls.filter(x=>x.method==='POST').length,1);
+});
