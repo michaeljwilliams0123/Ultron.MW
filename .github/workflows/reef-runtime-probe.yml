@@ -1,0 +1,61 @@
+name: Reef runtime protocol probe (not merge approval)
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: reef-probe-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  reef-runtime-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify the zero-paid, ephemeral runner environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
+          git lfs version
+          python3 -m venv "$RUNNER_TEMP/reef-venv"
+          source "$RUNNER_TEMP/reef-venv/bin/activate"
+          python -m pip --version
+      - name: Run Reef evidence fail-closed contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/reef-venv/bin/activate"
+          python -m unittest discover -s test -p test_reef_ci_probe.py -v
+      - name: Install and verify fixed upstream Reef wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/reef-venv/bin/activate"
+          mkdir -p "$RUNNER_TEMP/reef-wheel"
+          python -m pip download --disable-pip-version-check --no-deps --only-binary=:all: --dest "$RUNNER_TEMP/reef-wheel" reef-infra==0.1.3
+          printf '%s  %s\n' 'c676d1b3ace72118122978bf2935a8d937a6dff4acfdab3d64887a0971d42e72' "$RUNNER_TEMP/reef-wheel/reef_infra-0.1.3-py3-none-any.whl" | sha256sum --check
+          python -m pip install --disable-pip-version-check "$RUNNER_TEMP/reef-wheel/reef_infra-0.1.3-py3-none-any.whl"
+          python -c 'import reef; import importlib.metadata; assert importlib.metadata.version("reef-infra") == "0.1.3"'
+          reef --version
+      - name: Verify real Reef serve, inference record, feedback and release list
+        shell: bash
+        env:
+          ULTRON_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/reef-venv/bin/activate"
+          python scripts/reef_ci_probe.py
+      - name: Upload runtime-only evidence, never credentials or logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reef-runtime-probe-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/reef-runtime-probe.json
+          if-no-files-found: ignore
+          retention-days: 7
