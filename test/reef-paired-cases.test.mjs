@@ -98,3 +98,35 @@ test('protected evaluator executes relative policy dependency for a candidate',a
  assert.equal(missing.summary.candidateScore,0,
   'a candidate importing a policy without the source must fail closed');
 });
+
+
+test('protected evaluator accepts the unified operation-scoped identity fixture',async()=>{
+ const modernSource=[
+  "import {marker} from './github-principal-policy.mjs';",
+  "export function admitRepairTask({plan,identityEvidence,controls}){",
+  " if(!marker||plan?.paidFallback!==false||controls?.paused!==false||controls?.revoked!==false)",
+  "  throw Error('Repair admission paused or revoked');",
+  " if(identityEvidence?.principal!=='ultron-github-app'||identityEvidence?.operation!=='identity.read'||",
+  "  JSON.stringify(identityEvidence?.permissions)!==JSON.stringify({metadata:'read'}))",
+  "  throw Error('Unified GitHub App identity readback invalid');",
+  " return {repository:plan.repository,baseSha:plan.baseSha};",
+  "}",
+  "export function assertRepairStep(admission,step,{identityEvidence}){",
+  " if(step.operation!=='branch.update'||identityEvidence?.operation!=='repair.branch.update'||",
+  "  JSON.stringify(identityEvidence?.permissions)!==JSON.stringify({metadata:'read',contents:'write'}))",
+  "  throw Error('Repair step denied');",
+  " return {admitted:true};",
+  "}"
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:modernSource,
+  baseSha:sha('a'),candidateSha:sha('b'),
+  candidatePolicySource:'export const marker=true;',
+ });
+ const valid=result.caseResults.find(row=>row.id==='development-admit-valid');
+ assert.equal(valid.baseline.score,1);
+ assert.equal(valid.candidate.score,1,
+  'the protected fixture must support both legacy and operation-scoped identities');
+ const wrongPrincipal=result.caseResults.find(row=>row.id==='heldout-deny-admin-principal');
+ assert.equal(wrongPrincipal.candidate.score,1);
+});
