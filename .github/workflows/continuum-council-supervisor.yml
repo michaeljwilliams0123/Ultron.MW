@@ -39,7 +39,7 @@ jobs:
           script: |
             const {pathToFileURL}=require('node:url');
             const path=require('node:path');
-            const {CONTINUUM_ISSUES,selectCouncilReviews}=await import(
+            const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=await import(
               pathToFileURL(path.join(process.env.GITHUB_WORKSPACE,'src/continuum-supervisor.mjs')).href
             );
             const owner=context.repo.owner;
@@ -52,19 +52,20 @@ jobs:
             const inputs=[];
             for(const issue_number of CONTINUUM_ISSUES){
               const {data:issue}=await github.rest.issues.get({owner,repo,issue_number});
-              const lastPage=Math.max(1,Math.ceil(issue.comments/100));
-              const {data:comments}=await github.rest.issues.listComments({
-                owner,repo,issue_number,per_page:100,page:lastPage
+              const activity=await readCouncilActivity({
+                issue,owner,
+                fetchPage:async page=>(await github.rest.issues.listComments({
+                  owner,repo,issue_number,per_page:100,page
+                })).data
               });
-              const reports=comments.filter(x=>
-                x.user?.login==='github-actions[bot]' &&
-                x.body?.startsWith('# Ultron Council Report'));
-              const meaningful=comments.filter(x=>
-                x.user?.login===owner &&
-                !/^\s*\/council\b/.test(x.body||''));
-              const lastReviewAt=reports.at(-1)?.created_at??null;
-              const lastMeaningfulAt=meaningful.at(-1)?.created_at??issue.created_at;
-              inputs.push({number:issue_number,state:issue.state,lastReviewAt,lastMeaningfulAt});
+              if(!activity.complete){
+                core.warning('Incomplete council comment history for #'+issue_number+
+                  '; skip rather than duplicate review dispatch.');
+                continue;
+              }
+              inputs.push({number:issue_number,state:issue.state,
+                lastReviewAt:activity.lastReviewAt,
+                lastMeaningfulAt:activity.lastMeaningfulAt});
             }
             const picked=selectCouncilReviews(inputs,{now:new Date().toISOString(),limit:2,refreshHours:24});
             for(const issue_number of picked){
