@@ -32,7 +32,7 @@ function harness(plan,{readback,approval,identity,occupied=false,mutateFailure=f
   github:{
    request:async(method,path,data)=>{
     calls.push({method,path,data});
-    if(method==='GET')return (Array.isArray(readback)?readback.shift():readback)??{status:'completed',conclusion:'failure',run_attempt:1,head_sha:SHA};
+    if(method==='GET')return (Array.isArray(readback)?readback.shift():readback)??{path:'.github/workflows/verify.yml',status:'completed',conclusion:'failure',run_attempt:1,head_sha:SHA};
     if(mutateFailure)throw Error('network timeout after possible write');
     return {status:201};
    }
