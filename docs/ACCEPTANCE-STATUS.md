@@ -9,7 +9,7 @@ requirements. Runtime authorization and protected verification remain enforced.
 | --- | --- | --- |
 | [#65](https://github.com/michaeljwilliams0123/Ultron.MW/issues/65) | P2, open; owner session needed | Follow the issue's four steps: owner-run setup, one controlled-app transfer with independent readback, the missing negative checks, and sanitized evidence before closure. |
 | [#66](https://github.com/michaeljwilliams0123/Ultron.MW/issues/66) | Closed, completed | Bounded recovery and owner stop on the existing hosted runtime; the live pause/resume read task completed once. Physical hosted process death, a PC-offline browser and an SLA are outside that milestone. |
-| [#67](https://github.com/michaeljwilliams0123/Ultron.MW/issues/67) | Closed, completed | Scoped Mahoraga issue/Verify connector using the observed PAT actor and durable action ledger. Live App identity, generalized delegation and a second provider remain unaccepted. |
+| [#67](https://github.com/michaeljwilliams0123/Ultron.MW/issues/67) | Closed, completed | Scoped Mahoraga issue/Verify connector using the observed PAT actor and durable action ledger. Live App identity, the generalized delegation path and a second provider remain unaccepted. |
 | [#68](https://github.com/michaeljwilliams0123/Ultron.MW/issues/68) | Closed, not planned | Optional learning research. Reopen for a named candidate, useful task with baseline headroom, independent scoring and a bounded budget. |
 | [#69](https://github.com/michaeljwilliams0123/Ultron.MW/issues/69) | Closed, completed | Route audit with no proven safe deletions. A future retirement needs specific consumer, parity and rollback evidence. |
 
@@ -39,7 +39,7 @@ observations, not guarantees of future deployment state or scheduler timing.
 The connector's configured mode was `auto`, selecting the PAT lane. Its actor
 was independently observed as `michaeljwilliams0123`; underlying PAT grants
 were not inspected. The deployed App code requests narrow grants, but that
-does not establish live hosted App identity. Generalized delegated authority
+does not establish live hosted App identity. The generalized delegation path
 retains its fail-closed configuration gate. Credential changes require their
 own readiness checks before resuming writes.
 

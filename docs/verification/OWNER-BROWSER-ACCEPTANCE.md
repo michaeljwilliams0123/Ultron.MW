@@ -55,7 +55,9 @@ Do not replay the previous GitHub comment canary.
 Use one owner-approved controlled test application and a fresh test record.
 Navigate, enter the generated marker, upload its bounded canary, submit
 once, then independently refresh/read the persisted receiver record. Verify
-the receiver's complete bytes, SHA-256 and single-write count. Download a
+the receiver's complete bytes, SHA-256 and single-write count. After the first
+successful transfer and readback, re-enter the same completed request and
+confirm that no second submission occurs (receiver count remains one). Download a
 generated receipt to an empty approved destination and independently hash the
 on-disk file. A response echo alone does not prove durable receiver storage.
 

@@ -41,7 +41,7 @@ permissions, timeouts, immutable action pins, checkout credential suppression
 and no direct `github.event` interpolation in shell `run` blocks. These checks
 do not prove private service readiness or replace an owner-host acceptance run.
 
-Candidate validation before publication also passed: 746 tests with zero
+Candidate validation at `f69cc6d1bc72b3991035edb5636be440fd65e466` before publication also passed: 746 tests with zero
 failures and the same 12 skips; 364 text-source files, 150 route entries and
 930 references with zero unresolved/retained-route errors; all 64 relative
 Markdown file links resolved. The candidate contains 11 Markdown files.

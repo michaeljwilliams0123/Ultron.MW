@@ -31,14 +31,14 @@ The Pages UI is static: cloud objectives route to owner-confirmed GitHub actions
 
 Detailed source: [architecture notes](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/ARCHITECTURE.md).
 
-## Single hosted brain — dated deployment evidence
+## Single-hosted brain — dated deployment evidence
 
-The October 30 acceptance inventory identified [Ultron MW Cloud Brain](https://ultron-mw-cloud.hatchable.site/) at production v24 with one configured hourly task. The former experiment was v14, paused, with zero schedules; its application landing page was retired to production. These are point-in-time observations, not automatic deployment tracking. Historical test data remains separate from production work. [Retirement evidence](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/verification/HATCHABLE-SINGLE-PRODUCTION-2026-10-29.md) and [current acceptance dispositions](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/ACCEPTANCE-STATUS.md) describe the boundaries.
+The October 30 acceptance inventory identified [Ultron MW Cloud Brain](https://ultron-mw-cloud.hatchable.site/) at production v24 with one configured hourly task. The former experiment was v14, paused, with zero schedules; its application landing page was retired to production. These are point-in-time observations, not automatic deployment tracking. Historical test data remains separate from production work. [Retirement evidence](https://github.com/michaeljwilliams0123/Ultron.MW/blob/f69cc6d1bc72b3991035edb5636be440fd65e466/docs/verification/HATCHABLE-SINGLE-PRODUCTION-2026-10-29.md) and [current acceptance dispositions](https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/ACCEPTANCE-STATUS.md) describe the boundaries.
 
 The owner-generated Mahoraga Native PR Operator private key passed an independent local GitHub App authentication test and a one-repository scoped App-bot issue create/readback/close canary ([Mahoraga #1183](https://github.com/michaeljwilliams0123/mahoraga/issues/1183)). The **Hatchable-hosted experimental key configuration failed a PEM signing preflight** before any external write, so this is not acceptance of hosted App-only execution. Production deliberately preserves its functioning PAT-first authentication; neither the private key nor installation tokens are stored in GitHub source or public UI.
 
 The October 30 scoped #67 acceptance verified configured `auto` mode selecting
-the PAT actor for the fixed Mahoraga issue/Verify lane. Narrow App code grants
+the PAT actor for the fixed Mahoraga issue/Verify lane. Narrow GitHub App grants
 were deployed, but live hosted App identity, generalized delegation and a
 second provider remain unaccepted. #66 separately accepted bounded hosted
 recovery and owner stop; local browser acceptance remains with #65.
