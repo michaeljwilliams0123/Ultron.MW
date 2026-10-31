@@ -51,21 +51,28 @@ jobs:
             }
             const inputs=[];
             for(const issue_number of CONTINUUM_ISSUES){
-              const {data:issue}=await github.rest.issues.get({owner,repo,issue_number});
-              const activity=await readCouncilActivity({
-                issue,owner,
-                fetchPage:async page=>(await github.rest.issues.listComments({
-                  owner,repo,issue_number,per_page:100,page
-                })).data
-              });
-              if(!activity.complete){
-                core.warning('Incomplete council comment history for #'+issue_number+
-                  '; skip rather than duplicate review dispatch.');
-                continue;
+              try {
+                const {data:issue}=await github.rest.issues.get({owner,repo,issue_number});
+                const activity=await readCouncilActivity({
+                  issue,owner,
+                  fetchPage:async page=>(await github.rest.issues.listComments({
+                    owner,repo,issue_number,per_page:100,page
+                  })).data
+                });
+                if(!activity.complete){
+                  core.warning('Incomplete council comment history for #'+issue_number+
+                    '; skip rather than duplicate review dispatch.');
+                  continue;
+                }
+                inputs.push({number:issue_number,state:issue.state,
+                  lastReviewAt:activity.lastReviewAt,
+                  lastMeaningfulAt:activity.lastMeaningfulAt});
+              } catch {
+                // An unreadable issue is not evidence that no review is due.
+                // Fail closed for this issue and keep checking later issues.
+                core.warning('Council history unavailable for #'+issue_number+
+                  '; skip its dispatch without failing the remaining scan.');
               }
-              inputs.push({number:issue_number,state:issue.state,
-                lastReviewAt:activity.lastReviewAt,
-                lastMeaningfulAt:activity.lastMeaningfulAt});
             }
             const picked=selectCouncilReviews(inputs,{now:new Date().toISOString(),limit:2,refreshHours:24});
             for(const issue_number of picked){
