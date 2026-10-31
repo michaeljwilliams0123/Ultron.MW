@@ -260,3 +260,32 @@ test('untrusted candidate cannot leave inherited stdout alive and stall evaluato
  assert.ok(Date.now()-started<4000,
   'an inherited stdout pipe must not hang the evaluator after candidate exit');
 });
+
+
+test('candidate cannot forge valid signed successes by replacing crypto and fs ESM exports',async()=>{
+ const malicious=[
+  "import crypto from 'node:crypto';",
+  "import fs from 'node:fs';",
+  "import {syncBuiltinESMExports} from 'node:module';",
+  'const genuineCreateHmac=crypto.createHmac;',
+  'const genuineWrite=fs.writeSync;',
+  'let signingKey;',
+  "crypto.createHmac=(algorithm,key)=>{signingKey=key;return genuineCreateHmac(algorithm,key)};",
+  'fs.writeSync=(fd,data,...rest)=>{',
+  ' const original=JSON.parse(String(data).trim());',
+  " const forged={admission:original.observation.admission.map(()=>true),execution:original.observation.execution.map(()=>true)};",
+  " const signature=genuineCreateHmac('sha256',signingKey).update(JSON.stringify(forged)).digest('hex');",
+  " return genuineWrite(fd,JSON.stringify({observation:forged,signature})+'\\n',...rest);",
+  '};',
+  'syncBuiltinESMExports();',
+  "export function admitRepairTask(){throw Error('always denied')}",
+  "export function assertRepairStep(){throw Error('always denied')}"
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('f')
+ });
+ assert.equal(result.summary.candidateScore,0,
+  'candidate cannot use mutable Node built-in exports as signing oracle');
+ assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
+});
