@@ -11,7 +11,7 @@ const BRANCH = /^ultron\/repair-[a-z0-9][a-z0-9-]{2,63}$/;
 const KEY = /^repair:[a-z0-9][a-z0-9-]{7,90}$/;
 const PATH = /^(src|test)\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/;
 const PLAN_KEYS = new Set(['schema','owner','objective','repository',
-  'baseSha','branch','allowedPaths','idempotencyKey','maxAttempts',
+  'baseSha','preparedHeadSha','branch','allowedPaths','idempotencyKey','maxAttempts',
   'maxCostCents','expiresAt']);
 const STEP_KEYS = new Set(['operation','repository','branch','baseSha',
   'path','idempotencyKey','attempt']);
@@ -63,6 +63,8 @@ function assertPlan(plan, now) {
     plan.schema !== 'ultron.repair.plan.v1' ||
     plan.owner !== 'michaeljwilliams0123' ||
     plan.repository !== REPO || !SHA.test(plan.baseSha || '') ||
+    (plan.preparedHeadSha !== undefined &&
+      (!SHA.test(plan.preparedHeadSha) || plan.preparedHeadSha === plan.baseSha)) ||
     !BRANCH.test(plan.branch || '') ||
     typeof plan.objective !== 'string' ||
     plan.objective !== plan.objective.trim() ||
@@ -98,6 +100,7 @@ export function admitRepairTask({plan,identityEvidence,controls,now} = {}) {
   const admission = Object.freeze({
     schema:'ultron.repair.admission.v1',owner:plan.owner,
     objective:plan.objective,repository:REPO,baseSha:plan.baseSha,
+    preparedHeadSha:plan.preparedHeadSha??null,
     branch:plan.branch,allowedPaths:Object.freeze([...plan.allowedPaths]),
     idempotencyKey:plan.idempotencyKey,maxAttempts:plan.maxAttempts,
     maxCostCents:0,expiresAt:new Date(timestamp(plan.expiresAt)).toISOString(),
