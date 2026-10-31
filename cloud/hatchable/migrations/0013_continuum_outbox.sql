@@ -19,8 +19,24 @@ CREATE TABLE IF NOT EXISTS brain_continuum_outbox (
     CHECK (state IN ('pending','reconcile-required')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT continuum_outbox_expiry CHECK (expires_at > created_at AND expires_at <= created_at + interval '30 days')
+  CONSTRAINT continuum_outbox_expiry CHECK (expires_at > created_at AND expires_at <= created_at + interval '720 hours')
 );
+-- Normalize incoming timestamps at the database boundary, including callers
+-- that attempt to provide a future created_at to evade the expiry constraint.
+-- A statement-time stamp also avoids transaction-start skew for long transactions.
+CREATE OR REPLACE FUNCTION continuum_outbox_stamp() RETURNS trigger
+LANGUAGE plpgsql AS $
+BEGIN
+  NEW.created_at := statement_timestamp();
+  NEW.updated_at := statement_timestamp();
+  RETURN NEW;
+END;
+$;
+DROP TRIGGER IF EXISTS continuum_outbox_stamp ON brain_continuum_outbox;
+CREATE TRIGGER continuum_outbox_stamp
+  BEFORE INSERT ON brain_continuum_outbox
+  FOR EACH ROW EXECUTE FUNCTION continuum_outbox_stamp();
+
 CREATE INDEX IF NOT EXISTS continuum_outbox_pending
   ON brain_continuum_outbox(state,expires_at,created_at)
   WHERE state <> 'reconcile-required';
