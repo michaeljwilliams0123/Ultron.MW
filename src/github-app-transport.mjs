@@ -49,7 +49,8 @@ function exactPermissions(actual,expected){
 }
 function routeAllowed(operation,method,path){
  return typeof path==='string'&&path.startsWith(ROOT)&&
-  ROUTES[operation]?.some(([allowed,re])=>allowed===method&&re.test(path))===true;
+  Object.hasOwn(ROUTES,operation)&&
+  ROUTES[operation].some(([allowed,re])=>allowed===method&&re.test(path));
 }
 
 export function createUnifiedGitHubTransport({

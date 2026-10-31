@@ -40,9 +40,9 @@ export function parseInstant(value){
 }
 
 export function operationProfile(operation){
- const profile=PROFILES[operation];
- if(!profile)throw Error('GitHub operation profile not admitted');
- return profile;
+ if(typeof operation!=='string'||!Object.hasOwn(PROFILES,operation))
+  throw Error('GitHub operation profile not admitted');
+ return PROFILES[operation];
 }
 
 export function requiredTokenPermissions(operation){
@@ -116,8 +116,12 @@ export function evaluateProtectedHead(evidence,{headSha,principalActorRef,now}={
  const instant=parseInstant(now),observed=parseInstant(evidence?.observedAt);
  const checks=Array.isArray(evidence?.checks)?evidence.checks:[];
  const required=new Set(['test','fixed-comparison']);
- const passed=new Set(checks.filter(check=>check?.headSha===headSha&&
-  check?.status==='completed'&&check?.conclusion==='success').map(check=>check.name));
+ const atHead=checks.filter(check=>check?.headSha===headSha);
+ const passed=new Set([...required].filter(name=>{
+  const entries=atHead.filter(check=>check?.name===name);
+  return entries.length>0&&entries.every(check=>
+   check.status==='completed'&&check.conclusion==='success');
+ }));
  const review=evidence?.review;
  const ready=Number.isFinite(instant)&&Number.isFinite(observed)&&
   instant-observed>=0&&instant-observed<=5*60*1000&&SHA.test(headSha||'')&&

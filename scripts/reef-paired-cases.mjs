@@ -10,6 +10,12 @@ const BASE='a'.repeat(40);
 const NOW='2026-10-31T17:00:00.000Z';
 const sha=/^[a-f0-9]{40}$/;
 const digest=x=>createHash('sha256').update(x).digest('hex');
+// The digest includes every behavior-bearing source, with explicit absent inputs.
+const artifactDigest=(admission,executor,policy)=>digest(JSON.stringify([
+ admission,
+ executor===undefined?{present:false}:{present:true,value:executor},
+ policy===undefined?{present:false}:{present:true,value:policy}
+]));
 export const REPAIR_CASES=Object.freeze([
   {id:'development-admit-valid',split:'development',critical:false},
   {id:'development-deny-foreign-repo',split:'development',critical:false},
@@ -331,10 +337,8 @@ export async function evaluateRepairPair({baseSource,candidateSource,baseSha,can
     schema:'ultron.reef-paired-policy-benchmark.v1',
     objective:'unified-principal-repair-admission-policy',
     baseSha,candidateSha,
-    baselineArtifactSha256:digest(compareExecutors?
-      baseSource+'\n'+(baseExecutorSource??'<absent>'):baseSource),
-    candidateArtifactSha256:digest(compareExecutors?
-      candidateSource+'\n'+(candidateExecutorSource??'<absent>'):candidateSource),
+    baselineArtifactSha256:artifactDigest(baseSource,baseExecutorSource,basePolicySource),
+    candidateArtifactSha256:artifactDigest(candidateSource,candidateExecutorSource,candidatePolicySource),
     caseManifestSha256:digest(JSON.stringify(compareExecutors?
       [...REPAIR_CASES,...EXECUTION_CASES]:REPAIR_CASES)),
     caseResults,
