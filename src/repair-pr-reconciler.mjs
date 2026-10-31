@@ -111,17 +111,19 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
       baseSha:admission.baseSha,idempotencyKey:key,attempt:1,
     },next);
   }
-  if(['branch-confirmed','pr-dispatch','complete'].includes(entry.phase)){
-    // Completion and resumption are observations, not permanent authority:
-    // out-of-band deletion or a changed branch ref invalidates stale receipts.
+  async function confirmBranch(){
+    // Re-read even after a durable success. Stale refs cannot be promoted.
     const branch=await github.getBranch({
       repository:admission.repository,branch:admission.branch
     });
-    if(!branch)return result(entry,admission,marker,'reconcile-required');
+    if(!branch)return false;
     if(!branchVerified(branch,admission))
       throw Error('Repair branch readback identity mismatch');
+    return true;
   }
-  if(entry.phase==='complete'){
+  async function confirmComplete(){
+    if(!await confirmBranch())
+      return result(entry,admission,marker,'reconcile-required');
     const pr=await github.findPR({
       repository:admission.repository,branch:admission.branch,base:'main'
     });
@@ -130,23 +132,33 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
       throw Error('Repair PR readback identity mismatch');
     return result(entry,admission,marker,'complete');
   }
+  if(entry.phase==='complete')return confirmComplete();
 
   if(entry.phase==='reserved'){
-    // An existing unclaimed branch is not proof that this Repair App created it.
-    // Such an object must never be silently adopted.
-    const foreign=await github.getBranch({repository:admission.repository,branch:admission.branch});
-    if(foreign)throw Error('Repair preexisting branch ownership unknown');
-    await stepGate('branch.create');
-    if(await ledger.advance({key,fingerprint,from:'reserved',to:'branch-dispatch'})){
-      try{
-        await github.createBranch({repository:admission.repository,branch:admission.branch,
-          baseSha:admission.baseSha});
-      }catch{
-        // A write might have committed before its response was lost.
-        // Resolve by immutable exact-object readback below; never re-dispatch.
+    // A winning concurrent worker may advance the ledger after our claim
+    // snapshot but before this branch read. Re-read before calling it foreign.
+    const existing=await github.getBranch({
+      repository:admission.repository,branch:admission.branch
+    });
+    if(existing){
+      entry=await reRead();
+      if(entry.phase==='reserved')
+        throw Error('Repair preexisting branch ownership unknown');
+    }else{
+      await stepGate('branch.create');
+      if(await ledger.advance({key,fingerprint,from:'reserved',to:'branch-dispatch'})){
+        try{
+          await github.createBranch({
+            repository:admission.repository,branch:admission.branch,
+            baseSha:admission.baseSha
+          });
+        }catch{
+          // Outcome unknown: never replay the write without authoritative
+          // exact-object readback, even if GitHub reported a transport error.
+        }
       }
+      entry=await reRead();
     }
-    entry=await reRead();
   }
 
   if(entry.phase==='branch-dispatch'){
@@ -159,22 +171,32 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
     entry=await reRead();
   }
   if(entry.phase==='branch-confirmed'){
-    // A PR not associated with a prior dispatch cannot be adopted.
-    const foreign=await github.findPR({repository:admission.repository,branch:admission.branch,base:'main'});
-    if(foreign)throw Error('Repair preexisting PR ownership unknown');
-    await stepGate('pr.create');
-    if(await ledger.advance({key,fingerprint,from:'branch-confirmed',to:'pr-dispatch'})){
-      try{
-        await github.createPR({repository:admission.repository,
-          branch:admission.branch,base:'main',draft:false,
-          title:titleFor(admission),body:marker+'\n\nObjective: '+admission.objective});
-      }catch{
-        // Unknown write; only exact PR readback can authorize completion.
+    if(!await confirmBranch())
+      return result(entry,admission,marker,'reconcile-required');
+    const foreign=await github.findPR({
+      repository:admission.repository,branch:admission.branch,base:'main'
+    });
+    if(foreign){
+      entry=await reRead();
+      if(entry.phase==='branch-confirmed')
+        throw Error('Repair preexisting PR ownership unknown');
+    }else{
+      await stepGate('pr.create');
+      if(await ledger.advance({key,fingerprint,from:'branch-confirmed',to:'pr-dispatch'})){
+        try{
+          await github.createPR({repository:admission.repository,
+            branch:admission.branch,base:'main',draft:false,
+            title:titleFor(admission),body:marker+'\n\nObjective: '+admission.objective});
+        }catch{
+          // Unknown outcome: no blind replay of a PR-creation request.
+        }
       }
+      entry=await reRead();
     }
-    entry=await reRead();
   }
   if(entry.phase==='pr-dispatch'){
+    if(!await confirmBranch())
+      return result(entry,admission,marker,'reconcile-required');
     const observed=await github.findPR({repository:admission.repository,branch:admission.branch,base:'main'});
     if(!observed)return result(entry,admission,marker,'reconcile-required');
     if(!prVerified(observed,admission,marker))
@@ -182,6 +204,6 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
     await ledger.advance({key,fingerprint,from:'pr-dispatch',to:'complete',prNumber:observed.number});
     entry=await reRead();
   }
-  return result(entry,admission,marker,
-    entry.phase==='complete'?'complete':'reconcile-required');
+  if(entry.phase==='complete')return confirmComplete();
+  return result(entry,admission,marker,'reconcile-required');
 }
