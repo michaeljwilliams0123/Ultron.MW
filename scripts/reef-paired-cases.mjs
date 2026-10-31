@@ -1,6 +1,6 @@
 import { createHash,createHmac,randomBytes,timingSafeEqual } from 'node:crypto';
 import { spawn,execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync,writeSync } from 'node:fs';
 import { writeFile,readFile,mkdir,mkdtemp,rm } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -437,7 +437,11 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  const observationKey=Buffer.from(keyHex,'hex');
  // Candidate ESM must not mutate prototype or JSON serialization used by
  // the trusted runner to authenticate score observations.
- for(const intrinsic of [Array.prototype,Object.prototype,Promise.prototype,JSON]){
+ // Cryptographic signing and final output are trusted harness operations.
+ // Protect their native prototypes before executing untrusted ESM.
+ const hmacPrototype=Object.getPrototypeOf(createHmac('sha256',observationKey));
+ for(const intrinsic of [Array.prototype,Object.prototype,Promise.prototype,
+  Buffer.prototype,hmacPrototype,JSON]){
   Object.freeze(intrinsic);
  }
  const input=JSON.parse(await readFile(process.argv[3],'utf8'));
@@ -446,7 +450,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   await runExecutionVariant(input.executorSource,input.source,input.policySource):[];
  const observation={admission,execution};
  const signature=observationMac(observationKey,observation);
- process.stdout.write(trustedStringify({observation,signature})+'\n');
+ writeSync(1,trustedStringify({observation,signature})+'\n');
 }else if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
   const path='src/repair-admission.mjs';
