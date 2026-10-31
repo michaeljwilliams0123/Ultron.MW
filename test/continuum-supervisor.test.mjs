@@ -100,7 +100,7 @@ test('manual council dispatch fetches actual issue context, not generic placehol
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
-async function runDispatchExtraction({number=183,isPr='false',body='issue body',title='Roadmap',comments=[]}={}) {
+async function runDispatchExtraction({number=183,isPr='false',body='issue body',title='Roadmap',comments=[],eventName='workflow_dispatch'}={}) {
   const yml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
   const match=yml.match(/- name: Extract context[^\n]*\n[\s\S]*?\n          script: \|\n([\s\S]*?)\n      - name: Run owner-first council debate/);
   assert.ok(match,'workflow extraction script exists');
@@ -110,7 +110,11 @@ async function runDispatchExtraction({number=183,isPr='false',body='issue body',
   const requireMock=(name)=>name==='fs'
     ? {mkdirSync(){},writeFileSync(path,value){files.set(path,value);}}
     : name==='path' ? {join:(...parts)=>parts.join('/')} : (()=>{throw Error('unexpected require');})();
-  const context={actor:'github-actions[bot]',eventName:'workflow_dispatch',repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'},payload:{inputs:{item_number:String(number),is_pr:isPr}}};
+  const payload=eventName==='workflow_dispatch' ? {inputs:{item_number:String(number),is_pr:isPr}} :
+    eventName==='issues' ? {issue:{number,title,body}} :
+    eventName==='pull_request' ? {pull_request:{number,title,body}} :
+    {issue:{number,title,body},comment:{body}};
+  const context={actor:'github-actions[bot]',eventName,repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'},payload};
   const github={rest:{
     issues:{
       get:async()=>({data:{number,state:'open',title,body,comments:comments.length,...(number===196?{pull_request:{url:'https://api.github.com/pulls/196'}}:{})}}),
@@ -251,4 +255,16 @@ test('owner issue_comment council reports retain pull request identity',()=>{
  const yml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
  const section=yml.split("} else if (context.eventName === 'issue_comment') {")[1]?.split("} else if (context.eventName === 'workflow_dispatch') {")[0]||'';
  assert.match(section,/isPr\s*=\s*issue\.pull_request\s*\?\s*'true'\s*:\s*'false'/);
+});
+
+test('RED: non-dispatch issue, PR and owner-comment events export full security classification',async()=>{
+  for(const eventName of ['issues','pull_request','issue_comment']){
+    const result=await runDispatchExtraction({
+      eventName,title:'Routine review',body:'A'.repeat(8100)+' credential exposure'
+    });
+    assert.equal(result.exports.get('ORIGINAL_SECURITY_SIGNAL'),'1',
+      eventName+' must classify full untruncated event content');
+  }
+  const benign=await runDispatchExtraction({eventName:'issues',body:'Routine review'});
+  assert.equal(benign.exports.get('ORIGINAL_SECURITY_SIGNAL'),'0');
 });
