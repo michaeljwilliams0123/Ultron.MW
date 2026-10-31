@@ -113,3 +113,59 @@ test('C02 short observation window cannot certify seven-day SLO',()=>{
   assert.equal(result.meetsTarget,false);
   assert.equal(result.evidenceComplete,false);
 });
+
+
+test('C02 full seven-day 168-slot observed success meets target with genuine scheduler receipts',()=>{
+ const start=Date.parse('2026-10-25T12:00:00Z');
+ const end=new Date(start+168*60*60*1000).toISOString();
+ const runs=Array.from({length:168},(_,i)=>({
+  scheduledAt:new Date(start+i*60*60*1000).toISOString(),
+  success:true,source:'scheduler'
+ }));
+ const result=measureObservedSchedulerSlo({
+  startAt:new Date(start).toISOString(),endAt:end,intervalMinutes:60,runs
+ });
+ assert.equal(result.expectedSlots,168);
+ assert.equal(result.observedSlots,168);
+ assert.equal(result.successfulSlots,168);
+ assert.equal(result.missingSlots,0);
+ assert.equal(result.successRate,1);
+ assert.equal(result.evidenceComplete,true);
+ assert.equal(result.meetsTarget,true);
+});
+
+test('C02 complete seven-day coverage with one failed, forged or duplicated bad receipt fails the 99.5% target',()=>{
+ const start=Date.parse('2026-10-25T12:00:00Z');
+ const all=Array.from({length:168},(_,i)=>({
+  scheduledAt:new Date(start+i*60*60*1000).toISOString(),
+  success:true,source:'scheduler'
+ }));
+ const opts={startAt:new Date(start).toISOString(),
+  endAt:new Date(start+168*60*60*1000).toISOString(),intervalMinutes:60};
+ for(const runs of [
+  all.map((x,i)=>i===100?{...x,success:false}:x),
+  all.map((x,i)=>i===100?{...x,source:'manual'}:x),
+  [...all,{...all[100],success:false}]
+ ]){
+  const result=measureObservedSchedulerSlo({...opts,runs});
+  assert.equal(result.expectedSlots,168);
+  assert.equal(result.observedSlots,168);
+  assert.equal(result.evidenceComplete,true);
+  assert.equal(result.successfulSlots,167);
+  assert.equal(result.meetsTarget,false);
+ }
+});
+
+test('C02 nearly full seven-day success cannot meet target when one scheduler slot is missing',()=>{
+ const start=Date.parse('2026-10-25T12:00:00Z');
+ const runs=Array.from({length:167},(_,i)=>({
+  scheduledAt:new Date(start+i*60*60*1000).toISOString(),
+  success:true,source:'scheduler'
+ }));
+ const result=measureObservedSchedulerSlo({startAt:new Date(start).toISOString(),
+  endAt:new Date(start+168*60*60*1000).toISOString(),runs});
+ assert.equal(result.expectedSlots,168);
+ assert.equal(result.missingSlots,1);
+ assert.equal(result.evidenceComplete,false);
+ assert.equal(result.meetsTarget,false);
+});
