@@ -17,8 +17,10 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
      encoding:'utf8',maxBuffer:1048576
    }).trim();
  }
- function rejects(statement){
-   try{sql(statement);return false;}catch{return true;}
+ function rejects(statement,pattern){
+   if(!(pattern instanceof RegExp))throw Error('Expected PostgreSQL rejection pattern');
+   try{sql(statement);return false;}
+   catch(error){return pattern.test(String(error.stderr||error.message||error));}
  }
  const migration=readFileSync(new URL('../cloud/hatchable/migrations/0012_repair_pr_attempts.sql',
    import.meta.url),'utf8');
@@ -35,14 +37,14 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
    assert.equal(sql(`SELECT phase FROM repair_pr_attempts WHERE attempt_key='${key}';`),
      'branch-dispatch');
    assert.equal(rejects(`UPDATE repair_pr_attempts SET phase='complete',pr_number=7
-     WHERE attempt_key='${key}';`),true);
+     WHERE attempt_key='${key}';`,/repair_pr_attempts transition denied/),true);
    assert.equal(rejects(`UPDATE repair_pr_attempts SET fingerprint='${'b'.repeat(64)}'
-     WHERE attempt_key='${key}';`),true);
-   assert.equal(rejects(`DELETE FROM repair_pr_attempts WHERE attempt_key='${key}';`),true);
+     WHERE attempt_key='${key}';`,/repair_pr_attempts identity immutable/),true);
+   assert.equal(rejects(`DELETE FROM repair_pr_attempts WHERE attempt_key='${key}';`,/repair_pr_attempts deletion denied/),true);
    assert.equal(sql(`SELECT phase,fingerprint FROM repair_pr_attempts
      WHERE attempt_key='${key}';`),'branch-dispatch|'+sha);
    assert.equal(rejects(`INSERT INTO repair_pr_attempts(attempt_key,fingerprint,phase)
-     VALUES('${key}','${sha}','reserved');`),true);
+     VALUES('${key}','${sha}','reserved');`,/duplicate key/),true);
    sql(`UPDATE repair_pr_attempts SET phase='branch-confirmed',updated_at=now()
      WHERE attempt_key='${key}';`);
    sql(`UPDATE repair_pr_attempts SET phase='pr-dispatch',updated_at=now()
@@ -52,7 +54,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
    assert.equal(sql(`SELECT phase,pr_number FROM repair_pr_attempts
      WHERE attempt_key='${key}';`),'complete|7');
    assert.equal(rejects(`UPDATE repair_pr_attempts SET phase='pr-dispatch',pr_number=NULL
-     WHERE attempt_key='${key}';`),true);
+     WHERE attempt_key='${key}';`,/repair_pr_attempts transition denied/),true);
    sql('DROP TABLE repair_pr_attempts; DROP FUNCTION repair_pr_attempts_fence();');
  });
 }
