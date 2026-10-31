@@ -29,7 +29,9 @@ test('same source gives no claimed improvement or independent Reef acceptance', 
   assert.equal(result.heldoutCertified, false);
   assert.equal(result.reefRunVerified, false);
   assert.equal(result.eligibleForMerge, false);
-  assert.equal(result.baselineArtifactSha256, createHash('sha256').update(source).digest('hex'));
+  assert.equal(result.baselineArtifactSha256, createHash('sha256').update(JSON.stringify([
+    source,{present:false},{present:true,value:policy}
+  ])).digest('hex'));
 });
 
 test('critical security regression is observed on actual candidate module behavior', async () => {
@@ -84,4 +86,16 @@ test('malformed new Repair coordinator never scores security negatives as succes
   const execution=report.caseResults.filter(x=>x.id.startsWith('episode-'));
   assert.equal(execution.length>=8,true);
   assert.equal(execution.every(x=>x.candidate.score===0),true);
+});
+
+
+test('policy source is part of each distinct artifact fingerprint',async()=>{
+ const changed=await evaluateRepairPair({baseSource:source,candidateSource:source,
+  baseSha:sha('a'),candidateSha:sha('b'),
+  basePolicySource:policy,candidatePolicySource:policy+'\n'});
+ assert.notEqual(changed.baselineArtifactSha256,changed.candidateArtifactSha256);
+ const absent=await evaluateRepairPair({baseSource:source,candidateSource:source,
+  baseSha:sha('a'),candidateSha:sha('c'),
+  basePolicySource:undefined,candidatePolicySource:policy});
+ assert.notEqual(absent.baselineArtifactSha256,absent.candidateArtifactSha256);
 });

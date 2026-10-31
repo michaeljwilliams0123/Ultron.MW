@@ -87,3 +87,22 @@ test('protected-head evidence is exact-sha, fresh, check-complete and independen
  assert.equal(evaluateProtectedHead(evidence,{headSha:SHA,
   principalActorRef:'',now:NOW}).ready,false);
 });
+
+
+test('policy rejects inherited operation names before deriving authority',()=>{
+ for(const operation of ['constructor','toString','__proto__']){
+  assert.throws(()=>operationProfile(operation),/not admitted/i);
+  assert.throws(()=>requiredTokenPermissions(operation),/not admitted/i);
+ }
+});
+
+test('protected-head rejects conflicting status entries at same exact head',()=>{
+ const evidence={source:'github-protected-head-readback',verified:true,
+  headSha:SHA,observedAt:'2026-10-31T19:59:00Z',checks:[
+   {name:'test',status:'completed',conclusion:'success',headSha:SHA},
+   {name:'fixed-comparison',status:'completed',conclusion:'success',headSha:SHA},
+   {name:'test',status:'completed',conclusion:'failure',headSha:SHA},
+  ],review:{state:'approved',headSha:SHA,independent:true,actorRef:'github:user:reviewer'}};
+ assert.equal(evaluateProtectedHead(evidence,{headSha:SHA,
+  principalActorRef:'github-app:ultron-operator',now:NOW}).ready,false);
+});

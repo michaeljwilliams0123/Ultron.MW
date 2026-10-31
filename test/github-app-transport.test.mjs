@@ -54,6 +54,9 @@ test('operation-to-route fence rejects malformed and cross-profile paths before 
   ['actions.cancel','POST',ROOT+'/actions/runs/abc/cancel'],
   ['webhooks.ping','GET',ROOT+'/hooks/0'],
   ['webhooks.ping','GET',ROOT+'/hooks/abc'],
+  ['constructor','GET',ROOT+'/actions/workflows/verify.yml'],
+  ['toString','GET',ROOT+'/actions/workflows/verify.yml'],
+  ['__proto__','GET',ROOT+'/actions/workflows/verify.yml'],
  ]) await assert.rejects(transport.request(operation,method,path),/denied/i);
  assert.equal(tokenCalls,0);
  assert.equal(fetchCalls,0);
