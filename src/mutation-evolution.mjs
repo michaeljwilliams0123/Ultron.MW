@@ -28,28 +28,34 @@ const sorted=items=>[...items].sort();
 export function classifyMutation({baseline,candidate}={}){
  const previous=indexCases(baseline,'baseline');
  const next=indexCases(candidate,'candidate');
- const preserved=[],added=[],regressed=[],unverified=[];
+ const preserved=[],added=[],recovered=[],regressed=[],failed=[],unverified=[];
  for(const [id,item] of previous){
   const after=next.get(id);
-  if(!item.evidenceId||typeof item.evidenceId!=='string'||
-     !item.evidenceId.trim())unverified.push(id);
-  if(item.passed&&!after?.passed)regressed.push(id);
-  else if(item.passed&&after?.passed)preserved.push(id);
+  if(typeof item.evidenceId!=='string'||!item.evidenceId.trim())
+   unverified.push(id);
+  if(item.passed){
+   if(after?.passed)preserved.push(id);
+   else regressed.push(id);
+  }else if(after?.passed)recovered.push(id);
+  else if(!after)unverified.push(id);
  }
  for(const [id,item] of next){
-  if(!item.evidenceId||typeof item.evidenceId!=='string'||
-     !item.evidenceId.trim())unverified.push(id);
+  if(typeof item.evidenceId!=='string'||!item.evidenceId.trim())
+   unverified.push(id);
+  if(!item.passed)failed.push(id);
   if(!previous.has(id)&&item.passed)added.push(id);
  }
  const classification=regressed.length?'REGRESSION':
-  unverified.length?'INCONCLUSIVE':
-  added.length?'ADVANCEMENT':'PRESERVED';
+  (unverified.length||failed.length||(!previous.size&&!next.size))?'INCONCLUSIVE':
+  (added.length||recovered.length)?'ADVANCEMENT':'PRESERVED';
  return Object.freeze({
   schema:'ultron.mutation-evolution.v1',
   classification,
   preserved:Object.freeze(sorted(preserved)),
   added:Object.freeze(sorted(added)),
+  recovered:Object.freeze(sorted(recovered)),
   regressed:Object.freeze(sorted(regressed)),
+  failed:Object.freeze(sorted(failed)),
   unverified:Object.freeze(sorted(new Set(unverified))),
   // Functional classification is not trusted or independent release evidence.
   releaseEligible:false,
