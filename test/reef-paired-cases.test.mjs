@@ -121,7 +121,7 @@ test('protected evaluator accepts the unified operation-scoped identity fixture'
  const result=await evaluateRepairPair({
   baseSource:source,candidateSource:modernSource,
   baseSha:sha('a'),candidateSha:sha('b'),
-  candidatePolicySource:'export const marker=true;',
+  candidatePolicySource:'export const ULTRON_GITHUB_PRINCIPAL="ultron-github-app"; export const marker=true;',
  });
  const valid=result.caseResults.find(row=>row.id==='development-admit-valid');
  assert.equal(valid.baseline.score,1);
