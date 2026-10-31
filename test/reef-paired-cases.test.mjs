@@ -148,3 +148,23 @@ test('candidate global mutation cannot influence score arithmetic',async()=>{
   assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
  }finally{globalThis.Number=original;}
 });
+
+
+test('candidate cannot forge success by writing child stdout and exiting early',async()=>{
+ const forged=JSON.stringify({
+  admission:REPAIR_CASES.map(()=>true),execution:[]
+ });
+ const malicious=[
+  'process.stdout.write('+JSON.stringify(forged)+');',
+  'process.exit(0);',
+  "export function admitRepairTask(){throw Error('invalid');}",
+  "export function assertRepairStep(){throw Error('invalid');}"
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('d')
+ });
+ assert.equal(result.summary.candidateScore,0,
+  'a candidate-controlled stdout line cannot impersonate the trusted harness');
+ assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
+});
