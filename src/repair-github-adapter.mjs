@@ -24,13 +24,14 @@ function checkRepo(r){return r?.id===REPO_ID&&r?.full_name===REPO;}
 function readPR(raw,branch){
   if(!raw||!Number.isSafeInteger(raw.number)||raw.number<1||
     raw.state!=='open'||raw.draft!==false||
-    raw.head?.ref!==branch||raw.base?.ref!=='main'||
+    raw.head?.ref!==branch||!SHA.test(raw.head?.sha||'')||
+    raw.base?.ref!=='main'||
     !checkRepo(raw.head?.repo)||!checkRepo(raw.base?.repo)||
     typeof raw.body!=='string'||!MARKER.test(raw.body)||
     typeof raw.title!=='string'||!/^repair: [^\r\n]{12,100}$/.test(raw.title))
     throw Error('Repair GitHub PR readback identity mismatch');
   return Object.freeze({
-    number:raw.number,repo:REPO,head:branch,base:'main',
+    number:raw.number,repo:REPO,head:branch,headSha:raw.head.sha,base:'main',
     title:raw.title,body:raw.body,draft:false
   });
 }
