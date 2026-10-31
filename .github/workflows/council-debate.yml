@@ -88,6 +88,7 @@ jobs:
               title = String(issue.title || '');
               body = String(comment.body || '');
               itemNumber = Number(issue.number) || 0;
+              isPr = issue.pull_request ? 'true' : 'false';
             } else if (context.eventName === 'workflow_dispatch') {
               const inputs = context.payload.inputs || {};
               itemNumber = Number(inputs.item_number);
