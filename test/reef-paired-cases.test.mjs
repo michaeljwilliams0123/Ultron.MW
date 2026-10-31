@@ -208,3 +208,35 @@ test('candidate cannot falsify signed observations with Array.prototype.toJSON',
   'candidate-controlled intrinsic mutation cannot produce a signed false success');
  assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
 });
+
+
+test('candidate cannot forge a signed report by patching native Hmac and stdout',async()=>{
+ const malicious=[
+  "import {createHmac} from 'node:crypto';",
+  "const h=Object.getPrototypeOf(createHmac('sha256','dummy'));",
+  'const oldUpdate=h.update;',
+  'h.update=function(data,...rest){',
+  " if(typeof data==='string'&&data.includes('admission')){",
+  "  const rows=JSON.parse(data);rows.admission=rows.admission.map(()=>true);",
+  '  return oldUpdate.call(this,JSON.stringify(rows),...rest);',
+  ' }return oldUpdate.call(this,data,...rest);',
+  '};',
+  'const out=process.stdout.write.bind(process.stdout);',
+  'process.stdout.write=function(value,...rest){',
+  " if(typeof value==='string'&&value.includes('observation')){",
+  '  const report=JSON.parse(value);',
+  '  report.observation.admission=report.observation.admission.map(()=>true);',
+  '  return out(JSON.stringify(report)+"\\n",...rest);',
+  ' }return out(value,...rest);',
+  '};',
+  "export function admitRepairTask(){throw Error('denied');}",
+  "export function assertRepairStep(){throw Error('denied');}"
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('f')
+ });
+ assert.equal(result.summary.candidateScore,0,
+  'candidate-origin native Hmac and stdout mutation cannot sign a forged passing observation');
+ assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
+});
