@@ -42,7 +42,8 @@ function spawnObservedChild(inputPath,key,cwd){
    '--allow-fs-write='+cwd,
    runner,'--reef-child',inputPath
   ],{cwd,stdio:['pipe','pipe','ignore'],
-    env:{PATH:process.env.PATH||'',HOME:cwd,TMPDIR:cwd,NODE_ENV:'test'}});
+    env:{PATH:process.env.PATH||'',HOME:cwd,TMPDIR:cwd,TEMP:cwd,TMP:cwd,
+      NODE_ENV:'test'}});
   let output='',killed=false;
   const timer=setTimeout(()=>{killed=true;child.kill('SIGKILL');},30000);
   child.stdout.setEncoding('utf8');
