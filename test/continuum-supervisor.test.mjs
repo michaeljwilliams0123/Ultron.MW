@@ -174,3 +174,42 @@ test('council title transport does not apply a second UTF-8 byte truncation',()=
  assert.doesNotMatch(yml,/TITLE=\$\(head -c 240/);
  assert.match(yml,/TITLE=\$\(cat "\$TITLE_FILE"\)/);
 });
+
+
+test('hourly council supervisor isolates unreadable issue and dispatches a later eligible issue',async()=>{
+ const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+ const fragment=yml.match(/          script: \|\n([\s\S]*?)\n(?=\S|$)/);
+ assert.ok(fragment,'supervisor inline script must exist');
+ let source=fragment[1].split('\n').map(x=>x.replace(/^ {12}/,'')).join('\n');
+ const moduleImport=/const \{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\}=await import\([\s\S]*?\);/;
+ assert.match(source,moduleImport);
+ source=source.replace(moduleImport,'const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=deps;');
+ const dispatched=[],warnings=[],lookups=[];
+ const github={rest:{
+  issues:{
+   get:async({issue_number})=>{
+    lookups.push(issue_number);
+    if(issue_number===183)throw Error('simulated unavailable issue');
+    return {data:{number:issue_number,state:'open',comments:0}};
+   },
+   listComments:async()=>({data:[]})
+  },
+  actions:{createWorkflowDispatch:async args=>{dispatched.push(args);}}
+ }};
+ const summary={addHeading(){return this;},addRaw(){return this;},async write(){}};
+ const core={info(){},warning:msg=>warnings.push(msg),summary};
+ const deps={
+  CONTINUUM_ISSUES:[183,184,185],
+  selectCouncilReviews:rows=>rows.map(x=>x.number).slice(0,2),
+  readCouncilActivity:async()=>({complete:true,lastReviewAt:null,lastMeaningfulAt:null})
+ };
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const fn=new AsyncFunction('require','process','context','github','core','deps',source);
+ await fn(name=>{if(name==='node:url')return {pathToFileURL:()=>({href:'mock'})};if(name==='node:path')return {join:()=>''};throw Error('unexpected require')},
+  {env:{GITHUB_WORKSPACE:'/tmp'}},{repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'}},
+  github,core,deps);
+ assert.deepEqual(lookups,[182,183,184,185]);
+ assert.deepEqual(dispatched.map(x=>Number(x.inputs.item_number)),[184,185]);
+ assert.equal(warnings.length,1);
+ assert.match(warnings[0],/#183/);
+});
