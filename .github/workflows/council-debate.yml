@@ -107,7 +107,7 @@ jobs:
               body = String(target.body || '').slice(0,6000);
               const fullBody = String(target.body || '').toLowerCase();
               const riskWords = ['secret','credential','token','password','bypass security','fail-open','delete main','force push'];
-              core.exportVariable('ORIGINAL_SECURITY_SIGNAL',riskWords.some(word=>fullBody.includes(word))?'1':'0');
+              let securitySignal = riskWords.some(word=>fullBody.includes(word));
               // Include the latest genuine owner update when available, but
               // never replace the authoritative issue/PR title and body.
               if (isPr === 'false') {
@@ -123,6 +123,9 @@ jobs:
                   if (latestOwner) break;
                 }
                 if (latestOwner) {
+                  // Scan complete owner text; display clipping must not hide security context.
+                  securitySignal = securitySignal || riskWords.some(word =>
+                    String(latestOwner.body || '').toLowerCase().includes(word));
                   const ownerUpdate = '\n\nLatest owner update:\n' +
                     String(latestOwner.body || '').slice(0,1800);
                   // A workflow-dispatched run uses a bot actor ('0' is truthy).
@@ -132,6 +135,7 @@ jobs:
                     ownerUpdate;
                 }
               }
+              core.exportVariable('ORIGINAL_SECURITY_SIGNAL',securitySignal?'1':'0');
             } else {
               throw Error('Council dispatch event unsupported');
             }
@@ -161,7 +165,7 @@ jobs:
           fi
           echo "skipped=false" >> "$GITHUB_OUTPUT"
           # shellcheck disable=SC2155
-          TITLE=$(head -c 240 "$TITLE_FILE" 2>/dev/null || true)
+          TITLE=$(cat "$TITLE_FILE")
           # shellcheck disable=SC2155
           BODY=$(cat "$BODY_FILE")
           export TITLE BODY
