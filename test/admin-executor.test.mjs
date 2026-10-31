@@ -124,7 +124,7 @@ test('reversible repo setting writes only when exact before-value matches',async
  const plan={...base('repository.settings.update',{setting:'delete_branch_on_merge',value:true}),expected:{value:false}};
  const {services,calls,records}=harness(plan,{readback:[{delete_branch_on_merge:false},{delete_branch_on_merge:true}]});
  const result=await executeAdminOperation(plan,services);
- assert.equal(result.state,'dispatched-unverified');
+ assert.equal(result.state,'verified');
  assert.deepEqual(calls.map(x=>x.method),['GET','PATCH','GET']);
  assert.deepEqual(calls[1].data,{delete_branch_on_merge:true});
  assert.equal(records.at(-1)[1].state,'verified');
