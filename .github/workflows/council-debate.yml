@@ -114,11 +114,11 @@ jobs:
                   });
                   latestOwner = [...response.data].reverse().find(comment =>
                     comment.user?.login === 'michaeljwilliams0123' &&
-                    !/^\\s*\\/council\\b/.test(comment.body || ''));
+                    !/^\s*\/council\b/.test(comment.body || ''));
                   if (latestOwner) break;
                 }
                 if (latestOwner)
-                  body += '\\n\\nLatest owner update:\\n' +
+                  body += '\n\nLatest owner update:\n' +
                     String(latestOwner.body || '').slice(0,1800);
               }
             } else {
