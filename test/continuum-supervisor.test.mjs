@@ -222,3 +222,14 @@ test('full issue title risk word after display cap still marks original security
  assert.equal(result.exports.get('ORIGINAL_SECURITY_SIGNAL'),'1',
   'the undisplayed suffix of a GitHub title must influence security hold');
 });
+
+
+test('owner council commands enter council workflow without conflicting PR-brain execution',()=>{
+ const yml=readFileSync(new URL('../.github/workflows/owner-comment-router.yml',import.meta.url),'utf8');
+ const prRoute=yml.split('  pr-conversation:')[1]?.split('  council-command:')[0];
+ const councilRoute=yml.split('  council-command:')[1]||'';
+ assert.ok(prRoute);
+ assert.match(prRoute,/!startsWith\(github\.event\.comment\.body, '\/council'\)/,
+  'owner /council command should not trigger nonadmitted PR-brain job');
+ assert.match(councilRoute,/contains\(github\.event\.comment\.body, '\/council'\)/);
+});
