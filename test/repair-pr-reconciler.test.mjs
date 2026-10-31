@@ -149,3 +149,29 @@ test('simultaneous duplicate delivery cannot dispatch two external actions',asyn
  assert.equal(service.calls.pr,1);
  assert.equal(two.some(x=>x.status==='complete'),true);
 });
+
+test('completed attempt rechecks exact branch and PR, never trusts an old ledger status',async()=>{
+ const ledger=createMemoryRepairLedger(),service=fakeGitHub();
+ await runRepairPR(args({ledger,service}));
+ service.setPR({number:71,repo:REPO,head:'main',base:'main',title:'forged',
+   body:'forged',draft:false});
+ await assert.rejects(runRepairPR(args({ledger,service})),/PR readback identity mismatch/);
+ assert.equal(service.calls.pr,1);
+});
+
+test('deleted PR after completion remains uncertain and never creates a duplicate',async()=>{
+ const ledger=createMemoryRepairLedger(),service=fakeGitHub();
+ await runRepairPR(args({ledger,service}));
+ service.removePR();
+ const receipt=await runRepairPR(args({ledger,service}));
+ assert.equal(receipt.status,'reconcile-required');
+ assert.equal(service.calls.pr,1);
+});
+
+test('changed branch head after confirmation denies PR dispatch or stale completion',async()=>{
+ const ledger=createMemoryRepairLedger(),service=fakeGitHub();
+ await runRepairPR(args({ledger,service}));
+ service.setBranch({repo:REPO,ref:plan().branch,sha:'c'.repeat(40)});
+ await assert.rejects(runRepairPR(args({ledger,service})),/branch readback identity mismatch/);
+ assert.equal(service.calls.pr,1);
+});
