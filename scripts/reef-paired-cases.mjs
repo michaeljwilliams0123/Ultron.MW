@@ -47,7 +47,11 @@ function step(){return {
   idempotencyKey:plan().idempotencyKey,attempt:1
 };}
 function throws(callback){
-  try{callback();return false;}catch{return true;}
+  try{callback();return false;}catch(error){
+    // Import failures, missing functions or unexpected runtime exceptions are
+    // NOT evidence that a security policy correctly denied an operation.
+    return /^(Repair plan rejected|Repair App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
+  }
 }
 function runCase(mod,id){
   const admit=x=>mod.admitRepairTask(x);
@@ -95,6 +99,15 @@ async function loadModule(source){
 }
 async function runVariant(source){
   const mod=await loadModule(source);
+  if(!mod || typeof mod.admitRepairTask!=='function' ||
+      typeof mod.assertRepairStep!=='function')
+    return REPAIR_CASES.map(()=>false);
+  // A version that cannot admit a valid request is broken, not safe simply
+  // because all the negative examples also throw errors.
+  try{
+    if(runCase(mod,'development-admit-valid')!==true)
+      return REPAIR_CASES.map(()=>false);
+  }catch{return REPAIR_CASES.map(()=>false);}
   const outcomes=[];
   for(const item of REPAIR_CASES){
     let ok=false;
