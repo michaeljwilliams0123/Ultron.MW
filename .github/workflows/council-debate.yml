@@ -105,6 +105,9 @@ jobs:
               if (target.state !== 'open') throw Error('Council dispatch target not open');
               title = String(target.title || '');
               body = String(target.body || '').slice(0,6000);
+              const fullBody = String(target.body || '').toLowerCase();
+              const riskWords = ['secret','credential','token','password','bypass security','fail-open','delete main','force push'];
+              core.exportVariable('ORIGINAL_SECURITY_SIGNAL',riskWords.some(word=>fullBody.includes(word))?'1':'0');
               // Include the latest genuine owner update when available, but
               // never replace the authoritative issue/PR title and body.
               if (isPr === 'false') {
