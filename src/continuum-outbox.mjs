@@ -74,7 +74,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
          source_sha,authority_sha,request_sha,lease_generation,
          expires_at,effect,max_paid_cents)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11,$12)
-        ON CONFLICT(delivery_id) DO NOTHING
+        ON CONFLICT DO NOTHING
         RETURNING delivery_id AS "deliveryId",state`,params);
       if(result?.rows?.length===1){
         if(result.rows[0].deliveryId!==c.deliveryId||
