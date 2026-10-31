@@ -20,8 +20,12 @@ from http.server import ThreadingHTTPServer
 from importlib.metadata import version
 from pathlib import Path
 
-from reef_ci_probe import (BASE, FIXTURE, PORT_REEF, PORT_UPSTREAM,
-                           FixtureHandler, request, validate_upstream_response)
+if __package__:
+    from .reef_ci_probe import (PORT_REEF, PORT_UPSTREAM, FixtureHandler,
+                                request, validate_upstream_response)
+else:
+    from reef_ci_probe import (PORT_REEF, PORT_UPSTREAM, FixtureHandler,
+                               request, validate_upstream_response)
 
 ROOT = Path(__file__).resolve().parent.parent
 SHA = re.compile(r"^[0-9a-f]{40}$")
