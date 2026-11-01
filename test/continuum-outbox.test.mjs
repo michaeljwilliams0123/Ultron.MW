@@ -149,3 +149,41 @@ test('outbox migration stamps created_at from statement time and prevents future
  assert.match(sql,/NEW\.created_at\s*:=\s*statement_timestamp\(\)/i);
  assert.match(sql,/BEFORE INSERT ON brain_continuum_outbox/i);
 });
+
+
+test('RED: a successful fenced transition requires matching RETURNING and durable readback',async()=>{
+  for(const returned of [
+    {deliveryId:'continuum-delivery-foreign',state:'reconcile-required'},
+    {deliveryId:contract().deliveryId,state:'pending'},
+    {}
+  ]){
+    const db=fakeDb(),original=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      return sql.includes('UPDATE brain_continuum_outbox')?{rows:[returned]}:result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await outbox.reserve(contract());
+    await assert.rejects(outbox.markUnknown({
+      deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
+    }),/continuum-outbox-transition-readback-mismatch/);
+  }
+});
+
+test('RED: a successful CAS cannot report reconciliation when independent SQL readback is stale',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  let transitioned=false;
+  db.query=async(sql,params)=>{
+    const result=await original(sql,params);
+    if(sql.includes('UPDATE brain_continuum_outbox'))transitioned=true;
+    if(transitioned&&sql.includes('SELECT')&&sql.includes('brain_continuum_outbox')){
+      return {rows:result.rows.map(row=>({...row,state:'pending'}))};
+    }
+    return result;
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  await outbox.reserve(contract());
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
+  }),/continuum-outbox-transition-readback-mismatch/);
+});
