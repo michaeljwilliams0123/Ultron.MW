@@ -180,3 +180,35 @@ test('RED: repair CAS must verify persisted phase after an acknowledged UPDATE',
   await assert.rejects(ledger.advance({key:KEY,fingerprint:A,from:'reserved',
     to:'branch-dispatch'}),/readback|identity|mismatch/);
 });
+
+
+test('RED: an INSERT acknowledgement without persisted reservation cannot authorize dispatch',async()=>{
+  const db=mockDatabase(),ledger=createPostgresRepairLedger({db});
+  // Transport reports a successful INSERT row, but independent SELECT has no row.
+  // No external branch/PR operation may trust an unpersisted intent.
+  db.query=async(sql,params)=>{
+    db.calls.push({sql,params});
+    if(sql.includes('INSERT INTO repair_pr_attempts'))
+      return {rows:[{attempt_key:KEY,fingerprint:A,phase:'reserved',pr_number:null}]};
+    if(sql.includes('SELECT attempt_key,fingerprint,phase,pr_number'))
+      return {rows:[]};
+    throw Error('Unexpected SQL');
+  };
+  await assert.rejects(ledger.claim({key:KEY,fingerprint:A}),/claim|reconcile|required|readback/i);
+  assert.equal(db.calls.filter(call=>call.sql.includes('INSERT INTO')).length,1);
+  assert.equal(db.state.size,0);
+});
+
+test('RED: an INSERT acknowledgement cannot substitute for a contradictory persisted fingerprint',async()=>{
+  const db=mockDatabase(),ledger=createPostgresRepairLedger({db});
+  db.query=async(sql,params)=>{
+    db.calls.push({sql,params});
+    if(sql.includes('INSERT INTO repair_pr_attempts'))
+      return {rows:[{attempt_key:KEY,fingerprint:A,phase:'reserved',pr_number:null}]};
+    if(sql.includes('SELECT attempt_key,fingerprint,phase,pr_number'))
+      return {rows:[{attempt_key:KEY,fingerprint:B,phase:'reserved',pr_number:null}]};
+    throw Error('Unexpected SQL');
+  };
+  await assert.rejects(ledger.claim({key:KEY,fingerprint:A}),/collision|mismatch|readback/i);
+  assert.equal(db.calls.filter(call=>call.sql.includes('INSERT INTO')).length,1);
+});
