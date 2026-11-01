@@ -438,3 +438,23 @@ test('RED: supervisor summary counts only successful council workflow dispatches
  assert.deepEqual(dispatched,[184]);
  assert.match(summaries.join(''),/council reviews dispatched: 1; issue numbers: 184/);
 });
+
+
+test('RED: editing an older owner comment after a council report requires fresh review',async()=>{
+ const issue={comments:2,created_at:'2026-10-30T08:00:00Z',updated_at:'2026-11-01T11:00:00Z'};
+ const olderOwner={id:1,user:{login:'michaeljwilliams0123'},body:'Updated security constraints',
+   created_at:'2026-10-31T09:00:00Z',updated_at:'2026-11-01T11:00:00Z'};
+ const report={id:2,user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
+   created_at:'2026-10-31T10:00:00Z',updated_at:'2026-10-31T10:00:00Z'};
+ const activity=await readCouncilActivity({
+   issue,owner:'michaeljwilliams0123',
+   fetchPage:async page=>page===1?[olderOwner,report]:[],
+   fetchIssue:async()=>({...issue})
+ });
+ assert.equal(activity.complete,true);
+ assert.equal(activity.lastReviewAt,report.created_at);
+ assert.equal(activity.lastMeaningfulAt,olderOwner.updated_at,
+   'owner edits after the last council report must trigger review, not wait 24 hours');
+ assert.deepEqual(selectCouncilReviews([item(183,{lastReviewAt:activity.lastReviewAt,
+   lastMeaningfulAt:activity.lastMeaningfulAt})],{now:'2026-11-01T12:00:00Z'}),[183]);
+});
