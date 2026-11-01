@@ -76,6 +76,7 @@ jobs:
               }
             }
             const picked=selectCouncilReviews(inputs,{now:new Date().toISOString(),limit:2,refreshHours:24});
+            const dispatched=[];
             for(const issue_number of picked){
               // The initial scan is advisory. Revalidate the selected issue
               // immediately before dispatch: a new report may have arrived
@@ -107,9 +108,10 @@ jobs:
                 owner,repo,workflow_id:'council-debate.yml',ref:'main',
                 inputs:{item_number:String(issue_number),is_pr:'false'}
               });
+              dispatched.push(issue_number);
               core.info('Dispatched advisory council review on #'+issue_number);
             }
             await core.summary.addHeading('Continuum Council Supervisor')
               .addRaw('Open roadmap: #182; monitored: '+inputs.filter(x=>x.state==='open').length+
-                '; council reviews dispatched: '+picked.length+'; issue numbers: '+picked.join(', '))
+                '; council reviews dispatched: '+dispatched.length+'; issue numbers: '+dispatched.join(', '))
               .write();
