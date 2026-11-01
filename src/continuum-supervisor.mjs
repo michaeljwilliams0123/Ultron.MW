@@ -73,8 +73,15 @@ export async function readCouncilActivity({
     scannedPages.set(page,snapshot(comments));
     for(let i=comments.length-1;i>=0;i--){
       const c=comments[i];
-      if(!lastOwnerAt&&c?.user?.login===owner&&
-        !/^\s*\/council\b/.test(c.body||''))lastOwnerAt=c.created_at;
+      if(c?.user?.login===owner&&
+        !/^\s*\/council\b/.test(c.body||'')){
+        // A previously created owner comment can be edited after the last
+        // council report; use the later mutation time, not only created_at.
+        const ownerAt=c.updated_at&&parseTime(c.updated_at)>parseTime(c.created_at)
+          ?c.updated_at:c.created_at;
+        if(!lastOwnerAt||parseTime(ownerAt)>parseTime(lastOwnerAt))
+          lastOwnerAt=ownerAt;
+      }
       if(!lastReviewAt&&c?.user?.login==='github-actions[bot]'&&
         c.body?.startsWith('# Ultron Council Report'))lastReviewAt=c.created_at;
     }
