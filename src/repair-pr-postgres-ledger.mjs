@@ -46,15 +46,29 @@ export function createPostgresRepairLedger({db}={}){
        VALUES($1,$2,'reserved')
        ON CONFLICT(attempt_key) DO NOTHING
        RETURNING attempt_key,fingerprint,phase,pr_number`,[key,fingerprint]);
-      if(inserted.rows.length===1)
-        return {claimed:true,entry:normalize(inserted.rows[0],key)};
-      const existing=await db.query(`SELECT attempt_key,fingerprint,phase,pr_number
-        FROM repair_pr_attempts WHERE attempt_key=$1`,[key]);
-      if(existing.rows.length!==1)throw Error('Repair durable claim unavailable');
+      if(!Array.isArray(inserted?.rows)||inserted.rows.length>1)
+        throw Error('Repair durable claim reconcile-required');
+      const claimed=inserted.rows.length===1;
+      if(claimed){
+        const acknowledged=normalize(inserted.rows[0],key);
+        if(acknowledged.fingerprint!==fingerprint||
+           acknowledged.phase!=='reserved'||acknowledged.prNumber!==null)
+          throw Error('Repair durable claim readback mismatch');
+      }
+      // An INSERT acknowledgement cannot certify durable admission. Independently
+      // read back the fence before allowing any downstream external dispatch.
+      // A competing valid worker may advance the phase before this SELECT.
+      let existing;
+      try{
+        existing=await db.query(`SELECT attempt_key,fingerprint,phase,pr_number
+          FROM repair_pr_attempts WHERE attempt_key=$1`,[key]);
+      }catch{throw Error('Repair durable claim reconcile-required');}
+      if(!Array.isArray(existing?.rows)||existing.rows.length!==1)
+        throw Error('Repair durable claim reconcile-required');
       const entry=normalize(existing.rows[0],key);
       if(entry.fingerprint!==fingerprint)
         throw Error('Repair idempotency fingerprint collision');
-      return {claimed:false,entry};
+      return {claimed,entry};
     },
     async get(key){
       validateKey(key);
