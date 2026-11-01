@@ -9,7 +9,7 @@ export default async function(req,res){
  try{
   const observed=await db.query(
    "SELECT table_name FROM information_schema.tables "+
-   "WHERE table_schema='public' AND table_type='BASE TABLE'"
+   "WHERE table_schema=current_schema() AND table_type='BASE TABLE'"
   );
   if(!Array.isArray(observed?.rows)||
      observed.rows.some(row=>typeof row?.table_name!=='string'))
