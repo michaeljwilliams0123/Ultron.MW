@@ -80,6 +80,13 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         if(result.rows[0].deliveryId!==c.deliveryId||
           result.rows[0].state!=='pending')
           throw Error('continuum-outbox-admission-readback-mismatch');
+        // The INSERT result is not enough to attest durable identity or
+        // authorization. Read the stored row back before acknowledging a
+        // new reservation, just as uncertain transition recovery does.
+        const confirmed=await lookup(c.deliveryId);
+        if(!confirmed||confirmed.deliveryId!==c.deliveryId||
+          !same(confirmed,c)||confirmed.state!=='pending')
+          throw Error('continuum-outbox-admission-readback-mismatch');
         return {created:true,deliveryId:c.deliveryId,state:'pending'};
       }
       if(result?.rows?.length!==0)throw Error('continuum-outbox-admission-unavailable');
