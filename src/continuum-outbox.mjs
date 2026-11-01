@@ -90,6 +90,13 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
       throw Error('continuum-outbox-readback-unavailable');
     return result.rows[0]??null;
   };
+  // An acknowledged database write is still uncertain when its subsequent
+  // authoritative SELECT cannot be read. Normalize the outcome so callers
+  // must reconcile instead of interpreting a transport error as no commit.
+  const readbackOrHold=async deliveryId=>{
+    try {return await lookup(deliveryId);}
+    catch {throw Error('continuum-outbox-reconcile-required');}
+  };
   return Object.freeze({
     async reserve(contract){
       const c=validate(contract,iso(now()));
@@ -125,14 +132,14 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         // The INSERT result is not enough to attest durable identity or
         // authorization. Read the stored row back before acknowledging a
         // new reservation, just as uncertain transition recovery does.
-        const confirmed=await lookup(c.deliveryId);
+        const confirmed=await readbackOrHold(c.deliveryId);
         if(!confirmed||confirmed.deliveryId!==c.deliveryId||
           !same(confirmed,c)||confirmed.state!=='pending')
           throw Error('continuum-outbox-admission-readback-mismatch');
         return {created:true,deliveryId:c.deliveryId,state:'pending'};
       }
       if(result?.rows?.length!==0)throw Error('continuum-outbox-admission-unavailable');
-      const existing=await lookup(c.deliveryId);
+      const existing=await readbackOrHold(c.deliveryId);
       if(!existing||!same(existing,c)||
         !['pending','reconcile-required'].includes(existing.state))
         throw Error('continuum-outbox-delivery-conflict');
@@ -176,14 +183,14 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         if(returned?.deliveryId!==deliveryId||
           returned?.state!=='reconcile-required')
           throw Error('continuum-outbox-transition-readback-mismatch');
-        const confirmed=await lookup(deliveryId);
+        const confirmed=await readbackOrHold(deliveryId);
         if(!matchesTransitionReadback(confirmed,{deliveryId,sourceSha,leaseGeneration}))
           throw Error('continuum-outbox-transition-readback-mismatch');
         return {changed:true,deliveryId,state:'reconcile-required'};
       }
       if(updated?.rows?.length!==0)
         throw Error('continuum-outbox-transition-unavailable');
-      const current=await lookup(deliveryId);
+      const current=await readbackOrHold(deliveryId);
       // A no-op CAS still needs the same delivery identity as its SELECT key.
       // An adapter returning a foreign row must not certify reconciliation.
       if(current&&current.deliveryId!==deliveryId)
