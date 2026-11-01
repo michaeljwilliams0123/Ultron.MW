@@ -4,6 +4,8 @@
  * No writes, billing, browser cookie/profile access or secret logging.
  */
 import {isIP} from 'node:net';
+import {request as nodeHttpsRequest} from 'node:https';
+import {lookup as nodeDnsLookup} from 'node:dns/promises';
 const REPO='michaeljwilliams0123/mahoraga';
 const SHA=/^[a-f0-9]{40}$/;
 const PATH=/^(src|test|docs|scripts|evaluation|cloud-app|deploy)\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
@@ -140,5 +142,15 @@ export function makeCouncilExternalTransport({
     sourceSha:params.sourceSha,text,
     installationVerified:true,repositoryAccessVerified:true});
   }
+ });
+}
+
+/** Explicit opt-in from an authorized cloud worker; do not bind credentials
+ * from an untrusted HTTP request. Reuse one verified per-App token.
+ */
+export function makeNodeCouncilExternalTransport({githubInstallationToken}={}){
+ return makeCouncilExternalTransport({
+  dnsResolve:nodeDnsLookup,httpsRequest:nodeHttpsRequest,
+  githubInstallationToken,fetchImpl:globalThis.fetch
  });
 }
