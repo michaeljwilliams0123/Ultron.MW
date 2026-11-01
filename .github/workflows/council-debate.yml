@@ -201,6 +201,13 @@ jobs:
             const fs = require('fs');
             const path=require('node:path');
             const {pathToFileURL}=require('node:url');
+            // Pull-request workflows check out trusted main. Until the stable
+            // publication module and artifact are merged there, do not import
+            // candidate-only code or post an unverifiable replacement report.
+            if(!fs.existsSync('council-publication.json')){
+              core.info('Council publication v2 absent on trusted main; source-only candidate, no comment.');
+              return;
+            }
             const {alreadyPublished}=await import(pathToFileURL(
               path.join(process.env.GITHUB_WORKSPACE,'src/council-publication.mjs')).href);
             const publication=JSON.parse(fs.readFileSync('council-publication.json','utf8'));
