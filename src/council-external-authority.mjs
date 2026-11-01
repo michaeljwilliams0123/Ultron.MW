@@ -127,7 +127,7 @@ export async function runCouncilExternalIntent({plan,actor,transport}={}){
    contentSha:hex(obs.body),bytes:Buffer.byteLength(obs.body),
    contentData:obs.body,contentTrust:'untrusted-external-data-not-instructions',
    authorization:'trusted-egress-worker-claimed',
-   // Deliberately omit raw web text, credentials, and untrusted instructions.
+   // contentData is untrusted external page text; consumers must never execute it as instructions.
    releaseApproved:false
   });
  }
