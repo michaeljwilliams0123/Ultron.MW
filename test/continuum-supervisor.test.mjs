@@ -219,7 +219,8 @@ test('hourly council supervisor isolates unreadable issue and dispatches a later
  await fn(name=>{if(name==='node:url')return {pathToFileURL:()=>({href:'mock'})};if(name==='node:path')return {join:()=>''};throw Error('unexpected require')},
   {env:{GITHUB_WORKSPACE:'/tmp'}},{repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'}},
   github,core,deps);
- assert.deepEqual(lookups,[182,183,184,185]);
+ assert.deepEqual(lookups,[182,183,184,185,184,185],
+  'selected issues must be reread immediately before dispatch');
  assert.deepEqual(dispatched.map(x=>Number(x.inputs.item_number)),[184,185]);
  assert.equal(warnings.length,1);
  assert.match(warnings[0],/#183/);
