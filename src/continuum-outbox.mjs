@@ -81,13 +81,30 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
     async reserve(contract){
       const c=validate(contract,iso(now()));
       const params=FIELDS.map(key=>c[key]);
-      const result=await db.query(`INSERT INTO brain_continuum_outbox
-        (task_id,objective_id,delivery_id,idempotency_key,repository,
-         source_sha,authority_sha,request_sha,lease_generation,
-         expires_at,effect,max_paid_cents)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11,$12)
-        ON CONFLICT DO NOTHING
-        RETURNING delivery_id AS "deliveryId",state`,params);
+      let result;
+      try {
+        result=await db.query(`INSERT INTO brain_continuum_outbox
+          (task_id,objective_id,delivery_id,idempotency_key,repository,
+           source_sha,authority_sha,request_sha,lease_generation,
+           expires_at,effect,max_paid_cents)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11,$12)
+          ON CONFLICT DO NOTHING
+          RETURNING delivery_id AS "deliveryId",state`,params);
+      } catch {
+        // The INSERT may have committed before its acknowledgement was lost.
+        // Repeating the write could create a duplicate or conceal conflict.
+        // Verify the complete immutable contract through readback only.
+        let confirmed;
+        try {
+          confirmed=await lookup(c.deliveryId);
+          if(confirmed&&same(confirmed,c)&&confirmed.state==='pending')
+            return {created:false,deliveryId:c.deliveryId,state:'pending',
+              reconciled:true};
+        } catch {
+          // Readback failure or malformed stored fields remain unresolved.
+        }
+        throw Error('continuum-outbox-reconcile-required');
+      }
       if(result?.rows?.length===1){
         if(result.rows[0].deliveryId!==c.deliveryId||
           result.rows[0].state!=='pending')
