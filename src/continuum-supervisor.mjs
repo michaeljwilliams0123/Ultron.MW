@@ -51,9 +51,11 @@ export async function readCouncilActivity({
   if(overflow.length>0)return Object.freeze({complete:false,lastReviewAt:null,
     lastMeaningfulAt:issue.created_at});
   let lastReviewAt=null,lastOwnerAt=null;
-  let newestBoundary=null;
-  const boundary=comments=>JSON.stringify(comments.map(c=>
-    [c?.id,c?.created_at,c?.updated_at]));
+  // Every scanned page contributes to classification, including comment bodies.
+  // Re-read them all to reject same-second edits and stale history snapshots.
+  const scannedPages=new Map();
+  const snapshot=comments=>JSON.stringify(comments.map(c=>
+    [c?.id,c?.created_at,c?.updated_at,c?.body]));
   const incomplete=()=>Object.freeze({complete:false,lastReviewAt:null,
     lastMeaningfulAt:issue.created_at});
   let page=lastPage,scanned=0;
@@ -68,7 +70,7 @@ export async function readCouncilActivity({
     const expected=issue.comments===0?0:
       page===lastPage?issue.comments-(lastPage-1)*100:100;
     if(comments.length!==expected)return incomplete();
-    if(page===lastPage)newestBoundary=boundary(comments);
+    scannedPages.set(page,snapshot(comments));
     for(let i=comments.length-1;i>=0;i--){
       const c=comments[i];
       if(!lastOwnerAt&&c?.user?.login===owner&&
@@ -87,12 +89,14 @@ export async function readCouncilActivity({
     const latest=await fetchIssue();
     if(!latest||latest.comments!==issue.comments||
       latest.updated_at!==issue.updated_at)return incomplete();
-    const newestAgain=await fetchPage(lastPage);
+    for(const [pageNumber,before] of scannedPages){
+      const again=await fetchPage(pageNumber);
+      if(!Array.isArray(again))throw Error('activity-page-invalid');
+      if(snapshot(again)!==before)return incomplete();
+    }
     const overflowAgain=await fetchPage(lastPage+1);
-    if(!Array.isArray(newestAgain)||!Array.isArray(overflowAgain))
-      throw Error('activity-page-invalid');
-    if(overflowAgain.length!==0||boundary(newestAgain)!==newestBoundary)
-      return incomplete();
+    if(!Array.isArray(overflowAgain))throw Error('activity-page-invalid');
+    if(overflowAgain.length!==0)return incomplete();
   }
   const lastMeaningfulAt=lastOwnerAt&&
     (lastReviewAt===null||Date.parse(lastOwnerAt)>Date.parse(lastReviewAt))?
