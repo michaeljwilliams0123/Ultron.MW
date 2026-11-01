@@ -65,3 +65,15 @@ worker/provider and signed evidence are still needed for independent reasoning.
 5. The PR owner does not self-approve; a separately eligible reviewer validates
    exact-head CI. No privileges, merges, deployed receivers or paid credits
    are activated by this PR.
+
+## Expanded C04 engineering role profile
+
+Generate seven role-specific registration proposals with:
+
+```sh
+node scripts/council-app-manifests.mjs --profile=engineering-autonomy
+```
+
+Builder and Generator request Contents write and can prepare code changes on their own `ultron/council-<role>-` branches. Skeptic and Steward may contribute reviews and request changes. Predictor and Companion may contribute issues and comments. Sentinel may dispatch the existing `verify.yml` workflow on `main`. Each role requests Issues and PR write for its bounded functions.
+
+The operation policy requires an authenticated App identity, exact source SHA, zero paid cost, and scoped attempts. It cannot authorize a direct `main` update, an administrative change, or a merge. This is an implementation proposal and does not activate the proposed permissions. Actual App installation, execution service and release testing remain separate acceptance tasks.
