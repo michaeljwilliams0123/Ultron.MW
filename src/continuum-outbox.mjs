@@ -123,6 +123,10 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
       if(updated?.rows?.length!==0)
         throw Error('continuum-outbox-transition-unavailable');
       const current=await lookup(deliveryId);
+      // A no-op CAS still needs the same delivery identity as its SELECT key.
+      // An adapter returning a foreign row must not certify reconciliation.
+      if(current&&current.deliveryId!==deliveryId)
+        throw Error('continuum-outbox-transition-readback-mismatch');
       if(!current||current.sourceSha!==sourceSha||
         Number(current.leaseGeneration)!==leaseGeneration||
         current.state!=='reconcile-required')
