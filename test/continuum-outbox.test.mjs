@@ -314,7 +314,7 @@ test('RED: canonical persisted bigint strings reject trailing newlines on fresh 
     db.query=async(sql,params)=>{
       const result=await original(sql,params);
       if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
-        return {rows:result.rows.map(row=>({...row,leaseGeneration:'2\\n'}))};
+        return {rows:result.rows.map(row=>({...row,leaseGeneration:'2\n'}))};
       return result;
     };
     await assert.rejects(outbox.reserve(contract()),
@@ -331,7 +331,7 @@ test('RED: no-op fenced reconciliation rejects noncanonical persisted bigint str
   db.query=async(sql,params)=>{
     const result=await original(sql,params);
     if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
-      return {rows:result.rows.map(row=>({...row,leaseGeneration:'2\\n'}))};
+      return {rows:result.rows.map(row=>({...row,leaseGeneration:'2\n'}))};
     return result;
   };
   await assert.rejects(outbox.markUnknown({
