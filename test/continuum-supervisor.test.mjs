@@ -342,10 +342,10 @@ test('RED: same-count replacement of newest council comment invalidates scan',as
 
 test('RED: selected council issue is revalidated before workflow dispatch',async()=>{
   const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
-  const fragment=yml.match(/          script: \\|\\n([\\s\\S]*?)\\n(?=\\S|$)/);
+  const fragment=yml.match(/          script: \|\n([\s\S]*?)\n(?=\S|$)/);
   assert.ok(fragment,'supervisor inline script must exist');
-  let source=fragment[1].split('\\n').map(x=>x.replace(/^ {12}/,'')).join('\\n');
-  const moduleImport=/const \\{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\\}=await import\\([\\s\\S]*?\\);/;
+  let source=fragment[1].split('\n').map(x=>x.replace(/^ {12}/,'')).join('\n');
+  const moduleImport=/const \{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\}=await import\([\s\S]*?\);/;
   assert.match(source,moduleImport);
   source=source.replace(moduleImport,'const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=deps;');
   const dispatched=[];
