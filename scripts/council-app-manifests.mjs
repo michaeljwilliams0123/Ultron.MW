@@ -6,6 +6,7 @@
  */
 import {COUNCIL_APP_ROLES,councilAlias,buildCouncilAppManifest,
  councilCapacityReport} from '../src/council-app-identities.mjs';
+import {SME_DOMAINS,COUNCIL_LIFECYCLE} from '../src/council-shared-collaboration.mjs';
 
 const args=process.argv.slice(2);
 if(args.length!==1||!['--profile=scoped','--profile=engineering-autonomy','--profile=collaborative-sme','--profile=owner-requested'].includes(args[0])){
@@ -18,6 +19,7 @@ if(args.length!==1||!['--profile=scoped','--profile=engineering-autonomy','--pro
  const webhookUrl='https://ultron-mw-cloud.hatchable.site/api/brain/council-events';
  const apps=COUNCIL_APP_ROLES.map(role=>({
   role,
+  expertise:SME_DOMAINS[role],
   gmailAlias:mailbox?councilAlias(mailbox,role):null,
   manifest:buildCouncilAppManifest(role,{repository,webhookUrl,profile}),
   registrationPage:'https://github.com/settings/apps/new',
@@ -27,6 +29,8 @@ if(args.length!==1||!['--profile=scoped','--profile=engineering-autonomy','--pro
  console.log(JSON.stringify({
   schema:'ultron.council-github-app-blueprints.v1',
   repository,permissionProfile:profile,identityCount:apps.length,
+  sharedCaseSchema:'ultron.council.shared-case.v1',
+  sharedLifecycle:COUNCIL_LIFECYCLE,
   registrationStatus:'NOT_REGISTERED',
   requiresOwnerInstallApproval:true,
   createsSecrets:false,
