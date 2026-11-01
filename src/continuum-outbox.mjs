@@ -103,7 +103,8 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
       }
       if(result?.rows?.length!==0)throw Error('continuum-outbox-admission-unavailable');
       const existing=await lookup(c.deliveryId);
-      if(!existing||!same(existing,c))
+      if(!existing||!same(existing,c)||
+        !['pending','reconcile-required'].includes(existing.state))
         throw Error('continuum-outbox-delivery-conflict');
       return {created:false,deliveryId:c.deliveryId,state:existing.state};
     },
