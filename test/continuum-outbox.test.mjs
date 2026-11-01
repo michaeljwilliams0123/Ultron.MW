@@ -510,3 +510,71 @@ test('C01: transition readback cannot certify foreign repository or malformed im
     }
   }
 });
+
+
+test('C01: acknowledged INSERT with unavailable durable readback is reconcile-required, never a raw transport failure',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_outbox'))writes++;
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      throw Error('simulated readback transport timeout');
+    return original(sql,params);
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  await assert.rejects(outbox.reserve(contract()),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1,'never replay an acknowledged INSERT after readback loss');
+  assert.equal(db.entries.size,1,'the INSERT may already have committed');
+});
+
+test('C01: conflicting INSERT with unavailable duplicate readback stays reconcile-required',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  await outbox.reserve(contract());
+  const original=db.query.bind(db);let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_outbox'))writes++;
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      throw Error('simulated duplicate readback timeout');
+    return original(sql,params);
+  };
+  await assert.rejects(outbox.reserve(contract()),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1,'one caller attempt, no internal retry');
+  assert.equal(db.entries.size,1);
+});
+
+test('C01: acknowledged fenced UPDATE with unavailable durable readback stays reconcile-required',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();await outbox.reserve(c);
+  const original=db.query.bind(db);let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('UPDATE brain_continuum_outbox'))writes++;
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      throw Error('simulated transition readback timeout');
+    return original(sql,params);
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1,'never replay an acknowledged CAS after readback loss');
+  assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
+});
+
+test('C01: no-op fenced UPDATE with unavailable readback stays reconcile-required',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();await outbox.reserve(c);
+  await outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  });
+  const original=db.query.bind(db);let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('UPDATE brain_continuum_outbox'))writes++;
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      throw Error('simulated no-op readback timeout');
+    return original(sql,params);
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1);
+  assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
+});
