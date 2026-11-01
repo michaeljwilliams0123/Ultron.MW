@@ -120,6 +120,13 @@ export function makeCouncilExternalTransport({
      fail('github-permission-invalid');
    if(params.requireDistinctRepositoryInstallation===false)
      fail('peer-access-required');
+   if(!Number.isSafeInteger(params.expectedInstallationId)||
+      params.expectedInstallationId<1)fail('installation-identity-unverified');
+   const identity=await githubJson('https://api.github.com/installation',
+     githubInstallationToken,fetchImpl);
+   if(identity?.id!==params.expectedInstallationId||
+      !Number.isSafeInteger(identity.app_id)||identity.app_id<1)
+     fail('installation-identity-mismatch');
    // GitHub, not caller text, is the authority for installed repo scope.
    let permitted=false;
    for(let page=1;page<=5;page++){
@@ -139,7 +146,7 @@ export function makeCouncilExternalTransport({
    const text=Buffer.from(file.content.replace(/\s/g,''),'base64').toString('utf8');
    if(Buffer.byteLength(text)>MAX_BYTES)fail('github-file-too-large');
    return Object.freeze({status:200,repository:REPO,path:params.path,
-    sourceSha:params.sourceSha,text,
+    sourceSha:params.sourceSha,text,installationId:identity.id,
     installationVerified:true,repositoryAccessVerified:true});
   }
  });
