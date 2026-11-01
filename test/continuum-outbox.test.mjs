@@ -578,3 +578,27 @@ test('C01: no-op fenced UPDATE with unavailable readback stays reconcile-require
   assert.equal(writes,1);
   assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
 });
+
+test('C01: malformed persisted expiry on acknowledged or duplicate reservation is a stable mismatch, never raw input validation',async()=>{
+  // The database adapter can return malformed fields despite PostgreSQL
+  // enforcing valid timestamps. Readback corruption is not caller input.
+  for(const duplicate of [false,true]){
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    const c=contract();
+    if(duplicate)await outbox.reserve(c);
+    const original=db.query.bind(db);
+    let writes=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox'))writes++;
+      const result=await original(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,expiresAt:'not-a-timestamp'}))};
+      return result;
+    };
+    await assert.rejects(outbox.reserve(c),
+      duplicate?/continuum-outbox-delivery-conflict/:
+        /continuum-outbox-admission-readback-mismatch/);
+    assert.equal(writes,1,'never replay INSERT on malformed authoritative readback');
+    assert.equal(db.entries.size,1);
+  }
+});
