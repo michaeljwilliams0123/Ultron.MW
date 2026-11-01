@@ -69,7 +69,7 @@ function matchesPersisted(row,expected){
 // Accept native PostgreSQL Date values and ordinary ISO/SQL date strings.
 function validPersistedExpiry(value){
   if(value instanceof Date)return Number.isFinite(value.getTime());
-  return typeof value==='string'&&/^\\d{4}-\\d{2}-\\d{2}[T ]/.test(value)&&
+  return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}[T ]/.test(value)&&
     Number.isFinite(Date.parse(value));
 }
 function matchesTransitionReadback(row,{deliveryId,sourceSha,leaseGeneration}){
