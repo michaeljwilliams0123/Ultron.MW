@@ -293,7 +293,7 @@ test('truncated newest comment page fails closed even when an older council repo
 
 test('partial nonempty newest page cannot certify complete council history',async()=>{
  const result=await readCouncilActivity({
-  issue:{comments:201,created_at:'2026-10-29T08:00:00Z'},
+  issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
   owner:'michaeljwilliams0123',
   fetchPage:async page=>page===3?[{
    user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
