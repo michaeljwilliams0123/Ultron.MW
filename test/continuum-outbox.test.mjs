@@ -231,3 +231,37 @@ test('RED: no-op CAS cannot accept a foreign delivery identity in fresh persiste
     deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
   }),/continuum-outbox-transition-readback-mismatch/);
 });
+
+test('RED: successful outbox reservation must verify persisted immutable intent before acknowledging creation',async()=>{
+  // A matching INSERT RETURNING id/state alone cannot attest the stored
+  // objective, authority, request, cost or fencing contract.
+  for(const mutate of [
+    rows=>rows.map(row=>({...row,authoritySha:'d'.repeat(64)})),
+    rows=>rows.map(row=>({...row,requestSha:'d'.repeat(64)})),
+    rows=>rows.map(row=>({...row,leaseGeneration:3})),
+    rows=>rows.map(row=>({...row,deliveryId:'continuum-delivery-foreign'})),
+    ()=>[]
+  ]){
+    const db=fakeDb(),original=db.query.bind(db);
+    let inserted=false;
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('INSERT INTO brain_continuum_outbox'))inserted=true;
+      if(inserted&&sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:mutate(result.rows)};
+      return result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(contract()),
+      /continuum-outbox-admission-readback-mismatch/);
+    assert.equal(db.statements.filter(s=>s.sql.includes('INSERT INTO brain_continuum_outbox')).length,1);
+  }
+});
+
+test('successful outbox reservation is acknowledged only after fresh exact-contract readback',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  assert.deepEqual(await outbox.reserve(contract()),{
+    created:true,deliveryId:contract().deliveryId,state:'pending'
+  });
+  assert.equal(db.statements.filter(s=>s.sql.includes('SELECT')&&s.sql.includes('brain_continuum_outbox')).length,1);
+});
