@@ -47,6 +47,12 @@ export async function readCouncilActivity({
   for(;page>=1&&scanned<maxPages;page--,scanned++){
     const comments=await fetchPage(page);
     if(!Array.isArray(comments))throw Error('activity-page-invalid');
+    // The issue's comment count is an upper-bound snapshot. A missing
+    // expected page may hide a newer owner change; never treat an older
+    // council report as sufficient evidence to dispatch again.
+    if(issue.comments>0&&comments.length===0)
+      return Object.freeze({complete:false,lastReviewAt:null,
+        lastMeaningfulAt:issue.created_at});
     for(let i=comments.length-1;i>=0;i--){
       const c=comments[i];
       if(!lastOwnerAt&&c?.user?.login===owner&&
