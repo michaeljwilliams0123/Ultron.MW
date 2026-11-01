@@ -45,3 +45,36 @@ test('C04 Hatchable API is admin-only GET, read-only SQL and V8-native imports',
  const lib=readFileSync(new URL('../cloud/hatchable/lib/council-wiring.js',import.meta.url),'utf8');
  assert.doesNotMatch(lib,/from\s*['"]node:/);
 });
+
+test('C04 cloud brain distinguishes deployed capability registry from source-only Council intents',()=>{
+ const deployed=[
+  {id:'repo.inspect',effect:'read'},{id:'repo.prs',effect:'read'},
+  {id:'repo.ci',effect:'read'},{id:'site.render',effect:'read'},
+  {id:'council.review',effect:'advisory'}
+ ];
+ const r=assessCouncilWiring({tables:COUNCIL_TABLES,runtimeCapabilities:deployed});
+ assert.equal(r.capabilities.length,8);
+ for(const x of deployed){
+  const rec=r.capabilities.find(c=>c.id===x.id);
+  assert.equal(rec.status,'runtime-registered');
+  assert.equal(rec.effect,x.effect);
+  assert.equal(rec.liveAcceptanceVerified,false);
+ }
+ for(const id of ['web.open','mahoraga.repo.inspect','mahoraga.task.prepare']){
+  const rec=r.capabilities.find(c=>c.id===id);
+  assert.equal(rec.status,'source-candidate-not-deployed');
+  assert.equal(rec.liveAcceptanceVerified,false);
+ }
+ assert.equal(r.readyForProduction,false);
+ assert.equal(r.provenance.runtimeEvidence,'hatchable-deployed-brain-core-capabilities');
+ assert.equal(r.provenance.candidateEvidence,'git-pr-208-unmerged');
+ assert.throws(()=>assessCouncilWiring({tables:COUNCIL_TABLES,
+  runtimeCapabilities:[{id:'web.open',effect:'write'}]}),/observation-invalid/);
+ assert.throws(()=>assessCouncilWiring({tables:COUNCIL_TABLES,
+  runtimeCapabilities:[deployed[0],deployed[0]]}),/observation-invalid/);
+});
+test('C04 cloud readiness imports the current deployed Brain capability inventory',()=>{
+ const src=readFileSync(new URL('../cloud/hatchable/api/brain/council-readiness.js',import.meta.url),'utf8');
+ assert.match(src,/CAPABILITIES/);
+ assert.match(src,/runtimeCapabilities\s*:\s*CAPABILITIES/);
+});
