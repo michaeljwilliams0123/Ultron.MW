@@ -107,3 +107,10 @@ test('C04: CLI builds auditable manifest blueprints without creating Apps or pri
  assert.equal(new Set(result.apps.map(m=>m.manifest.name)).size,7);
  assert.ok(!/privateKey|clientSecret|webhookSecret|accessToken|password|-----BEGIN /i.test(p.stdout));
 });
+
+test('C04: forged token-origin labels never authenticate a council bot',()=>{
+ const forged={role:'Builder',installationId:99201,verifiedBy:'github-installation-token',
+   sourceSha:'a'.repeat(40),scope:repo};
+ // Metadata supplied by a caller, however convincing, cannot authorize a write.
+ assert.equal(decideCouncilAction(forged,{operation:'comment',repository:repo}).allowed,false);
+});
