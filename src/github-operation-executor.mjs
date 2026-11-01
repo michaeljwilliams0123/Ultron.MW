@@ -37,6 +37,12 @@ function exactKeys(value,keys){
   Object.keys(value).every(key=>keys.includes(key));
 }
 function positiveId(value){return Number.isSafeInteger(value)&&value>0;}
+function allowedRunWorkflow(run){
+ if(typeof run?.path!=='string')return false;
+ const match=/^\\.github\\/workflows\\/([a-zA-Z0-9._-]+)(?:@[^@\\s]+)?$/.exec(run.path);
+ return Boolean(match&&WORKFLOWS.has(match[1]));
+}
+
 function deepFreeze(value){
  if(value&&typeof value==='object'&&!Object.isFrozen(value)){
   Object.freeze(value);
@@ -126,12 +132,13 @@ function assertPreconditions(plan,observed){
     observed[1]?.object?.type==='commit'&&
     observed[1]?.object?.sha===plan.expected.refSha;break;
   case 'actions.rerun_failed':
-   valid=observed[0]?.status==='completed'&&
+   valid=allowedRunWorkflow(observed[0])&&observed[0]?.status==='completed'&&
     observed[0]?.conclusion===plan.expected.conclusion&&
     observed[0]?.run_attempt===plan.expected.runAttempt&&
     observed[0]?.head_sha===plan.expected.headSha;break;
   case 'actions.cancel':
-   valid=observed[0]?.status===plan.expected.status&&
+   valid=allowedRunWorkflow(observed[0])&&
+    observed[0]?.status===plan.expected.status&&
     observed[0]?.run_attempt===plan.expected.runAttempt&&
     observed[0]?.head_sha===plan.expected.headSha;break;
   case 'actions.enable':
