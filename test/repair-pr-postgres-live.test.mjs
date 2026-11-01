@@ -5,22 +5,15 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { assertEphemeralPostgresService } from '../src/repair-postgres-preflight.mjs';
 
 if(process.env.ULTRON_POSTGRES_TEST==='1'){
  // Never auto-select a running database by image: it might be persistent.
  // GitHub Actions pins this ID to the exact job-scoped postgres service.
- const container=process.env.ULTRON_POSTGRES_CONTAINER_ID;
- assert.match(container??'',/^[a-f0-9]{12,64}$/i,'explicit CI PostgreSQL service ID required');
- const details=JSON.parse(execFileSync('docker',
-  ['inspect','--format','{{json .}}',container],{encoding:'utf8'}));
- assert.equal(details.Config.Image,'postgres:16-alpine','refuse non-CI image');
- assert.equal(details.State.Running,true,'CI service must be running');
- assert.ok(details.Config.Env.includes('ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1'),
-  'refuse unmarked or persistent PostgreSQL containers');
- assert.ok(details.Config.Env.includes('POSTGRES_USER=ultron'));
- assert.ok(details.Config.Env.includes('POSTGRES_DB=ultron'));
- assert.ok(!(details.Mounts??[]).some(m=>m.Type==='bind'),
-  'refuse bind-mounted PostgreSQL storage');
+ const container=assertEphemeralPostgresService({
+   containerId:process.env.ULTRON_POSTGRES_CONTAINER_ID,
+   runDocker:args=>execFileSync('docker',args,{encoding:'utf8',maxBuffer:1048576})
+ });
  // Never run a destructive fixture against an existing shared application DB.
  // An unpredictable newly created database is the sole test write target.
  const scratchDb='ultron_repair_ci_'+randomBytes(8).toString('hex');
