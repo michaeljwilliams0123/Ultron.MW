@@ -270,3 +270,38 @@ test('successful outbox reservation is acknowledged only after fresh exact-contr
   });
   assert.equal(db.statements.filter(s=>s.sql.includes('SELECT')&&s.sql.includes('brain_continuum_outbox')).length,1);
 });
+
+test('RED: immutable persisted numeric readback must not coerce invalid cost, task or fence types',async()=>{
+  for(const [field,value] of [
+    ['maxPaidCents',false],['maxPaidCents',null],['maxPaidCents',''],
+    ['maxPaidCents',[]],['taskId',[71]],['leaseGeneration',[2]]
+  ]){
+    const db=fakeDb(),original=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,[field]:value}))};
+      return result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(contract()),
+      /continuum-outbox-admission-readback-mismatch/);
+  }
+});
+
+test('RED: successful fenced transition rejects coerced persisted lease generation',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  let transitioned=false;
+  db.query=async(sql,params)=>{
+    const result=await original(sql,params);
+    if(sql.includes('UPDATE brain_continuum_outbox'))transitioned=true;
+    if(transitioned&&sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      return {rows:result.rows.map(row=>({...row,leaseGeneration:[2]}))};
+    return result;
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  await outbox.reserve(contract());
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
+  }),/continuum-outbox-transition-readback-mismatch/);
+});
