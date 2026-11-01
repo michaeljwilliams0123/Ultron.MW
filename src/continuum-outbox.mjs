@@ -64,8 +64,17 @@ function matchesPersisted(row,expected){
   try {return same(row,expected);}
   catch {return false;}
 }
+// A malformed or missing timestamp from an adapter cannot attest the
+// persisted immutable expiry, even when the fencing CAS itself succeeded.
+// Accept native PostgreSQL Date values and ordinary ISO/SQL date strings.
+function validPersistedExpiry(value){
+  if(value instanceof Date)return Number.isFinite(value.getTime());
+  return typeof value==='string'&&/^\\d{4}-\\d{2}-\\d{2}[T ]/.test(value)&&
+    Number.isFinite(Date.parse(value));
+}
 function matchesTransitionReadback(row,{deliveryId,sourceSha,leaseGeneration}){
   return row?.deliveryId===deliveryId&&row.repository===REPO&&
+    validPersistedExpiry(row.expiresAt)&&
     persistedInteger(row.taskId)>0&&
     typeof row.objectiveId==='string'&&IDENTIFIER.test(row.objectiveId)&&
     typeof row.idempotencyKey==='string'&&IDENTIFIER.test(row.idempotencyKey)&&
