@@ -268,3 +268,17 @@ test('RED: non-dispatch issue, PR and owner-comment events export full security 
   const benign=await runDispatchExtraction({eventName:'issues',body:'Routine review'});
   assert.equal(benign.exports.get('ORIGINAL_SECURITY_SIGNAL'),'0');
 });
+
+
+test('truncated newest comment page fails closed even when an older council report exists',async()=>{
+ const result=await readCouncilActivity({
+  issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
+  owner:'michaeljwilliams0123',
+  fetchPage:async page=>page===3?[]:[{
+   user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
+   created_at:'2026-10-31T10:00:00Z'
+  }]
+ });
+ assert.equal(result.complete,false,
+  'missing newest page must not authorize duplicate or stale council dispatch');
+});
