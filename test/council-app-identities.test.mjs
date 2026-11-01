@@ -125,3 +125,81 @@ test('C04: forged token-origin labels never authenticate a council bot',()=>{
  // Metadata supplied by a caller, however convincing, cannot authorize a write.
  assert.equal(decideCouncilAction(forged,{operation:'comment',repository:repo}).allowed,false);
 });
+
+test('C04 engineering-autonomy: role-specific manifest permissions permit more bounded work',()=>{
+ const roles=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
+ const configs=roles.map(role=>buildCouncilAppManifest(role,{...base,profile:'engineering-autonomy'}));
+ const byRole=Object.fromEntries(roles.map((r,i)=>[r,configs[i].default_permissions]));
+ assert.equal(byRole.Builder.contents,'write');
+ assert.equal(byRole.Generator.contents,'write');
+ assert.equal(byRole.Sentinel.actions,'write');
+ for(const reviewer of ['Skeptic','Steward']){
+  assert.equal(byRole[reviewer].pull_requests,'write');
+  assert.equal(byRole[reviewer].contents,'read');
+ }
+ for(const config of configs){
+  assert.equal(config.default_permissions.administration,undefined);
+  assert.equal(config.default_permissions.workflows,undefined);
+  assert.equal(config.default_permissions.secrets,undefined);
+  assert.equal(config.hook_attributes.active,false);
+ }
+});
+test('C04 engineering-autonomy: actual scoped operation needs fresh, authenticated, non-self role',async()=>{
+ const permissionByRole={
+  Builder:{metadata:'read',contents:'write',issues:'write',pull_requests:'write',checks:'read',actions:'read'},
+  Sentinel:{metadata:'read',contents:'read',issues:'write',pull_requests:'write',checks:'read',actions:'write'},
+  Skeptic:{metadata:'read',contents:'read',issues:'write',pull_requests:'write',checks:'read',actions:'read'}
+ };
+ async function actor(role){
+  const observation={source:'github-installations-api',app_slug:'ultron-mw-'+role.toLowerCase(),
+   app_id:99201,id:99202,repositories:[repo],suspended_at:null,
+   permissions:permissionByRole[role]};
+  return authenticateCouncilAppActor({
+    role,sourceSha:'a'.repeat(40),installationToken:'bounded-ephemeral-token',
+    profile:'engineering-autonomy',githubProbe:async()=>observation
+  });
+ }
+ const builder=await actor('Builder'),sentinel=await actor('Sentinel'),skeptic=await actor('Skeptic');
+ const operation={operation:'branch.update',repository:repo,
+  branch:'ultron/council-builder-improve-tests',path:'test/council-app-identities.test.mjs',
+  baseSha:'a'.repeat(40),maxPaidCents:0,attempt:1};
+ assert.equal(decideCouncilAction(builder,operation).allowed,true);
+ assert.equal(decideCouncilAction(sentinel,operation).allowed,false);
+ assert.equal(decideCouncilAction(builder,{...operation,branch:'main'}).allowed,false);
+ assert.equal(decideCouncilAction(builder,{...operation,branch:'ultron/council-generator-improve-tests'}).allowed,false);
+ assert.equal(decideCouncilAction(builder,{...operation,path:'.github/workflows/verify.yml'}).allowed,false);
+ assert.equal(decideCouncilAction(builder,{...operation,path:'../secrets.txt'}).allowed,false);
+ assert.equal(decideCouncilAction(builder,{...operation,maxPaidCents:1}).allowed,false);
+ assert.equal(decideCouncilAction(builder,{...operation,baseSha:'b'.repeat(40)}).allowed,false);
+ assert.equal(decideCouncilAction(builder,{...operation,attempt:4}).allowed,false);
+ assert.equal(decideCouncilAction(builder,{...operation,operation:'merge'}).allowed,false);
+ assert.equal(decideCouncilAction(sentinel,{operation:'actions.dispatch',repository:repo,
+  workflow:'verify.yml',ref:'main',baseSha:'a'.repeat(40),maxPaidCents:0,attempt:1}).allowed,true);
+ assert.equal(decideCouncilAction(sentinel,{operation:'actions.dispatch',repository:repo,
+  workflow:'cloud-pr.yml',ref:'main',baseSha:'a'.repeat(40),maxPaidCents:0,attempt:1}).allowed,false);
+ assert.equal(decideCouncilAction(skeptic,{operation:'review.request-changes',repository:repo,
+  prAuthor:'different-human',baseSha:'a'.repeat(40),maxPaidCents:0,attempt:1}).allowed,true);
+ assert.equal(decideCouncilAction(skeptic,{operation:'review.request-changes',repository:repo,
+  prAuthor:'ultron-mw-skeptic[bot]',baseSha:'a'.repeat(40),maxPaidCents:0,attempt:1}).allowed,false);
+ assert.equal(decideCouncilAction(skeptic,{operation:'review.approve',repository:repo,
+  prAuthor:'different-human',baseSha:'a'.repeat(40),maxPaidCents:0,attempt:1}).allowed,false);
+});
+test('C04 engineering-autonomy: current scoped token cannot claim expanded permissions',async()=>{
+ const observed={source:'github-installations-api',app_slug:'ultron-mw-builder',
+  app_id:4,id:5,repositories:[repo],permissions:{
+   metadata:'read',contents:'read',issues:'write',pull_requests:'write',checks:'read',actions:'read'
+  }};
+ await assert.rejects(authenticateCouncilAppActor({role:'Builder',profile:'engineering-autonomy',
+  sourceSha:'a'.repeat(40),installationToken:'ephemeral-test-token',
+  githubProbe:async()=>observed}),/permission-missing/);
+});
+test('C04: manifest CLI exposes engineering-autonomy role matrix without issuing installation',()=>{
+ const r=spawnSync(process.execPath,['scripts/council-app-manifests.mjs','--profile=engineering-autonomy'],{encoding:'utf8'});
+ assert.equal(r.status,0,r.stderr);
+ const data=JSON.parse(r.stdout);
+ assert.equal(data.permissionProfile,'engineering-autonomy');
+ assert.equal(data.apps.length,7);
+ assert.equal(data.registrationStatus,'NOT_REGISTERED');
+ assert.equal(data.apps[0].manifest.default_permissions.contents,'write');
+ assert.equal(data.apps[5].manifest.default_permissions.actions,'write');
+});
