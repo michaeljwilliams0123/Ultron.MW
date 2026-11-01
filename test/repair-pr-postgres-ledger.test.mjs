@@ -136,9 +136,11 @@ test('Repair App PostgreSQL preflight rejects untrusted Docker services before a
 test('RED: repair ledger rejects a foreign persisted claim or SELECT identity',async()=>{
   for(const tamper of ['insert','select']){
     const db=mockDatabase(),query=db.query.bind(db);
+    let tamperSelect=false;
     db.query=async(sql,params)=>{
       const result=await query(sql,params);
-      if(sql.includes(tamper==='insert'?'INSERT INTO repair_pr_attempts':'SELECT attempt_key')&&result.rows.length)
+      if(sql.includes(tamper==='insert'?'INSERT INTO repair_pr_attempts':'SELECT attempt_key')&&
+         result.rows.length&&(tamper==='insert'||tamperSelect))
         return {rows:result.rows.map(row=>({...row,attempt_key:'repair:foreign-claim-001'}))};
       return result;
     };
@@ -147,6 +149,7 @@ test('RED: repair ledger rejects a foreign persisted claim or SELECT identity',a
       await assert.rejects(ledger.claim({key:KEY,fingerprint:A}),/readback|identity|mismatch/);
     }else{
       await ledger.claim({key:KEY,fingerprint:A});
+      tamperSelect=true; // Claim now independently reads back; target get() specifically.
       await assert.rejects(ledger.get(KEY),/readback|identity|mismatch/);
     }
   }
