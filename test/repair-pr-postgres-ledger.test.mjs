@@ -94,3 +94,39 @@ test('live PostgreSQL fixture requires the exact CI service container and an eph
  assert.match(workflow,/ULTRON_POSTGRES_CONTAINER_ID: \$\{\{ job\.services\.postgres\.id \}\}/);
  assert.match(workflow,/ULTRON_TEST_POSTGRES: repair-ci-ephemeral-v1/);
 });
+
+test('Repair App PostgreSQL preflight rejects untrusted Docker services before any exec',async()=>{
+ const {assertEphemeralPostgresService}=await import('../src/repair-postgres-preflight.mjs');
+ const id='a'.repeat(64);
+ const valid=()=>({Id:id,Config:{Image:'postgres:16-alpine',Env:[
+  'ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1','POSTGRES_USER=ultron','POSTGRES_DB=ultron'
+ ]},State:{Running:true},Mounts:[{Type:'volume'}]});
+ const calls=[];
+ const runDocker=args=>{calls.push(args);return JSON.stringify(valid());};
+ assert.equal(assertEphemeralPostgresService({containerId:id,runDocker}),id);
+ assert.deepEqual(calls,[['inspect','--format','{{json .}}',id]]);
+ const invalid=[
+  {label:'wrong container ID',id:'invalid;docker exec',detail:valid()},
+  {label:'missing ID',id:undefined,detail:valid()},
+  {label:'mismatched inspected ID',id,detail:{...valid(),Id:'b'.repeat(64)}},
+  {label:'wrong image',id,detail:{...valid(),Config:{...valid().Config,Image:'postgres:latest'}}},
+  {label:'stopped container',id,detail:{...valid(),State:{Running:false}}},
+  {label:'missing ephemeral marker',id,detail:{...valid(),Config:{...valid().Config,Env:['POSTGRES_USER=ultron','POSTGRES_DB=ultron']}}},
+  {label:'wrong database user',id,detail:{...valid(),Config:{...valid().Config,Env:['ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1','POSTGRES_USER=postgres','POSTGRES_DB=ultron']}}},
+  {label:'wrong database name',id,detail:{...valid(),Config:{...valid().Config,Env:['ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1','POSTGRES_USER=ultron','POSTGRES_DB=production']}}},
+  {label:'bind mount',id,detail:{...valid(),Mounts:[{Type:'bind'}]}},
+  {label:'malformed inspect',id,raw:'{not json'},
+  {label:'inspect failed',id,throws:true}
+ ];
+ for(const item of invalid){
+  const seen=[];
+  assert.throws(()=>assertEphemeralPostgresService({containerId:item.id,runDocker:args=>{
+   seen.push(args);
+   if(item.throws)throw Error('docker inspect unavailable');
+   return item.raw??JSON.stringify(item.detail);
+  }}),/repair-postgres-preflight/,item.label);
+  assert.ok(seen.every(args=>args[0]==='inspect'),item.label+' must never docker exec');
+  if(item.id===undefined||!/^[a-f0-9]{12,64}$/i.test(item.id))
+   assert.equal(seen.length,0,item.label+' must reject before Docker access');
+ }
+});
