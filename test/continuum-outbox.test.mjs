@@ -421,3 +421,60 @@ test('RED: unknown UPDATE response before commit stays unresolved, never silentl
   assert.equal(writes,1,'never replay an uncertain UPDATE');
   assert.equal(db.entries.get(c.deliveryId).state,'pending');
 });
+
+test('RED: lost INSERT acknowledgement after commit reconciles immutable persisted intent without replay',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  const c=contract();let inserts=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_outbox')){
+      inserts++;
+      await original(sql,params);
+      throw Error('simulated lost INSERT response after PostgreSQL commit');
+    }
+    return original(sql,params);
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  assert.deepEqual(await outbox.reserve(c),{
+    created:false,deliveryId:c.deliveryId,state:'pending',reconciled:true
+  });
+  assert.equal(inserts,1,'unknown INSERT must never be blindly repeated');
+  assert.equal(db.entries.size,1);
+  assert.equal(db.entries.get(c.deliveryId).authoritySha,c.authoritySha);
+});
+
+test('RED: lost INSERT acknowledgement before commit holds reconcile-required with no replay',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  const c=contract();let inserts=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_outbox')){
+      inserts++;
+      throw Error('simulated lost INSERT response before PostgreSQL commit');
+    }
+    return original(sql,params);
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  await assert.rejects(outbox.reserve(c),/continuum-outbox-reconcile-required/);
+  assert.equal(inserts,1,'do not replay an uncertain INSERT');
+  assert.equal(db.entries.size,0);
+});
+
+test('RED: lost INSERT acknowledgement cannot certify mismatched authority or unavailable readback',async()=>{
+  for(const mode of ['foreign-authority','readback-failure']){
+    const db=fakeDb(),original=db.query.bind(db),c=contract();let inserts=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;await original(sql,params);
+        throw Error('simulated lost INSERT response after commit');
+      }
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox')){
+        if(mode==='readback-failure')throw Error('readback transport failure');
+        const result=await original(sql,params);
+        return {rows:result.rows.map(row=>({...row,authoritySha:'d'.repeat(64)}))};
+      }
+      return original(sql,params);
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(c),/continuum-outbox-reconcile-required/);
+    assert.equal(inserts,1,'mismatched/unknown state must not trigger another INSERT');
+  }
+});
