@@ -124,3 +124,46 @@ itself. Registration, isolated worker credentials, true independent
 reasoning and durable cloud case storage are separate postreview
 acceptance requirements. These proposed capabilities are not yet
 active on protected main.
+
+
+## Direct public research and Mahoraga peer access
+
+All seven SMEs share the same three additional capability contracts in
+src/council-external-authority.mjs:
+- web.open: read public HTTPS pages and return bounded, explicitly untrusted
+  content as evidence; no passwords, cookies, local files, form submits or
+  browser-side mutation
+- mahoraga.repo.inspect: authenticated GitHub App read of a file at an exact
+  commit in michaeljwilliams0123/mahoraga, not an inferred installation grant
+- mahoraga.task.prepare: construct a zero-paid, source-bound handoff for
+  Mahoraga's existing at-least-once idempotent task relay; does not submit
+  or claim an external ACK without an authorized, reconciled single writer
+
+Node transport: src/council-external-transport.mjs provides
+makeNodeCouncilExternalTransport(). A trusted cloud worker opts into it and
+supplies its own short-lived GitHub App installation token. Public HTTP reads
+resolve IPv4, reject private/reserved endpoints, pin the validated address
+for TLS, disable redirects, require HTTPS and cap bytes. Webpage content is
+data, not governing instructions. Mahoraga GitHub REST reads first confirm
+that the installation token grants access to the Mahoraga repository, then
+read the exact file SHA; no PAT is inherited from the owner.
+
+GitHub requires explicit App installation selection for BOTH repositories.
+Permission parity across seven registered Apps is not automatically a
+cross-repository grant. No currently installed council Apps were observed.
+Until individual installations and cloud execution workers are verified,
+these are executable source contracts and opt-in adapters, not active
+autonomous browser sessions or peer writes.
+
+InsForge: assessed as a possible optional cloud backend, not installed.
+Hatchable/PostgreSQL remains the C04 execution-state authority. Do not
+create a parallel InsForge state owner, subscriptions, credentials or
+migrations without a separate decision. $0/day paid inference applies.
+
+Review criteria (CodeRabbit/independent reviewer):
+- Reject arbitrary URL schemes, loopback, metadata endpoints, DNS rebinding
+  and redirects; prove egress IP filtering is used by the actual worker
+- Require exact GitHub App installation readback for Mahoraga access
+- Prove no external POST or duplicate task handoff under uncertain writes
+- Keep every SME's identical privileges separate from specialty conclusions
+- Preserve protected merge, independent review and release authorizations
