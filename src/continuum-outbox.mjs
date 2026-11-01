@@ -135,6 +135,8 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         if(!confirmed||confirmed.deliveryId!==deliveryId||
           confirmed.sourceSha!==sourceSha||
           persistedInteger(confirmed.leaseGeneration)!==leaseGeneration||
+          persistedInteger(confirmed.maxPaidCents)!==0||
+          !['read','advisory'].includes(confirmed.effect)||
           confirmed.state!=='reconcile-required')
           throw Error('continuum-outbox-transition-readback-mismatch');
         return {changed:true,deliveryId,state:'reconcile-required'};
@@ -148,6 +150,8 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         throw Error('continuum-outbox-transition-readback-mismatch');
       if(!current||current.sourceSha!==sourceSha||
         persistedInteger(current.leaseGeneration)!==leaseGeneration||
+        persistedInteger(current.maxPaidCents)!==0||
+        !['read','advisory'].includes(current.effect)||
         current.state!=='reconcile-required')
         throw Error('continuum-outbox-fence-or-source-conflict');
       return {changed:false,deliveryId,state:'reconcile-required'};
