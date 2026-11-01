@@ -404,10 +404,10 @@ test('RED: same-second edit on earlier scanned council page invalidates complete
 
 test('RED: supervisor summary counts only successful council workflow dispatches',async()=>{
  const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
- const fragment=yml.match(/          script: \\|\\n([\\s\\S]*?)\\n(?=\\S|$)/);
+ const fragment=yml.match(/          script: \|\n([\s\S]*?)\n(?=\S|$)/);
  assert.ok(fragment);
- let source=fragment[1].split('\\n').map(x=>x.replace(/^ {12}/,'')).join('\\n');
- const moduleImport=/const \\{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\\}=await import\\([\\s\\S]*?\\);/;
+ let source=fragment[1].split('\n').map(x=>x.replace(/^ {12}/,'')).join('\n');
+ const moduleImport=/const \{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\}=await import\([\s\S]*?\);/;
  assert.match(source,moduleImport);
  source=source.replace(moduleImport,'const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=deps;');
  const dispatched=[],summaries=[],reads=new Map();
