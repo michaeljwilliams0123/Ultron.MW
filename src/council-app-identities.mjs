@@ -86,8 +86,32 @@ export function validateInstallationObservation({role,repository=REPO}={},observ
   appId:observation.app_id,installationId:observation.id,repository
  });
 }
+// A caller-supplied string like "verifiedBy:github-installation-token" is
+// never authentication. Only this process's trusted backend probe may mint
+// a branded actor; a serialized or cloned object loses its authority.
+const AUTHENTICATED_ACTORS=new WeakSet();
+export async function authenticateCouncilAppActor({
+ role,repository=REPO,sourceSha,installationToken,githubProbe
+}={}){
+ roleCheck(role);
+ repoCheck(repository);
+ if(repository!==REPO||typeof sourceSha!=='string'||
+   !/^[a-f0-9]{40}$/.test(sourceSha)||
+   typeof installationToken!=='string'||installationToken.length<12||
+   typeof githubProbe!=='function')
+   throw Error('council-authentication-unavailable');
+ // githubProbe MUST be a trusted server-side GitHub API client. Never let an
+ // incoming request/body supply this function, token or installation proof.
+ const observed=await githubProbe({installationToken,repository});
+ const binding=validateInstallationObservation({role,repository},observed);
+ const actor=Object.freeze({role,installationId:binding.installationId,
+   verifiedBy:'github-installation-token',scope:repository,sourceSha});
+ AUTHENTICATED_ACTORS.add(actor);
+ return actor;
+}
 export function decideCouncilAction(actor,{operation,repository=REPO}={}){
- if(!actor||!ROLE_SET.has(actor.role)||actor.verifiedBy!=='github-installation-token'||
+ if(!actor||!AUTHENTICATED_ACTORS.has(actor)||!ROLE_SET.has(actor.role)||
+   actor.verifiedBy!=='github-installation-token'||
    !Number.isSafeInteger(actor.installationId)||actor.installationId<1||
    typeof actor.sourceSha!=='string'||!/^[a-f0-9]{40}$/.test(actor.sourceSha)||
    actor.scope!==REPO||repository!==REPO)
