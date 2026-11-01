@@ -51,7 +51,7 @@ function runWorkflowAllowed(run){
  // GitHub run.path identifies the workflow file for rerun/cancel requests.
  // Missing paths or unexpected refs/paths cannot authorize a mutation.
  if(typeof run?.path!=='string')return false;
- const match=/^\.github\/workflows\/([a-zA-Z0-9._-]+)$/.exec(run.path);
+ const match=/^\.github\/workflows\/([a-zA-Z0-9._-]+)(?:@[^@\s]+)?$/.exec(run.path);
  return Boolean(match && validWorkflow(match[1]));
 }
 function positiveId(n){return Number.isSafeInteger(n)&&n>0;}
