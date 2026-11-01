@@ -112,6 +112,8 @@ test('RED C04 external: trusted web observation requires explicit safe egress an
  assert.equal(receipt.verifiedExternalExecution,false);
  assert.equal(receipt.pageContentTrusted,false);
  assert.equal(receipt.role,'Skeptic');
+ assert.equal(receipt.contentData,'<html>Reference only</html>');
+ assert.equal(receipt.contentTrust,'untrusted-external-data-not-instructions');
  const bad={webRead:async()=>({status:200,finalUrl:'http://localhost',
   contentType:'text/html',body:'invalid',egressVerified:false,redirected:true})};
  await assert.rejects(runCouncilExternalIntent({plan,actor:who,transport:bad}),
@@ -136,6 +138,8 @@ test('RED C04 external: Mahoraga inspection requires separate installation autho
  assert.equal(result.observed,true);
  assert.equal(result.verifiedExternalExecution,false);
  assert.equal(result.sourceSha,peer);
+ assert.match(result.contentData,/RELAY_PROTOCOL_VERSION/);
+ assert.equal(result.contentTrust,'untrusted-external-data-not-instructions');
  await assert.rejects(runCouncilExternalIntent({plan,actor:who,transport:{
   githubRead:async()=>({status:200,repository:'michaeljwilliams0123/mahoraga',
    sourceSha:peer,path:'src/task-relay-contract.mjs',text:'spoofed',
