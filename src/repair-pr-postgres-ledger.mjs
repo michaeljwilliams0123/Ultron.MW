@@ -20,9 +20,16 @@ function validateFingerprint(fingerprint){
   if(typeof fingerprint!=='string'||!HASH.test(fingerprint))
     throw Error('Repair fingerprint invalid');
 }
-function normalize(row){
-  if(!row||typeof row!=='object'||!PHASES.has(row.phase)||
-    !HASH.test(row.fingerprint||''))throw Error('Repair persisted ledger row invalid');
+function normalize(row,expectedKey){
+  // SQL WHERE and RETURNING alone cannot attest a trustworthy adapter row.
+  // Every readback must bind to the requested immutable attempt identity.
+  if(!row||typeof row!=='object'||row.attempt_key!==expectedKey)
+    throw Error('Repair durable readback identity mismatch');
+  if(!PHASES.has(row.phase)||!HASH.test(row.fingerprint||'')||
+    (row.phase==='complete'
+      ? !Number.isSafeInteger(row.pr_number)||row.pr_number<1
+      : row.pr_number!==null&&row.pr_number!==undefined))
+    throw Error('Repair persisted ledger row invalid');
   return Object.freeze({
     key:row.attempt_key,fingerprint:row.fingerprint,
     phase:row.phase,prNumber:row.pr_number??null
@@ -40,11 +47,11 @@ export function createPostgresRepairLedger({db}={}){
        ON CONFLICT(attempt_key) DO NOTHING
        RETURNING attempt_key,fingerprint,phase,pr_number`,[key,fingerprint]);
       if(inserted.rows.length===1)
-        return {claimed:true,entry:normalize(inserted.rows[0])};
+        return {claimed:true,entry:normalize(inserted.rows[0],key)};
       const existing=await db.query(`SELECT attempt_key,fingerprint,phase,pr_number
         FROM repair_pr_attempts WHERE attempt_key=$1`,[key]);
       if(existing.rows.length!==1)throw Error('Repair durable claim unavailable');
-      const entry=normalize(existing.rows[0]);
+      const entry=normalize(existing.rows[0],key);
       if(entry.fingerprint!==fingerprint)
         throw Error('Repair idempotency fingerprint collision');
       return {claimed:false,entry};
@@ -55,7 +62,7 @@ export function createPostgresRepairLedger({db}={}){
         FROM repair_pr_attempts WHERE attempt_key=$1`,[key]);
       if(found.rows.length===0)return null;
       if(found.rows.length!==1)throw Error('Repair durable readback conflict');
-      return normalize(found.rows[0]);
+      return normalize(found.rows[0],key);
     },
     async advance({key,fingerprint,from,to,prNumber=null}={}){
       validateKey(key);validateFingerprint(fingerprint);
@@ -69,8 +76,24 @@ export function createPostgresRepairLedger({db}={}){
         SET phase=$4,pr_number=COALESCE($5,pr_number),updated_at=now()
         WHERE attempt_key=$1 AND fingerprint=$2 AND phase=$3
         RETURNING attempt_key`,[key,fingerprint,from,to,prNumber]);
-      if(changed.rows.length>1)throw Error('Repair durable CAS conflict');
-      return changed.rows.length===1;
+      if(!Array.isArray(changed?.rows)||changed.rows.length>1)
+        throw Error('Repair durable CAS conflict');
+      if(changed.rows.length===0)return false;
+      if(changed.rows[0]?.attempt_key!==key)
+        throw Error('Repair durable transition readback identity mismatch');
+      // A successful UPDATE acknowledgement is not proof of persisted state.
+      // Read-only reconciliation never repeats an uncertain external write.
+      let persisted;
+      try {persisted=await db.query(`SELECT attempt_key,fingerprint,phase,pr_number
+        FROM repair_pr_attempts WHERE attempt_key=$1`,[key]);}
+      catch {throw Error('Repair durable transition reconcile-required');}
+      if(persisted?.rows?.length!==1)
+        throw Error('Repair durable transition readback mismatch');
+      const entry=normalize(persisted.rows[0],key);
+      if(entry.fingerprint!==fingerprint||entry.phase!==to||
+        (to==='complete'&&entry.prNumber!==prNumber))
+        throw Error('Repair durable transition readback mismatch');
+      return true;
     }
   });
 }
