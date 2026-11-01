@@ -95,3 +95,50 @@ test('C01 outbox enforces durable dedupe, immutable identity, zero cost and forw
   await assert.rejects(sql(overlong),/check constraint/);
 
 });
+
+
+test('C03 bridge receipts persist once against the exact admitted outbox delivery',options,async t=>{
+  const schema='ultron_c03_'+randomUUID().replaceAll('-','');
+  async function sql(statement){
+    const result=await run('docker',['exec',container,'psql','-U','ultron','-d','ultron',
+      '-X','-q','-t','-A','-v','ON_ERROR_STOP=1','-c',
+      'SET search_path TO '+schema+'; '+statement],
+      {timeout:10_000,maxBuffer:1024*1024});
+    return result.stdout.trim();
+  }
+  await sql('CREATE SCHEMA '+schema);
+  t.after(()=>sql('DROP SCHEMA '+schema+' CASCADE'));
+  for(const name of ['0001_tasks.sql','0013_continuum_outbox.sql','0014_continuum_receipts.sql'])
+    await sql(await readFile(new URL('../cloud/hatchable/migrations/'+name,import.meta.url),'utf8'));
+  await sql("INSERT INTO brain_tasks(task_key,objective) VALUES('c03-ack-test','repo.inspect')");
+  await sql(`INSERT INTO brain_continuum_outbox
+    (task_id,objective_id,delivery_id,idempotency_key,repository,source_sha,
+      authority_sha,request_sha,lease_generation,expires_at,effect,max_paid_cents)
+    VALUES(1,'continuum-c03-objective-01','continuum-delivery-0001',
+      'continuum:delivery:0001','michaeljwilliams0123/Ultron.MW',
+      repeat('a',40),repeat('c',64),repeat('b',64),2,
+      now()+interval '1 day','read',0)`);
+  const insert=`INSERT INTO brain_continuum_receipts
+    (receipt_id,delivery_id,source,payload_sha256,route_sha)
+    SELECT 'continuum-ack-0000001',o.delivery_id,'mahoraga-cloud',
+      repeat('e',64),repeat('d',64)
+    FROM brain_continuum_outbox o WHERE o.delivery_id='continuum-delivery-0001'
+      AND o.task_id=1 AND o.source_sha=repeat('a',40)
+      AND o.request_sha=repeat('b',64) AND o.authority_sha=repeat('c',64)
+      AND o.lease_generation=2 AND o.max_paid_cents=0
+      AND o.effect IN ('read','advisory')
+    ON CONFLICT DO NOTHING RETURNING receipt_id`;
+  assert.equal(await sql(insert),'continuum-ack-0000001');
+  assert.equal(await sql(insert),'');
+  assert.equal(await sql('SELECT count(*) FROM brain_continuum_receipts'),'1');
+  await assert.rejects(sql(`UPDATE brain_continuum_receipts SET route_sha=repeat('f',64)`),
+    /continuum receipt mutation forbidden/);
+  await assert.rejects(sql(`DELETE FROM brain_continuum_receipts`),
+    /continuum receipt mutation forbidden/);
+  await assert.rejects(sql(`INSERT INTO brain_continuum_receipts
+    (receipt_id,delivery_id,source,payload_sha256,route_sha)
+    VALUES('continuum-ack-foreign','continuum-delivery-nonexistent',
+      'mahoraga-cloud',repeat('e',64),repeat('d',64))`),
+    /foreign key constraint/);
+  assert.equal(await sql('SELECT count(*) FROM brain_continuum_receipts'),'1');
+});
