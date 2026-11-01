@@ -77,6 +77,20 @@ test('C02 duplicate or malformed due queue is held before any transition',async(
   }
 });
 
+test('C02 rejects coercible but invalid paid-cost values before any state transition',async()=>{
+  for(const badCost of [null,false,'',[],[0],{}]){
+    let writes=0;
+    const result=await reconcileContinuumTick({
+      now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
+      outbox:{observe:async()=>row({maxPaidCents:badCost}),
+        markUnknown:async()=>{writes++;return {state:'reconcile-required'};}}
+    });
+    assert.equal(result.status,'held-partial');
+    assert.equal(result.receipts[0].disposition,'held-unknown');
+    assert.equal(writes,0);
+  }
+});
+
 test('C02 unknown database response produces hold receipt, never blind retries',async()=>{
   let calls=0;
   const result=await reconcileContinuumTick({
