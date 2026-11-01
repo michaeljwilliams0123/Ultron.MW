@@ -18,6 +18,7 @@ jobs:
           POSTGRES_USER: ultron
           POSTGRES_PASSWORD: ci-only-ephemeral
           POSTGRES_DB: ultron
+          ULTRON_TEST_POSTGRES: repair-ci-ephemeral-v1
         ports:
           - 5432:5432
         options: >-
@@ -46,6 +47,7 @@ jobs:
       - name: PostgreSQL-backed acceptance replay and conflict checks
         env:
           ULTRON_POSTGRES_TEST: '1'
+          ULTRON_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
         run: node --test --test-concurrency=1 test/hatchable-acceptance-postgres.test.mjs test/hatchable-heldout-postgres.test.mjs test/hatchable-owner-stop-postgres.test.mjs test/hatchable-completion-readback-postgres.test.mjs test/hatchable-process-recovery-postgres.test.mjs test/mahoraga-process-recovery-postgres.test.mjs test/repair-pr-postgres-live.test.mjs test/continuum-outbox-postgres.test.mjs
   fixed-comparison:
     if: github.event_name == 'pull_request'
