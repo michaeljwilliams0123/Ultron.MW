@@ -14,6 +14,11 @@ const APP_PROFILE={
    metadata:'read',contents:'read',issues:'write',
    pull_requests:'write',checks:'read',actions:'read'
  }),
+ // Equal GitHub rights for all seven; expertise is not a permission tier.
+ 'collaborative-sme':Object.freeze({
+   metadata:'read',contents:'write',issues:'write',
+   pull_requests:'write',checks:'read',actions:'write'
+ }),
  'owner-requested':Object.freeze({
    metadata:'read',administration:'write',actions:'write',
    contents:'write',workflows:'write',issues:'write',
@@ -27,6 +32,10 @@ const ENGINEERING_ROLE_GRANTS=Object.freeze({
  Skeptic:Object.freeze({}),Steward:Object.freeze({}),
  Predictor:Object.freeze({}),Companion:Object.freeze({})
 });
+const COLLABORATIVE_OPS=Object.freeze([
+ 'branch.create','branch.update','pr.create','pr.comment','issue.create',
+ 'issue.comment','review.comment','review.request-changes','actions.dispatch'
+]);
 const ENGINEERING_OPS=Object.freeze({
  Builder:Object.freeze(['branch.create','branch.update','pr.create','pr.comment','issue.create','issue.comment']),
  Generator:Object.freeze(['branch.create','branch.update','pr.create','pr.comment','issue.create','issue.comment']),
@@ -42,7 +51,7 @@ function profileRights(role,profile){
  if(!Object.hasOwn(APP_PROFILE,profile))throw Error('council-profile-invalid');
  return APP_PROFILE[profile];
 }
-const SAFE_BRANCH=/^ultron\/council-(builder|generator)-[a-z0-9][a-z0-9-]{2,55}$/;
+const SAFE_BRANCH=/^ultron\/council-(builder|skeptic|steward|predictor|generator|sentinel|companion)-[a-z0-9][a-z0-9-]{2,55}$/;
 const SAFE_CODE_PATH=/^(src|test|docs|scripts|cloud\/hatchable)\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/;
 const BRANCH_OPERATIONS=new Set(['branch.create','branch.update','pr.create']);
 const REVIEW_OPERATIONS=new Set(['review.comment','review.request-changes']);
@@ -148,8 +157,10 @@ export function decideCouncilAction(actor,request={}){
   return Object.freeze({allowed:true,scope:repository,role:actor.role,reason:'scoped-operation'});
  // Elevation requires a separately installed engineering profile, a trusted
  // installation-token proof, exact source SHA, bounded attempt and zero cost.
- if(!['engineering-autonomy','owner-requested'].includes(actor.profile)||
-   !ENGINEERING_OPS[actor.role]?.includes(operation))
+ const allowedOps=actor.profile==='collaborative-sme'?
+   COLLABORATIVE_OPS:ENGINEERING_OPS[actor.role];
+ if(!['engineering-autonomy','owner-requested','collaborative-sme'].includes(actor.profile)||
+   !allowedOps?.includes(operation))
   return Object.freeze({allowed:false,reason:'requires-separate-owner-and-review-authorization'});
  if(request.baseSha!==actor.sourceSha||request.maxPaidCents!==0||
    !Number.isSafeInteger(request.attempt)||request.attempt<1||request.attempt>3)
