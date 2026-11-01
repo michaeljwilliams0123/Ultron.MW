@@ -149,6 +149,21 @@ test('RED C04 external: Mahoraga inspection requires separate installation autho
    installationVerified:false,repositoryAccessVerified:false})
  }}),/external-observation-invalid/);
 });
+test('C04: a Mahoraga read cannot use a different App installation than its authenticated actor',async()=>{
+ const plan=buildCouncilExternalIntent({role:'Builder',shared,
+  capability:'mahoraga.repo.inspect',
+  target:{repository:'michaeljwilliams0123/mahoraga',
+   sourceSha:peer,path:'src/task-relay-contract.mjs'},attempt:1,maxPaidCents:0});
+ const who=await actor('Builder');
+ await assert.rejects(runCouncilExternalIntent({plan,actor:who,
+  transport:{githubRead:async()=>({
+   status:200,repository:'michaeljwilliams0123/mahoraga',
+   sourceSha:peer,path:'src/task-relay-contract.mjs',
+   text:'public-but-wrong-installation',installationId:who.installationId+1,
+   installationVerified:true,repositoryAccessVerified:true
+  })}}),/external-observation-invalid/);
+});
+
 test('RED C04 external: Mahoraga task prepare is not a blind write or independent delivery',async()=>{
  const plan=buildCouncilExternalIntent({role:'Generator',shared,
   capability:'mahoraga.task.prepare',
