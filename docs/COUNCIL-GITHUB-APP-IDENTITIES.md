@@ -77,3 +77,50 @@ node scripts/council-app-manifests.mjs --profile=engineering-autonomy
 Builder and Generator request Contents write and can prepare code changes on their own `ultron/council-<role>-` branches. Skeptic and Steward may contribute reviews and request changes. Predictor and Companion may contribute issues and comments. Sentinel may dispatch the existing `verify.yml` workflow on `main`. Each role requests Issues and PR write for its bounded functions.
 
 The operation policy requires an authenticated App identity, exact source SHA, zero paid cost, and scoped attempts. It cannot authorize a direct `main` update, an administrative change, or a merge. This is an implementation proposal and does not activate the proposed permissions. Actual App installation, execution service and release testing remain separate acceptance tasks.
+
+## Council 3.0: identical GitHub capability, seven SME lenses
+
+Generate the recommended uniform registration blueprint using the CLI
+profile "collaborative-sme" (rather than the legacy unequal profile).
+
+All seven Apps request the SAME repository grant set: Metadata read,
+Contents write, Issues write, Pull Requests write, Checks read, and
+Actions write. No automatic repository administration, secrets, or
+workflow-edit privileges are requested. This is equal capability,
+not shared login credentials or seven independent owner accounts.
+
+Every role has the SAME operation options: fenced branch creation and
+updates, PR creation, issue and PR comments, review feedback/request
+changes, and dispatch of the allowlisted verify.yml workflow. Each
+branch writer has a separate council-{role}-... prefix to prevent
+competing writers. Every elevated action requires an independently
+authenticated App installation actor, exact source SHA, $0 paid
+cost, and a bounded attempt. Self-approval, protected-main writes,
+secret changes, administrative grants and deployments remain gated.
+
+Shared process understanding is defined by the immutable,
+content-addressed "ultron.council.shared-case.v1" contract in
+src/council-shared-collaboration.mjs. ALL seven roles receive the
+same owner intent, objective, task fingerprint, source SHA, dependency
+graph, evidence references, $0 constraint and lifecycle phase.
+The lifecycle is intake, plan, authorize, execute, verify, persist,
+learn. Unchanged evidence retains the same case SHA regardless of
+observation time.
+
+Each SME adds a different evidence lens on that SAME context:
+Builder: implementation and regression tests.
+Skeptic: falsification and counterexamples.
+Steward: authorization, independent review and provenance.
+Predictor: outcomes, failure scenarios and uncertainty.
+Generator: alternative designs and experiments.
+Sentinel: monitoring, drift and recovery.
+Companion: owner priorities, context and continuity.
+
+The assessment collector preserves separate role-specific rationales,
+evidence and dissent, without manufacturing consensus. It does not
+claim model reasoning or authenticated external execution where neither
+occurred. An App identity is NOT a qualifying independent reviewer by
+itself. Registration, isolated worker credentials, true independent
+reasoning and durable cloud case storage are separate postreview
+acceptance requirements. These proposed capabilities are not yet
+active on protected main.
