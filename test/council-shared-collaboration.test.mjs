@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {COUNCIL_APP_ROLES,buildCouncilAppManifest,
  authenticateCouncilAppActor,decideCouncilAction} from '../src/council-app-identities.mjs';
 import {createSharedCouncilCase,createSMEAssignment,collectCouncilAssessments,
@@ -125,4 +126,21 @@ test('RED C04: conflicting SME recommendations remain attributable, preserve dis
  assert.throws(()=>collectCouncilAssessments(shared,[...assessments,assessments[0]]),/duplicate-role/);
  assert.throws(()=>collectCouncilAssessments(shared,assessments.map((a,i)=>
   i===0?{...a,caseSha:'0'.repeat(64)}:a)),/case-mismatch/);
+});
+
+
+test('C04: registration blueprints expose seven SME lenses and one shared lifecycle',()=>{
+ const script=process.execPath;
+ const run=spawnSync(script,['scripts/council-app-manifests.mjs','--profile=collaborative-sme'],
+  {encoding:'utf8'});
+ assert.equal(run.status,0,run.stderr);
+ const obj=JSON.parse(run.stdout);
+ assert.equal(obj.permissionProfile,'collaborative-sme');
+ assert.equal(obj.sharedCaseSchema,'ultron.council.shared-case.v1');
+ assert.deepEqual(obj.sharedLifecycle,COUNCIL_LIFECYCLE);
+ assert.equal(obj.apps.length,7);
+ assert.equal(new Set(obj.apps.map(x=>x.expertise.domain)).size,7);
+ assert.ok(obj.apps.every(x=>x.expertise.evidenceQuestions.length>=2));
+ assert.equal(new Set(obj.apps.map(x=>JSON.stringify(x.manifest.default_permissions))).size,1);
+ assert.equal(obj.registrationStatus,'NOT_REGISTERED');
 });
