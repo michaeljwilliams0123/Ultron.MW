@@ -39,7 +39,7 @@ function exactKeys(value,keys){
 function positiveId(value){return Number.isSafeInteger(value)&&value>0;}
 function allowedRunWorkflow(run){
  if(typeof run?.path!=='string')return false;
- const match=/^\\.github\\/workflows\\/([a-zA-Z0-9._-]+)(?:@[^@\\s]+)?$/.exec(run.path);
+ const match=/^\.github\/workflows\/([a-zA-Z0-9._-]+)(?:@[^@\s]+)?$/.exec(run.path);
  return Boolean(match&&WORKFLOWS.has(match[1]));
 }
 
