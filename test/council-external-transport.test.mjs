@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
 import {makeCouncilExternalTransport,publicIPv4} from '../src/council-external-transport.mjs';
 const peer='michaeljwilliams0123/mahoraga';
 const sha='b'.repeat(40);
@@ -72,4 +73,33 @@ test('RED C04 outbound: missing peer repo installation blocks direct read withou
   expectedInstallationId:701}),
   /external-transport-peer-not-installed/);
  assert.equal(count,2);
+});
+
+test('C04 review: exact IPv4 reserved subnets preserve routable neighbors',()=>{
+ for(const address of ['192.0.0.255','192.0.2.255'])
+  assert.equal(publicIPv4(address),false,address);
+ for(const address of ['192.0.1.1','192.0.3.1'])
+  assert.equal(publicIPv4(address),true,address);
+});
+test('C04 review: a slow-drip HTTPS server cannot evade the absolute deadline',async()=>{
+ let destroyCount=0;
+ const transport=makeCouncilExternalTransport({
+  totalTimeoutMs:25,
+  dnsResolve:async()=>[{address:'8.8.8.8',family:4}],
+  httpsRequest:()=>{
+   const request=new EventEmitter();
+   request.end=()=>{};
+   request.destroy=err=>{
+    destroyCount++;
+    request.emit('error',err);
+    request.emit('close');
+   };
+   return request;
+  }
+ });
+ await assert.rejects(transport.webRead({
+  url:'https://www.wikipedia.org/',method:'GET',
+  redirect:'manual',maxBytes:65536,requirePublicIpAtConnection:true
+ }),/external-transport-timeout/);
+ assert.equal(destroyCount,1);
 });
