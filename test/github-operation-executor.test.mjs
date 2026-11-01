@@ -213,6 +213,30 @@ test('reserve failure, duplicate reservation and uncertain writes never issue a 
  }
 });
 
+test('rerun and cancel only mutate allowlisted workflow runs at the exact head',async()=>{
+ for(const [operation,expected,status] of [
+  ['actions.rerun_failed',{runAttempt:1,headSha:HEAD,conclusion:'failure'},'completed'],
+  ['actions.cancel',{runAttempt:1,headSha:HEAD,status:'in_progress'},'in_progress']
+ ]){
+  const input=plan(operation,{params:{runId:15},expected});
+  for(const path of ['.github/workflows/untrusted-deploy.yml@main',
+   'other/verify.yml',null]){
+   const run=harness(input,{run:{path,status,conclusion:'failure',
+    run_attempt:1,head_sha:HEAD}});
+   await assert.rejects(executeGitHubOperation(input,run.services),/precondition/i);
+   assert.equal(run.calls.filter(x=>x.method!=='GET').length,0);
+  }
+  for(const path of ['.github/workflows/verify.yml',
+   '.github/workflows/verify.yml@refs/pull/7/merge']){
+   const run=harness(input,{run:{path,status,conclusion:'failure',
+    run_attempt:1,head_sha:HEAD}});
+   assert.equal((await executeGitHubOperation(input,run.services)).state,
+    'dispatched-unverified');
+   assert.equal(run.calls.filter(x=>x.method==='POST').length,1);
+  }
+ }
+});
+
 test('workflow controls exclude nonexistent workflows and never disable core Verify',()=>{
  for(const input of [
   plan('actions.disable',{params:{workflow:'verify.yml'},expected:{state:'active'}}),
