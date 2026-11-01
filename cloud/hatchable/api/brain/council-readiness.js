@@ -2,6 +2,7 @@
 // Never claims installed identities or authenticated live Council workers.
 import {db} from 'hatchable';
 import {assessCouncilWiring} from 'lib/council-wiring.js';
+import {CAPABILITIES} from 'lib/brain-core.js';
 export const access='admin';
 export const methods=['GET'];
 export default async function(req,res){
@@ -18,7 +19,8 @@ export default async function(req,res){
    tables:observed.rows.map(row=>row.table_name),
    // No installation metadata is available from the current bridge.
    // Never infer seven App identities from an owner PAT or a manifest.
-   installationObservations:[]
+   installationObservations:[],
+   runtimeCapabilities:CAPABILITIES
   });
   return res.status(200).json({
    ...readiness,observedAt:new Date().toISOString(),
