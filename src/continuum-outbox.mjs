@@ -112,6 +112,9 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
     try {return await lookup(deliveryId);}
     catch {throw Error('continuum-outbox-reconcile-required');}
   };
+  // Admission is checked before SQL and again after the final readback.
+  // A slow or lost-ACK write must not return a delivery already expired.
+  const liveAtReadback=c=>Date.parse(c.expiresAt)>Date.parse(iso(now()));
   return Object.freeze({
     async reserve(contract){
       const c=validate(contract,iso(now()));
@@ -132,7 +135,8 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         let confirmed;
         try {
           confirmed=await lookup(c.deliveryId);
-          if(confirmed&&matchesPersisted(confirmed,c)&&confirmed.state==='pending')
+          if(confirmed&&matchesPersisted(confirmed,c)&&confirmed.state==='pending'&&
+            liveAtReadback(c))
             return {created:false,deliveryId:c.deliveryId,state:'pending',
               reconciled:true};
         } catch {
@@ -151,6 +155,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         if(!confirmed||confirmed.deliveryId!==c.deliveryId||
           !matchesPersisted(confirmed,c)||confirmed.state!=='pending')
           throw Error('continuum-outbox-admission-readback-mismatch');
+        if(!liveAtReadback(c))throw Error('continuum-outbox-reconcile-required');
         return {created:true,deliveryId:c.deliveryId,state:'pending'};
       }
       if(result?.rows?.length!==0)throw Error('continuum-outbox-admission-unavailable');
@@ -158,6 +163,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
       if(!existing||!matchesPersisted(existing,c)||
         !['pending','reconcile-required'].includes(existing.state))
         throw Error('continuum-outbox-delivery-conflict');
+      if(!liveAtReadback(c))throw Error('continuum-outbox-reconcile-required');
       return {created:false,deliveryId:c.deliveryId,state:existing.state};
     },
     async observe({deliveryId}={}){
