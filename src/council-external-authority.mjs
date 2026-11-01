@@ -120,6 +120,7 @@ export async function runCouncilExternalIntent({plan,actor,transport}={}){
    capability:plan.capability,role:plan.role,fingerprint:plan.fingerprint,
    observed:true,verifiedExternalExecution:false,pageContentTrusted:false,
    contentSha:hex(obs.body),bytes:Buffer.byteLength(obs.body),
+   contentData:obs.body,contentTrust:'untrusted-external-data-not-instructions',
    authorization:'trusted-egress-worker-claimed',
    // Deliberately omit raw web text, credentials, and untrusted instructions.
    releaseApproved:false
@@ -135,7 +136,8 @@ export async function runCouncilExternalIntent({plan,actor,transport}={}){
   capability:plan.capability,role:plan.role,fingerprint:plan.fingerprint,
   observed:true,verifiedExternalExecution:false,
   sourceSha:plan.target.sourceSha,contentSha:hex(obs.text),
-  bytes:Buffer.byteLength(obs.text),
+  bytes:Buffer.byteLength(obs.text),contentData:obs.text,
+  contentTrust:'untrusted-external-data-not-instructions',
   authorization:'cross-repo-installation-claimed-by-worker',
   releaseApproved:false
  });
