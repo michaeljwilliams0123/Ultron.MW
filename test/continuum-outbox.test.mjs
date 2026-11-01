@@ -629,3 +629,28 @@ test('C01: fenced transition must not certify missing or malformed persisted exp
     }
   }
 });
+
+
+test('C01: reservation never acknowledges a delivery that expired during database latency',async()=>{
+  // A valid intent can expire between admission and durable SQL readback.
+  // The INSERT may have committed: hold for reconciliation, never replay.
+  for(const mode of ['created','duplicate','lost-ack']){
+    const db=fakeDb(),original=db.query.bind(db),c=contract();
+    let clock=NOW,inserts=0;
+    const outbox=createContinuumOutbox({db,now:()=>clock});
+    if(mode==='duplicate')await outbox.reserve(c);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;
+        clock=c.expiresAt;
+        if(mode==='lost-ack')throw Error('simulated lost INSERT acknowledgement');
+      }
+      return result;
+    };
+    await assert.rejects(outbox.reserve(c),/continuum-outbox-reconcile-required/,
+      mode+' must not report a live delivery after its expiry');
+    assert.equal(inserts,1,'never repeat an expired or uncertain INSERT');
+    assert.equal(db.entries.size,1,'persisted intent must be reconciled, not erased');
+  }
+});
