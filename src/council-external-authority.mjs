@@ -110,6 +110,7 @@ export async function runCouncilExternalIntent({plan,actor,transport}={}){
     repository:PEER,sourceSha:plan.target.sourceSha,
     path:plan.target.path,requiredPermission:'contents:read',
     requireDistinctRepositoryInstallation:true,
+    expectedInstallationId:actor.installationId,
     sourceShaOwner:plan.sourceSha,fingerprint:plan.fingerprint
    });
  if(!validReceiptShape(obs)||obs.status!==200)err('observation-invalid');
@@ -131,7 +132,8 @@ export async function runCouncilExternalIntent({plan,actor,transport}={}){
   });
  }
  if(obs.repository!==PEER||obs.sourceSha!==plan.target.sourceSha||
-   obs.path!==plan.target.path||obs.installationVerified!==true||
+   obs.path!==plan.target.path||obs.installationId!==actor.installationId||
+   obs.installationVerified!==true||
    obs.repositoryAccessVerified!==true||typeof obs.text!=='string'||
    Buffer.byteLength(obs.text)>MAX_RESPONSE_BYTES)
   err('observation-invalid');
