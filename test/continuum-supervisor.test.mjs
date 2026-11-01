@@ -378,3 +378,63 @@ test('RED: selected council issue is revalidated before workflow dispatch',async
   assert.equal(reads,2,'selected issue must be read again before dispatch');
   assert.deepEqual(dispatched,[],'new council report must suppress stale dispatch');
 });
+
+
+test('RED: same-second edit on earlier scanned council page invalidates complete history',async()=>{
+ const bot={id:90,user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z',updated_at:'2026-10-31T10:00:00Z'};
+ const firstPage=[...Array.from({length:99},(_,i)=>({id:i+1,user:{login:'someone'},body:'noise '+i,created_at:'2026-10-30T10:00:00Z',updated_at:'2026-10-30T10:00:00Z'})),bot];
+ const newest=[{id:101,user:{login:'someone'},body:'ordinary',created_at:'2026-10-31T11:00:00Z',updated_at:'2026-10-31T11:00:00Z'}];
+ let oldPageReads=0;
+ const result=await readCouncilActivity({
+  issue:{comments:101,created_at:'2026-10-29T08:00:00Z',updated_at:'2026-10-31T11:00:00Z'},
+  owner:'michaeljwilliams0123',
+  fetchPage:async page=>{
+   if(page===2)return newest;
+   if(page===1){
+    oldPageReads++;
+    return oldPageReads===1?firstPage:firstPage.map((c,i)=>i===0?{...c,body:'edited without timestamp granularity'}:c);
+   }
+   return [];
+  },
+  fetchIssue:async()=>({comments:101,updated_at:'2026-10-31T11:00:00Z'})
+ });
+ assert.equal(result.complete,false,'an edit to any scanned page must invalidate council classification');
+ assert.ok(oldPageReads>=2,'all scanned pages must be rechecked, not only newest');
+});
+
+test('RED: supervisor summary counts only successful council workflow dispatches',async()=>{
+ const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+ const fragment=yml.match(/          script: \\|\\n([\\s\\S]*?)\\n(?=\\S|$)/);
+ assert.ok(fragment);
+ let source=fragment[1].split('\\n').map(x=>x.replace(/^ {12}/,'')).join('\\n');
+ const moduleImport=/const \\{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\\}=await import\\([\\s\\S]*?\\);/;
+ assert.match(source,moduleImport);
+ source=source.replace(moduleImport,'const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=deps;');
+ const dispatched=[],summaries=[],reads=new Map();
+ const github={rest:{
+  issues:{
+   get:async({issue_number})=>({data:{number:issue_number,state:'open',comments:0,created_at:'2026-10-31T12:00:00Z'}}),
+   listComments:async()=>({data:[]})
+  },
+  actions:{createWorkflowDispatch:async args=>{dispatched.push(Number(args.inputs.item_number));}}
+ }};
+ const deps={
+  CONTINUUM_ISSUES:[183,184],
+  selectCouncilReviews:rows=>rows.filter(x=>x.lastReviewAt===null).map(x=>x.number),
+  readCouncilActivity:async({issue})=>{
+   const seen=(reads.get(issue.number)||0)+1;
+   reads.set(issue.number,seen);
+   return {complete:true,lastReviewAt:issue.number===183&&seen>1?'2026-11-01T11:59:59Z':null,lastMeaningfulAt:'2026-10-31T12:00:00Z'};
+  }
+ };
+ const summary={addHeading(){return this;},addRaw(s){summaries.push(s);return this;},async write(){}};
+ const core={info(){},warning(){},summary};
+ const fn=new AsyncFunction('require','process','context','github','core','deps',source);
+ await fn(name=>{
+  if(name==='node:url')return {pathToFileURL:()=>({href:'mock'})};
+  if(name==='node:path')return {join:()=>''};
+  throw Error('unexpected require');
+ },{env:{GITHUB_WORKSPACE:'/tmp'}},{repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'}},github,core,deps);
+ assert.deepEqual(dispatched,[184]);
+ assert.match(summaries.join(''),/council reviews dispatched: 1; issue numbers: 184/);
+});
