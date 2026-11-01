@@ -95,7 +95,8 @@ export function createSMEAssignment(shared,role){
 }
 export function collectCouncilAssessments(shared,assessments){
  trustedCase(shared);
- if(!Array.isArray(assessments)||assessments.length!==COUNCIL_APP_ROLES.length)
+ if(!Array.isArray(assessments)||assessments.length<1||
+   assessments.length>COUNCIL_APP_ROLES.length*2)
   reject('members-invalid');
  const seen=new Set();
  const positions=[];
@@ -117,6 +118,8 @@ export function collectCouncilAssessments(shared,assessments){
    rationale:item.rationale,evidenceRefs,unknowns,modelBacked:false,
    githubPrincipal:null,independentlyAuthenticated:false}));
  }
+ if(positions.length!==COUNCIL_APP_ROLES.length)
+  reject('members-invalid');
  positions.sort((a,b)=>COUNCIL_APP_ROLES.indexOf(a.role)-COUNCIL_APP_ROLES.indexOf(b.role));
  const distinct=new Set(positions.map(p=>p.position));
  const perRole=Object.freeze(positions);
