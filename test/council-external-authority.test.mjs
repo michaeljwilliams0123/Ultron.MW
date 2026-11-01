@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {COUNCIL_APP_ROLES,authenticateCouncilAppActor} from '../src/council-app-identities.mjs';
+import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction} from '../src/council-app-identities.mjs';
 import {createSharedCouncilCase} from '../src/council-shared-collaboration.mjs';
 import {buildCouncilExternalIntent,runCouncilExternalIntent,
   COUNCIL_EXTERNAL_CAPABILITIES} from '../src/council-external-authority.mjs';
@@ -99,6 +99,9 @@ test('RED C04 external: trusted web observation requires explicit safe egress an
  const plan=buildCouncilExternalIntent({role:'Skeptic',shared,capability:'web.open',
   target:{url:'https://www.wikipedia.org/'},attempt:1,maxPaidCents:0});
  const who=await actor('Skeptic');
+ assert.equal(decideCouncilAction(who,{operation:plan.capability,
+  repository:repo,baseSha:sha,maxPaidCents:0,attempt:1,
+  caseSha:shared.caseSha,externalIntentFingerprint:plan.fingerprint}).allowed,true);
  const transport={webRead:async({url,method,redirect,maxBytes})=>{
   assert.equal(url,'https://www.wikipedia.org/');
   assert.equal(method,'GET');
