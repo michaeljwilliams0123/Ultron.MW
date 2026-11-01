@@ -15,9 +15,9 @@ function fromHex(hex){return Uint8Array.from(hex.match(/../g),x=>parseInt(x,16))
 function toHex(bytes){return Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');}
 
 export async function verifyContinuumAck({
- raw,timestamp,signature,secret,now=Date.now(),subtle=globalThis.crypto?.subtle
+ raw,timestamp,signature,secret,expectedSource,now=Date.now(),subtle=globalThis.crypto?.subtle
 }={}){
- if(!subtle||typeof secret!=='string'||encoder.encode(secret).length<32)
+ if(!subtle||!SOURCES.has(expectedSource)||typeof secret!=='string'||encoder.encode(secret).length<32)
    reject('continuum-ack-authentication-unconfigured');
  if(typeof raw!=='string'||raw.length<40||raw.length>20000)
    reject('continuum-ack-invalid');
@@ -48,6 +48,7 @@ export async function verifyContinuumAck({
    !Number.isSafeInteger(item.leaseGeneration)||item.leaseGeneration<1||
    item.status!=='acknowledged'||item.maxPaidCents!==0)
    reject('continuum-ack-invalid');
+ if(item.source!==expectedSource)reject('continuum-ack-source-mismatch');
  const payloadSha=toHex(await subtle.digest('SHA-256',encoder.encode(raw)));
  const ack=Object.freeze({
    receiptId:item.receiptId,deliveryId:item.deliveryId,
