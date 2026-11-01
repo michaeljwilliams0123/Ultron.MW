@@ -52,7 +52,7 @@ function githubPath(params){
   fail('peer-target-invalid');
 }
 export function makeCouncilExternalTransport({
- dnsResolve,httpsRequest,githubInstallationToken,fetchImpl,totalTimeoutMs=15000
+ dnsResolve,httpsRequest,githubInstallationToken,verifiedInstallationId,fetchImpl,totalTimeoutMs=15000
 }={}){
  if(!Number.isSafeInteger(totalTimeoutMs)||totalTimeoutMs<1||totalTimeoutMs>15000)
   fail('timeout-policy-invalid');
@@ -65,13 +65,22 @@ export function makeCouncilExternalTransport({
      !Number.isSafeInteger(params.maxBytes)||params.maxBytes<1||
      params.maxBytes>MAX_BYTES)fail('web-policy-invalid');
    const url=webUrl(params.url);
-   const addresses=await dnsResolve(url.hostname,{family:4,all:true});
+   // The total budget includes DNS and socket I/O, not just idle periods.
+   const expiresAt=Date.now()+totalTimeoutMs;
+   const addresses=await new Promise((resolve,reject)=>{
+    const deadline=setTimeout(()=>reject(Error('external-transport-timeout')),totalTimeoutMs);
+    Promise.resolve().then(()=>dnsResolve(url.hostname,{family:4,all:true}))
+      .then(value=>{clearTimeout(deadline);resolve(value);},
+            error=>{clearTimeout(deadline);reject(error);});
+   });
    if(!Array.isArray(addresses)||!addresses.length||
      addresses.some(x=>x.family!==4||!publicIPv4(x.address)))
      fail('private-egress');
    // Pin the validated IPv4 for the TLS connection. A later DNS query must
    // NOT replace the chosen IP (rebinding). TLS still verifies the hostname.
    const pinned=addresses[0].address;
+   const remaining=expiresAt-Date.now();
+   if(remaining<=0)fail('timeout');
    return new Promise((resolve,reject)=>{
     let done=false,total=0,deadline;
     const finish=(error,value)=>{
@@ -86,7 +95,10 @@ export function makeCouncilExternalTransport({
       method:'GET',timeout:10000,maxHeaderSize:16384,
       headers:{accept:'text/html,text/plain,application/json',
        'user-agent':'ultron-council-public-research/1.0'},
-      lookup:(_host,_options,callback)=>callback(null,pinned,4)
+      family:4,autoSelectFamily:false,
+      lookup:(_host,options,callback)=>options?.all
+        ?callback(null,[{address:pinned,family:4}])
+        :callback(null,pinned,4)
      },res=>{
       const type=String(res.headers['content-type']??'').split(';')[0].trim().toLowerCase();
       if(res.statusCode!==200||!['text/html','text/plain','application/json'].includes(type)){
@@ -108,7 +120,7 @@ export function makeCouncilExternalTransport({
        egressVerified:true,redirected:false
       }));
      });
-     if(!done)deadline=setTimeout(()=>request.destroy(Error('external-transport-timeout')),totalTimeoutMs);
+     if(!done)deadline=setTimeout(()=>request.destroy(Error('external-transport-timeout')),remaining);
      request.on('close',()=>clearTimeout(deadline));
      request.on('timeout',()=>request.destroy(Error('external-transport-timeout')));
      request.on('error',e=>finish(e));
@@ -127,10 +139,11 @@ export function makeCouncilExternalTransport({
      fail('peer-access-required');
    if(!Number.isSafeInteger(params.expectedInstallationId)||
       params.expectedInstallationId<1)fail('installation-identity-unverified');
-   const identity=await githubJson('https://api.github.com/installation',
-     githubInstallationToken,fetchImpl);
-   if(identity?.id!==params.expectedInstallationId||
-      !Number.isSafeInteger(identity.app_id)||identity.app_id<1)
+   // Installation-token identities are bound at trusted App token issuance,
+   // not through GET /installation (which requires a GitHub App JWT).
+   if(!Number.isSafeInteger(verifiedInstallationId)||verifiedInstallationId<1)
+     fail('installation-identity-unverified');
+   if(verifiedInstallationId!==params.expectedInstallationId)
      fail('installation-identity-mismatch');
    // GitHub, not caller text, is the authority for installed repo scope.
    let permitted=false;
@@ -151,7 +164,7 @@ export function makeCouncilExternalTransport({
    const text=Buffer.from(file.content.replace(/\s/g,''),'base64').toString('utf8');
    if(Buffer.byteLength(text)>MAX_BYTES)fail('github-file-too-large');
    return Object.freeze({status:200,repository:REPO,path:params.path,
-    sourceSha:params.sourceSha,text,installationId:identity.id,
+    sourceSha:params.sourceSha,text,installationId:verifiedInstallationId,
     installationVerified:true,repositoryAccessVerified:true});
   }
  });
@@ -160,9 +173,9 @@ export function makeCouncilExternalTransport({
 /** Explicit opt-in from an authorized cloud worker; do not bind credentials
  * from an untrusted HTTP request. Reuse one verified per-App token.
  */
-export function makeNodeCouncilExternalTransport({githubInstallationToken}={}){
+export function makeNodeCouncilExternalTransport({githubInstallationToken,verifiedInstallationId}={}){
  return makeCouncilExternalTransport({
   dnsResolve:nodeDnsLookup,httpsRequest:nodeHttpsRequest,
-  githubInstallationToken,fetchImpl:globalThis.fetch
+  githubInstallationToken,verifiedInstallationId,fetchImpl:globalThis.fetch
  });
 }
