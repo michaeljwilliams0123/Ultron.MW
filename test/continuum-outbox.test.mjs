@@ -192,6 +192,7 @@ test('RED: a successful CAS cannot report reconciliation when independent SQL re
 test('confirmed CAS holds when fresh readback is absent or has a different fence',async()=>{
   for(const transform of [
     ()=>[],
+    rows=>rows.map(row=>({...row,deliveryId:'continuum-delivery-foreign'})),
     rows=>rows.map(row=>({...row,sourceSha:'d'.repeat(40)})),
     rows=>rows.map(row=>({...row,leaseGeneration:3}))
   ]){
@@ -211,4 +212,22 @@ test('confirmed CAS holds when fresh readback is absent or has a different fence
     }),/continuum-outbox-transition-readback-mismatch/);
     assert.equal(db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length,1);
   }
+});
+
+
+test('RED: no-op CAS cannot accept a foreign delivery identity in fresh persisted readback',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  await outbox.markUnknown({deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration});
+  const original=db.query.bind(db);
+  db.query=async(sql,params)=>{
+    const result=await original(sql,params);
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      return {rows:result.rows.map(row=>({...row,deliveryId:'continuum-delivery-foreign'}))};
+    return result;
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-transition-readback-mismatch/);
 });
