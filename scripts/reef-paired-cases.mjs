@@ -19,6 +19,18 @@ const trustedCreateHmac=createHmac;
 const trustedWriteSync=writeSync;
 const observationMac=(key,observation)=>trustedCreateHmac('sha256',key)
  .update(trustedStringify(observation)).digest('hex');
+/** Keep the observation key out of Node's shared small-buffer slab.
+ * This is defense in depth only. It is NOT process separation: the candidate
+ * still shares a process with the observation signer until #201 is completed.
+ */
+export function createNonPooledObservationKey(keyHex){
+ if(typeof keyHex!=='string'||!/^[a-f0-9]{64}$/.test(keyHex))
+  throw Error('Invalid evaluator observation key');
+ const key=Buffer.alloc(32);
+ if(key.write(keyHex,'hex')!==32)
+  throw Error('Invalid evaluator observation key');
+ return key;
+}
 /** Select only an enforce-mode flag actually supported by this Node runtime.
  * Node 20 uses --experimental-permission; newer supported runtimes use --permission.
  * Never fall back to running evaluator children without a permissions model.
@@ -456,7 +468,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  // in command arguments, environment variables, or candidate-readable files.
  const keyHex=readFileSync(0,'utf8').trim();
  if(!/^[a-f0-9]{64}$/.test(keyHex))throw Error('Invalid evaluator observation key');
- const observationKey=Buffer.from(keyHex,'hex');
+ const observationKey=createNonPooledObservationKey(keyHex);
  // Candidate ESM must not mutate prototype or JSON serialization used by
  // the trusted runner to authenticate score observations.
  // Cryptographic signing and final output are trusted harness operations.
