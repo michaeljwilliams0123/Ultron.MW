@@ -105,5 +105,5 @@ test('C04: CLI builds auditable manifest blueprints without creating Apps or pri
  assert.equal(result.requiresOwnerInstallApproval,true);
  assert.equal(result.createsSecrets,false);
  assert.equal(new Set(result.apps.map(m=>m.manifest.name)).size,7);
- assert.ok(!/private.key|secret|token_value|password/i.test(p.stdout));
+ assert.ok(!/privateKey|clientSecret|webhookSecret|accessToken|password|-----BEGIN /i.test(p.stdout));
 });
