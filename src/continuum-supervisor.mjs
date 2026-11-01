@@ -85,10 +85,10 @@ export async function readCouncilActivity({
       if(!lastReviewAt&&c?.user?.login==='github-actions[bot]'&&
         c.body?.startsWith('# Ultron Council Report'))lastReviewAt=c.created_at;
     }
-    // GitHub comments are ascending: all earlier pages predate this report.
-    if(lastReviewAt)break;
+    // Older owner comments can be edited after the newest council report.
+    // Scan the bounded entire history, not only until the first report.
   }
-  const complete=lastReviewAt!==null||page<1;
+  const complete=page<1;
   // Reconcile against a fresh issue count and the newest comment boundary.
   // A same-count delete/replacement is invisible to the initial overflow
   // probe; neither case may authorize a stale council dispatch.
