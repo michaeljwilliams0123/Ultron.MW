@@ -65,7 +65,7 @@ export async function recordContinuumAck({db,ack}={}){
  if(typeof db?.query!=='function')reject('continuum-ack-db-required');
  // A single SQL statement binds the independently authenticated bridge ACK
  // to an existing immutable C01 outbox intent. No worker execution is inferred.
- const result=await db.query(\`INSERT INTO brain_continuum_receipts
+ const result=await db.query(`INSERT INTO brain_continuum_receipts
    (receipt_id,delivery_id,source,payload_sha256,route_sha)
    SELECT $1,$2,$3,$4,$9 FROM brain_continuum_outbox o
    WHERE o.delivery_id=$2 AND o.task_id=$5
@@ -74,7 +74,7 @@ export async function recordContinuumAck({db,ack}={}){
      AND o.effect IN ('read','advisory')
      AND o.state IN ('pending','reconcile-required')
    ON CONFLICT DO NOTHING
-   RETURNING receipt_id AS "receiptId",delivery_id AS "deliveryId"\`,
+   RETURNING receipt_id AS "receiptId",delivery_id AS "deliveryId"`,
    [ack.receiptId,ack.deliveryId,ack.source,ack.payloadSha,ack.taskId,
     ack.sourceSha,ack.requestSha,ack.authoritySha,ack.routeSha,
     ack.leaseGeneration,ack.maxPaidCents]);
@@ -86,9 +86,9 @@ export async function recordContinuumAck({db,ack}={}){
      reject('continuum-ack-write-uncertain');
  }
  // Explicit post-write observation: never repeat the INSERT on lost ACK.
- const observed=await db.query(\`SELECT receipt_id AS "receiptId",
+ const observed=await db.query(`SELECT receipt_id AS "receiptId",
    delivery_id AS "deliveryId",source,payload_sha256 AS "payloadSha",
-   route_sha AS "routeSha" FROM brain_continuum_receipts WHERE delivery_id=$1\`,
+   route_sha AS "routeSha" FROM brain_continuum_receipts WHERE delivery_id=$1`,
    [ack.deliveryId]);
  if(!observed||!Array.isArray(observed.rows)||observed.rows.length!==1)
    reject('continuum-ack-write-uncertain');
