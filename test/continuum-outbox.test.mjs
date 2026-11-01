@@ -238,6 +238,9 @@ test('RED: successful outbox reservation must verify persisted immutable intent 
   // A matching INSERT RETURNING id/state alone cannot attest the stored
   // objective, authority, request, cost or fencing contract.
   for(const mutate of [
+    // A matching immutable identity is insufficient if the persisted state
+    // was already moved out of pending before reservation acknowledgement.
+    rows=>rows.map(row=>({...row,state:'reconcile-required'})),
     rows=>rows.map(row=>({...row,authoritySha:'d'.repeat(64)})),
     rows=>rows.map(row=>({...row,requestSha:'d'.repeat(64)})),
     rows=>rows.map(row=>({...row,leaseGeneration:3})),
