@@ -478,3 +478,35 @@ test('RED: lost INSERT acknowledgement cannot certify mismatched authority or un
     assert.equal(inserts,1,'mismatched/unknown state must not trigger another INSERT');
   }
 });
+
+test('C01: transition readback cannot certify foreign repository or malformed immutable identity',async()=>{
+  for(const premarked of [false,true]){
+    for(const corrupted of [
+      {repository:'foreign/repository'},
+      {authoritySha:'invalid-authority'},
+      {requestSha:'invalid-request'},
+      {taskId:0}
+    ]){
+      const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+      const c=contract();
+      await outbox.reserve(c);
+      if(premarked)await outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      });
+      const original=db.query.bind(db);
+      db.query=async(sql,params)=>{
+        const result=await original(sql,params);
+        if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+          return {rows:result.rows.map(row=>({...row,...corrupted}))};
+        return result;
+      };
+      const before=db.statements.filter(x=>x.sql.includes('UPDATE brain_continuum_outbox')).length;
+      await assert.rejects(outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      }),premarked?/continuum-outbox-fence-or-source-conflict/:
+          /continuum-outbox-transition-readback-mismatch/);
+      assert.equal(db.statements.filter(x=>x.sql.includes('UPDATE brain_continuum_outbox')).length,
+        before+1,'no blind replay of the transition');
+    }
+  }
+});
