@@ -306,7 +306,7 @@ test('RED: successful fenced transition rejects coerced persisted lease generati
   }),/continuum-outbox-transition-readback-mismatch/);
 });
 
-test('RED: canonical persisted bigint strings reject trailing newlines on fresh and duplicate reservation',async()=>{
+test('canonical persisted bigint strings reject trailing newlines on fresh and duplicate reservation',async()=>{
   for(const duplicate of [false,true]){
     const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
     if(duplicate)await outbox.reserve(contract());
@@ -322,7 +322,7 @@ test('RED: canonical persisted bigint strings reject trailing newlines on fresh 
   }
 });
 
-test('RED: no-op fenced reconciliation rejects noncanonical persisted bigint strings',async()=>{
+test('no-op fenced reconciliation rejects noncanonical persisted bigint strings',async()=>{
   const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
   const c=contract();
   await outbox.reserve(c);
