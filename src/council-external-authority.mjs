@@ -89,7 +89,11 @@ function validReceiptShape(result){
 export async function runCouncilExternalIntent({plan,actor,transport}={}){
  if(!PLANS.has(plan))err('plan-unverified');
  if(!actor||actor.role!==plan.role||actor.sourceSha!==plan.sourceSha||
-   decideCouncilAction(actor,{operation:'inspect',repository:SOURCE_REPO}).allowed!==true)
+   decideCouncilAction(actor,{
+    operation:plan.capability,repository:SOURCE_REPO,baseSha:plan.sourceSha,
+    maxPaidCents:0,attempt:plan.attempt,caseSha:plan.caseSha,
+    externalIntentFingerprint:plan.fingerprint
+   }).allowed!==true)
   err('identity-unverified');
  if(plan.capability==='mahoraga.task.prepare')
   err('live-write-not-authorized');
