@@ -118,12 +118,34 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         !SHA.test(sourceSha||'')||
         !Number.isSafeInteger(leaseGeneration)||leaseGeneration<1)
         throw Error('continuum-outbox-fence-or-source-conflict');
-      const updated=await db.query(`UPDATE brain_continuum_outbox
-        SET state='reconcile-required',updated_at=now()
-        WHERE delivery_id=$1 AND source_sha=$2 AND lease_generation=$3
-          AND state='pending'
-        RETURNING delivery_id AS "deliveryId",state`,
-      [deliveryId,sourceSha,leaseGeneration]);
+      let updated;
+      try {
+        updated=await db.query(`UPDATE brain_continuum_outbox
+          SET state='reconcile-required',updated_at=now()
+          WHERE delivery_id=$1 AND source_sha=$2 AND lease_generation=$3
+            AND state='pending'
+          RETURNING delivery_id AS "deliveryId",state`,
+        [deliveryId,sourceSha,leaseGeneration]);
+      } catch {
+        // A lost database response cannot prove that the CAS did not commit.
+        // Perform readback ONLY; never repeat the uncertain UPDATE.
+        let current;
+        try {current=await lookup(deliveryId);}
+        catch {throw Error('continuum-outbox-reconcile-required');}
+        if(current?.deliveryId===deliveryId&&
+          current.repository===REPO&&
+          DIGEST.test(current.authoritySha||'')&&
+          DIGEST.test(current.requestSha||'')&&
+          current.sourceSha===sourceSha&&
+          persistedInteger(current.leaseGeneration)===leaseGeneration&&
+          persistedInteger(current.maxPaidCents)===0&&
+          ['read','advisory'].includes(current.effect)&&
+          current.state==='reconcile-required')
+          return {changed:false,deliveryId,state:'reconcile-required',reconciled:true};
+        // Pending, missing, or contradictory readback cannot establish the
+        // outcome. The caller must reconcile rather than blindly retry.
+        throw Error('continuum-outbox-reconcile-required');
+      }
       if(updated?.rows?.length===1){
         // A successful SQL response is not an independently reconciled
         // transition until both the returned identity and fresh persisted
