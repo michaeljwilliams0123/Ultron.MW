@@ -364,3 +364,19 @@ test('RED: fenced reconciliation must not certify an unauthorized persisted cost
     }
   }
 });
+
+test('RED: duplicate outbox reservation must not certify an unrecognized persisted state',async()=>{
+  for(const foreignState of ['completed','delivered','failed']){
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    await outbox.reserve(contract());
+    const query=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await query(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,state:foreignState}))};
+      return result;
+    };
+    await assert.rejects(outbox.reserve(contract()),/continuum-outbox-delivery-conflict/);
+    assert.equal(db.entries.size,1);
+  }
+});
