@@ -38,6 +38,8 @@ test('C04 Hatchable API is admin-only GET, read-only SQL and V8-native imports',
  assert.match(code,/access\s*=\s*'admin'/);
  assert.match(code,/methods\s*=\s*\['GET'\]/);
  assert.match(code,/information_schema\.tables/);
+ assert.match(code,/table_schema\s*=\s*current_schema\(\)/);
+ assert.doesNotMatch(code,/table_schema='public'/);
  assert.doesNotMatch(code,/\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b/i);
  assert.doesNotMatch(code,/from\s*['"]node:/);
  const lib=readFileSync(new URL('../cloud/hatchable/lib/council-wiring.js',import.meta.url),'utf8');
