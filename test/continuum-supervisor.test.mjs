@@ -58,14 +58,18 @@ test('supervisor grants only actions dispatch, never administration or secret ac
 test('scan backward past the final comment page to find last genuine council report',async()=>{
   const bot=(at)=>({user:{login:'github-actions[bot]'},body:'# Ultron Council Report\nreview',created_at:at});
   const owner=(at)=>({user:{login:'michaeljwilliams0123'},body:'Owner changed scope',created_at:at});
-  const pages={3:[{user:{login:'someone'},body:'noise'}],2:[owner('2026-10-31T09:00:00Z'),bot('2026-10-31T10:00:00Z')],1:[bot('2026-10-30T08:00:00Z')]};
+  const pages={3:[{user:{login:'someone'},body:'noise'}],2:[
+    owner('2026-10-31T09:00:00Z'),
+    ...Array.from({length:98},(_,i)=>({user:{login:'someone'},body:'noise '+i})),
+    bot('2026-10-31T10:00:00Z')
+  ],1:[bot('2026-10-30T08:00:00Z')]};
   const calls=[];
   const result=await readCouncilActivity({
-    issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
+    issue:{comments:201,created_at:'2026-10-29T08:00:00Z'},
     owner:'michaeljwilliams0123',
     fetchPage:async page=>{calls.push(page);return pages[page]||[];}
   });
-  assert.deepEqual(calls,[3,2]);
+  assert.deepEqual(calls,[4,3,2]);
   assert.equal(result.complete,true);
   assert.equal(result.lastReviewAt,'2026-10-31T10:00:00Z');
   assert.equal(result.lastMeaningfulAt,'2026-10-29T08:00:00Z');
@@ -73,10 +77,13 @@ test('scan backward past the final comment page to find last genuine council rep
 
 test('owner change after older report is retained even across page boundary',async()=>{
   const result=await readCouncilActivity({
-    issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
+    issue:{comments:201,created_at:'2026-10-29T08:00:00Z'},
     owner:'michaeljwilliams0123',
     fetchPage:async page=>page===3?[{user:{login:'michaeljwilliams0123'},body:'Change',created_at:'2026-10-31T11:00:00Z'}]:
-      page===2?[{user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z'}]:[]
+      page===2?[
+      {user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z'},
+      ...Array.from({length:99},()=>({user:{login:'someone'},body:'noise'}))
+    ]:[]
   });
   assert.equal(result.complete,true);
   assert.equal(result.lastMeaningfulAt,'2026-10-31T11:00:00Z');
@@ -272,7 +279,7 @@ test('RED: non-dispatch issue, PR and owner-comment events export full security 
 
 test('truncated newest comment page fails closed even when an older council report exists',async()=>{
  const result=await readCouncilActivity({
-  issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
+  issue:{comments:201,created_at:'2026-10-29T08:00:00Z'},
   owner:'michaeljwilliams0123',
   fetchPage:async page=>page===3?[]:[{
    user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
@@ -284,9 +291,9 @@ test('truncated newest comment page fails closed even when an older council repo
 });
 
 
-test('RED: partial nonempty newest page cannot certify complete council history',async()=>{
+test('partial nonempty newest page cannot certify complete council history',async()=>{
  const result=await readCouncilActivity({
-  issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
+  issue:{comments:201,created_at:'2026-10-29T08:00:00Z'},
   owner:'michaeljwilliams0123',
   fetchPage:async page=>page===3?[{
    user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
@@ -297,7 +304,7 @@ test('RED: partial nonempty newest page cannot certify complete council history'
   'a partial final page can omit newer owner instructions even if it contains a council report');
 });
 
-test('RED: comments appended after issue snapshot must not be hidden by stale page count',async()=>{
+test('comments appended after issue snapshot must not be hidden by stale page count',async()=>{
  const result=await readCouncilActivity({
   issue:{comments:200,created_at:'2026-10-29T08:00:00Z'},
   owner:'michaeljwilliams0123',
