@@ -103,3 +103,53 @@ test('C04 review: a slow-drip HTTPS server cannot evade the absolute deadline',a
  }),/external-transport-timeout/);
  assert.equal(destroyCount,1);
 });
+
+test('C04 review: hanging DNS resolution consumes the same absolute web deadline',async()=>{
+ let socketCount=0;
+ const t=makeCouncilExternalTransport({
+  totalTimeoutMs:35,
+  dnsResolve:async()=>new Promise(()=>{}),
+  httpsRequest:()=>{socketCount++;throw Error('must not connect');}
+ });
+ await assert.rejects(t.webRead({url:'https://www.wikipedia.org/',
+  method:'GET',redirect:'manual',maxBytes:65536,requirePublicIpAtConnection:true
+ }),/external-transport-timeout/);
+ assert.equal(socketCount,0);
+});
+test('C04 review: pinned lookup supports Node 20 all-address and single-address callback forms',async()=>{
+ const t=makeCouncilExternalTransport({
+  dnsResolve:async()=>[{address:'8.8.8.8',family:4}],
+  httpsRequest:(_url,opts,_cb)=>{
+   assert.equal(opts.autoSelectFamily,false);
+   assert.equal(opts.family,4);
+   opts.lookup('www.wikipedia.org',{all:true},(err,addresses)=>{
+    assert.ifError(err);
+    assert.deepEqual(addresses,[{address:'8.8.8.8',family:4}]);
+   });
+   opts.lookup('www.wikipedia.org',{all:false},(err,address,family)=>{
+    assert.ifError(err);
+    assert.equal(address,'8.8.8.8');
+    assert.equal(family,4);
+   });
+   const request=new EventEmitter();
+   request.end=()=>request.destroy(Error('expected-test-stop'));
+   request.destroy=e=>request.emit('error',e);
+   return request;
+  }
+ });
+ await assert.rejects(t.webRead({url:'https://www.wikipedia.org/',
+  method:'GET',redirect:'manual',maxBytes:65536,requirePublicIpAtConnection:true
+ }),/expected-test-stop/);
+});
+test('C04 review: issuance-bound installation identity rejects wrong actor without GitHub IO',async()=>{
+ let calls=0;
+ const t=makeCouncilExternalTransport({
+  githubInstallationToken:'private-server-token',
+  verifiedInstallationId:701,
+  fetchImpl:async()=>{calls++;throw Error('unexpected GitHub read');}
+ });
+ await assert.rejects(t.githubRead({repository:peer,sourceSha:sha,
+  path:'src/task-relay-contract.mjs',expectedInstallationId:702}),
+  /external-transport-installation-identity-mismatch/);
+ assert.equal(calls,0);
+});
