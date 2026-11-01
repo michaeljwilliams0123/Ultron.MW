@@ -134,6 +134,7 @@ test('RED C04 external: Mahoraga inspection requires separate installation autho
    assert.equal(args.sourceSha,peer);
    return {status:200,repository:args.repository,sourceSha:args.sourceSha,
     path:args.path,text:'export const RELAY_PROTOCOL_VERSION = "3.0.1";',
+    installationId:who.installationId,
     installationVerified:true,repositoryAccessVerified:true};
   }
  };
