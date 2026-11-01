@@ -41,9 +41,24 @@ async function githubJson(url,token,fetchImpl){
    authorization:'Bearer '+token,'x-github-api-version':'2022-11-28'}
  });
  if(response.status!==200)fail('github-read-unavailable');
- const bytes=await response.text();
- if(Buffer.byteLength(bytes)>1024*1024)fail('github-response-too-large');
- try{return JSON.parse(bytes);}catch{fail('github-json-invalid');}
+ const reader=response.body?.getReader?.();
+ if(!reader)fail('github-json-invalid');
+ const parts=[];
+ let total=0;
+ try{
+  while(true){
+   const {done,value}=await reader.read();
+   if(done)break;
+   total+=value.byteLength;
+   if(total>1024*1024){
+    await reader.cancel().catch(()=>{});
+    fail('github-response-too-large');
+   }
+   parts.push(Buffer.from(value));
+  }
+ }finally{reader.releaseLock();}
+ try{return JSON.parse(Buffer.concat(parts,total).toString('utf8'));}
+ catch{fail('github-json-invalid');}
 }
 function githubPath(params){
  if(!params||params.repository!==REPO||!SHA.test(params.sourceSha??'')||
