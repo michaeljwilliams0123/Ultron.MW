@@ -14,7 +14,7 @@ const PEER='michaeljwilliams0123/mahoraga';
 const SOURCE_REPO='michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
 const SAFE_PATH=/^(src|test|docs|scripts|evaluation|cloud-app|deploy)\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
-const BAD_HOST=/(?:^|\.)(?:localhost|local|internal|invalid|test|example)(?:$|\.)/i;
+const BAD_HOST=/(?:^|\.)(?:localhost|local|internal|invalid|test)(?:$|\.)/i;
 const MAX_RESPONSE_BYTES=65536;
 function err(msg){throw new TypeError('external-'+msg);}
 function secureWebURL(candidate){
