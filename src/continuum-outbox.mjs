@@ -58,6 +58,19 @@ function same(existing,expected){
     return actual===expected[key];
   });
 }
+function matchesTransitionReadback(row,{deliveryId,sourceSha,leaseGeneration}){
+  return row?.deliveryId===deliveryId&&row.repository===REPO&&
+    persistedInteger(row.taskId)>0&&
+    typeof row.objectiveId==='string'&&IDENTIFIER.test(row.objectiveId)&&
+    typeof row.idempotencyKey==='string'&&IDENTIFIER.test(row.idempotencyKey)&&
+    typeof row.authoritySha==='string'&&DIGEST.test(row.authoritySha)&&
+    typeof row.requestSha==='string'&&DIGEST.test(row.requestSha)&&
+    row.sourceSha===sourceSha&&
+    persistedInteger(row.leaseGeneration)===leaseGeneration&&
+    persistedInteger(row.maxPaidCents)===0&&
+    ['read','advisory'].includes(row.effect)&&
+    row.state==='reconcile-required';
+}
 function requireDb(db){
   if(typeof db?.query!=='function')throw Error('continuum-outbox-db-required');
 }
@@ -149,15 +162,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         let current;
         try {current=await lookup(deliveryId);}
         catch {throw Error('continuum-outbox-reconcile-required');}
-        if(current?.deliveryId===deliveryId&&
-          current.repository===REPO&&
-          DIGEST.test(current.authoritySha||'')&&
-          DIGEST.test(current.requestSha||'')&&
-          current.sourceSha===sourceSha&&
-          persistedInteger(current.leaseGeneration)===leaseGeneration&&
-          persistedInteger(current.maxPaidCents)===0&&
-          ['read','advisory'].includes(current.effect)&&
-          current.state==='reconcile-required')
+        if(matchesTransitionReadback(current,{deliveryId,sourceSha,leaseGeneration}))
           return {changed:false,deliveryId,state:'reconcile-required',reconciled:true};
         // Pending, missing, or contradictory readback cannot establish the
         // outcome. The caller must reconcile rather than blindly retry.
@@ -172,12 +177,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
           returned?.state!=='reconcile-required')
           throw Error('continuum-outbox-transition-readback-mismatch');
         const confirmed=await lookup(deliveryId);
-        if(!confirmed||confirmed.deliveryId!==deliveryId||
-          confirmed.sourceSha!==sourceSha||
-          persistedInteger(confirmed.leaseGeneration)!==leaseGeneration||
-          persistedInteger(confirmed.maxPaidCents)!==0||
-          !['read','advisory'].includes(confirmed.effect)||
-          confirmed.state!=='reconcile-required')
+        if(!matchesTransitionReadback(confirmed,{deliveryId,sourceSha,leaseGeneration}))
           throw Error('continuum-outbox-transition-readback-mismatch');
         return {changed:true,deliveryId,state:'reconcile-required'};
       }
@@ -188,11 +188,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
       // An adapter returning a foreign row must not certify reconciliation.
       if(current&&current.deliveryId!==deliveryId)
         throw Error('continuum-outbox-transition-readback-mismatch');
-      if(!current||current.sourceSha!==sourceSha||
-        persistedInteger(current.leaseGeneration)!==leaseGeneration||
-        persistedInteger(current.maxPaidCents)!==0||
-        !['read','advisory'].includes(current.effect)||
-        current.state!=='reconcile-required')
+      if(!matchesTransitionReadback(current,{deliveryId,sourceSha,leaseGeneration}))
         throw Error('continuum-outbox-fence-or-source-conflict');
       return {changed:false,deliveryId,state:'reconcile-required'};
     }
