@@ -602,3 +602,30 @@ test('C01: malformed persisted expiry on acknowledged or duplicate reservation i
     assert.equal(db.entries.size,1);
   }
 });
+
+test('C01: fenced transition must not certify missing or malformed persisted expiry',async()=>{
+  for(const premarked of [false,true]){
+    for(const expiresAt of [undefined,null,'not-a-timestamp']){
+      const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+      const c=contract();
+      await outbox.reserve(c);
+      if(premarked)await outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      });
+      const original=db.query.bind(db);
+      db.query=async(sql,params)=>{
+        const result=await original(sql,params);
+        if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+          return {rows:result.rows.map(row=>({...row,expiresAt}))};
+        return result;
+      };
+      const before=db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length;
+      await assert.rejects(outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      }),premarked?/continuum-outbox-fence-or-source-conflict/:
+        /continuum-outbox-transition-readback-mismatch/);
+      assert.equal(db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length,
+        before+1,'an uncertain or contradictory readback must never replay the CAS');
+    }
+  }
+});
