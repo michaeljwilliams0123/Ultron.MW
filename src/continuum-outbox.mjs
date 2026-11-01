@@ -104,8 +104,22 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
           AND state='pending'
         RETURNING delivery_id AS "deliveryId",state`,
       [deliveryId,sourceSha,leaseGeneration]);
-      if(updated?.rows?.length===1)
+      if(updated?.rows?.length===1){
+        // A successful SQL response is not an independently reconciled
+        // transition until both the returned identity and fresh persisted
+        // readback agree with the exact delivery/source/fencing contract.
+        const returned=updated.rows[0];
+        if(returned?.deliveryId!==deliveryId||
+          returned?.state!=='reconcile-required')
+          throw Error('continuum-outbox-transition-readback-mismatch');
+        const confirmed=await lookup(deliveryId);
+        if(!confirmed||confirmed.deliveryId!==deliveryId||
+          confirmed.sourceSha!==sourceSha||
+          Number(confirmed.leaseGeneration)!==leaseGeneration||
+          confirmed.state!=='reconcile-required')
+          throw Error('continuum-outbox-transition-readback-mismatch');
         return {changed:true,deliveryId,state:'reconcile-required'};
+      }
       if(updated?.rows?.length!==0)
         throw Error('continuum-outbox-transition-unavailable');
       const current=await lookup(deliveryId);
