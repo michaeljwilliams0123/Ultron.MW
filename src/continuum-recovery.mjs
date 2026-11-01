@@ -63,7 +63,7 @@ export async function reconcileContinuumTick({
          !Number.isSafeInteger(Number(row.leaseGeneration))||
          Number(row.leaseGeneration)<1||
          !['read','advisory'].includes(row.effect)||
-         Number(row.maxPaidCents)!==0||
+         row.maxPaidCents!==0||
          !['pending','reconcile-required'].includes(row.state)){
         receipts.push(receipt(deliveryId,'held-unknown'));
         continue;
