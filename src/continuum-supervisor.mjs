@@ -42,6 +42,12 @@ export async function readCouncilActivity({
     maxPages<1||maxPages>20)
     throw Error('activity-input-invalid');
   const lastPage=Math.max(1,Math.ceil(issue.comments/100));
+  // A comment can arrive after the issue metadata snapshot and create a
+  // previously uncounted page. Do not certify an older report in that case.
+  const overflow=await fetchPage(lastPage+1);
+  if(!Array.isArray(overflow))throw Error('activity-page-invalid');
+  if(overflow.length>0)return Object.freeze({complete:false,lastReviewAt:null,
+    lastMeaningfulAt:issue.created_at});
   let lastReviewAt=null,lastOwnerAt=null;
   let page=lastPage,scanned=0;
   for(;page>=1&&scanned<maxPages;page--,scanned++){
@@ -50,7 +56,11 @@ export async function readCouncilActivity({
     // The issue's comment count is an upper-bound snapshot. A missing
     // expected page may hide a newer owner change; never treat an older
     // council report as sufficient evidence to dispatch again.
-    if(issue.comments>0&&comments.length===0)
+    // A nonempty but incomplete page is also unsafe: a newer owner
+    // instruction may be among the missing comments.
+    const expected=issue.comments===0?0:
+      page===lastPage?issue.comments-(lastPage-1)*100:100;
+    if(comments.length<expected)
       return Object.freeze({complete:false,lastReviewAt:null,
         lastMeaningfulAt:issue.created_at});
     for(let i=comments.length-1;i>=0;i--){
