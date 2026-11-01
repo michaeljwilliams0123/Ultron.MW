@@ -34,7 +34,8 @@ const ENGINEERING_ROLE_GRANTS=Object.freeze({
 });
 const COLLABORATIVE_OPS=Object.freeze([
  'branch.create','branch.update','pr.create','pr.comment','issue.create',
- 'issue.comment','review.comment','review.request-changes','actions.dispatch'
+ 'issue.comment','review.comment','review.request-changes','actions.dispatch',
+ 'web.open','mahoraga.repo.inspect','mahoraga.task.prepare'
 ]);
 const ENGINEERING_OPS=Object.freeze({
  Builder:Object.freeze(['branch.create','branch.update','pr.create','pr.comment','issue.create','issue.comment']),
@@ -165,6 +166,16 @@ export function decideCouncilAction(actor,request={}){
  if(request.baseSha!==actor.sourceSha||request.maxPaidCents!==0||
    !Number.isSafeInteger(request.attempt)||request.attempt<1||request.attempt>3)
   return Object.freeze({allowed:false,reason:'scoped-plan-not-verified'});
+ if(new Set(['web.open','mahoraga.repo.inspect','mahoraga.task.prepare']).has(operation)){
+  if(typeof request.externalIntentFingerprint!=='string'||
+     !/^[a-f0-9]{64}$/.test(request.externalIntentFingerprint)||
+     typeof request.caseSha!=='string'||!/^[a-f0-9]{64}$/.test(request.caseSha))
+   return Object.freeze({allowed:false,reason:'external-intent-unverified'});
+  // Public-target and cross-repository checks run inside the branded
+  // council-external-authority plan and the separately trusted egress worker.
+  return Object.freeze({allowed:true,scope:repository,role:actor.role,
+   reason:'bounded-external-operation'});
+ }
  if(BRANCH_OPERATIONS.has(operation)){
   const match=typeof request.branch==='string'&&request.branch.match(SAFE_BRANCH);
   if(!match||match[1]!==actor.role.toLowerCase()||
