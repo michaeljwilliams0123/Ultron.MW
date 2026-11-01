@@ -282,3 +282,33 @@ test('truncated newest comment page fails closed even when an older council repo
  assert.equal(result.complete,false,
   'missing newest page must not authorize duplicate or stale council dispatch');
 });
+
+
+test('RED: partial nonempty newest page cannot certify complete council history',async()=>{
+ const result=await readCouncilActivity({
+  issue:{comments:205,created_at:'2026-10-29T08:00:00Z'},
+  owner:'michaeljwilliams0123',
+  fetchPage:async page=>page===3?[{
+   user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
+   created_at:'2026-10-31T10:00:00Z'
+  }]:[]
+ });
+ assert.equal(result.complete,false,
+  'a partial final page can omit newer owner instructions even if it contains a council report');
+});
+
+test('RED: comments appended after issue snapshot must not be hidden by stale page count',async()=>{
+ const result=await readCouncilActivity({
+  issue:{comments:200,created_at:'2026-10-29T08:00:00Z'},
+  owner:'michaeljwilliams0123',
+  fetchPage:async page=>page===3?[{
+   user:{login:'michaeljwilliams0123'},body:'New owner scope',
+   created_at:'2026-10-31T11:00:00Z'
+  }]:page===2?[{
+   user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
+   created_at:'2026-10-31T10:00:00Z'
+  }]:[]
+ });
+ assert.equal(result.complete,false,
+  'an extra page created after the issue snapshot must force reconciliation before dispatch');
+});
