@@ -187,3 +187,28 @@ test('RED: a successful CAS cannot report reconciliation when independent SQL re
     deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
   }),/continuum-outbox-transition-readback-mismatch/);
 });
+
+
+test('confirmed CAS holds when fresh readback is absent or has a different fence',async()=>{
+  for(const transform of [
+    ()=>[],
+    rows=>rows.map(row=>({...row,sourceSha:'d'.repeat(40)})),
+    rows=>rows.map(row=>({...row,leaseGeneration:3}))
+  ]){
+    const db=fakeDb(),original=db.query.bind(db);
+    let updated=false;
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('UPDATE brain_continuum_outbox'))updated=true;
+      if(updated&&sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:transform(result.rows)};
+      return result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await outbox.reserve(contract());
+    await assert.rejects(outbox.markUnknown({
+      deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
+    }),/continuum-outbox-transition-readback-mismatch/);
+    assert.equal(db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length,1);
+  }
+});
