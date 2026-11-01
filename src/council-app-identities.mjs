@@ -20,6 +20,32 @@ const APP_PROFILE={
    pull_requests:'write',checks:'write'
  })
 };
+const ENGINEERING_ROLE_GRANTS=Object.freeze({
+ Builder:Object.freeze({contents:'write'}),
+ Generator:Object.freeze({contents:'write'}),
+ Sentinel:Object.freeze({actions:'write'}),
+ Skeptic:Object.freeze({}),Steward:Object.freeze({}),
+ Predictor:Object.freeze({}),Companion:Object.freeze({})
+});
+const ENGINEERING_OPS=Object.freeze({
+ Builder:Object.freeze(['branch.create','branch.update','pr.create','pr.comment','issue.create','issue.comment']),
+ Generator:Object.freeze(['branch.create','branch.update','pr.create','pr.comment','issue.create','issue.comment']),
+ Skeptic:Object.freeze(['review.comment','review.request-changes','issue.comment','pr.comment']),
+ Steward:Object.freeze(['review.comment','review.request-changes','issue.comment','pr.comment']),
+ Predictor:Object.freeze(['issue.create','issue.comment','pr.comment']),
+ Sentinel:Object.freeze(['actions.dispatch','issue.comment','pr.comment']),
+ Companion:Object.freeze(['issue.comment','pr.comment'])
+});
+function profileRights(role,profile){
+ if(profile==='engineering-autonomy')
+  return {...APP_PROFILE.scoped,...ENGINEERING_ROLE_GRANTS[role]};
+ if(!Object.hasOwn(APP_PROFILE,profile))throw Error('council-profile-invalid');
+ return APP_PROFILE[profile];
+}
+const SAFE_BRANCH=/^ultron\/council-(builder|generator)-[a-z0-9][a-z0-9-]{2,55}$/;
+const SAFE_CODE_PATH=/^(src|test|docs|scripts|cloud\/hatchable)\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/;
+const BRANCH_OPERATIONS=new Set(['branch.create','branch.update','pr.create']);
+const REVIEW_OPERATIONS=new Set(['review.comment','review.request-changes']);
 function roleCheck(role){
  if(!ROLE_SET.has(role))throw Error('council-role-invalid');
 }
@@ -48,7 +74,7 @@ export function buildCouncilAppManifest(role,{
 }={}){
  roleCheck(role);
  repoCheck(repository);
- if(!Object.hasOwn(APP_PROFILE,profile))throw Error('council-profile-invalid');
+ const grants=profileRights(role,profile);
  const hookUrl=urlCheck(webhookUrl);
  return Object.freeze({
   name:'ultron-mw-'+role.toLowerCase(),
@@ -57,10 +83,10 @@ export function buildCouncilAppManifest(role,{
   public:false,
   hook_attributes:Object.freeze({url:hookUrl,active:false}),
   default_events:Object.freeze([]),
-  default_permissions:Object.freeze({...APP_PROFILE[profile]})
+  default_permissions:Object.freeze({...grants})
  });
 }
-export function validateInstallationObservation({role,repository=REPO}={},observation){
+export function validateInstallationObservation({role,repository=REPO,profile='scoped'}={},observation){
  roleCheck(role);
  repoCheck(repository);
  if(observation===null||observation===undefined)return Object.freeze({
@@ -74,7 +100,7 @@ export function validateInstallationObservation({role,repository=REPO}={},observ
  if(observation.suspended_at)throw Error('council-installation-suspended');
  if(!Array.isArray(observation.repositories)||!observation.repositories.includes(repository))
    throw Error('council-repository-not-installed');
- const required=APP_PROFILE.scoped;
+ const required=profileRights(role,profile);
  if(!observation.permissions||Object.entries(required).some(([key,value])=>{
   const found=observation.permissions[key];
   return value==='read'?!['read','write'].includes(found):found!=='write';
@@ -91,7 +117,7 @@ export function validateInstallationObservation({role,repository=REPO}={},observ
 // a branded actor; a serialized or cloned object loses its authority.
 const AUTHENTICATED_ACTORS=new WeakSet();
 export async function authenticateCouncilAppActor({
- role,repository=REPO,sourceSha,installationToken,githubProbe
+ role,repository=REPO,sourceSha,installationToken,githubProbe,profile='scoped'
 }={}){
  roleCheck(role);
  repoCheck(repository);
@@ -103,9 +129,9 @@ export async function authenticateCouncilAppActor({
  // githubProbe MUST be a trusted server-side GitHub API client. Never let an
  // incoming request/body supply this function, token or installation proof.
  const observed=await githubProbe({installationToken,repository});
- const binding=validateInstallationObservation({role,repository},observed);
+ const binding=validateInstallationObservation({role,repository,profile},observed);
  const actor=Object.freeze({role,installationId:binding.installationId,
-   verifiedBy:'github-installation-token',scope:repository,sourceSha});
+   verifiedBy:'github-installation-token',scope:repository,sourceSha,profile});
  AUTHENTICATED_ACTORS.add(actor);
  return actor;
 }
@@ -116,11 +142,37 @@ export function decideCouncilAction(actor,{operation,repository=REPO}={}){
    typeof actor.sourceSha!=='string'||!/^[a-f0-9]{40}$/.test(actor.sourceSha)||
    actor.scope!==REPO||repository!==REPO)
   return Object.freeze({allowed:false,reason:'identity-or-scope-unverified'});
- // Read and evidence-only interactions; none of the following are authority
- // to perform a protected merge, cast a self-review, grant admin or spend.
- if(!new Set(['inspect','comment','propose']).has(operation))
+ // Existing scoped advisory admission remains unchanged.
+ if(new Set(['inspect','comment','propose']).has(operation))
+  return Object.freeze({allowed:true,scope:repository,role:actor.role,reason:'scoped-operation'});
+ // Elevation requires a separately installed engineering profile, a trusted
+ // installation-token proof, exact source SHA, bounded attempt and zero cost.
+ if(!['engineering-autonomy','owner-requested'].includes(actor.profile)||
+   !ENGINEERING_OPS[actor.role]?.includes(operation))
   return Object.freeze({allowed:false,reason:'requires-separate-owner-and-review-authorization'});
- return Object.freeze({allowed:true,scope:repository,role:actor.role,reason:'scoped-operation'});
+ const request=arguments[1]||{};
+ if(request.baseSha!==actor.sourceSha||request.maxPaidCents!==0||
+   !Number.isSafeInteger(request.attempt)||request.attempt<1||request.attempt>3)
+  return Object.freeze({allowed:false,reason:'scoped-plan-not-verified'});
+ if(BRANCH_OPERATIONS.has(operation)){
+  const match=typeof request.branch==='string'&&request.branch.match(SAFE_BRANCH);
+  if(!match||match[1]!==actor.role.toLowerCase()||
+    (operation==='branch.update'&&
+      (typeof request.path!=='string'||!SAFE_CODE_PATH.test(request.path)||
+       request.path.split('/').some(x=>x==='.'||x==='..')||
+       request.path.includes('//')||
+       request.path.startsWith('.github/'))))
+   return Object.freeze({allowed:false,reason:'scope-denied'});
+ }
+ if(operation==='actions.dispatch'&&
+   (request.workflow!=='verify.yml'||request.ref!=='main'))
+  return Object.freeze({allowed:false,reason:'workflow-not-approved'});
+ if(REVIEW_OPERATIONS.has(operation)&&
+   (typeof request.prAuthor!=='string'||!request.prAuthor.trim()||
+    request.prAuthor.toLowerCase()===
+     ('ultron-mw-'+actor.role.toLowerCase()+'[bot]')))
+  return Object.freeze({allowed:false,reason:'self-review-denied'});
+ return Object.freeze({allowed:true,scope:repository,role:actor.role,reason:'bounded-engineering-operation'});
 }
 export function councilCapacityReport({installedAppCount=0,rateLimits=[]}={}){
  if(!Number.isSafeInteger(installedAppCount)||installedAppCount<0||installedAppCount>100||
