@@ -62,14 +62,14 @@ test('scan backward past the final comment page to find last genuine council rep
     owner('2026-10-31T09:00:00Z'),
     ...Array.from({length:98},(_,i)=>({user:{login:'someone'},body:'noise '+i})),
     bot('2026-10-31T10:00:00Z')
-  ],1:[bot('2026-10-30T08:00:00Z')]};
+  ],1:[...Array.from({length:99},(_,i)=>({user:{login:'someone'},body:'old noise '+i})),bot('2026-10-30T08:00:00Z')]};
   const calls=[];
   const result=await readCouncilActivity({
     issue:{comments:201,created_at:'2026-10-29T08:00:00Z'},
     owner:'michaeljwilliams0123',
     fetchPage:async page=>{calls.push(page);return pages[page]||[];}
   });
-  assert.deepEqual(calls,[4,3,2]);
+  assert.deepEqual(calls,[4,3,2,1]);
   assert.equal(result.complete,true);
   assert.equal(result.lastReviewAt,'2026-10-31T10:00:00Z');
   assert.equal(result.lastMeaningfulAt,'2026-10-29T08:00:00Z');
@@ -83,7 +83,7 @@ test('owner change after older report is retained even across page boundary',asy
       page===2?[
       {user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z'},
       ...Array.from({length:99},()=>({user:{login:'someone'},body:'noise'}))
-    ]:[]
+    ]:page===1?Array.from({length:100},(_,i)=>({user:{login:'someone'},body:'older '+i})):[]
   });
   assert.equal(result.complete,true);
   assert.equal(result.lastMeaningfulAt,'2026-10-31T11:00:00Z');
@@ -457,4 +457,25 @@ test('RED: editing an older owner comment after a council report requires fresh 
    'owner edits after the last council report must trigger review, not wait 24 hours');
  assert.deepEqual(selectCouncilReviews([item(183,{lastReviewAt:activity.lastReviewAt,
    lastMeaningfulAt:activity.lastMeaningfulAt})],{now:'2026-11-01T12:00:00Z'}),[183]);
+});
+
+
+test('RED: owner edit on older comment page after newest council report is never skipped',async()=>{
+ const issue={comments:101,created_at:'2026-10-30T08:00:00Z',updated_at:'2026-11-01T11:00:00Z'};
+ const owner={id:1,user:{login:'michaeljwilliams0123'},body:'Security instruction revised',
+   created_at:'2026-10-31T09:00:00Z',updated_at:'2026-11-01T11:00:00Z'};
+ const oldest=[owner,...Array.from({length:99},(_,i)=>({
+   id:i+2,user:{login:'someone'},body:'noise '+i,created_at:'2026-10-31T09:01:00Z'
+ }))];
+ const newest=[{id:101,user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
+   created_at:'2026-10-31T10:00:00Z',updated_at:'2026-10-31T10:00:00Z'}];
+ const pages=[];
+ const activity=await readCouncilActivity({
+   issue,owner:'michaeljwilliams0123',
+   fetchPage:async page=>{pages.push(page);return page===1?oldest:page===2?newest:[];},
+   fetchIssue:async()=>({...issue})
+ });
+ assert.equal(activity.complete,true);
+ assert.ok(pages.includes(1),'older owner edits must be inspected despite a newer council report');
+ assert.equal(activity.lastMeaningfulAt,owner.updated_at);
 });
