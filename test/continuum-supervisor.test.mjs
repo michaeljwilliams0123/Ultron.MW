@@ -319,3 +319,61 @@ test('comments appended after issue snapshot must not be hidden by stale page co
  assert.equal(result.complete,false,
   'an extra page created after the issue snapshot must force reconciliation before dispatch');
 });
+
+
+test('RED: same-count replacement of newest council comment invalidates scan',async()=>{
+  let newestReads=0;
+  const original={id:101,user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z'};
+  const replacement={id:102,user:{login:'michaeljwilliams0123'},body:'New owner scope',created_at:'2026-10-31T11:00:00Z'};
+  const result=await readCouncilActivity({
+    issue:{comments:1,created_at:'2026-10-29T08:00:00Z',updated_at:'2026-10-31T10:00:00Z'},
+    owner:'michaeljwilliams0123',
+    fetchPage:async page=>{
+      if(page!==1)return [];
+      newestReads++;
+      return [newestReads===1?original:replacement];
+    },
+    fetchIssue:async()=>({comments:1,updated_at:'2026-10-31T10:00:00Z'})
+  });
+  assert.equal(result.complete,false,'replaced newest comment must not certify stale council evidence');
+  assert.ok(newestReads>=2,'newest comment boundary must be rechecked');
+});
+
+test('RED: selected council issue is revalidated before workflow dispatch',async()=>{
+  const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+  const fragment=yml.match(/          script: \\|\\n([\\s\\S]*?)\\n(?=\\S|$)/);
+  assert.ok(fragment,'supervisor inline script must exist');
+  let source=fragment[1].split('\\n').map(x=>x.replace(/^ {12}/,'')).join('\\n');
+  const moduleImport=/const \\{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\\}=await import\\([\\s\\S]*?\\);/;
+  assert.match(source,moduleImport);
+  source=source.replace(moduleImport,'const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=deps;');
+  const dispatched=[];
+  let reads=0;
+  const github={rest:{
+    issues:{
+      get:async({issue_number})=>({data:{number:issue_number,state:'open',comments:0,created_at:'2026-10-31T12:00:00Z'}}),
+      listComments:async()=>({data:[]})
+    },
+    actions:{createWorkflowDispatch:async args=>{dispatched.push(args);}}
+  }};
+  const deps={
+    CONTINUUM_ISSUES:[183],
+    selectCouncilReviews:rows=>rows.filter(x=>x.lastReviewAt===null).map(x=>x.number),
+    readCouncilActivity:async()=>{
+      reads++;
+      return {complete:true,lastReviewAt:reads===1?null:'2026-11-01T11:59:59Z',lastMeaningfulAt:'2026-10-31T12:00:00Z'};
+    }
+  };
+  const summary={addHeading(){return this;},addRaw(){return this;},async write(){}};
+  const core={info(){},warning(){},summary};
+  const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+  const fn=new AsyncFunction('require','process','context','github','core','deps',source);
+  await fn(name=>{
+    if(name==='node:url')return {pathToFileURL:()=>({href:'mock'})};
+    if(name==='node:path')return {join:()=>''};
+    throw Error('unexpected require');
+  },{env:{GITHUB_WORKSPACE:'/tmp'}},
+  {repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'}},github,core,deps);
+  assert.equal(reads,2,'selected issue must be read again before dispatch');
+  assert.deepEqual(dispatched,[],'new council report must suppress stale dispatch');
+});
