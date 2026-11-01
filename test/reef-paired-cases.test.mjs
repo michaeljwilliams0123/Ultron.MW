@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { evaluateRepairPair, REPAIR_CASES, selectNodePermissionFlag } from '../scripts/reef-paired-cases.mjs';
+import { evaluateRepairPair, REPAIR_CASES, selectNodePermissionFlag, createNonPooledObservationKey } from '../scripts/reef-paired-cases.mjs';
 import { readFile } from 'node:fs/promises';
 
 const sha = x => x.repeat(40);
@@ -298,4 +298,15 @@ test('Reef enforces permissions on both Node 20 and newer Node runtimes',()=>{
   '--permission');
  assert.equal(selectNodePermissionFlag(new Set(['--permission'])),'--permission');
  assert.throws(()=>selectNodePermissionFlag(new Set()),/permission flag unavailable/);
+});
+
+test('Reef signer key never resides in a shared Node Buffer pool',()=>{
+ const hex='a1'.repeat(32);
+ const key=createNonPooledObservationKey(hex);
+ assert.equal(key.length,32);
+ assert.equal(key.byteOffset,0);
+ assert.equal(key.buffer.byteLength,32,'candidate-accessible pooled slabs must not contain signer bytes');
+ assert.equal(key.toString('hex'),hex);
+ key.fill(0);
+ assert.throws(()=>createNonPooledObservationKey('bad-key'),/Invalid evaluator observation key/);
 });
