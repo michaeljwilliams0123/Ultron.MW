@@ -305,3 +305,36 @@ test('RED: successful fenced transition rejects coerced persisted lease generati
     deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
   }),/continuum-outbox-transition-readback-mismatch/);
 });
+
+test('RED: canonical persisted bigint strings reject trailing newlines on fresh and duplicate reservation',async()=>{
+  for(const duplicate of [false,true]){
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    if(duplicate)await outbox.reserve(contract());
+    const original=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,leaseGeneration:'2\\n'}))};
+      return result;
+    };
+    await assert.rejects(outbox.reserve(contract()),
+      duplicate?/continuum-outbox-delivery-conflict/:/continuum-outbox-admission-readback-mismatch/);
+  }
+});
+
+test('RED: no-op fenced reconciliation rejects noncanonical persisted bigint strings',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  await outbox.markUnknown({deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration});
+  const original=db.query.bind(db);
+  db.query=async(sql,params)=>{
+    const result=await original(sql,params);
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      return {rows:result.rows.map(row=>({...row,leaseGeneration:'2\\n'}))};
+    return result;
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-fence-or-source-conflict/);
+});
