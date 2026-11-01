@@ -84,14 +84,16 @@ test('live PostgreSQL repair fence test uses new disposable database, never drop
  assert.doesNotMatch(script,/DROP TABLE IF EXISTS repair_pr_attempts CASCADE/i);
 });
 
-test('live PostgreSQL fixture requires the exact CI service container and an ephemeral marker',()=>{
+test('live PostgreSQL fixture uses tested preflight and the exact CI service container',()=>{
  const script=readFileSync(new URL('./repair-pr-postgres-live.test.mjs',import.meta.url),'utf8');
+ const preflight=readFileSync(new URL('../src/repair-postgres-preflight.mjs',import.meta.url),'utf8');
  const workflow=readFileSync(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8');
- assert.match(script,/process\.env\.ULTRON_POSTGRES_CONTAINER_ID/);
- assert.match(script,/ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1/);
- assert.match(script,/execFileSync\('docker',\s*\['inspect'/);
- assert.doesNotMatch(script,/\['ps','--filter','ancestor=postgres:16-alpine'/);
- assert.match(workflow,/ULTRON_POSTGRES_CONTAINER_ID: \$\{\{ job\.services\.postgres\.id \}\}/);
+ assert.match(script,/process\\.env\\.ULTRON_POSTGRES_CONTAINER_ID/);
+ assert.match(script,/assertEphemeralPostgresService\\(/);
+ assert.match(preflight,/ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1/);
+ assert.match(preflight,/runDocker\\(\\['inspect'/);
+ assert.doesNotMatch(script,/\\['ps','--filter','ancestor=postgres:16-alpine'/);
+ assert.match(workflow,/ULTRON_POSTGRES_CONTAINER_ID: \\$\\{\\{ job\\.services\\.postgres\\.id \\$\\}\\}/);
  assert.match(workflow,/ULTRON_TEST_POSTGRES: repair-ci-ephemeral-v1/);
 });
 
