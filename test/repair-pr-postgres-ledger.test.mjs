@@ -93,7 +93,7 @@ test('live PostgreSQL fixture uses tested preflight and the exact CI service con
  assert.match(preflight,/ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1/);
  assert.match(preflight,/runDocker\(\['inspect'/);
  assert.doesNotMatch(script,/\['ps','--filter','ancestor=postgres:16-alpine'/);
- assert.match(workflow,/ULTRON_POSTGRES_CONTAINER_ID: \$\{\{ job\.services\.postgres\.id \$\}\}/);
+ assert.match(workflow,/ULTRON_POSTGRES_CONTAINER_ID: \$\{\{ job\.services\.postgres\.id \}\}/);
  assert.match(workflow,/ULTRON_TEST_POSTGRES: repair-ci-ephemeral-v1/);
 });
 
