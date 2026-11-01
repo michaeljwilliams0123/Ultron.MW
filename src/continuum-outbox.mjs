@@ -38,11 +38,23 @@ function validate(contract,now){
     throw Error('continuum-outbox-admission-denied-invalid-expiry');
   return Object.freeze({...Object.fromEntries(FIELDS.map(k=>[k,c[k]])),expiresAt});
 }
+// PostgreSQL bigint may arrive as a decimal string. Never use Number() on
+// arbitrary readback values: false, null, empty strings and arrays can
+// otherwise masquerade as the authorized zero-cost or fencing integer.
+function persistedInteger(value){
+  if(typeof value==='number')
+    return Number.isSafeInteger(value)?value:NaN;
+  if(typeof value==='string'&&/^(0|[1-9][0-9]*)$/.test(value)){
+    const parsed=Number(value);
+    return Number.isSafeInteger(parsed)?parsed:NaN;
+  }
+  return NaN;
+}
 function same(existing,expected){
   return FIELDS.every(key=>{
     const actual=key==='expiresAt'?iso(existing[key]):
       ['taskId','leaseGeneration','maxPaidCents'].includes(key)?
-        Number(existing[key]):existing[key];
+        persistedInteger(existing[key]):existing[key];
     return actual===expected[key];
   });
 }
@@ -122,7 +134,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         const confirmed=await lookup(deliveryId);
         if(!confirmed||confirmed.deliveryId!==deliveryId||
           confirmed.sourceSha!==sourceSha||
-          Number(confirmed.leaseGeneration)!==leaseGeneration||
+          persistedInteger(confirmed.leaseGeneration)!==leaseGeneration||
           confirmed.state!=='reconcile-required')
           throw Error('continuum-outbox-transition-readback-mismatch');
         return {changed:true,deliveryId,state:'reconcile-required'};
@@ -135,7 +147,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
       if(current&&current.deliveryId!==deliveryId)
         throw Error('continuum-outbox-transition-readback-mismatch');
       if(!current||current.sourceSha!==sourceSha||
-        Number(current.leaseGeneration)!==leaseGeneration||
+        persistedInteger(current.leaseGeneration)!==leaseGeneration||
         current.state!=='reconcile-required')
         throw Error('continuum-outbox-fence-or-source-conflict');
       return {changed:false,deliveryId,state:'reconcile-required'};
