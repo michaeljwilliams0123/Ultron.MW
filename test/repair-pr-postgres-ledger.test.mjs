@@ -132,3 +132,51 @@ test('Repair App PostgreSQL preflight rejects untrusted Docker services before a
    assert.equal(seen.length,0,item.label+' must reject before Docker access');
  }
 });
+
+test('RED: repair ledger rejects a foreign persisted claim or SELECT identity',async()=>{
+  for(const tamper of ['insert','select']){
+    const db=mockDatabase(),query=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await query(sql,params);
+      if(sql.includes(tamper==='insert'?'INSERT INTO repair_pr_attempts':'SELECT attempt_key')&&result.rows.length)
+        return {rows:result.rows.map(row=>({...row,attempt_key:'repair:foreign-claim-001'}))};
+      return result;
+    };
+    const ledger=createPostgresRepairLedger({db});
+    if(tamper==='insert'){
+      await assert.rejects(ledger.claim({key:KEY,fingerprint:A}),/readback|identity|mismatch/);
+    }else{
+      await ledger.claim({key:KEY,fingerprint:A});
+      await assert.rejects(ledger.get(KEY),/readback|identity|mismatch/);
+    }
+  }
+});
+
+test('RED: repair CAS rejects foreign RETURNING identity even when UPDATE reports success',async()=>{
+  const db=mockDatabase(),query=db.query.bind(db);
+  db.query=async(sql,params)=>{
+    const result=await query(sql,params);
+    return sql.includes('UPDATE repair_pr_attempts')
+      ?{rows:[{attempt_key:'repair:foreign-update-001'}]}:result;
+  };
+  const ledger=createPostgresRepairLedger({db});
+  await ledger.claim({key:KEY,fingerprint:A});
+  await assert.rejects(ledger.advance({key:KEY,fingerprint:A,from:'reserved',
+    to:'branch-dispatch'}),/readback|identity|mismatch/);
+});
+
+test('RED: repair CAS must verify persisted phase after an acknowledged UPDATE',async()=>{
+  const db=mockDatabase(),query=db.query.bind(db);
+  let updated=false;
+  db.query=async(sql,params)=>{
+    const result=await query(sql,params);
+    if(sql.includes('UPDATE repair_pr_attempts'))updated=true;
+    if(updated&&sql.includes('SELECT attempt_key'))
+      return {rows:result.rows.map(row=>({...row,phase:'reserved'}))};
+    return result;
+  };
+  const ledger=createPostgresRepairLedger({db});
+  await ledger.claim({key:KEY,fingerprint:A});
+  await assert.rejects(ledger.advance({key:KEY,fingerprint:A,from:'reserved',
+    to:'branch-dispatch'}),/readback|identity|mismatch/);
+});
