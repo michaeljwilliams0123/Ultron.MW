@@ -8,8 +8,8 @@ import {COUNCIL_APP_ROLES,councilAlias,buildCouncilAppManifest,
  councilCapacityReport} from '../src/council-app-identities.mjs';
 
 const args=process.argv.slice(2);
-if(args.length!==1||!['--profile=scoped','--profile=owner-requested'].includes(args[0])){
- console.error('usage: node scripts/council-app-manifests.mjs --profile=scoped|owner-requested');
+if(args.length!==1||!['--profile=scoped','--profile=engineering-autonomy','--profile=owner-requested'].includes(args[0])){
+ console.error('usage: node scripts/council-app-manifests.mjs --profile=scoped|engineering-autonomy|owner-requested');
  process.exitCode=2;
 }else{
  const profile=args[0].split('=')[1];
