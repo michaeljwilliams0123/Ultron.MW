@@ -58,6 +58,12 @@ function same(existing,expected){
     return actual===expected[key];
   });
 }
+// A malformed adapter readback is a persisted-state mismatch, not invalid
+// caller input. Preserve the stable conflict/hold disposition after a write.
+function matchesPersisted(row,expected){
+  try {return same(row,expected);}
+  catch {return false;}
+}
 function matchesTransitionReadback(row,{deliveryId,sourceSha,leaseGeneration}){
   return row?.deliveryId===deliveryId&&row.repository===REPO&&
     persistedInteger(row.taskId)>0&&
@@ -117,7 +123,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         let confirmed;
         try {
           confirmed=await lookup(c.deliveryId);
-          if(confirmed&&same(confirmed,c)&&confirmed.state==='pending')
+          if(confirmed&&matchesPersisted(confirmed,c)&&confirmed.state==='pending')
             return {created:false,deliveryId:c.deliveryId,state:'pending',
               reconciled:true};
         } catch {
@@ -134,13 +140,13 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         // new reservation, just as uncertain transition recovery does.
         const confirmed=await readbackOrHold(c.deliveryId);
         if(!confirmed||confirmed.deliveryId!==c.deliveryId||
-          !same(confirmed,c)||confirmed.state!=='pending')
+          !matchesPersisted(confirmed,c)||confirmed.state!=='pending')
           throw Error('continuum-outbox-admission-readback-mismatch');
         return {created:true,deliveryId:c.deliveryId,state:'pending'};
       }
       if(result?.rows?.length!==0)throw Error('continuum-outbox-admission-unavailable');
       const existing=await readbackOrHold(c.deliveryId);
-      if(!existing||!same(existing,c)||
+      if(!existing||!matchesPersisted(existing,c)||
         !['pending','reconcile-required'].includes(existing.state))
         throw Error('continuum-outbox-delivery-conflict');
       return {created:false,deliveryId:c.deliveryId,state:existing.state};
