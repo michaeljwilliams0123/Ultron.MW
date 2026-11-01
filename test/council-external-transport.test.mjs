@@ -33,9 +33,6 @@ test('RED C04 outbound: GitHub App token must explicitly list Mahoraga and retur
  const calls=[];
  const mock=async(url,init)=>{
   calls.push({url:String(url),method:init.method,auth:init.headers.authorization});
-  if(String(url)==='https://api.github.com/installation')
-   return new Response(JSON.stringify({id:701,app_id:900}),
-    {status:200,headers:{'content-type':'application/json'}});
   if(String(url).endsWith('/installation/repositories?per_page=100&page=1'))
    return new Response(JSON.stringify({total_count:1,repositories:[{full_name:peer}]}),
     {status:200,headers:{'content-type':'application/json'}});
@@ -46,7 +43,7 @@ test('RED C04 outbound: GitHub App token must explicitly list Mahoraga and retur
   throw Error('unexpected url '+url);
  };
  const t=makeCouncilExternalTransport({githubInstallationToken:'private-server-token',
-  fetchImpl:mock});
+  verifiedInstallationId:701,fetchImpl:mock});
  const result=await t.githubRead({repository:peer,sourceSha:sha,
   path:'src/task-relay-contract.mjs',requiredPermission:'contents:read',
   requireDistinctRepositoryInstallation:true,expectedInstallationId:701});
@@ -55,24 +52,22 @@ test('RED C04 outbound: GitHub App token must explicitly list Mahoraga and retur
  assert.equal(result.text,'export const version = 3;');
  assert.equal(result.installationVerified,true);
  assert.equal(result.repositoryAccessVerified,true);
- assert.equal(calls.length,3);
+ assert.equal(calls.length,2);
  assert.ok(calls.every(c=>c.method==='GET'));
  assert.ok(calls.every(c=>c.auth==='Bearer private-server-token'));
 });
 test('RED C04 outbound: missing peer repo installation blocks direct read without attempting contents',async()=>{
  let count=0;
  const t=makeCouncilExternalTransport({
-  githubInstallationToken:'private-server-token',
-  fetchImpl:async(url)=>{count++;return new Response(JSON.stringify(
-   String(url)==='https://api.github.com/installation'?
-     {id:701,app_id:900}:
-     {total_count:1,repositories:[{full_name:'michaeljwilliams0123/Ultron.MW'}]}
+  githubInstallationToken:'private-server-token',verifiedInstallationId:701,
+  fetchImpl:async()=>{count++;return new Response(JSON.stringify(
+    {total_count:1,repositories:[{full_name:'michaeljwilliams0123/Ultron.MW'}]}
   ),{status:200});}
  });
  await assert.rejects(t.githubRead({repository:peer,sourceSha:sha,path:'src/task-relay-contract.mjs',
   expectedInstallationId:701}),
   /external-transport-peer-not-installed/);
- assert.equal(count,2);
+ assert.equal(count,1);
 });
 
 test('C04 review: exact IPv4 reserved subnets preserve routable neighbors',()=>{
