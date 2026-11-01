@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {
  COUNCIL_APP_ROLES, councilAlias,buildCouncilAppManifest,
- validateInstallationObservation,decideCouncilAction,
+ validateInstallationObservation,authenticateCouncilAppActor,decideCouncilAction,
  councilCapacityReport
 } from '../src/council-app-identities.mjs';
 
@@ -73,9 +73,15 @@ test('C04: live API observation checks distinct app, repository and permissions;
  assert.throws(()=>validateInstallationObservation({role:'Builder',repository:repo},
   {...observed,permissions:{...observed.permissions,pull_requests:'read'}}),/permission-missing/);
 });
-test('C04: unverified or self-approved owner-like operations are denied regardless of configured App permissions',()=>{
- const actor={role:'Builder',installationId:99201,verifiedBy:'github-installation-token',
-    sourceSha:'a'.repeat(40),scope:repo};
+test('C04: unverified or self-approved owner-like operations are denied regardless of configured App permissions',async()=>{
+ const observed={source:'github-installations-api',app_slug:'ultron-mw-builder',
+   app_id:88101,id:99201,account:{login:'michaeljwilliams0123'},
+   repository_selection:'selected',repositories:[repo],suspended_at:null,
+   permissions:{metadata:'read',contents:'read',issues:'write',pull_requests:'write',actions:'read',checks:'read'}};
+ const actor=await authenticateCouncilAppActor({
+   role:'Builder',installationToken:'ephemeral-test-token',sourceSha:'a'.repeat(40),
+   githubProbe:async()=>observed
+ });
  assert.deepEqual(decideCouncilAction(actor,{operation:'comment',repository:repo}),{
    allowed:true,scope:repo,role:'Builder',reason:'scoped-operation'
  });
@@ -85,6 +91,11 @@ test('C04: unverified or self-approved owner-like operations are denied regardle
  assert.equal(decideCouncilAction({...actor,verifiedBy:'owner-text'},
    {operation:'comment',repository:repo}).allowed,false);
  assert.equal(decideCouncilAction(actor,{operation:'comment',repository:'other/repo'}).allowed,false);
+ assert.equal(decideCouncilAction({...actor},{operation:'comment',repository:repo}).allowed,false);
+ await assert.rejects(authenticateCouncilAppActor({
+  role:'Skeptic',sourceSha:'a'.repeat(40),installationToken:'ephemeral-test-token',
+  githubProbe:async()=>observed
+ }),/identity-mismatch/);
 });
 test('C04: no fictional additive AI token pool or GitHub Actions credits',()=>{
  const report=councilCapacityReport({installedAppCount:7,rateLimits:[5000,5000,5000,5000,5000,5000,5000]});
