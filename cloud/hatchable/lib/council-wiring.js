@@ -10,11 +10,36 @@ const required=Object.freeze([
 ]);
 export const COUNCIL_ROLES=roles;
 export const COUNCIL_TABLES=required;
-export function assessCouncilWiring({tables,installationObservations=[],sourceSha=null}={}){
+const RUNTIME_IDS=Object.freeze([
+ 'repo.inspect','repo.prs','repo.ci','site.render','council.review'
+]);
+const CANDIDATE_IDS=Object.freeze([
+ 'web.open','mahoraga.repo.inspect','mahoraga.task.prepare'
+]);
+export function assessCouncilWiring({
+ tables,installationObservations=[],runtimeCapabilities=[],sourceSha=null
+}={}){
  if(!Array.isArray(tables)||tables.some(t=>typeof t!=='string')||
    !Array.isArray(installationObservations)||
+   !Array.isArray(runtimeCapabilities)||
+   runtimeCapabilities.length>RUNTIME_IDS.length||
    (sourceSha!==null&&!(typeof sourceSha==='string'&&/^[a-f0-9]{40}$/.test(sourceSha))))
   throw Error('council-wiring-observation-invalid');
+ const seenCapabilities=new Set();
+ const runtime=runtimeCapabilities.map(item=>{
+  if(!item||!RUNTIME_IDS.includes(item.id)||
+     !['read','advisory'].includes(item.effect)||
+     seenCapabilities.has(item.id))
+    throw Error('council-wiring-observation-invalid');
+  seenCapabilities.add(item.id);
+  return Object.freeze({id:item.id,effect:item.effect,
+   status:'runtime-registered',liveAcceptanceVerified:false});
+ });
+ const candidate=CANDIDATE_IDS.map(id=>Object.freeze({
+  id,effect:id==='mahoraga.task.prepare'?'proposal-only':'read',
+  status:'source-candidate-not-deployed',liveAcceptanceVerified:false
+ }));
+ const capabilities=Object.freeze([...runtime,...candidate]);
  const found=new Set(tables);
  const missing=required.filter(t=>!found.has(t));
  const appRoles=new Set();
@@ -44,6 +69,12 @@ export function assessCouncilWiring({tables,installationObservations=[],sourceSh
   canonicalStateOwner:'Hatchable/PostgreSQL',
   sourceSha,readOnly:true,roleCount:roles.length,
   identicalCapabilityProfile:'collaborative-sme',
+  capabilities,
+  provenance:Object.freeze({
+   runtimeEvidence:'hatchable-deployed-brain-core-capabilities',
+   candidateEvidence:'git-pr-208-unmerged',
+   installationEvidence:'none-authenticated'
+  }),
   githubRoleInstallationsObserved:appRoles.size,
   roleIdentities:Object.freeze([...appRoles].sort()),
   rolesUnverified:Object.freeze(rolesUnverified),
