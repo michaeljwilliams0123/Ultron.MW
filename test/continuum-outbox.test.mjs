@@ -338,3 +338,29 @@ test('no-op fenced reconciliation rejects noncanonical persisted bigint strings'
     deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
   }),/continuum-outbox-fence-or-source-conflict/);
 });
+
+
+test('RED: fenced reconciliation must not certify an unauthorized persisted cost or effect',async()=>{
+  for(const altered of [
+    {maxPaidCents:1},{maxPaidCents:false},{effect:'write'}
+  ]){
+    for(const premarked of [false,true]){
+      const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+      const c=contract();
+      await outbox.reserve(c);
+      if(premarked)await outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      });
+      const query=db.query.bind(db);
+      db.query=async(sql,params)=>{
+        const result=await query(sql,params);
+        if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+          return {rows:result.rows.map(row=>({...row,...altered}))};
+        return result;
+      };
+      await assert.rejects(outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      }),/continuum-outbox-(transition-readback-mismatch|fence-or-source-conflict)/);
+    }
+  }
+});
