@@ -87,10 +87,10 @@ test('live PostgreSQL repair fence test uses new disposable database, never drop
 test('live PostgreSQL fixture requires the exact CI service container and an ephemeral marker',()=>{
  const script=readFileSync(new URL('./repair-pr-postgres-live.test.mjs',import.meta.url),'utf8');
  const workflow=readFileSync(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8');
- assert.match(script,/process\\.env\\.ULTRON_POSTGRES_CONTAINER_ID/);
+ assert.match(script,/process\.env\.ULTRON_POSTGRES_CONTAINER_ID/);
  assert.match(script,/ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1/);
  assert.match(script,/docker[^\\n]*inspect/);
- assert.doesNotMatch(script,/\\['ps','--filter','ancestor=postgres:16-alpine'/);
- assert.match(workflow,/ULTRON_POSTGRES_CONTAINER_ID: \\$\\{\\{ job\\.services\\.postgres\\.id \\}\\}/);
+ assert.doesNotMatch(script,/\['ps','--filter','ancestor=postgres:16-alpine'/);
+ assert.match(workflow,/ULTRON_POSTGRES_CONTAINER_ID: \$\{\{ job\.services\.postgres\.id \}\}/);
  assert.match(workflow,/ULTRON_TEST_POSTGRES: repair-ci-ephemeral-v1/);
 });
