@@ -51,7 +51,9 @@ test('reserve atomically records a zero-cost, source-and-fence-bound intent befo
   assert.match(sql.sql,/INSERT INTO brain_continuum_outbox/);
   assert.match(sql.sql,/ON CONFLICT DO NOTHING/);
   assert.equal(sql.params[11],0);
-  assert.equal(db.statements.length,1);
+  assert.equal(db.statements.length,2);
+  assert.match(db.statements[1].sql,/SELECT[\\s\\S]*FROM brain_continuum_outbox/);
+  assert.deepEqual(db.statements[1].params,[contract().deliveryId]);
   assert.equal(typeof outbox.dispatch,'undefined');
 });
 
