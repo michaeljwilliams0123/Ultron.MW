@@ -89,7 +89,7 @@ test('live PostgreSQL fixture requires the exact CI service container and an eph
  const workflow=readFileSync(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8');
  assert.match(script,/process\.env\.ULTRON_POSTGRES_CONTAINER_ID/);
  assert.match(script,/ULTRON_TEST_POSTGRES=repair-ci-ephemeral-v1/);
- assert.match(script,/docker[^\\n]*inspect/);
+ assert.match(script,/execFileSync\('docker',\s*\['inspect'/);
  assert.doesNotMatch(script,/\['ps','--filter','ancestor=postgres:16-alpine'/);
  assert.match(workflow,/ULTRON_POSTGRES_CONTAINER_ID: \$\{\{ job\.services\.postgres\.id \}\}/);
  assert.match(workflow,/ULTRON_TEST_POSTGRES: repair-ci-ephemeral-v1/);
