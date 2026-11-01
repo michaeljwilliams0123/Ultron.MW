@@ -18,8 +18,8 @@ export function publicIPv4(address){
  if(a===0||a===10||a===127||a>=224||a===169&&b===254||
   a===172&&b>=16&&b<=31||a===192&&b===168||
   a===100&&b>=64&&b<=127||a===198&&b>=18&&b<=19||
-  a===192&&b===0||a===192&&b===88&&c===99||
-  a===192&&b===0&&c===2||a===198&&b===51&&c===100||
+  a===192&&b===0&&(c===0||c===2)||a===192&&b===88&&c===99||
+  a===198&&b===51&&c===100||
   a===203&&b===0&&c===113||a===255)return false;
  return true;
 }
@@ -52,8 +52,10 @@ function githubPath(params){
   fail('peer-target-invalid');
 }
 export function makeCouncilExternalTransport({
- dnsResolve,httpsRequest,githubInstallationToken,fetchImpl
+ dnsResolve,httpsRequest,githubInstallationToken,fetchImpl,totalTimeoutMs=15000
 }={}){
+ if(!Number.isSafeInteger(totalTimeoutMs)||totalTimeoutMs<1||totalTimeoutMs>15000)
+  fail('timeout-policy-invalid');
  return Object.freeze({
   async webRead(params={}){
    if(typeof dnsResolve!=='function'||typeof httpsRequest!=='function')
@@ -71,10 +73,11 @@ export function makeCouncilExternalTransport({
    // NOT replace the chosen IP (rebinding). TLS still verifies the hostname.
    const pinned=addresses[0].address;
    return new Promise((resolve,reject)=>{
-    let done=false,total=0;
+    let done=false,total=0,deadline;
     const finish=(error,value)=>{
      if(done)return;
      done=true;
+     clearTimeout(deadline);
      if(error)reject(error);else resolve(value);
     };
     let request;
@@ -105,6 +108,8 @@ export function makeCouncilExternalTransport({
        egressVerified:true,redirected:false
       }));
      });
+     if(!done)deadline=setTimeout(()=>request.destroy(Error('external-transport-timeout')),totalTimeoutMs);
+     request.on('close',()=>clearTimeout(deadline));
      request.on('timeout',()=>request.destroy(Error('external-transport-timeout')));
      request.on('error',e=>finish(e));
      request.end();
