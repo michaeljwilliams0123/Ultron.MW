@@ -380,3 +380,44 @@ test('RED: duplicate outbox reservation must not certify an unrecognized persist
     assert.equal(db.entries.size,1);
   }
 });
+
+test('RED: unknown UPDATE response after durable commit reconciles via readback without replay',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  const original=db.query.bind(db);
+  let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('UPDATE brain_continuum_outbox')){
+      writes++;
+      await original(sql,params);
+      throw Error('simulated lost PostgreSQL UPDATE response');
+    }
+    return original(sql,params);
+  };
+  assert.deepEqual(await outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),{changed:false,deliveryId:c.deliveryId,state:'reconcile-required',reconciled:true});
+  assert.equal(writes,1,'never replay an uncertain UPDATE');
+  assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
+});
+
+test('RED: unknown UPDATE response before commit stays unresolved, never silently retries',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  const original=db.query.bind(db);
+  let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('UPDATE brain_continuum_outbox')){
+      writes++;
+      throw Error('simulated lost response before any commit');
+    }
+    return original(sql,params);
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1,'never replay an uncertain UPDATE');
+  assert.equal(db.entries.get(c.deliveryId).state,'pending');
+});
