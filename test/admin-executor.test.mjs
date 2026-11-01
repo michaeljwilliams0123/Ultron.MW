@@ -183,6 +183,24 @@ test('rerun and cancel are denied for non-allowlisted workflow runs before any a
 });
 
 
+test('rerun and cancel accept allowlisted ref-qualified workflow paths',async()=>{
+ for(const [operation,expected] of [
+  ['actions.rerun_failed',{runAttempt:1,headSha:SHA,conclusion:'failure'}],
+  ['actions.cancel',{runAttempt:1,headSha:SHA,status:'in_progress'}]
+ ]){
+  const plan={...base(operation),expected};
+  for(const path of ['.github/workflows/verify.yml@main',
+   '.github/workflows/verify.yml@refs/pull/7/merge']){
+   const readback={path,status:operation==='actions.cancel'?'in_progress':'completed',
+    conclusion:'failure',run_attempt:1,head_sha:SHA};
+   const {services,calls}=harness(plan,{readback});
+   const result=await executeAdminOperation(plan,services);
+   assert.equal(result.state,'dispatched-unverified');
+   assert.equal(calls.filter(x=>x.method==='POST').length,1);
+  }
+ }
+});
+
 test('failure to persist unknown-write receipt never turns it into a retryable exception',async()=>{
  const input=base();
  const run=harness(input,{mutateFailure:true});
