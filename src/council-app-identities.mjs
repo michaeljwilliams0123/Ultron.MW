@@ -135,7 +135,8 @@ export async function authenticateCouncilAppActor({
  AUTHENTICATED_ACTORS.add(actor);
  return actor;
 }
-export function decideCouncilAction(actor,{operation,repository=REPO}={}){
+export function decideCouncilAction(actor,request={}){
+ const {operation,repository=REPO}=request;
  if(!actor||!AUTHENTICATED_ACTORS.has(actor)||!ROLE_SET.has(actor.role)||
    actor.verifiedBy!=='github-installation-token'||
    !Number.isSafeInteger(actor.installationId)||actor.installationId<1||
@@ -150,7 +151,6 @@ export function decideCouncilAction(actor,{operation,repository=REPO}={}){
  if(!['engineering-autonomy','owner-requested'].includes(actor.profile)||
    !ENGINEERING_OPS[actor.role]?.includes(operation))
   return Object.freeze({allowed:false,reason:'requires-separate-owner-and-review-authorization'});
- const request=arguments[1]||{};
  if(request.baseSha!==actor.sourceSha||request.maxPaidCents!==0||
    !Number.isSafeInteger(request.attempt)||request.attempt<1||request.attempt>3)
   return Object.freeze({allowed:false,reason:'scoped-plan-not-verified'});
