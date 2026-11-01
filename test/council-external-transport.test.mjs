@@ -136,6 +136,27 @@ test('C04 review: pinned lookup supports Node 20 all-address and single-address 
   method:'GET',redirect:'manual',maxBytes:65536,requirePublicIpAtConnection:true
  }),/expected-test-stop/);
 });
+test('C04 GitHub read stops oversized streamed bodies before buffering the full response',async()=>{
+ let pulled=0,cancelled=false;
+ const oversized=new ReadableStream({
+  pull(controller){
+   pulled++;
+   if(pulled>100){controller.close();return;}
+   controller.enqueue(new Uint8Array(16384));
+  },
+  cancel(){cancelled=true;}
+ });
+ const t=makeCouncilExternalTransport({
+  githubInstallationToken:'private-server-token',verifiedInstallationId:701,
+  fetchImpl:async()=>new Response(oversized,{status:200})
+ });
+ await assert.rejects(t.githubRead({repository:peer,sourceSha:sha,
+  path:'src/task-relay-contract.mjs',expectedInstallationId:701}),
+  /external-transport-github-response-too-large/);
+ assert.ok(pulled<=67,'oversized response must stop after the 1 MiB cap');
+ assert.equal(cancelled,true);
+});
+
 test('C04 review: issuance-bound installation identity rejects wrong actor without GitHub IO',async()=>{
  let calls=0;
  const t=makeCouncilExternalTransport({
