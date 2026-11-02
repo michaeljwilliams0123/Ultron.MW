@@ -259,6 +259,16 @@ export function createCapabilityBroker({ authorize = async () => false,
       if(attemptStore)await attemptStore.advance({
         id:attemptId,fingerprint,expectedStatus:'approval-pending',receipt:checkpoint});
       pending.receipt=checkpoint;
+      // The durable checkpoint may await storage while an independent owner
+      // revokes or unbinds this authority. Recheck AFTER that await: a stale
+      // grant must not dispatch even though the pre-check was once valid.
+      // Preserve the persisted uncertain receipt rather than releasing/replaying
+      // its key; an independent reconciler can establish the final outcome.
+      let authorityStillValid = false;
+      try {
+        authorityStillValid = recordFor(id) === record && record.readiness === 'ready';
+      } catch { /* expired, invalid clock, or unbound: fail closed */ }
+      if (!authorityStillValid) return checkpoint;
     } catch (error) {
       // Release only a pre-dispatch approval-pending record. An ambiguous
       // persisted 'reconcile-required' state must remain non-replayable.
