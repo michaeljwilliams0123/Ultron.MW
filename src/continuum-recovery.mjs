@@ -12,9 +12,20 @@ const SHA=/^[a-f0-9]{40}$/;
 const DELIVERY=/^[a-z0-9][a-z0-9_.:-]{11,127}$/i;
 const WEEK_MS=7*24*60*60*1000;
 
+// JS Date.parse normalizes nonexistent calendar days such as February 30.
+// Fail closed unless the date portion of a scheduler/DB timestamp is real.
+function validCalendarDay(value){
+  if(typeof value!=='string')return false;
+  const parts=/^(\d{4})-(\d{2})-(\d{2})[T ]/.exec(value);
+  if(!parts)return false;
+  const y=Number(parts[1]),m=Number(parts[2]),d=Number(parts[3]);
+  const leap=y%4===0&&(y%100!==0||y%400===0);
+  const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+  return d>=1&&d<=(days[m-1]??0);
+}
 function clock(value){
-  const t=Date.parse(value);
-  if(typeof value!=='string'||!Number.isFinite(t))
+  const t=validCalendarDay(value)?Date.parse(value):NaN;
+  if(!Number.isFinite(t))
     throw Error('continuum-recovery-time-invalid');
   return new Date(t).toISOString();
 }
@@ -35,7 +46,7 @@ function persistedLease(value){
 // which cannot attest the stored expiry of an immutable delivery.
 function persistedExpiry(value){
   if(value instanceof Date)return Number.isFinite(value.getTime())?value.getTime():null;
-  if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}[T ]/.test(value))
+  if(!validCalendarDay(value))
     return null;
   const parsed=Date.parse(value);
   return Number.isFinite(parsed)?parsed:null;
@@ -90,13 +101,14 @@ export async function reconcileContinuumTick({
         receipts.push(receipt(deliveryId,'held-unknown'));
         continue;
       }
-      if(row.state==='reconcile-required'){
-        receipts.push(receipt(deliveryId,'reconcile-required'));
-        continue;
-      }
+      // Even uncertain receipts need valid expiry evidence before certifying status.
       const expiry=persistedExpiry(row.expiresAt);
       if(expiry===null){
         receipts.push(receipt(deliveryId,'held-unknown'));
+        continue;
+      }
+      if(row.state==='reconcile-required'){
+        receipts.push(receipt(deliveryId,'reconcile-required'));
         continue;
       }
       if(expiry>Date.parse(observedAt)){
