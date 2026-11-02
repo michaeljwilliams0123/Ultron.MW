@@ -1,124 +1,103 @@
-# Destiny's Codex — dedicated executor App and live canary handoff
+# Destiny Codex Cloud — separate execution lane and evidence canary
 
-**Status: SOURCE-ONLY / NOT CONFIGURED / NO LIVE DESTINY EXECUTION PROVEN.**
-Canonical tracker: [Continuum C03 #185](https://github.com/michaeljwilliams0123/Ultron.MW/issues/185).
-Supporting: [#183](https://github.com/michaeljwilliams0123/Ultron.MW/issues/183) C01 outbox, [#187](https://github.com/michaeljwilliams0123/Ultron.MW/issues/187) $0 policy, [#204](https://github.com/michaeljwilliams0123/Ultron.MW/issues/204) evidence contract, [#168](https://github.com/michaeljwilliams0123/Ultron.MW/issues/168) repair, and [CODEX-AUTHORS](CODEX-AUTHORS.md).
+**Status: SOURCE-ONLY / CLOUD ENVIRONMENT NOT CONFIRMED / LIVE TASK NOT PROVEN.**
+Tracking: [issue #185](https://github.com/michaeljwilliams0123/Ultron.MW/issues/185), [C01 #183](https://github.com/michaeljwilliams0123/Ultron.MW/issues/183), [acceptance #204](https://github.com/michaeljwilliams0123/Ultron.MW/issues/204).
 
-## Intent / what this PR delivers
+## Which cloud integration?
 
-Prepare a distinct **`ultron-destiny-executor` GitHub App** as the public receipt/branch-write actor for a **separately authenticated Destiny Work/Codex** event executor. The App must not be confused with a new ChatGPT identity, a second controller, a new Hatchable deployment, the existing `ultron-github-app` or a second human account. One durable task owner remains Hatchable/PostgreSQL, with GitHub handling versioned source/CI.
+**No separately registered GitHub App is required.** The desired resource is an **OpenAI Codex Cloud environment** in the intended ChatGPT account, with that account's existing authorized GitHub connection. Codex Cloud tasks, ChatGPT Work event-triggered tasks, and GitHub App installations are **three distinct products and identities**. Do not substitute one for another.
 
-This PR ships:
-1. `config/destiny-executor-trust.json`: deliberately `unconfigured`, no credentials, App IDs or public signing key invented.
-2. `src/destiny-executor-attestation.mjs`: a small read-only Ed25519 completion verifier. It correlates an immutable trusted outbox intent and exact event actor to one signed, zero-paid, **read-only** result. It cannot dispatch tasks, grant authority, install an App or mutate a DB.
-3. `test/destiny-executor-attestation.test.mjs`: positive signature and negative forged-owner, wrong actor, source drift, bad route/delivery, stale timestamps, replay and paid/action escalation cases.
-4. An explicit owner/Destiny activation and evidence checklist.
+Official guidance:
+- [Create and publish a Codex Cloud environment](https://learn.chatgpt.com/docs/environments/cloud-environments)
+- [Using Codex Cloud](https://help.openai.com/en/articles/20001545-using-codex-cloud)
+- [ChatGPT scheduled/event-triggered tasks](https://help.openai.com/en/articles/10291617-scheduled-tasks-in-chatgpt)
 
-`cloud/hatchable/lib/continuum-ack.js` currently verifies a separately keyed `destiny-work` bridge **ACK**, not actual execution completion. `cloud/hatchable/migrations/0014_continuum_receipts.sql` requires prior authorized durable receiver/route registration. This PR does **not** replace that contract or pretend a signed completion file can automatically advance production state.
+### Account-side activation (requires the account owner in Codex Cloud)
 
-## Identity and trust diagram
+1. Sign in to the **intended** ChatGPT account (not Mike's if independent account provenance is required).
+2. Choose **Work in → Cloud → Select environment → Create environment**, or **Settings → Codex Cloud → Environments → Create environment**.
+3. Select `michaeljwilliams0123/Ultron.MW` using that account's connected GitHub identity and authorized repo access.
+4. Prepare, inspect and test the environment. Use Node 22 and the existing repo verification command:
+   `node --test test/destiny-executor-attestation.test.mjs && node scripts/verify.mjs`.
+5. Review setup and **Publish**. Record an independently observed environment ID *fingerprint* (SHA-256; not raw private identifier), owning workspace/account observation, actual GitHub actor, and setup/test evidence. Do **not** declare account authentication from a GitHub username or environment label.
+6. Start a new **read-only** cloud task that checks `docs/core/codex-authors.mjs` from current `main` and reports `mike-codex` and `destiny-codex` registration state. No write, merge, credential access, or model-API paid fallback.
+7. If hands-free trigger from GitHub PR events is needed, create a **separate Work event-triggered task** from the same account with the GitHub plugin connected, and validate its trigger/condition/prompt against the trusted current-main contract. Merely publishing a Codex Cloud environment does **not** auto-subscribe it to GitHub events. Keep any earlier Work route registry as historical until proven active.
+
+**Important:** The GitHub connector available to this chat can edit the repository but cannot publish Codex Cloud environments, enable a different ChatGPT account, transfer GitHub OAuth authorization, or query another account's cloud task runs. Use the account-side environment setup UI for those steps; do not forge proof in the repository.
+
+## Evidence model
 
 ```text
-Ultron/Hatchable C01 task+outbox (trusted database readback)
-             |
-             v
-GitHub Issue -> task PR/event  [source/head/route/delivery digest]
-             |
-             v
-Destiny's own authenticated Work event task (must be enabled in that account)
-             |
-             v
-Signed read-only result (signing key controlled by authorized executor runtime)
-             |
-             v
-Dedicated Destiny GitHub App creates branch receipt / exposes GitHub actor
-             |
-             v
-Ultron verifies GitHub event actor + Ed25519 + outbox fields + exact SHA
-             |
-             v
-C03 durable independent readback -> task result, held or reconcile-required
+C01 immutable outbox (authoritative DB readback)
+  ↓ immutable task/request/source/route/delivery digests
+GitHub task PR (owner-authorized, pinned head)
+  ↓ account-side Codex Cloud task OR separately enrolled Work GitHub event task
+Actual read-only cloud execution
+  ↓ independently controlled Ed25519 signer produces signed completion receipt
+Authenticated GitHub write/event readback (observed actor)
+  ↓ pinned environment fingerprint + receipt verification
+C03 independently persisted completion and no-replay readback
 ```
 
-**Two distinct independent checks are necessary.** A GitHub App bot account attests which *App installation* wrote a commit; it cannot, by itself, attest which **ChatGPT Work account** actually ran the job. A signed receipt attests possession of the executor signing key, but establishing which Work account controls that key needs a separately verified account-side enrollment/installation observation. Until that independent binding exists, `workAccountAuthenticated=false` and `productionAccepted=false` are mandatory even for a cryptographically valid receipt.
+`config/destiny-executor-trust.json` starts **unconfigured**: `githubActor`,
+`environmentFingerprint`, `keyId` and `publicKeyPem` remain `null`.
+Only a separately authorized setup may pin them after independent readback.
+Do not mint a test signing key and register it as a real cloud executor.
 
-Do not mint an arbitrary key in this repository and declare it Destiny's. Register a key only after an authenticated Destiny executor provisioner has generated it with the **private** key retained exclusively in a separately authorized runtime. Pin the public key/key ID and exact App installation identifiers through a reviewed trusted-base configuration update. Never store secrets, session cookies, client secrets, PEM private keys, access tokens, account IDs or Work transcripts in public GitHub issues, source or CI logs.
+The v2 `src/destiny-executor-attestation.mjs` verifier:
+- checks a strict Ed25519 receipt with immutable intent/task/delivery/request/source/route identity;
+- checks the observed GitHub commit/event actor against independently pinned trust (which may be a human owner; a separate GitHub username is **not** mandatory);
+- checks the cloud environment fingerprint, key ID, read-only effect and zero-paid budget;
+- rejects forged, stale, future-dated, mutated, unconfigured and conflicting receipts; and
+- always returns `workAccountAuthenticated:false` and `productionAccepted:false`. Account provenance and actual external execution must be proven **independently**.
 
-## Proposed GitHub App installation
+An ACK is *not* completion: `cloud/hatchable/lib/continuum-ack.js` verifies an authenticated delivery acknowledgement only. The C03 receiver must not self-register routes. A lost write response requires readback reconciliation and never blind re-execution. Replaying a delivery may be safe only after authoritative evidence of no prior external execution and a separately authorized new attempt. Do not paste credentials or ChatGPT sessions into issues, PRs or workflow logs.
 
-Owner action, **not performed by this PR**:
+## Safe canaries and release gates
 
-1. From GitHub **Settings → Developer settings → GitHub Apps → New GitHub App**, create `ultron-destiny-executor` (or a unique available name recorded in the approved trust manifest).
-2. Restrict installation to **`michaeljwilliams0123/Ultron.MW`**. Capture trusted App ID, installation ID, expected bot login by authenticated readback; don't infer identity from the proposed name.
-3. Request only repository **Metadata: read** (automatic), **Contents: read/write on task branches** (repository-wide grant fenced by application policy), **Pull requests: read**, **Issues: read**, **Actions: read**. App installation permissions cannot natively restrict writes to specific paths; enforce allowed task/receipt paths in trusted code and protect `main` with branch rules.
-4. No Administration, Secrets, Members, Deployments or Workflows write grants; no bypass/auto-merge/self-review. Rotate and revoke App credentials independently. Private key and signing key are different security materials.
-5. Set an explicit single receiver source `destiny-work` with authorized C01 outbox/route registration, versioned route digest and independently held signing key. Do **not** provision secret material from GitHub issues or code generated by an untrusted PR.
-6. In **Destiny's own authenticated ChatGPT Work account**, inspect the enrolled GitHub event task, verify repo/event rules, route fingerprint, enabled state, and zero-approved-paid-usage behavior. App installation **does not** create or enable that Work task.
-7. If that Work event cannot securely bind the private attestation key or cannot run with $0 approved incremental paid spend, report `not-ready` and stop. The App-only setup may still be used as a transport smoke test but not as authenticated Destiny acceptance.
-
-## Canary 0 — local source regression (this PR)
+### Canary 0: repository source
 
 ```sh
 node --test test/destiny-executor-attestation.test.mjs
 node scripts/verify.mjs
 ```
 
-These tests generate an ephemeral test-only Ed25519 key pair in-process, exercise signature/correlation constraints and **never** invoke Destiny, connect to a live App, mint credentials or incur model usage.
+These are deterministic local/CI tests, **not real cloud connectivity**.
 
-## Canary 1 — safe live request (Destiny to finish)
+### Canary 1: actual Codex Cloud
 
-**After authenticated setup**, use a *new owner-authored* Issue and task PR created from **then-current main** through the documented [CODEX-AUTHORS](CODEX-AUTHORS.md) flow:
+From the independently authenticated account and published environment:
 
 ```text
-/codex destiny-codex Inspect trusted current-main docs/core/codex-authors.mjs and report the callable author IDs. No product-source modification, merge, credential access or paid fallback.
+Inspect trusted current main docs/core/codex-authors.mjs. Report the two callable author IDs and which lanes are enrolled or unverified. Read-only, no merge, no credential access and no paid API fallback.
 ```
 
-Use a *new* immutable task/delivery ID. Prior #83/#87/#90/#93/#116/#117/#180/#181 PRs are historical artifacts, not reusable canaries after main has advanced. Obtain an exact-head PR-triggered `test` check; an owner comment `/codex run destiny-codex` is a trigger hint only, **not** an execution receipt. Do not post repeated wake-up comments or retry an uncertain write blindly.
+Capture the actual Codex Cloud task link/ID, account-side execution record, selected repo/environment, observed head SHA, test output and repo readback. A GitHub issue/comment alone is not a completed cloud task.
 
-Destination-scoped receiver must first consume a legitimate C01 outbox item and a separately registered immutable C03 route. A receipt payload must match exact task/delivery/request/source/route, include a cryptographically signed `completed` result digest, `maxPaidCents=0`, `effect=read`, a bounded expiry, pinned key ID and the expected App login. Verify the **creating commit's actual actor** with GitHub API; do not accept an actor merely supplied in JSON. Persist signed receipt with create-only semantics, then read it back; conflicting IDs or unknown writes enter `reconcile-required`.
+### Canary 2: Work GitHub event and C03 bridge (only if that lane is enabled)
 
-### Required acceptance table
+- Use a **new owner-authored** issue and task PR pinned to current main; verify the Work trigger and task's immutable routing fingerprint **independently**.
+- Confirm `accepted → published → acknowledged → running → result-recorded → verified` through real provider/account observations and DB receipts.
+- Validate no duplicate run on a repeated notification, plus wrong actor, forged signature, wrong environment, wrong delivery/route SHA, stale source, key rotation, expired timestamp, lost ACK, incomplete write, and zero-credit cases.
+- Separate **CI green**, **Codex Cloud task success**, **Work event delivery**, **bridge ACK**, and **production acceptance**. They are not interchangeable.
+- Never grant admin, protected-main bypass, PR self-approval or external paid usage just to make the canary pass.
 
-| Gate | Acceptance evidence | Owner |
+### Completion register
+
+| Requirement | Current evidence | State |
 | --- | --- | --- |
-| A1 | Dedicated App ID/installation/repo scope verified and least-authority policy enforced | Owner + Destiny |
-| A2 | Real **Destiny-authenticated Work** event task is enabled; installation/route fingerprint checked independently | Destiny |
-| A3 | A uniquely provisioned Work-bound signing key is held outside Git; pinned public key and key ID independently reviewed | Destiny |
-| A4 | Exact-main immutable owner task, target PR and current C01 outbox/registered C03 route all agree | Ultron |
-| A5 | One live trigger, one Work accepted claim, one actual harmless repository inspection and one signed completed result | Destiny |
-| A6 | GitHub actor/readback, Ed25519 proof, full request SHA, task/delivery/route/source/CI exact head and timing reconcile | Ultron |
-| A7 | Forged owner ACK, wrong App, modified payload, stale SHA, expired/rotated key, duplicate delivery and lost ACK all fail closed | Ultron |
-| A8 | No local PC, unauthorized credential changes, autonomous release, unrelated writes or additional paid spend | Owner + Ultron |
+| Source verifier + synthetic negative tests | PR #216 branch & exact-head CI | Check CI after edits |
+| Account-owned cloud environment published | No verified account-side environment ID | **Blocked** |
+| Real account/GitHub repo binding | GitHub connector alone cannot attest Work/Codex account | **Blocked** |
+| External signer independently bound | No pinned authorized key | **Blocked** |
+| One live read-only cloud task | No independent task receipt | **Blocked** |
+| C01/C03 persisted end-to-end result and replay | Missing live receiver and completion proof | **Blocked** |
+| Production release | No positive live acceptance; `productionAccepted=false` | **Not accepted** |
 
-Positive A5/A6 must reference independently observable **executor and provider** receipts; a static JSON fixture or a manual GitHub owner comment cannot satisfy them. Initial canary can be reported as `verified-executor-receipt` only; production acceptance and separately authenticated Work-account proof require the full independent A1–A8 evidence chain.
+## Recovery
 
-## Risks, unresolved decisions and rollback
+On receipt conflict, unknown write, revoked/expired signer, mismatched main SHA or unsupported account access, **hold and reconcile**. Never delete or rewrite an existing receipt to hide ambiguity. Preserve all evidence. Roll back by disabling routing in its authorized control plane and revoking executor access outside Git; no credential keys are stored in this PR.
 
-| Priority | Blocker / risk | Decision / test |
-| --- | --- | --- |
-| P0 | Work task not actually enabled in Destiny's account | Confirm separate account-side event subscription; no fabricated enrollment |
-| P0 | Shared owner GitHub identity masquerades as Destiny | Require observed dedicated App actor **and** externally provisioned key verification |
-| P0 | Work environment cannot securely sign with a separate private key | Hold identity acceptance; do not pretend GitHub bot is Work |
-| P0 | No authorized C03 receiver/route or independently verifiable callback | Finish route registration and Hatchable deployment under #185 |
-| P0 | Missing ACK vs result confusion | Maintain separate `acknowledged` and `completed` evidence |
-| P0 | Ambiguous writes/duplicate delivery | Reconcile immutable IDs by authoritative readback; no blind replay |
-| P0 | $0 approved paid spend/Work credit eligibility unknown | Probe without model use where possible; require owner authorization for costs |
-| P1 | App permission compromise / malicious PR instructions | Narrow grants, protected main, exact trusted-base policy and path fences |
-| P1 | Owner-authored PR workflow works, App-created PR may not wake checks | Exercise event-origin matrix; don't substitute workflow_dispatch for external Work delivery |
-| P1 | Live telemetry and identity/key rotation | Expose redacted readiness, last-success, revoked state, age and no-ACK reasons |
-| P1 | No Work-identity attestation standard | Keep `workAccountAuthenticated=false` until independently validated evidence exists |
-| P2 | Additional UI/control plane causes duplicated state and spend | Keep one Hatchable runtime, GitHub as source, same C01/C03 ledgers |
+## What this PR may be merged as
 
-**Rollback:** Revoke the App installation/access token and executor signing key, mark trusted destination `disabled`, block new C03 delivery, preserve immutable readbacks, and reconcile any in-flight/unknown side effects. Never delete or reassign an old delivery to suppress ambiguity. This PR does not activate App credentials or alter deployed SQL.
-
-## Destiny completion checklist for this draft PR
-
-- [ ] Independently inspect current main vs this branch and confirm no conflict with PRs #198/#199/#207/#213.
-- [ ] Run focused and full tests, address material code/security findings.
-- [ ] Use real Destiny account (not an assumed bot) to create/verify persistent Work event trigger.
-- [ ] Create and install the dedicated App with minimal grants; record real App and installation identity in reviewed configuration.
-- [ ] Provision signer in Destiny's authorized runtime and add independently verified trust key **public portion only**.
-- [ ] Connect signed result delivery to C03 through a separately authorized producer/receiver, no self-registered route.
-- [ ] Prove exact-main positive canary and negative/no-replay/revocation tests with durable independent readback.
-- [ ] Update #185 and #204 with actual evidence links; mark the blocked gates complete only when measured.
-- [ ] Keep this PR draft and source-only until signed-off integration criteria are established; do not silently merge or deploy.
+At most this is a source-only contract and guided account-side setup for a Codex Cloud identity. **Do not describe it as live Cloud enabled, Work account proven, C03 authenticated end-to-end or production accepted.** Merge eligibility is separately determined by exact-head CI, review and repository protections; the external acceptance gates in #185 remain open until real observations exist.
