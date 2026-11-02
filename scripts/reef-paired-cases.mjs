@@ -15,6 +15,8 @@ const trustedStringify=JSON.stringify.bind(JSON);
 // Candidate output is untrusted. The controller owns case IDs, scoring and
 // release decisions. Never keep an HMAC signing oracle in the candidate realm.
 const trustedWriteSync=writeSync;
+// Capture frame construction before candidate imports; Object.create itself is mutable.
+const trustedObjectCreate=Object.create;
 /** Compatibility helper for old diagnostic callers. The candidate runner no
  * longer creates, receives, or uses a signing key. Not a provenance claim. */
 export function createNonPooledObservationKey(keyHex){
@@ -485,7 +487,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  const execution=input.includeExecutors?
   await runExecutionVariant(input.executorSource,input.source,input.policySource):[];
  const observation={admission,execution};
- const envelope=Object.create(null);
+ const envelope=trustedObjectCreate(null);
  envelope.observation=observation;
  envelope.completionNonce=completionNonce;
  trustedWriteSync(1,trustedStringify(envelope)+'\n');
