@@ -122,11 +122,15 @@ export function assertOperationAuthorization(authorization,{
 }
 
 /**
- * Produces a non-executable readiness result. It never merges. A protected
- * head is ready only when exact-head required checks and an independent human
- * review were freshly read from GitHub for the same SHA.
+ * Non-executable source-merge readiness assessment. Owner approval is the
+ * authority for routine PRs; a second reviewer is not a universal Ultron gate.
+ * This function MUST receive verified observations from trusted GitHub/owner
+ * readers, not a model, candidate worker, or caller-supplied assertion. GitHub
+ * branch protection and material security/dependency holds remain separate.
+ * Issue #209 contains the owner-approved queue; PR #200 requires independent
+ * security assessment (#201), and #198 remains architecturally parked.
  */
-export function evaluateProtectedHead(evidence,{headSha,principalActorRef,now}={}){
+export function evaluateProtectedHead(evidence,{headSha,principalActorRef,prNumber,now}={}){
  const instant=parseInstant(now),observed=parseInstant(evidence?.observedAt);
  const checks=Array.isArray(evidence?.checks)?evidence.checks:[];
  const required=new Set(['test','fixed-comparison']);
@@ -136,15 +140,36 @@ export function evaluateProtectedHead(evidence,{headSha,principalActorRef,now}={
   return entries.length>0&&entries.every(check=>
    check.status==='completed'&&check.conclusion==='success');
  }));
- const review=evidence?.review;
+ const owner=evidence?.ownerApproval;
+ const ownerApproved=Number.isSafeInteger(prNumber)&&prNumber>0&&
+  owner?.source==='github-owner-queue-attestation'&&owner?.verified===true&&
+  owner?.actor==='michaeljwilliams0123'&&
+  owner?.repository===ULTRON_REPOSITORY&&
+  owner?.issueNumber===209&&
+  Number.isSafeInteger(owner?.commentId)&&owner.commentId>0&&
+  owner?.scope==='routine-source-squash'&&owner?.decision==='approved'&&
+  Array.isArray(owner?.approvedPrNumbers)&&
+  owner.approvedPrNumbers.every(n=>Number.isSafeInteger(n)&&n>0)&&
+  owner.approvedPrNumbers.includes(prNumber);
+ const rules=evidence?.githubRules;
+ const githubEligible=rules?.source==='github-enforced-merge-readback'&&
+  rules?.verified===true&&rules?.eligible===true;
+ const securityReady=evidence?.dependenciesSatisfied===true&&
+  evidence?.materialSecurityFindingsClear===true&&
+  // A critical independent security assessment is distinct from generic code
+  // review. Owner approval cannot silently clear Reef #201's release hold.
+  (prNumber!==200&&evidence?.criticalSecurityHold!==true||
+   evidence?.independentSecurityAssessment?.source==='trusted-security-adjudication'&&
+   evidence?.independentSecurityAssessment?.verified===true&&
+   evidence?.independentSecurityAssessment?.status==='cleared')&&
+  // #198 proposes a separate Admin App inconsistent with the single principal.
+  prNumber!==198;
  const ready=Number.isFinite(instant)&&Number.isFinite(observed)&&
   instant-observed>=0&&instant-observed<=5*60*1000&&SHA.test(headSha||'')&&
   typeof principalActorRef==='string'&&principalActorRef.length>0&&
   evidence?.source==='github-protected-head-readback'&&evidence?.verified===true&&
   evidence?.headSha===headSha&&[...required].every(name=>passed.has(name))&&
-  review?.state==='approved'&&review?.headSha===headSha&&review?.independent===true&&
-  typeof review.actorRef==='string'&&review.actorRef.length>0&&
-  review.actorRef!==principalActorRef;
+  ownerApproved&&githubEligible&&securityReady;
  return Object.freeze({ready,executable:false,headSha,
-  reason:ready?'exact-head-checks-and-independent-review':'protected-head-evidence-incomplete'});
+  reason:ready?'exact-head-checks-and-owner-authorization':'protected-head-evidence-incomplete'});
 }
