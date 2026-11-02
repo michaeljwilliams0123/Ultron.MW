@@ -12,11 +12,52 @@ const SHA=/^[a-f0-9]{40}$/;
 const DELIVERY=/^[a-z0-9][a-z0-9_.:-]{11,127}$/i;
 const WEEK_MS=7*24*60*60*1000;
 
+// JS Date.parse normalizes nonexistent calendar days such as February 30.
+// Fail closed unless the date portion of a scheduler/DB timestamp is real.
+function validCalendarDay(value){
+  if(typeof value!=='string')return false;
+  const parts=/^(\d{4})-(\d{2})-(\d{2})[T ]/.exec(value);
+  if(!parts)return false;
+  const y=Number(parts[1]),m=Number(parts[2]),d=Number(parts[3]);
+  const leap=y%4===0&&(y%100!==0||y%400===0);
+  const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+  return d>=1&&d<=(days[m-1]??0);
+}
 function clock(value){
-  const t=Date.parse(value);
-  if(typeof value!=='string'||!Number.isFinite(t))
+  // Scheduler clocks must have the same explicit, bounded timezone and
+  // real calendar fields as immutable PostgreSQL expiry readbacks.
+  // Date.parse alone accepts worker-local time and invalid +14:30 offsets.
+  const t=typeof value==='string'?persistedExpiry(value):null;
+  if(t===null)
     throw Error('continuum-recovery-time-invalid');
   return new Date(t).toISOString();
+}
+// PostgreSQL BIGINT may be returned as a canonical decimal string. Never
+// coerce adapter data: arrays, booleans, hex and whitespace-padded strings
+// could otherwise masquerade as a valid lease fence.
+function persistedLease(value){
+  if(typeof value==='number')
+    return Number.isSafeInteger(value)&&value>0?value:null;
+  if(typeof value==='string'&&/^[1-9][0-9]*$/.test(value)){
+    const parsed=Number(value);
+    return Number.isSafeInteger(parsed)?parsed:null;
+  }
+  return null;
+}
+// A PostgreSQL timestamptz readback must be a Date or an ISO/SQL
+// timestamp string. Date.parse alone coerces arrays and arbitrary objects,
+// which cannot attest the stored expiry of an immutable delivery.
+function persistedExpiry(value){
+  if(value instanceof Date)return Number.isFinite(value.getTime())?value.getTime():null;
+  // A persisted expiry is a global instant. Local-time strings vary across
+  // worker timezones, and Date.parse may accept malformed trailing fields.
+  if(!validCalendarDay(value)||
+     !/^\d{4}-\d{2}-\d{2}[T ](?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:0\d|1[0-4])(?::?[0-5]\d)?)$/.test(value))
+    return null;
+  const zone=/[+-](\d{2})(?::?(\d{2}))?$/.exec(value);
+  if(zone&&Number(zone[1])===14&&Number(zone[2]??0)!==0)return null;
+  const parsed=Date.parse(value);
+  return Number.isFinite(parsed)?parsed:null;
 }
 function receipt(deliveryId,disposition){
   return Object.freeze({deliveryId,disposition,externalDispatches:0});
@@ -42,6 +83,9 @@ export async function reconcileContinuumTick({
     throw Error('continuum-recovery-input-invalid');
   const control=await readControl();
   if(control?.paused===true)return summary('paused');
+  // Revocation is an explicit admission fence. Missing or coerced values
+  // cannot certify an active owner authority for a recovery transition.
+  if(control?.revoked!==false)return summary('held-revoked');
   if(control?.paused!==false||control?.maxPaidCents!==0||
      control?.paidFallback!==false)
     return summary('held-zero-cost');
@@ -58,13 +102,19 @@ export async function reconcileContinuumTick({
   for(const deliveryId of ids){
     try{
       const row=await outbox.observe({deliveryId});
+      const leaseGeneration=persistedLease(row?.leaseGeneration);
       if(!row||row.deliveryId!==deliveryId||row.repository!==REPO||
          !SHA.test(row.sourceSha||'')||
-         !Number.isSafeInteger(Number(row.leaseGeneration))||
-         Number(row.leaseGeneration)<1||
+         leaseGeneration===null||
          !['read','advisory'].includes(row.effect)||
          row.maxPaidCents!==0||
          !['pending','reconcile-required'].includes(row.state)){
+        receipts.push(receipt(deliveryId,'held-unknown'));
+        continue;
+      }
+      // Even uncertain receipts need valid expiry evidence before certifying status.
+      const expiry=persistedExpiry(row.expiresAt);
+      if(expiry===null){
         receipts.push(receipt(deliveryId,'held-unknown'));
         continue;
       }
@@ -72,21 +122,26 @@ export async function reconcileContinuumTick({
         receipts.push(receipt(deliveryId,'reconcile-required'));
         continue;
       }
-      const expiry=Date.parse(row.expiresAt);
-      if(!Number.isFinite(expiry)){
-        receipts.push(receipt(deliveryId,'held-unknown'));
-        continue;
-      }
       if(expiry>Date.parse(observedAt)){
         receipts.push(receipt(deliveryId,'pending'));
         continue;
       }
+      // Owner authority may change during asynchronous observation. Recheck
+      // immediately before a database transition, not only at tick admission.
+      // The DB adapter must still enforce its own atomic authority fence.
+      const currentControl=await readControl();
+      if(currentControl?.paused!==false||currentControl?.revoked!==false||
+         currentControl?.maxPaidCents!==0||currentControl?.paidFallback!==false){
+        receipts.push(receipt(deliveryId,'held-unknown'));
+        continue;
+      }
       const result=await outbox.markUnknown({
         deliveryId,sourceSha:row.sourceSha,
-        leaseGeneration:Number(row.leaseGeneration)
+        leaseGeneration
       });
       receipts.push(receipt(deliveryId,
-        result?.state==='reconcile-required'?'reconcile-required':'held-unknown'));
+        result?.deliveryId===deliveryId&&typeof result.changed==='boolean'&&
+        result.state==='reconcile-required'?'reconcile-required':'held-unknown'));
     }catch{
       // A possible database transition may have committed before a lost ACK.
       // The next tick can only read back; never repeat an external effect.
@@ -108,7 +163,8 @@ export function measureObservedSchedulerSlo({
   const start=Date.parse(clock(startAt));
   const end=Date.parse(clock(endAt));
   if(!Number.isSafeInteger(intervalMinutes)||intervalMinutes<1||
-     intervalMinutes>1440||typeof target!=='number'||target<=0||target>1||
+     // Never allow caller-configured acceptance to weaken the mandatory 99.5% SLO.
+     intervalMinutes>1440||!Number.isFinite(target)||target<0.995||target>1||
      !Array.isArray(runs)||runs.length>10000)
     throw Error('continuum-slo-input-invalid');
   const interval=intervalMinutes*60000;
