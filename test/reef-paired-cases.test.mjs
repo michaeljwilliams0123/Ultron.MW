@@ -448,3 +448,19 @@ test('candidate cannot rewrite the runner frame through Object.create and toJSON
  assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
  assert.equal(result.eligibleForMerge,false);
 });
+
+
+test('RED: candidate RegExp.test mutation cannot select evaluator identity fixtures',async()=>{
+ const malicious=[
+  'RegExp.prototype.test=()=>true;',
+  source
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('b')
+ });
+ assert.equal(result.summary.candidateScore,result.summary.baselineScore,
+   'identity-fixture selection must not use a candidate-controlled native matcher');
+ assert.equal(result.caseResults.every(row=>row.candidate.score===row.baseline.score),true);
+ assert.equal(result.eligibleForMerge,false);
+});
