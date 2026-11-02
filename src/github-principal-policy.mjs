@@ -10,7 +10,7 @@ export const ULTRON_REPOSITORY='michaeljwilliams0123/Ultron.MW';
 export const ULTRON_REPOSITORY_ID=1424939667;
 export const ULTRON_GITHUB_PRINCIPAL='ultron-github-app';
 
-const RFC3339=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const RFC3339=/^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/;
 const SHA=/^[a-f0-9]{40}$/;
 const ACTOR=/^github-app:[a-z0-9][a-z0-9-]{2,70}$/;
 const GRANT_ID=/^[a-z0-9][a-z0-9:_-]{7,127}$/;
@@ -38,9 +38,15 @@ export function parseInstant(value){
  if(typeof value!=='string'||!RFC3339.test(value))return NaN;
  // Date.parse normalizes nonexistent calendar dates (Feb 30 -> Mar 2).
  // An expiry or protected-head observation must use the exact stated day.
- const parts=/^(\d{4})-(\d{2})-(\d{2})T/.exec(value);
+ const parts=RFC3339.exec(value);
  if(!parts)return NaN;
  const y=Number(parts[1]),m=Number(parts[2]),d=Number(parts[3]);
+ // RFC3339 timezone offsets cannot exceed 14 hours; 14:00 is the limit.
+ // Date.parse otherwise accepts impossible +23:59 and 24:00 notation.
+ if(parts[6]!==undefined){
+  const hours=Number(parts[7]),minutes=Number(parts[8]);
+  if(hours>14||hours===14&&minutes!==0)return NaN;
+ }
  const leap=y%4===0&&(y%100!==0||y%400===0);
  const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
  if(d<1||d>(days[m-1]??0))return NaN;
