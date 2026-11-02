@@ -176,8 +176,18 @@ export function makeCouncilExternalTransport({
     '?ref='+params.sourceSha,githubInstallationToken,fetchImpl);
    if(file.type!=='file'||file.path!==params.path||file.encoding!=='base64'||
       typeof file.content!=='string')fail('github-file-invalid');
-   const text=Buffer.from(file.content.replace(/\s/g,''),'base64').toString('utf8');
-   if(Buffer.byteLength(text)>MAX_BYTES)fail('github-file-too-large');
+   // GitHub wraps base64 with newlines, but Node's decoder also silently
+   // drops arbitrary invalid characters and accepts missing/extra padding.
+   // Only canonical encoded source is admissible for exact-SHA readbacks.
+   const encoded=file.content.replace(/\s/g,'');
+   if(!encoded||encoded.length%4!==0||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+     fail('github-file-invalid');
+   const bytes=Buffer.from(encoded,'base64');
+   if(bytes.toString('base64')!==encoded)
+     fail('github-file-invalid');
+   if(bytes.length>MAX_BYTES)fail('github-file-too-large');
+   const text=bytes.toString('utf8');
    return Object.freeze({status:200,repository:REPO,path:params.path,
     sourceSha:params.sourceSha,text,installationId:verifiedInstallationId,
     installationVerified:true,repositoryAccessVerified:true});
