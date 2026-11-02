@@ -71,9 +71,14 @@ rejected.
 Source declarations or masked setup values do not prove the principal is ready.
 Runtime admission requires the expected installation, repository, actor,
 operation, effective token permissions, expiry and revocation state to be
-independently read back without exposing credential material. Exact-head CI and
-an independent approving reviewer remain separate protected-release evidence;
-the App cannot review its own work and this contract exposes no merge route.
+independently read back without exposing credential material. For routine
+source-only PRs, a verified approval from repository owner `michaeljwilliams0123`
+under the canonical issue #209 queue is the decisive Ultron authorization;
+a second independent GitHub approval is not a blanket internal requirement.
+Exact-head CI, queue dependencies, material security findings and GitHub's own
+enforced review/branch protections remain separate release eligibility evidence.
+Reef #200/#201 still requires independent security adjudication. The App cannot
+approve its own work, override GitHub rules or perform merges through this module.
 
 ## Canonical execution lifecycle
 
@@ -87,11 +92,14 @@ the App cannot review its own work and this contract exposes no merge route.
 4. **Execute** — persist the intended operation and idempotency key before any
    external write, then dispatch within its declared scope.
 5. **Verify** — independently observe GitHub object identity, branch/PR head,
-   checks, review state, and the requested postcondition.
+   exact-head checks, owner approval provenance, applicable GitHub review rules,
+   dependency/security holds, and the requested postcondition.
 6. **Persist** — atomically record observations, outcome, remaining uncertainty,
    and the next eligible transition. Sent or uncertain writes are readback-only.
 7. **Learn** — verified trajectories may propose candidates; independent
-   evaluation and protected review decide promotion without widening authority.
+   evaluation and owner-authorized, protection-compliant release gates decide
+   routine promotion; high-risk security evaluations still need independent
+   security clearance without widening authority.
 
 ## Execution priority
 
