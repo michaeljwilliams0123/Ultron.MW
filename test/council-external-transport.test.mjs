@@ -169,3 +169,25 @@ test('C04 review: issuance-bound installation identity rejects wrong actor witho
   /external-transport-installation-identity-mismatch/);
  assert.equal(calls,0);
 });
+
+
+test('RED C04 GitHub file read refuses malformed or noncanonical base64 source bodies',async()=>{
+  // Buffer.from(value,'base64') silently discards invalid characters.
+  // A trusted readback must not claim source provenance from truncated input.
+  const malformed=['ZXhwb3J0ICE=!!','ZXhwb3J0ICE','ZXhwb3J0ICE===','%%%'];
+  for(const content of malformed){
+    const t=makeCouncilExternalTransport({
+      githubInstallationToken:'private-server-token',verifiedInstallationId:701,
+      fetchImpl:async url=>{
+        if(String(url).includes('/installation/repositories?'))
+          return new Response(JSON.stringify({repositories:[{full_name:peer}]}),{status:200});
+        return new Response(JSON.stringify({type:'file',
+          path:'src/task-relay-contract.mjs',encoding:'base64',content}),{status:200});
+      }
+    });
+    await assert.rejects(t.githubRead({repository:peer,sourceSha:sha,
+      path:'src/task-relay-contract.mjs',requiredPermission:'contents:read',
+      expectedInstallationId:701}),/external-transport-github-file-invalid/,
+      'invalid base64 must fail closed: '+content);
+  }
+});
