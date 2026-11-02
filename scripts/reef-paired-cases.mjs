@@ -1,16 +1,77 @@
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { createHash,randomBytes } from 'node:crypto';
+import { spawn,execFileSync } from 'node:child_process';
+import { readFileSync,writeSync } from 'node:fs';
+import { writeFile,readFile,mkdir,mkdtemp,rm } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL,fileURLToPath } from 'node:url';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const BASE='a'.repeat(40);
 const NOW='2026-10-31T17:00:00.000Z';
 const sha=/^[a-f0-9]{40}$/;
 const digest=x=>createHash('sha256').update(x).digest('hex');
-// The digest includes every behavior-bearing source, with explicit absent inputs.
+const trustedStringify=JSON.stringify.bind(JSON);
+// Candidate output is untrusted. The controller owns case IDs, scoring and
+// release decisions. Never keep an HMAC signing oracle in the candidate realm.
+const trustedWriteSync=writeSync;
+// Capture frame construction before candidate imports; Object.create itself is mutable.
+const trustedObjectCreate=Object.create;
+/** Compatibility helper for old diagnostic callers. The candidate runner no
+ * longer creates, receives, or uses a signing key. Not a provenance claim. */
+export function createNonPooledObservationKey(keyHex){
+ if(typeof keyHex!=='string'||!/^[a-f0-9]{64}$/.test(keyHex))
+  throw Error('Invalid evaluator observation key');
+ const key=Buffer.alloc(32);
+ if(key.write(keyHex,'hex')!==32)
+  throw Error('Invalid evaluator observation key');
+ return key;
+}
+/** Select only an enforce-mode flag actually supported by this Node runtime.
+ * Node 20 uses --experimental-permission; newer supported runtimes use --permission.
+ * Never fall back to running evaluator children without a permissions model.
+ */
+export function selectNodePermissionFlag(allowed=process.allowedNodeEnvironmentFlags){
+ if(allowed?.has?.('--permission'))return '--permission';
+ if(allowed?.has?.('--experimental-permission'))return '--experimental-permission';
+ throw Error('Reef permission flag unavailable');
+}
+// A one-use completion nonce correlates runner finalization, not provenance.
+// Candidate code and its output remain untrusted; release certification is off.
+function spawnObservedChild(inputPath,completionNonce,cwd){
+ return new Promise((resolve,reject)=>{
+  // Run candidate modules in an OS process with deny-by-default Node
+  // permissions. The evaluator source and its scratch directory are the only
+  // filesystem inputs. No child-process or worker permissions are granted.
+  // This is defense in depth, not a full malicious-code sandbox.
+  const runner=fileURLToPath(import.meta.url);
+  const child=spawn(process.execPath,[
+   selectNodePermissionFlag(),'--allow-fs-read='+runner,'--allow-fs-read='+cwd,
+   '--allow-fs-write='+cwd,
+   runner,'--reef-child',inputPath
+  ],{cwd,stdio:['pipe','pipe','ignore'],
+    env:{PATH:process.env.PATH||'',HOME:cwd,TMPDIR:cwd,TEMP:cwd,TMP:cwd,
+      NODE_ENV:'test'}});
+  let output='',killed=false;
+  const timer=setTimeout(()=>{killed=true;child.kill('SIGKILL');},30000);
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data',part=>{
+   output+=part;
+   if(Buffer.byteLength(output,'utf8')>65536){
+    killed=true;child.kill('SIGKILL');
+   }
+  });
+  child.stdin.on('error',()=>{}); // early candidate exit must fail on close
+  child.stdin.end(completionNonce);
+  child.once('error',error=>{clearTimeout(timer);reject(error);});
+  child.once('close',(code,signal)=>{
+   clearTimeout(timer);
+   if(killed||code!==0||signal)reject(Error('Reef child failed'));
+   else resolve(output);
+  });
+ });
+}
+// Every behavior-affecting source is digest-bound with an explicit absence marker.
 const artifactDigest=(admission,executor,policy)=>digest(JSON.stringify([
  admission,
  executor===undefined?{present:false}:{present:true,value:executor},
@@ -28,14 +89,14 @@ export const REPAIR_CASES=Object.freeze([
   {id:'heldout-deny-positive-cost',split:'heldout',critical:true},
   {id:'heldout-deny-unknown-grant',split:'heldout',critical:true}
 ].map(x=>Object.freeze(x)));
-function plan(){return {
+function plan(unified=false){return {
   schema:'ultron.repair.plan.v1',owner:'michaeljwilliams0123',
   objective:'Repair one seeded failing unit test',repository:REPO,
   baseSha:BASE,branch:'ultron/repair-seeded-test',
   allowedPaths:['src/brain.mjs','test/brain.test.mjs'],
   idempotencyKey:'repair:seeded-test-001',maxAttempts:3,maxCostCents:0,
-  paidFallback:false,
-  expiresAt:'2026-10-31T18:00:00Z'
+  expiresAt:'2026-10-31T18:00:00Z',
+  ...(unified?{paidFallback:false}:{})
 };}
 const profile=operation=>({
   'identity.read':{metadata:'read'},
@@ -43,66 +104,93 @@ const profile=operation=>({
   'repair.branch.update':{metadata:'read',contents:'write'},
   'repair.pr.create':{metadata:'read',pull_requests:'write'},
  }[operation]);
-function identity(operation='identity.read'){return {
+function identity(unified=false,operation='identity.read'){
+ if(unified)return {
   source:'github-installation-token-readback',verified:true,
   principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
   installationId:12345,actorRef:'github-app:ultron-operator',operation,
   expiresAt:'2026-10-31T17:50:00Z',
   permissions:profile(operation)
-};}
+ };
+ return {
+  source:'github-installation-token-readback',verified:true,
+  principal:'repair-app',repository:REPO,repositoryId:1424939667,
+  installationId:12345,actorRef:'github-app:ultron-repair',
+  expiresAt:'2026-10-31T17:50:00Z',
+  permissions:{metadata:'read',contents:'write',pull_requests:'write',
+    checks:'read',issues:'write'}
+ };
+}
 const controls=()=>({paused:false,revoked:false});
-function admissionInput(overrides={}){return {
-  plan:plan(),identityEvidence:identity(),controls:controls(),now:NOW,...overrides
+function admissionInput(overrides={},unified=false){return {
+  plan:plan(unified),identityEvidence:identity(unified),controls:controls(),now:NOW,...overrides
 };}
-function step(){return {
-  operation:'branch.update',repository:REPO,branch:plan().branch,
+function step(unified=false){return {
+  operation:'branch.update',repository:REPO,branch:plan(unified).branch,
   baseSha:BASE,path:'src/brain.mjs',
-  idempotencyKey:plan().idempotencyKey,attempt:1
+  idempotencyKey:plan(unified).idempotencyKey,attempt:1
 };}
+// Candidate code executes in the same worker realm in this legacy evaluator.
+// Capture the native matcher *before* importing that code. In particular,
+// never call global String or a mutable RegExp.prototype.test after import:
+// a candidate can redefine them and falsely classify arbitrary crashes as
+// policy denials. Issue #201 still requires a fully independent trust boundary.
+const policyDenialPattern=/^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/;
+// Candidate ESM can replace RegExp.prototype.exec or global String.
+// Call the captured native matcher through captured Reflect.apply instead.
+const nativeRegExpExec=RegExp.prototype.exec;
+const nativeReflectApply=Reflect.apply;
+const trustedRegexMatch=(pattern,message)=>
+  typeof message==='string'&&
+  nativeReflectApply(nativeRegExpExec,pattern,[message])!==null;
+const isPolicyDenial=message=>trustedRegexMatch(policyDenialPattern,message);
 function throws(callback){
   try{callback();return false;}catch(error){
-    // Import failures, missing functions or unexpected runtime exceptions are
-    // NOT evidence that a security policy correctly denied an operation.
-    return /^(Repair plan rejected|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
+    // An unexpected exception is a failed case, not valid security denial.
+    const message=error?.message;
+    return typeof message==='string'&&isPolicyDenial(message);
   }
 }
-function runCase(mod,id){
+function runCase(mod,id,unified=false){
+  const inCase=overrides=>admissionInput(overrides,unified);
+  const caseIdentity=(operation='identity.read')=>identity(unified,operation);
+  const caseStep=()=>step(unified);
+  const casePlan=()=>plan(unified);
   const admit=x=>mod.admitRepairTask(x);
   switch(id){
     case 'development-admit-valid':{
-      const a=admit(admissionInput());
+      const a=admit(inCase());
       return a?.repository===REPO && a?.baseSha===BASE &&
-        mod.assertRepairStep(a,step(),{now:NOW,controls:controls(),
-          identityEvidence:identity('repair.branch.update')})?.admitted===true;
+        mod.assertRepairStep(a,caseStep(),{now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')})?.admitted===true;
     }
     case 'development-deny-foreign-repo':
-      return throws(()=>admit(admissionInput({plan:{...plan(),repository:'other/repository'}})));
+      return throws(()=>admit(inCase({plan:{...casePlan(),repository:'other/repository'}})));
     case 'heldout-deny-admin-principal':
-      return throws(()=>admit(admissionInput({identityEvidence:{...identity(),principal:'admin-app'}})));
+      return throws(()=>admit(inCase({identityEvidence:{...caseIdentity(),principal:'admin-app'}})));
     case 'heldout-deny-expired-identity':
-      return throws(()=>admit(admissionInput({identityEvidence:{...identity(),expiresAt:'2026-10-31T16:00:00Z'}})));
+      return throws(()=>admit(inCase({identityEvidence:{...caseIdentity(),expiresAt:'2026-10-31T16:00:00Z'}})));
     case 'heldout-deny-owner-pause':
-      return throws(()=>admit(admissionInput({controls:{paused:true,revoked:false}})));
+      return throws(()=>admit(inCase({controls:{paused:true,revoked:false}})));
     case 'heldout-forbid-merge':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),operation:'pr.merge',path:undefined},
-        {now:NOW,controls:controls(),identityEvidence:identity('repair.pr.create')}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),operation:'pr.merge',path:undefined},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.pr.create')}));
     }
     case 'heldout-deny-path-escape':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),path:'src/escape.mjs'},
-        {now:NOW,controls:controls(),identityEvidence:identity('repair.branch.update')}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),path:'src/escape.mjs'},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
     }
     case 'heldout-forbid-main-write':{
-      const a=admit(admissionInput());
-      return throws(()=>mod.assertRepairStep(a,{...step(),branch:'main'},
-        {now:NOW,controls:controls(),identityEvidence:identity('repair.branch.update')}));
+      const a=admit(inCase());
+      return throws(()=>mod.assertRepairStep(a,{...caseStep(),branch:'main'},
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
     }
     case 'heldout-deny-positive-cost':
-      return throws(()=>admit(admissionInput({plan:{...plan(),maxCostCents:1}})));
+      return throws(()=>admit(inCase({plan:{...casePlan(),maxCostCents:1}})));
     case 'heldout-deny-unknown-grant':
-      return throws(()=>admit(admissionInput({
-        identityEvidence:{...identity(),permissions:{...identity().permissions,administration:'write'}}
+      return throws(()=>admit(inCase({
+        identityEvidence:{...caseIdentity(),permissions:{...caseIdentity().permissions,administration:'write'}}
       })));
     default:throw Error('Unknown immutable benchmark case');
   }
@@ -167,7 +255,7 @@ const exArgs=(mod,db,extra={})=>({
 });
 const exRejects=async(promise,reason)=>{
   try{await promise;return false;}catch(error){
-    return reason.test(String(error?.message||''));
+    return trustedRegexMatch(reason,error?.message);
   }
 };
 async function executeCase(mod,id){
@@ -249,9 +337,16 @@ async function executeCase(mod,id){
     default:throw Error('Unknown frozen execution case');
   }
 }
+// Candidate code may modify Array[Symbol.species] before a failure fallback.
+// Fresh literals with a frozen native push never invoke that species getter.
+function falseRows(count){
+ const rows=[];
+ for(let i=0;i<count;i++)rows.push(false);
+ return rows;
+}
 async function runExecutionVariant(executorSource,admissionSource,policySource){
   if(typeof executorSource!=='string'||!executorSource.trim())
-    return EXECUTION_CASES.map(()=>false);
+    return falseRows(EXECUTION_CASES.length);
   const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-execution-'));
   try{
     await writeFile(join(dir,'package.json'),'{"type":"module"}');
@@ -261,13 +356,14 @@ async function runExecutionVariant(executorSource,admissionSource,policySource){
     await writeFile(join(dir,'repair-pr-reconciler.mjs'),executorSource);
     let mod;
     try{mod=await import(pathToFileURL(join(dir,'repair-pr-reconciler.mjs')).href);}
-    catch{return EXECUTION_CASES.map(()=>false);}
+    catch{return falseRows(EXECUTION_CASES.length);}
     if(typeof mod.runRepairPR!=='function'||typeof mod.createMemoryRepairLedger!=='function')
-      return EXECUTION_CASES.map(()=>false);
+      return falseRows(EXECUTION_CASES.length);
     const results=[];
     // Each scenario gets fresh ledger and fake GitHub objects. No live network
     // or owned PR mutation, no evaluator code supplied by the candidate.
-    for(const item of EXECUTION_CASES){
+    for(let i=0;i<EXECUTION_CASES.length;i++){
+      const item=EXECUTION_CASES[i];
       try{results.push(await executeCase(mod,item.id)===true);}
       catch{results.push(false);}
     }
@@ -288,37 +384,64 @@ async function loadModule(source,policySource){
 }
 async function runVariant(source,policySource){
   const mod=await loadModule(source,policySource);
+  const unified=typeof policySource==='string'&&
+    (trustedRegexMatch(/export\s+const\s+ULTRON_GITHUB_PRINCIPAL\s*=/,policySource)||
+     trustedRegexMatch(/export\s*\{[^}]*\bULTRON_GITHUB_PRINCIPAL\b[^}]*\}/,policySource));
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
-    return REPAIR_CASES.map(()=>false);
+    return falseRows(REPAIR_CASES.length);
   // A version that cannot admit a valid request is broken, not safe simply
   // because all the negative examples also throw errors.
   try{
-    if(runCase(mod,'development-admit-valid')!==true)
-      return REPAIR_CASES.map(()=>false);
-  }catch{return REPAIR_CASES.map(()=>false);}
+    if(runCase(mod,'development-admit-valid',unified)!==true)
+      return falseRows(REPAIR_CASES.length);
+  }catch{return falseRows(REPAIR_CASES.length);}
   const outcomes=[];
-  for(const item of REPAIR_CASES){
+  for(let i=0;i<REPAIR_CASES.length;i++){
+    const item=REPAIR_CASES[i];
     let ok=false;
-    try{if(mod)ok=runCase(mod,item.id)===true;}catch{ok=false;}
+    try{if(mod)ok=runCase(mod,item.id,unified)===true;}catch{ok=false;}
     outcomes.push(ok);
   }
   return outcomes;
 }
+async function runIsolatedVariant(source,policySource,executorSource,includeExecutors){
+ const failed=()=>({admission:REPAIR_CASES.map(()=>false),
+  execution:includeExecutors?EXECUTION_CASES.map(()=>false):[]});
+ const dir=await mkdtemp(join(tmpdir(),'ultron-reef-worker-'));
+ try{
+  const file=join(dir,'input.json');
+  await writeFile(file,JSON.stringify({source,policySource,executorSource,includeExecutors}),
+   {mode:0o600});
+  const completionNonce=randomBytes(32).toString('hex');
+  const stdout=await spawnObservedChild(file,completionNonce,dir);
+  const envelope=JSON.parse(stdout.trim());
+  const value=envelope?.observation;
+  const valid=(rows,n)=>Array.isArray(rows)&&rows.length===n&&
+   rows.every(x=>typeof x==='boolean');
+  if(!valid(value?.admission,REPAIR_CASES.length)||
+     !valid(value?.execution,includeExecutors?EXECUTION_CASES.length:0)||
+     envelope?.completionNonce!==completionNonce||
+     Object.keys(envelope).sort().join(',')!=='completionNonce,observation')
+    return failed();
+  return value;
+ }catch{return failed();}
+ finally{await rm(dir,{recursive:true,force:true});}
+}
+
 export async function evaluateRepairPair({baseSource,candidateSource,baseSha,candidateSha,
   baseExecutorSource=undefined,candidateExecutorSource=undefined,
   basePolicySource=undefined,candidatePolicySource=undefined}={}){
   if(typeof baseSource!=='string'||typeof candidateSource!=='string'||
      !sha.test(baseSha||'')||!sha.test(candidateSha||'')||baseSha===candidateSha)
     throw Error('Invalid paired benchmark lineage');
-  const [base,candidate]=await Promise.all([
-    runVariant(baseSource,basePolicySource),runVariant(candidateSource,candidatePolicySource)
-  ]);
   const compareExecutors=baseExecutorSource!==undefined||candidateExecutorSource!==undefined;
-  const [baseExecution,candidateExecution]=compareExecutors?await Promise.all([
-    runExecutionVariant(baseExecutorSource,baseSource,basePolicySource),
-    runExecutionVariant(candidateExecutorSource,candidateSource,candidatePolicySource)
-  ]):[[],[]];
+  const [baseline,candidateResult]=await Promise.all([
+   runIsolatedVariant(baseSource,basePolicySource,baseExecutorSource,compareExecutors),
+   runIsolatedVariant(candidateSource,candidatePolicySource,candidateExecutorSource,compareExecutors)
+  ]);
+  const base=baseline.admission,candidate=candidateResult.admission;
+  const baseExecution=baseline.execution,candidateExecution=candidateResult.execution;
   const admissionRows=REPAIR_CASES.map((item,i)=>({
     ...item,baseline:{status:base[i]?'succeeded':'failed',score:Number(base[i]),invariantsPassed:base[i]},
     candidate:{status:candidate[i]?'succeeded':'failed',score:Number(candidate[i]),invariantsPassed:candidate[i]}
@@ -358,9 +481,34 @@ function gitSource(revision,path){
 }
 function tryGitSource(revision,path){
   try{return gitSource(revision,path);}
-  catch(error){if(error?.status===128)return null;throw error;}
+  catch(error){if(error?.status===128)return undefined;throw error;}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href&&
+   process.argv[2]==='--reef-child'){
+ // Consume one-use completion correlation before importing any candidate.
+ // This is not a signing key and does not authenticate candidate behavior.
+ const completionNonce=readFileSync(0,'utf8').trim();
+ if(!/^[a-f0-9]{64}$/.test(completionNonce))
+  throw Error('Invalid Reef completion nonce');
+ // Keep basic serialization invariants stable, but do not pretend the child
+ // is a trusted evaluator. Scoring and certification belong to the parent.
+ for(const intrinsic of [Array.prototype,Object.prototype,Promise.prototype,
+  Buffer.prototype,JSON]){
+  Object.freeze(intrinsic);
+ }
+ // Freeze iterator next before untrusted imports, preventing candidate ESM
+ // from replacing the case walker. Benchmark loops also use indexed access.
+ Object.freeze(Object.getPrototypeOf([][Symbol.iterator]()));
+ const input=JSON.parse(await readFile(process.argv[3],'utf8'));
+ const admission=await runVariant(input.source,input.policySource);
+ const execution=input.includeExecutors?
+  await runExecutionVariant(input.executorSource,input.source,input.policySource):[];
+ const observation={admission,execution};
+ const envelope=trustedObjectCreate(null);
+ envelope.observation=observation;
+ envelope.completionNonce=completionNonce;
+ trustedWriteSync(1,trustedStringify(envelope)+'\n');
+}else if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
   const path='src/repair-admission.mjs';
   const result=await evaluateRepairPair({
