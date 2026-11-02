@@ -333,9 +333,16 @@ async function executeCase(mod,id){
     default:throw Error('Unknown frozen execution case');
   }
 }
+// Candidate code may modify Array[Symbol.species] before a failure fallback.
+// Fresh literals with a frozen native push never invoke that species getter.
+function falseRows(count){
+ const rows=[];
+ for(let i=0;i<count;i++)rows.push(false);
+ return rows;
+}
 async function runExecutionVariant(executorSource,admissionSource,policySource){
   if(typeof executorSource!=='string'||!executorSource.trim())
-    return EXECUTION_CASES.map(()=>false);
+    return falseRows(EXECUTION_CASES.length);
   const dir=await mkdtemp(join(tmpdir(),'ultron-reef-policy-execution-'));
   try{
     await writeFile(join(dir,'package.json'),'{"type":"module"}');
@@ -345,9 +352,9 @@ async function runExecutionVariant(executorSource,admissionSource,policySource){
     await writeFile(join(dir,'repair-pr-reconciler.mjs'),executorSource);
     let mod;
     try{mod=await import(pathToFileURL(join(dir,'repair-pr-reconciler.mjs')).href);}
-    catch{return EXECUTION_CASES.map(()=>false);}
+    catch{return falseRows(EXECUTION_CASES.length);}
     if(typeof mod.runRepairPR!=='function'||typeof mod.createMemoryRepairLedger!=='function')
-      return EXECUTION_CASES.map(()=>false);
+      return falseRows(EXECUTION_CASES.length);
     const results=[];
     // Each scenario gets fresh ledger and fake GitHub objects. No live network
     // or owned PR mutation, no evaluator code supplied by the candidate.
@@ -379,13 +386,13 @@ async function runVariant(source,policySource){
       /export\s*\{[^}]*\bULTRON_GITHUB_PRINCIPAL\b[^}]*\}/,[policySource]));
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
-    return REPAIR_CASES.map(()=>false);
+    return falseRows(REPAIR_CASES.length);
   // A version that cannot admit a valid request is broken, not safe simply
   // because all the negative examples also throw errors.
   try{
     if(runCase(mod,'development-admit-valid',unified)!==true)
-      return REPAIR_CASES.map(()=>false);
-  }catch{return REPAIR_CASES.map(()=>false);}
+      return falseRows(REPAIR_CASES.length);
+  }catch{return falseRows(REPAIR_CASES.length);}
   const outcomes=[];
   for(const item of REPAIR_CASES){
     let ok=false;
