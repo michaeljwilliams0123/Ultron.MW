@@ -18,6 +18,18 @@ function clock(value){
     throw Error('continuum-recovery-time-invalid');
   return new Date(t).toISOString();
 }
+// PostgreSQL BIGINT may be returned as a canonical decimal string. Never
+// coerce adapter data: arrays, booleans, hex and whitespace-padded strings
+// could otherwise masquerade as a valid lease fence.
+function persistedLease(value){
+  if(typeof value==='number')
+    return Number.isSafeInteger(value)&&value>0?value:null;
+  if(typeof value==='string'&&/^[1-9][0-9]*$/.test(value)){
+    const parsed=Number(value);
+    return Number.isSafeInteger(parsed)?parsed:null;
+  }
+  return null;
+}
 function receipt(deliveryId,disposition){
   return Object.freeze({deliveryId,disposition,externalDispatches:0});
 }
@@ -58,10 +70,10 @@ export async function reconcileContinuumTick({
   for(const deliveryId of ids){
     try{
       const row=await outbox.observe({deliveryId});
+      const leaseGeneration=persistedLease(row?.leaseGeneration);
       if(!row||row.deliveryId!==deliveryId||row.repository!==REPO||
          !SHA.test(row.sourceSha||'')||
-         !Number.isSafeInteger(Number(row.leaseGeneration))||
-         Number(row.leaseGeneration)<1||
+         leaseGeneration===null||
          !['read','advisory'].includes(row.effect)||
          row.maxPaidCents!==0||
          !['pending','reconcile-required'].includes(row.state)){
@@ -83,7 +95,7 @@ export async function reconcileContinuumTick({
       }
       const result=await outbox.markUnknown({
         deliveryId,sourceSha:row.sourceSha,
-        leaseGeneration:Number(row.leaseGeneration)
+        leaseGeneration
       });
       receipts.push(receipt(deliveryId,
         result?.state==='reconcile-required'?'reconcile-required':'held-unknown'));
