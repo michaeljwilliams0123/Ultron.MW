@@ -55,3 +55,25 @@ test('transport treats response loss as failure for executor reconciliation, not
  await assert.rejects(transport.request('POST','/repos/michaeljwilliams0123/Ultron.MW/actions/runs/15/cancel'),/transport/i);
  assert.equal(calls,1);
 });
+
+
+test('RED: admin request body must not change during async credential mint',async()=>{
+  const root='/repos/michaeljwilliams0123/Ultron.MW';
+  const data={allow_squash_merge:true};
+  const sent=[];
+  const t=createAdminGitHubTransport({
+    getToken:async()=>{
+      // A caller-controlled object can change while minting privileges.
+      data.allow_squash_merge=false;
+      data.visibility='private';
+      return {token:'test-only-credential'};
+    },
+    fetchImpl:async(_url,request)=>{
+      sent.push(request.body);
+      return {ok:true,status:200};
+    }
+  });
+  await t.request('PATCH',root,data);
+  assert.deepEqual(sent,['{"allow_squash_merge":true}'],
+    'wire bytes must be the same request validated before the first await');
+});
