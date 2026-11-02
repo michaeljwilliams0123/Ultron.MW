@@ -66,28 +66,38 @@ test('routine operations accept only standing grants and high-impact operations 
   'independent-owner-authorization'),{operation:routine,...common}),/authorization/i);
 });
 
-test('protected-head evidence is exact-sha, fresh, check-complete and independently reviewed',()=>{
+test('protected-head requires authenticated owner queue approval and exact-head checks',()=>{
+ const ownerApproval={source:'github-owner-queue-attestation',verified:true,
+  actor:'michaeljwilliams0123',repository:ULTRON_REPOSITORY,
+  issueNumber:209,commentId:6579368546,scope:'routine-source-squash',
+  decision:'approved',approvedPrNumbers:[212,210,207,208,200,199,176]};
  const evidence={source:'github-protected-head-readback',verified:true,
   headSha:SHA,observedAt:'2026-10-31T19:59:00Z',checks:[
    {name:'test',status:'completed',conclusion:'success',headSha:SHA},
    {name:'fixed-comparison',status:'completed',conclusion:'success',headSha:SHA},
-  ],review:{state:'approved',headSha:SHA,independent:true,actorRef:'github:user:reviewer'}};
- const ready=evaluateProtectedHead(evidence,{headSha:SHA,
-  principalActorRef:'github-app:ultron-operator',now:NOW});
+  ],ownerApproval,
+  githubRules:{source:'github-enforced-merge-readback',verified:true,eligible:true},
+  dependenciesSatisfied:true,materialSecurityFindingsClear:true};
+ const opts={headSha:SHA,prNumber:212,principalActorRef:'github-app:ultron-operator',now:NOW};
+ const ready=evaluateProtectedHead(evidence,opts);
  assert.deepEqual(ready,{ready:true,executable:false,headSha:SHA,
-  reason:'exact-head-checks-and-independent-review'});
+  reason:'exact-head-checks-and-owner-authorization'});
  for(const patch of [
   {headSha:'c'.repeat(40)},
   {observedAt:'2026-10-31T19:50:00Z'},
   {checks:evidence.checks.slice(0,1)},
-  {review:{...evidence.review,actorRef:'github-app:ultron-operator'}},
-  {review:{...evidence.review,independent:false}},
- ]) assert.equal(evaluateProtectedHead({...evidence,...patch},{headSha:SHA,
-  principalActorRef:'github-app:ultron-operator',now:NOW}).ready,false);
- assert.equal(evaluateProtectedHead(evidence,{headSha:SHA,
-  principalActorRef:'',now:NOW}).ready,false);
+  {ownerApproval:{...ownerApproval,actor:'different-owner'}},
+  {ownerApproval:{...ownerApproval,verified:false}},
+  {githubRules:{...evidence.githubRules,eligible:false}},
+  {materialSecurityFindingsClear:false},
+  {dependenciesSatisfied:false},
+ ]) assert.equal(evaluateProtectedHead({...evidence,...patch},opts).ready,false);
+ assert.equal(evaluateProtectedHead(evidence,{...opts,principalActorRef:''}).ready,false);
+ assert.equal(evaluateProtectedHead({...evidence,ownerApproval:undefined,
+  review:{state:'approved',independent:true,headSha:SHA,
+   actorRef:'github:user:independent-reviewer'}},opts).ready,false,
+  'a reviewer cannot replace the authenticated owner authorization');
 });
-
 
 test('policy rejects inherited operation names before deriving authority',()=>{
  for(const operation of ['constructor','toString','__proto__']){
@@ -96,14 +106,19 @@ test('policy rejects inherited operation names before deriving authority',()=>{
  }
 });
 
-test('protected-head rejects conflicting status entries at same exact head',()=>{
+test('protected-head rejects conflicting checks even with valid owner approval',()=>{
  const evidence={source:'github-protected-head-readback',verified:true,
   headSha:SHA,observedAt:'2026-10-31T19:59:00Z',checks:[
    {name:'test',status:'completed',conclusion:'success',headSha:SHA},
    {name:'fixed-comparison',status:'completed',conclusion:'success',headSha:SHA},
    {name:'test',status:'completed',conclusion:'failure',headSha:SHA},
-  ],review:{state:'approved',headSha:SHA,independent:true,actorRef:'github:user:reviewer'}};
- assert.equal(evaluateProtectedHead(evidence,{headSha:SHA,
+  ],ownerApproval:{source:'github-owner-queue-attestation',verified:true,
+   actor:'michaeljwilliams0123',repository:ULTRON_REPOSITORY,
+   issueNumber:209,commentId:6579368546,scope:'routine-source-squash',
+   decision:'approved',approvedPrNumbers:[212]},
+  githubRules:{source:'github-enforced-merge-readback',verified:true,eligible:true},
+  dependenciesSatisfied:true,materialSecurityFindingsClear:true};
+ assert.equal(evaluateProtectedHead(evidence,{headSha:SHA,prNumber:212,
   principalActorRef:'github-app:ultron-operator',now:NOW}).ready,false);
 });
 
