@@ -115,3 +115,30 @@ test('batch evaluates each mutable caller envelope from one snapshot',()=>{
   assert.equal(assessContinuumEvidenceBatch([e],opts).disposition,'batch-unverified');
   assert.equal(reads,1);
 });
+
+test('same delivery with contradictory outcome or actor is a conflicting receipt',()=>{
+  for(const mutation of [
+    e=>{e.outcome='unknown';},
+    e=>{e.actorId='different-authorized-actor';},
+    e=>{e.attempt=2;}
+  ]){
+    const first=base(),second=base();mutation(second);
+    const assessed=assessContinuumEvidenceBatch([first,second],opts);
+    assert.equal(assessed.disposition,'held');
+    assert.equal(assessed.reason,'conflicting-delivery');
+  }
+});
+test('same delivery with contradictory independent readback is held, not silently deduplicated',()=>{
+  const first=base(),second=base();
+  for(const e of [first,second]){
+    e.intent.effect='write';e.readback=receipt();e.review=approval();
+  }
+  second.readback.observedEffect='absent';
+  const assessed=assessContinuumEvidenceBatch([first,second],opts);
+  assert.equal(assessed.disposition,'held');
+  assert.equal(assessed.reason,'conflicting-delivery');
+});
+test('identical duplicate delivery remains unverified without independent live attestation',()=>{
+  const first=base(),second=base();
+  assert.equal(assessContinuumEvidenceBatch([first,second],opts).disposition,'batch-unverified');
+});
