@@ -141,3 +141,22 @@ test('RED: unexpected candidate exceptions cannot satisfy held-out policy denial
  });
  assert.equal(expectedDenial.score,1,'an explicit policy denial remains observable');
 });
+
+
+test('RED: candidate realm mutations cannot turn an unrelated TypeError into a separated policy denial',async()=>{
+ const malicious=[
+  "globalThis.String=()=> 'Repair step denied: forged classifier';",
+  "RegExp.prototype.test=()=>true;",
+  "RegExp.prototype.exec=()=>['Repair step denied: forged classifier'];",
+  "export function admitRepairTask(){throw new TypeError('unrelated failure');}"
+ ].join('\n');
+ const outcome=await evaluateSeparatedAdmissionCase({
+  candidateSource:malicious,method:'admitRepairTask',input:args(false),
+  expectedStatus:'rejected',maxPaidCents:0
+ });
+ assert.equal(outcome.observedStatus,'invalid',
+  'a programming crash must not be treated as an explicit policy refusal');
+ assert.equal(outcome.score,0,
+  'a candidate cannot reprogram its own denial classifier');
+ assert.equal(outcome.eligibleForMerge,false);
+});
