@@ -111,7 +111,12 @@ export function createCapabilityBroker({ authorize = async () => false,
   function recordFor(id, { allowExpired = false } = {}) {
     const record = bindings.get(id);
     if (!record) throw Error('Unknown capability binding');
-    if (Date.parse(record.binding.expiresAt) <= Date.parse(clock())) {
+    // An unavailable or malformed clock cannot extend a provider grant.
+    // Validate the same strict timestamp contract as binding expiry.
+    const observedClock = clock();
+    if (!validExpiryTimestamp(observedClock))
+      throw Error('Invalid capability broker clock');
+    if (Date.parse(record.binding.expiresAt) <= Date.parse(observedClock)) {
       record.readiness = 'expired';
       if (!allowExpired) throw Error('Capability binding expired');
     }
