@@ -46,7 +46,9 @@ function wire(p=payload(), key=privateKey) {
   return {receipt:p,signature};
 }
 function inspect(options={}){
-  const signed=wire(options.receipt||payload());
+  const signable=options.receipt && typeof options.receipt==='object' &&
+    !Array.isArray(options.receipt) ? options.receipt : payload();
+  const signed=wire(signable);
   return assessDestinyCanary({
     intent:INTENT,trust:TRUST,
     observedGitHubActor:TRUST.appLogin,
