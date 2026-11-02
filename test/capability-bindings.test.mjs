@@ -431,3 +431,57 @@ test('RED: invalid broker clock cannot extend expired capability authority',asyn
     assert.equal(target.executions,0,'bad clock must not dispatch');
   }
 });
+
+
+test('C05 revocation during a durable checkpoint cannot dispatch stale authority', async () => {
+  let checkpointEntered, releaseCheckpoint;
+  const entered = new Promise(resolve => { checkpointEntered = resolve; });
+  const checkpointGate = new Promise(resolve => { releaseCheckpoint = resolve; });
+  const rows = new Map();
+  const store = {
+    async claim({ id, fingerprint, receipt }) {
+      if (rows.has(id)) return { claimed: false, ...rows.get(id) };
+      rows.set(id, { fingerprint, receipt });
+      return { claimed: true, fingerprint, receipt };
+    },
+    async advance({ id, fingerprint, expectedStatus, receipt }) {
+      const old = rows.get(id);
+      assert.equal(old?.fingerprint, fingerprint);
+      assert.equal(old?.receipt.status, expectedStatus);
+      rows.set(id, { fingerprint, receipt });
+      if (expectedStatus === 'approval-pending') {
+        checkpointEntered();
+        await checkpointGate;
+      }
+      return true;
+    },
+    async release({ id, fingerprint }) {
+      const old = rows.get(id);
+      if (old?.fingerprint !== fingerprint || old.receipt.status !== 'approval-pending')
+        throw Error('cannot release persisted uncertain checkpoint');
+      rows.delete(id);
+      return true;
+    },
+  };
+  const target = adapter();
+  const broker = createCapabilityBroker({
+    clock: () => now, attemptStore: store, authorize: async () => true,
+  });
+  broker.bind(manifest(), target);
+  await broker.health('github-owner');
+  const actionKey = 'write:revoked-advance';
+  const pending = broker.execute('github-owner', {
+    operation: 'issue.write', idempotencyKey: actionKey,
+    estimatedCostCents: 0, input: { title: 'must not dispatch' },
+    expected: { issueCreated: true },
+  });
+  await entered;
+  assert.equal((await broker.unbind('github-owner')).status, 'unbound');
+  releaseCheckpoint();
+  const receipt = await pending;
+  assert.equal(receipt.status, 'reconcile-required',
+    'revocation after durable checkpoint must preserve uncertain outcome');
+  assert.equal(target.executions, 0, 'revoked authority must never reach provider');
+  assert.equal(rows.get('github-owner:' + actionKey).receipt.status,
+    'reconcile-required', 'checkpoint must survive for no-replay recovery');
+});
