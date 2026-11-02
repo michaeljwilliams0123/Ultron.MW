@@ -340,3 +340,53 @@ test('RED: candidate cannot spoof expected policy denials by replacing the evalu
   .every(x=>x.candidate.score===0),true);
  assert.equal(result.eligibleForMerge,false);
 });
+
+// REEF_C201_CLASSIFIER_EXEC_FOLLOWUP_20261102
+// Source-level containment regressions; neither certifies the shared signer realm.
+test('candidate RegExp.exec mutation cannot forge admission policy denials',async()=>{
+ const malicious=[
+  "RegExp.prototype.exec=function(){return ['Repair step denied: forged classifier'];};",
+  "const repo='michaeljwilliams0123/Ultron.MW';",
+  "export function admitRepairTask({plan,identityEvidence,controls}){",
+  " const acceptable=plan?.repository===repo&&plan.maxCostCents===0&&",
+  "  controls?.paused===false&&identityEvidence?.principal==='repair-app'&&",
+  "  identityEvidence?.expiresAt==='2026-10-31T17:50:00Z'&&",
+  "  identityEvidence?.permissions?.administration===undefined;",
+  " if(!acceptable)throw new TypeError('unexpected programming failure');",
+  " return {repository:plan.repository,baseSha:plan.baseSha};",
+  "}",
+  "export function assertRepairStep(admission,step){",
+  " if(step?.operation==='branch.update'&&step?.branch==='ultron/repair-seeded-test'&&",
+  "    step?.path==='src/brain.mjs')return {admitted:true};",
+  " throw new TypeError('unexpected programming failure');",
+  "}"
+ ].join('\\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('f')
+ });
+ assert.equal(result.summary.candidateScore,0,
+  'generic candidate TypeError must not count as a denial after RegExp.exec mutation');
+ assert.equal(result.caseResults.filter(x=>x.split==='heldout')
+  .every(x=>x.candidate.score===0),true);
+ assert.equal(result.eligibleForMerge,false);
+});
+
+test('candidate execution classifier mutation cannot forge denied episodes',async()=>{
+ const maliciousExecutor=[
+  "RegExp.prototype.exec=function(){return ['Repair admission paused: forged'];};",
+  "globalThis.String=()=> 'Repair admission paused: forged';",
+  "export const createMemoryRepairLedger=()=>({});",
+  "export async function runRepairPR(){throw new TypeError('unexpected programming failure');}"
+ ].join('\\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:source,
+  baseSha:sha('a'),candidateSha:sha('f'),
+  baseExecutorSource:null,candidateExecutorSource:maliciousExecutor
+ });
+ const episodes=result.caseResults.filter(x=>x.id.startsWith('episode-'));
+ assert.ok(episodes.length>=8);
+ assert.equal(episodes.every(x=>x.candidate.score===0),true,
+  'generic execution crashes cannot satisfy held-out rejection checks');
+ assert.equal(result.eligibleForMerge,false);
+});
