@@ -418,3 +418,25 @@ test('C02 revoked or malformed control cannot transition durable recovery state'
     assert.equal(result.externalDispatches,0);
   }
 });
+
+test('RED: C02 rechecks owner authority after async outbox observation before CAS',async()=>{
+  // Authority can change while the database observation is in flight. An
+  // initial admission check is not permission to transition a stale lease.
+  for(const revoked of [{revoked:true},{paused:true},{maxPaidCents:1},{paidFallback:true}]){
+    let controlReads=0,writes=0;
+    const result=await reconcileContinuumTick({
+      now:NOW,
+      readControl:async()=>{controlReads++;return control(controlReads===1?{}:revoked);},
+      listDue:async()=>[delivery],
+      outbox:{
+        observe:async()=>row(),
+        markUnknown:async()=>{writes++;return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
+      }
+    });
+    assert.equal(controlReads,2,'must re-read authority immediately before CAS');
+    assert.equal(writes,0,'revoked or metered authority cannot transition outbox');
+    assert.equal(result.status,'held-partial');
+    assert.equal(result.receipts[0].disposition,'held-unknown');
+    assert.equal(result.externalDispatches,0);
+  }
+});
