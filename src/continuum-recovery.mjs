@@ -24,8 +24,11 @@ function validCalendarDay(value){
   return d>=1&&d<=(days[m-1]??0);
 }
 function clock(value){
-  const t=validCalendarDay(value)?Date.parse(value):NaN;
-  if(!Number.isFinite(t))
+  // Scheduler clocks must have the same explicit, bounded timezone and
+  // real calendar fields as immutable PostgreSQL expiry readbacks.
+  // Date.parse alone accepts worker-local time and invalid +14:30 offsets.
+  const t=typeof value==='string'?persistedExpiry(value):null;
+  if(t===null)
     throw Error('continuum-recovery-time-invalid');
   return new Date(t).toISOString();
 }
