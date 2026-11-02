@@ -36,6 +36,14 @@ export const GITHUB_OPERATION_PROFILES=Object.freeze(Object.keys(PROFILES));
 
 export function parseInstant(value){
  if(typeof value!=='string'||!RFC3339.test(value))return NaN;
+ // Date.parse normalizes nonexistent calendar dates (Feb 30 -> Mar 2).
+ // An expiry or protected-head observation must use the exact stated day.
+ const parts=/^(\d{4})-(\d{2})-(\d{2})T/.exec(value);
+ if(!parts)return NaN;
+ const y=Number(parts[1]),m=Number(parts[2]),d=Number(parts[3]);
+ const leap=y%4===0&&(y%100!==0||y%400===0);
+ const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+ if(d<1||d>(days[m-1]??0))return NaN;
  return Date.parse(value);
 }
 
