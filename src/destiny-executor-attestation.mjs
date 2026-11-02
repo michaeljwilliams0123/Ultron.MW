@@ -1,28 +1,26 @@
 /**
- * C03 Destiny handoff: verification-only, separately signed completion canary.
+ * C03 cloud Codex handoff. Verify a bounded, separately signed completion
+ * receipt against authoritative C01 intent, pinned cloud environment metadata,
+ * and actual GitHub write actor read back from GitHub, never a payload claim.
  *
- * Existing continuum-ack verifies DELIVERY/ACK (never execution). This module
- * verifies a bounded execution RECEIPT against the trusted C01 outbox intent,
- * independently pinned receiver key and a GitHub App actor observed through
- * authenticated GitHub readback. It NEVER performs dispatch, writes to a DB,
- * authorizes paid calls, installs an App or attests a ChatGPT Work account.
+ * GitHub account connection != Codex Cloud account. A signature attests control
+ * of an executor key, not a human/ChatGPT identity. No dispatch, credential
+ * creation, merge, deployment, paid calls, or production acceptance is here.
  */
 import {createHash,createPublicKey,verify as verifySignature} from 'node:crypto';
 
-export const DESTINY_RECEIPT_SCHEMA='ultron.destiny.execution-receipt.v1';
-const APP='ultron-destiny-executor[bot]';
+export const DESTINY_RECEIPT_SCHEMA='ultron.destiny.execution-receipt.v2';
 const REPO='michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
 const DIGEST=/^[a-f0-9]{64}$/;
 const ID=/^[a-z0-9][a-z0-9_.:-]{11,127}$/i;
-const FIELD_NAMES=[
-  'appLogin','authorId','deliveryId','effect','expiresAt','issuedAt',
-  'keyId','maxPaidCents','repository','requestSha','resultSha','routeSha',
-  'schema','sourceSha','status','taskId'
+const ACTOR=/^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i;
+const FIELDS=[
+  'authorId','deliveryId','effect','environmentFingerprint','executionLane',
+  'expiresAt','githubActor','issuedAt','keyId','maxPaidCents','repository',
+  'requestSha','resultSha','routeSha','schema','sourceSha','status','taskId'
 ].sort();
-const MAX_AGE=300000;
-const MAX_CLOCK_SKEW=30000;
-const maxSource=600000;
+const MAX_LIFETIME=300000,MAX_FUTURE_SKEW=30000,MAX_ISSUED_AGE=600000;
 const isRecord=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const validTime=x=>typeof x==='string'&&
   /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(x)&&
@@ -30,99 +28,94 @@ const validTime=x=>typeof x==='string'&&
 const deny=status=>Object.freeze({status,verifiedReceipt:false,receiptSha:null,
   workAccountAuthenticated:false,productionAccepted:false});
 
-/**
- * Stable UTF-8 bytes; does not grant authority. A signature over data is
- * meaningful only after the independent trust/config/correlation checks below.
- */
 export function canonicalDestinyReceipt(receipt){
   if(!isRecord(receipt))throw Error('destiny-receipt-invalid');
   return JSON.stringify(Object.fromEntries(Object.keys(receipt).sort()
     .map(key=>[key,receipt[key]])));
 }
-function validIntent(intent){
-  return isRecord(intent)&&intent.repository===REPO&&
-    typeof intent.taskId==='string'&&ID.test(intent.taskId)&&
-    typeof intent.deliveryId==='string'&&ID.test(intent.deliveryId)&&
-    typeof intent.requestSha==='string'&&DIGEST.test(intent.requestSha)&&
-    typeof intent.sourceSha==='string'&&SHA.test(intent.sourceSha)&&
-    typeof intent.routeSha==='string'&&DIGEST.test(intent.routeSha)&&
-    intent.effect==='read'&&intent.maxPaidCents===0;
+function validIntent(i){
+  return isRecord(i)&&i.repository===REPO&&
+    typeof i.taskId==='string'&&ID.test(i.taskId)&&
+    typeof i.deliveryId==='string'&&ID.test(i.deliveryId)&&
+    typeof i.requestSha==='string'&&DIGEST.test(i.requestSha)&&
+    typeof i.sourceSha==='string'&&SHA.test(i.sourceSha)&&
+    typeof i.routeSha==='string'&&DIGEST.test(i.routeSha)&&
+    i.effect==='read'&&i.maxPaidCents===0;
 }
-function keyFromTrust(trust){
-  if(!isRecord(trust)||trust.state!=='configured'||trust.appLogin!==APP||
-    typeof trust.keyId!=='string'||!/^[-a-z0-9]{4,64}$/.test(trust.keyId)||
-    typeof trust.publicKeyPem!=='string')return null;
+function verifiedTrust(t){
+  if(!isRecord(t)||t.state!=='configured'||
+     t.executionLane!=='codex-cloud'||typeof t.githubActor!=='string'||
+     !ACTOR.test(t.githubActor)||typeof t.environmentFingerprint!=='string'||
+     !DIGEST.test(t.environmentFingerprint)||
+     typeof t.keyId!=='string'||!/^[-a-z0-9]{4,64}$/.test(t.keyId)||
+     typeof t.publicKeyPem!=='string')return null;
   try{
-    const key=createPublicKey(trust.publicKeyPem);
+    const key=createPublicKey(t.publicKeyPem);
     return key.asymmetricKeyType==='ed25519'?key:null;
   }catch{return null;}
 }
-function validReceipt(receipt){
-  return isRecord(receipt)&&Object.keys(receipt).sort().join(',')===FIELD_NAMES.join(',')&&
-    receipt.schema===DESTINY_RECEIPT_SCHEMA&&
-    receipt.repository===REPO&&
-    typeof receipt.taskId==='string'&&ID.test(receipt.taskId)&&
-    typeof receipt.deliveryId==='string'&&ID.test(receipt.deliveryId)&&
-    typeof receipt.requestSha==='string'&&DIGEST.test(receipt.requestSha)&&
-    typeof receipt.sourceSha==='string'&&SHA.test(receipt.sourceSha)&&
-    typeof receipt.routeSha==='string'&&DIGEST.test(receipt.routeSha)&&
-    receipt.authorId==='destiny-codex'&&receipt.appLogin===APP&&
-    typeof receipt.keyId==='string'&&/^[-a-z0-9]{4,64}$/.test(receipt.keyId)&&
-    receipt.effect==='read'&&receipt.maxPaidCents===0&&
-    receipt.status==='completed'&&
-    typeof receipt.resultSha==='string'&&DIGEST.test(receipt.resultSha)&&
-    validTime(receipt.issuedAt)&&validTime(receipt.expiresAt);
+function validReceipt(r){
+  return isRecord(r)&&Object.keys(r).sort().join(',')===FIELDS.join(',')&&
+    r.schema===DESTINY_RECEIPT_SCHEMA&&r.repository===REPO&&
+    typeof r.taskId==='string'&&ID.test(r.taskId)&&
+    typeof r.deliveryId==='string'&&ID.test(r.deliveryId)&&
+    typeof r.requestSha==='string'&&DIGEST.test(r.requestSha)&&
+    typeof r.sourceSha==='string'&&SHA.test(r.sourceSha)&&
+    typeof r.routeSha==='string'&&DIGEST.test(r.routeSha)&&
+    r.authorId==='destiny-codex'&&r.executionLane==='codex-cloud'&&
+    typeof r.githubActor==='string'&&ACTOR.test(r.githubActor)&&
+    typeof r.environmentFingerprint==='string'&&DIGEST.test(r.environmentFingerprint)&&
+    typeof r.keyId==='string'&&/^[-a-z0-9]{4,64}$/.test(r.keyId)&&
+    r.effect==='read'&&r.maxPaidCents===0&&r.status==='completed'&&
+    typeof r.resultSha==='string'&&DIGEST.test(r.resultSha)&&
+    validTime(r.issuedAt)&&validTime(r.expiresAt);
 }
-function validSignatureText(signature){
-  if(typeof signature!=='string'||!/[A-Za-z0-9+/]{86}==/.test(signature)||
-     signature.length!==88)return null;
-  const bytes=Buffer.from(signature,'base64');
-  return bytes.length===64&&bytes.toString('base64')===signature?bytes:null;
+function signatureBytes(s){
+  if(typeof s!=='string'||!/^[A-Za-z0-9+/]{86}==$/.test(s))return null;
+  const bytes=Buffer.from(s,'base64');
+  return bytes.length===64&&bytes.toString('base64')===s?bytes:null;
 }
-
 /**
- * A caller MUST obtain `intent` from authoritative PostgreSQL readback, not
- * the PR being evaluated. `observedGitHubActor` must come from GitHub API
- * readback of the actual immutable receipt-creating commit or event, NOT
- * from the receipt itself. An App actor alone is NOT a Work identity.
+ * The caller must obtain intent from authoritative database readback and the
+ * observedGitHubActor from GitHub's authenticated commit/event API. Neither
+ * may be taken from the PR/receipt being assessed.
  *
- * `priorReceiptSha` is the durable earlier receipt digest, if a delivery
- * already exists. This function does not decide whether an unknown write
- * occurred; the caller must independently reconcile it before any retry.
+ * A Codex Cloud environment ID fingerprint is correlation data, not an
+ * independent Work account attestation. Trust must be provisioned separately.
+ * Unknown writes require readback reconciliation before any retry.
  */
 export function assessDestinyCanary({intent,receipt,signature,trust,
   observedGitHubActor,now=Date.now(),priorReceiptSha}={}){
   try{
     if(!validIntent(intent))return deny('blocked-intent');
-    const key=keyFromTrust(trust);
+    const key=verifiedTrust(trust);
     if(!key)return deny('blocked-unconfigured');
-    if(observedGitHubActor!==trust.appLogin||observedGitHubActor==='michaeljwilliams0123')
-      return deny('blocked-actor');
+    if(typeof observedGitHubActor!=='string'||
+       observedGitHubActor!==trust.githubActor)return deny('blocked-actor');
     if(!validReceipt(receipt))return deny('blocked-receipt');
     if(receipt.keyId!==trust.keyId||
-      ['repository','taskId','deliveryId','requestSha','sourceSha','routeSha',
-        'effect','maxPaidCents'].some(k=>receipt[k]!==intent[k]))
+       receipt.githubActor!==observedGitHubActor||
+       receipt.environmentFingerprint!==trust.environmentFingerprint||
+       receipt.executionLane!==trust.executionLane||
+       ['repository','taskId','deliveryId','requestSha','sourceSha','routeSha',
+         'effect','maxPaidCents'].some(k=>receipt[k]!==intent[k]))
       return deny('blocked-correlation');
-    const issued=Date.parse(receipt.issuedAt);
-    const expiry=Date.parse(receipt.expiresAt);
-    if(!Number.isFinite(now)||expiry<=issued||expiry-issued>MAX_AGE||
-      issued>now+MAX_CLOCK_SKEW||now>expiry||issued<now-maxSource)
+    const issued=Date.parse(receipt.issuedAt),expiry=Date.parse(receipt.expiresAt);
+    if(!Number.isFinite(now)||expiry<=issued||expiry-issued>MAX_LIFETIME||
+       issued>now+MAX_FUTURE_SKEW||now>expiry||issued<now-MAX_ISSUED_AGE)
       return deny('blocked-expired');
-    const bytes=validSignatureText(signature);
-    if(!bytes)return deny('blocked-signature');
-    const canonical=canonicalDestinyReceipt(receipt);
-    if(!verifySignature(null,Buffer.from(canonical,'utf8'),key,bytes))
+    const bytes=signatureBytes(signature);
+    if(!bytes||!verifySignature(null,
+       Buffer.from(canonicalDestinyReceipt(receipt),'utf8'),key,bytes))
       return deny('blocked-signature');
-    const receiptSha=createHash('sha256').update(canonical).digest('hex');
+    const receiptSha=createHash('sha256')
+      .update(canonicalDestinyReceipt(receipt)).digest('hex');
     if(priorReceiptSha!==undefined&&priorReceiptSha!==null){
       if(typeof priorReceiptSha!=='string'||!DIGEST.test(priorReceiptSha)||
-        priorReceiptSha!==receiptSha)return deny('reconcile-required');
+         priorReceiptSha!==receiptSha)return deny('reconcile-required');
       return Object.freeze({status:'already-recorded',verifiedReceipt:true,
         receiptSha,workAccountAuthenticated:false,productionAccepted:false});
     }
-    // Work account binding requires a separate independently authenticated
-    // session/installation observation; a shared GitHub actor or pinned key
-    // does not prove which ChatGPT account ran.
     return Object.freeze({status:'verified-executor-receipt',verifiedReceipt:true,
       receiptSha,workAccountAuthenticated:false,productionAccepted:false});
   }catch{return deny('blocked-receipt');}
