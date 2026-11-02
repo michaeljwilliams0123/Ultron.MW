@@ -106,3 +106,35 @@ test('protected-head rejects conflicting status entries at same exact head',()=>
  assert.equal(evaluateProtectedHead(evidence,{headSha:SHA,
   principalActorRef:'github-app:ultron-operator',now:NOW}).ready,false);
 });
+
+
+test('RED: impossible calendar timestamps cannot authorize GitHub principal or protected head',async()=>{
+ const {parseInstant}=await import('../src/github-principal-policy.mjs');
+ const invalid='2026-02-30T20:00:00Z';
+ const realNow='2026-03-02T20:00:00Z'; // Date.parse normalizes Feb 30 to Mar 2
+ assert.ok(Number.isNaN(parseInstant(invalid)),'nonexistent February date must not parse');
+ assert.throws(()=>assertUnifiedGitHubIdentity(
+   identity('repair.branch.update',{expiresAt:'2026-02-30T20:30:00Z'}),
+   {operation:'repair.branch.update',now:realNow}
+ ),/identity|profile/i);
+ const op='actions.rerun_failed';
+ assert.throws(()=>assertOperationAuthorization(
+   authorization(op,'independent-standing-grant',
+     {expiresAt:'2026-02-30T20:05:00Z'}),
+   {operation:op,planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',
+    installationId:9123,now:realNow}
+ ),/authorization/i);
+ const protectedEvidence={
+   source:'github-protected-head-readback',verified:true,
+   headSha:SHA,observedAt:'2026-02-30T19:59:00Z',
+   checks:[
+     {name:'test',status:'completed',conclusion:'success',headSha:SHA},
+     {name:'fixed-comparison',status:'completed',conclusion:'success',headSha:SHA}
+   ],
+   review:{state:'approved',headSha:SHA,independent:true,
+     actorRef:'github:user:independent-reviewer'}
+ };
+ assert.equal(evaluateProtectedHead(protectedEvidence,{
+   headSha:SHA,principalActorRef:'github-app:ultron-operator',now:realNow
+ }).ready,false);
+});
