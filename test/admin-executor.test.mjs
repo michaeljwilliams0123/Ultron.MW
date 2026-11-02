@@ -223,3 +223,84 @@ test('successful GitHub effect with unavailable receipt ledger remains uncertain
  assert.equal(result.ledgerMarkFailed,true);
  assert.equal(run.calls.filter(x=>x.method==='POST').length,1);
 });
+
+test('caller mutation during reservation cannot replace an approved routine action',async()=>{
+ const plan=base();
+ const approval={source:'independent-standing-grant',verified:true,
+  actor:'michaeljwilliams0123',planDigest:digest(plan),grantId:'grant-admin-169',
+  expiresAt:'2026-10-31T20:10:00Z'};
+ const {services,calls,records}=harness(plan,{approval});
+ let entered,release;
+ const reserving=new Promise(resolve=>{entered=resolve});
+ const pending=new Promise(resolve=>{release=resolve});
+ const reserve=services.ledger.reserve;
+ services.ledger.reserve=async record=>{
+  entered();
+  await pending;
+  return reserve(record);
+ };
+ const execution=executeAdminOperation(plan,services);
+ await reserving;
+ plan.operation='actions.disable';
+ plan.params.workflow='verify.yml';
+ delete plan.params.runId;
+ plan.expected.runAttempt=99;
+ release();
+ const result=await execution;
+ assert.deepEqual(calls.filter(call=>call.method!=='GET').map(({method,path})=>({method,path})),[
+  {method:'POST',path:'/repos/michaeljwilliams0123/Ultron.MW/actions/runs/15/rerun-failed-jobs'},
+ ]);
+ assert.equal(result.operation,'actions.rerun_failed');
+ assert.equal(records[0][1].precondition.runAttempt,1);
+});
+
+test('authority changes during preflight or reservation prevent the external write',async t=>{
+ for(const phase of ['preflight','reservation']){
+  for(const change of ['plan-expiry','identity-expiry','grant-expiry','paused','revoked']){
+   await t.test(`${phase}: ${change}`,async()=>{
+    const plan=base();
+    const approval={source:'independent-owner-authorization',verified:true,
+     actor:'michaeljwilliams0123',planDigest:digest(plan),grantId:'grant-admin-169',
+     expiresAt:change==='grant-expiry'?'2026-10-31T20:01:00Z':'2026-10-31T20:10:00Z'};
+    const {services,calls,records}=harness(plan,{approval});
+    const identity=await services.identity.read();
+    if(change==='identity-expiry')identity.expiresAt='2026-10-31T20:01:00Z';
+    let now=NOW;
+    const controls={paused:false,revoked:false};
+    services.clock=()=>now;
+    services.control.read=async()=>({...controls});
+    const changeAuthority=()=>{
+     if(change==='paused'||change==='revoked')controls[change]=true;
+     else now=change==='plan-expiry'?'2026-10-31T20:06:00Z':'2026-10-31T20:02:00Z';
+    };
+    if(phase==='preflight'){
+     const request=services.github.request;
+     services.github.request=async(...args)=>{
+      const result=await request(...args);
+      if(args[0]==='GET')changeAuthority();
+      return result;
+     };
+    }else{
+     const reserve=services.ledger.reserve;
+     services.ledger.reserve=async record=>{
+      const claim=await reserve(record);
+      changeAuthority();
+      return claim;
+     };
+    }
+    let result,error;
+    try{result=await executeAdminOperation(plan,services)}catch(caught){error=caught}
+    assert.equal(calls.filter(call=>call.method!=='GET').length,0,
+     'changed authority must prevent the GitHub mutation');
+    if(phase==='preflight'){
+     assert.ok(error,'stale preflight must reject before reservation');
+     assert.equal(records.length,0);
+    }else{
+     assert.equal(error,undefined);
+     assert.equal(result.state,'reconcile-required');
+     assert.equal(records.at(-1)[1].state,'reconcile-required');
+    }
+   });
+  }
+ }
+});

@@ -46,6 +46,17 @@ function instant(value){
  if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT/.test(value))return NaN;
  return Date.parse(value);
 }
+function deepFreeze(value){
+ if(value&&typeof value==='object'&&!Object.isFrozen(value)){
+  Object.freeze(value);
+  for(const child of Object.values(value))deepFreeze(child);
+ }
+ return value;
+}
+function snapshotPlan(plan){
+ try{return deepFreeze(structuredClone(plan))}
+ catch{throw Error('Admin plan must be plain data')}
+}
 function validWorkflow(name){return typeof name==='string'&&ALLOWED_WORKFLOWS.has(name);}
 function runWorkflowAllowed(run){
  // GitHub run.path identifies the workflow file for rerun/cancel requests.
@@ -223,6 +234,7 @@ export async function executeAdminOperation(plan,services){
   services?.authority?.verify&&services?.ledger?.reserve&&
   services?.ledger?.mark&&services?.github?.request,
   'Admin trusted service adapter missing');
+ plan=snapshotPlan(plan);
  const now=services.clock(),time=instant(now);
  const validation=validateAdminPlan(plan,now);
  const controls=await services.control.read();
@@ -235,15 +247,35 @@ export async function executeAdminOperation(plan,services){
  const path=getPreconditionPath(plan);
  const before=await services.github.request('GET',path);
  assertPrecondition(plan,before);
+ const assertCurrentAuthority=async()=>{
+  const controls=await services.control.read();
+  check(controls?.paused===false&&controls.revoked===false,
+   'Admin stopped: paused or revoked');
+  // Sample after the asynchronous read, then check every expiring authority.
+  const checkedAt=services.clock(),checkedTime=instant(checkedAt);
+  validateAdminPlan(plan,checkedAt);
+  assertIdentity(identity,plan.operation,checkedTime);
+  assertApproval(approval,validation.planDigest,validation.requiresStepUp,checkedTime);
+  return checkedAt;
+ };
+ const beforeReserve=await assertCurrentAuthority();
  const intent={schema:'ultron.admin.attempt.v1',
   idempotencyKey:plan.idempotencyKey,planDigest:validation.planDigest,
   repository:REPO,operation:plan.operation,installationId:identity.installationId,
   grantId:approval.grantId,precondition:plan.expected,
-  state:'reserved',observedAt:now};
+  state:'reserved',observedAt:beforeReserve};
  const claim=await services.ledger.reserve(intent);
  if(claim?.created!==true)
   return Object.freeze({state:'reconcile-required',reason:'duplicate-or-unknown-attempt',
    idempotencyKey:plan.idempotencyKey});
+ try{
+  // Reservation may itself wait long enough for authority to change.
+  await assertCurrentAuthority();
+ }catch{
+  return markOrResidual(services,{...intent,state:'reconcile-required'},
+   {state:'reconcile-required',reason:'authority-changed-before-dispatch',
+    operation:plan.operation,idempotencyKey:plan.idempotencyKey});
+ }
  const request=mutation(plan);
  try{
   const result=await services.github.request(request.method,request.path,request.data);
