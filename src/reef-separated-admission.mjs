@@ -4,7 +4,7 @@
  * The existing Reef evaluator is NOT upgraded by importing this module.
  */
 import {spawn} from 'node:child_process';
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -21,6 +21,9 @@ function permissionFlag(){
 function executeCandidate({dir,candidate,input,method,timeoutMs}){
  return new Promise(resolve=>{
   let proc,stdout='',timedOut=false,tooLarge=false,settled=false;
+  // This nonce correlates an actual runner completion, not candidate provenance.
+  // It is never passed as part of the candidate method input.
+  const completionNonce=randomBytes(32).toString('hex');
   const finish=outcome=>{if(!settled){settled=true;resolve(outcome);}};
   try{
    proc=spawn(process.execPath,[
@@ -38,7 +41,7 @@ function executeCandidate({dir,candidate,input,method,timeoutMs}){
     if(Buffer.byteLength(stdout)>MAX_BYTES){tooLarge=true;proc.kill('SIGKILL');}
    });
    proc.stdin.on('error',()=>{});
-   proc.stdin.end(JSON.stringify({method,input}));
+   proc.stdin.end(JSON.stringify({method,input,completionNonce}));
    proc.once('error',()=>{clearTimeout(timer);finish({status:'invalid'});});
    proc.once('close',(code,signal)=>{
     clearTimeout(timer);
@@ -47,7 +50,8 @@ function executeCandidate({dir,candidate,input,method,timeoutMs}){
     try{result=JSON.parse(stdout.trim());}catch{return finish({status:'invalid'});}
     if(result?.protocol!=='ultron.reef.untrusted-result.v1'||
        !['returned','rejected'].includes(result.status)||
-       Object.keys(result).sort().join(',')!=='protocol,status')
+       result.completionNonce!==completionNonce||
+       Object.keys(result).sort().join(',')!=='completionNonce,protocol,status')
       return finish({status:'invalid'});
     finish({status:result.status});
    });
