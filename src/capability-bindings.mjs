@@ -12,6 +12,19 @@ const BINDING_KEYS = new Set(['id', 'provider', 'runtime', 'actorRef', 'authMeth
 const OPERATION_KEYS = new Set(['name', 'effect', 'scope']);
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
+// Date.parse normalizes impossible days (e.g. February 30) instead of rejecting
+// them. An authority expiry must denote the exact local calendar date supplied.
+function validExpiryTimestamp(value) {
+  if (typeof value !== 'string') return false;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts || !Number.isFinite(Date.parse(value))) return false;
+  const year = Number(parts[1]), month = Number(parts[2]), day = Number(parts[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day >= 1 && day <= (days[month - 1] ?? 0);
+}
+
+
 function serializable(value, max = 20_000) {
   try {
     const encoded = JSON.stringify(value);
@@ -47,7 +60,7 @@ export function validateCapabilityBinding(input) {
       new Set(input.operations.map(operation => operation.name)).size !== input.operations.length ||
       !Number.isSafeInteger(input.maxCostCents) || input.maxCostCents < 0 ||
       input.maxCostCents > 100_000 ||
-      !Number.isFinite(Date.parse(input.expiresAt)) ||
+      !validExpiryTimestamp(input.expiresAt) ||
       input.credentialRef !== null &&
         !(typeof input.credentialRef === 'string' &&
           /^env:ULTRON_[A-Z0-9_]{3,60}$/.test(input.credentialRef)))
@@ -98,7 +111,12 @@ export function createCapabilityBroker({ authorize = async () => false,
   function recordFor(id, { allowExpired = false } = {}) {
     const record = bindings.get(id);
     if (!record) throw Error('Unknown capability binding');
-    if (Date.parse(record.binding.expiresAt) <= Date.parse(clock())) {
+    // An unavailable or malformed clock cannot extend a provider grant.
+    // Validate the same strict timestamp contract as binding expiry.
+    const observedClock = clock();
+    if (!validExpiryTimestamp(observedClock))
+      throw Error('Invalid capability broker clock');
+    if (Date.parse(record.binding.expiresAt) <= Date.parse(observedClock)) {
       record.readiness = 'expired';
       if (!allowExpired) throw Error('Capability binding expired');
     }
@@ -157,11 +175,17 @@ export function createCapabilityBroker({ authorize = async () => false,
   async function execute(id, request) {
     const record = recordFor(id);
     if (record.readiness !== 'ready') throw Error('Capability binding not ready');
+    // Read once so an accessor cannot present one cost to validation and a
+    // different positive cost to the immutable dispatch snapshot.
+    const estimatedCostCents = request?.estimatedCostCents;
     if (!request || typeof request !== 'object' ||
         !NAME.test(request.operation || '') || !IDEMPOTENCY.test(request.idempotencyKey || '') ||
-        !Number.isSafeInteger(request.estimatedCostCents) ||
-        request.estimatedCostCents < 0 ||
-        request.estimatedCostCents > record.binding.maxCostCents ||
+        !Number.isSafeInteger(estimatedCostCents) ||
+        estimatedCostCents < 0 ||
+        // Continuum's hard $0/day external-paid policy is global. A provider
+        // manifest's larger ceiling is descriptive, never spend authority.
+        estimatedCostCents > 0 ||
+        estimatedCostCents > record.binding.maxCostCents ||
         !serializable(request.input) || !serializable(request.expected, 4_000))
       throw Error('Invalid capability request');
     const operation = record.binding.operations.find(item => item.name === request.operation);
@@ -170,7 +194,7 @@ export function createCapabilityBroker({ authorize = async () => false,
     // untrusted caller must not mutate the dispatch payload after approval.
     const snapshot = {
       operation: request.operation, idempotencyKey: request.idempotencyKey,
-      estimatedCostCents: request.estimatedCostCents,
+      estimatedCostCents,
       input: JSON.parse(JSON.stringify(request.input)),
       expected: JSON.parse(JSON.stringify(request.expected)),
     };
@@ -235,6 +259,16 @@ export function createCapabilityBroker({ authorize = async () => false,
       if(attemptStore)await attemptStore.advance({
         id:attemptId,fingerprint,expectedStatus:'approval-pending',receipt:checkpoint});
       pending.receipt=checkpoint;
+      // The durable checkpoint may await storage while an independent owner
+      // revokes or unbinds this authority. Recheck AFTER that await: a stale
+      // grant must not dispatch even though the pre-check was once valid.
+      // Preserve the persisted uncertain receipt rather than releasing/replaying
+      // its key; an independent reconciler can establish the final outcome.
+      let authorityStillValid = false;
+      try {
+        authorityStillValid = recordFor(id) === record && record.readiness === 'ready';
+      } catch { /* expired, invalid clock, or unbound: fail closed */ }
+      if (!authorityStillValid) return checkpoint;
     } catch (error) {
       // Release only a pre-dispatch approval-pending record. An ambiguous
       // persisted 'reconcile-required' state must remain non-replayable.

@@ -34,11 +34,13 @@ export function selectCouncilReviews(issues,{now=new Date().toISOString(),limit=
  * dispatch rather than misclassify an existing review as absent.
  */
 export async function readCouncilActivity({
-  issue,owner,fetchPage,maxPages=10
+  issue,owner,fetchPage,fetchIssue,maxPages=10
 }={}){
   if(!issue||!Number.isSafeInteger(issue.comments)||issue.comments<0||
     typeof issue.created_at!=='string'||typeof owner!=='string'||
-    typeof fetchPage!=='function'||!Number.isSafeInteger(maxPages)||
+    typeof fetchPage!=='function'||
+    (fetchIssue!==undefined&&typeof fetchIssue!=='function')||
+    !Number.isSafeInteger(maxPages)||
     maxPages<1||maxPages>20)
     throw Error('activity-input-invalid');
   const lastPage=Math.max(1,Math.ceil(issue.comments/100));
@@ -49,6 +51,13 @@ export async function readCouncilActivity({
   if(overflow.length>0)return Object.freeze({complete:false,lastReviewAt:null,
     lastMeaningfulAt:issue.created_at});
   let lastReviewAt=null,lastOwnerAt=null;
+  // Every scanned page contributes to classification, including comment bodies.
+  // Re-read them all to reject same-second edits and stale history snapshots.
+  const scannedPages=new Map();
+  const snapshot=comments=>JSON.stringify(comments.map(c=>
+    [c?.id,c?.created_at,c?.updated_at,c?.body]));
+  const incomplete=()=>Object.freeze({complete:false,lastReviewAt:null,
+    lastMeaningfulAt:issue.created_at});
   let page=lastPage,scanned=0;
   for(;page>=1&&scanned<maxPages;page--,scanned++){
     const comments=await fetchPage(page);
@@ -60,20 +69,42 @@ export async function readCouncilActivity({
     // instruction may be among the missing comments.
     const expected=issue.comments===0?0:
       page===lastPage?issue.comments-(lastPage-1)*100:100;
-    if(comments.length<expected)
-      return Object.freeze({complete:false,lastReviewAt:null,
-        lastMeaningfulAt:issue.created_at});
+    if(comments.length!==expected)return incomplete();
+    scannedPages.set(page,snapshot(comments));
     for(let i=comments.length-1;i>=0;i--){
       const c=comments[i];
-      if(!lastOwnerAt&&c?.user?.login===owner&&
-        !/^\s*\/council\b/.test(c.body||''))lastOwnerAt=c.created_at;
+      if(c?.user?.login===owner&&
+        !/^\s*\/council\b/.test(c.body||'')){
+        // A previously created owner comment can be edited after the last
+        // council report; use the later mutation time, not only created_at.
+        const ownerAt=c.updated_at&&parseTime(c.updated_at)>parseTime(c.created_at)
+          ?c.updated_at:c.created_at;
+        if(!lastOwnerAt||parseTime(ownerAt)>parseTime(lastOwnerAt))
+          lastOwnerAt=ownerAt;
+      }
       if(!lastReviewAt&&c?.user?.login==='github-actions[bot]'&&
         c.body?.startsWith('# Ultron Council Report'))lastReviewAt=c.created_at;
     }
-    // GitHub comments are ascending: all earlier pages predate this report.
-    if(lastReviewAt)break;
+    // Older owner comments can be edited after the newest council report.
+    // Scan the bounded entire history, not only until the first report.
   }
-  const complete=lastReviewAt!==null||page<1;
+  const complete=page<1;
+  // Reconcile against a fresh issue count and the newest comment boundary.
+  // A same-count delete/replacement is invisible to the initial overflow
+  // probe; neither case may authorize a stale council dispatch.
+  if(complete&&fetchIssue){
+    const latest=await fetchIssue();
+    if(!latest||latest.comments!==issue.comments||
+      latest.updated_at!==issue.updated_at)return incomplete();
+    for(const [pageNumber,before] of scannedPages){
+      const again=await fetchPage(pageNumber);
+      if(!Array.isArray(again))throw Error('activity-page-invalid');
+      if(snapshot(again)!==before)return incomplete();
+    }
+    const overflowAgain=await fetchPage(lastPage+1);
+    if(!Array.isArray(overflowAgain))throw Error('activity-page-invalid');
+    if(overflowAgain.length!==0)return incomplete();
+  }
   const lastMeaningfulAt=lastOwnerAt&&
     (lastReviewAt===null||Date.parse(lastOwnerAt)>Date.parse(lastReviewAt))?
       lastOwnerAt:issue.created_at;
