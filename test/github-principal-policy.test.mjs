@@ -155,3 +155,47 @@ test('RED: impossible RFC3339 clock fields and offsets never authorize principal
  assert.ok(Number.isFinite(parseInstant('2026-11-01T12:00:00+14:00')));
  assert.ok(Number.isFinite(parseInstant('2026-11-01T12:00:00-05:00')));
 });
+
+
+test('RED owner authority: authenticated queue approval is sufficient without a second review',()=>{
+ const ownerApproval={
+  source:'github-owner-queue-attestation',verified:true,
+  actor:'michaeljwilliams0123',repository:ULTRON_REPOSITORY,
+  issueNumber:209,commentId:6579368546,
+  scope:'routine-source-squash',decision:'approved',
+  approvedPrNumbers:[212,210,207,208,200,199,176]
+ };
+ const evidence={
+  source:'github-protected-head-readback',verified:true,headSha:SHA,
+  observedAt:'2026-10-31T19:59:00Z',
+  checks:[
+   {name:'test',status:'completed',conclusion:'success',headSha:SHA},
+   {name:'fixed-comparison',status:'completed',conclusion:'success',headSha:SHA}
+  ],
+  ownerApproval,
+  githubRules:{source:'github-enforced-merge-readback',verified:true,eligible:true},
+  dependenciesSatisfied:true,materialSecurityFindingsClear:true
+ };
+ const opts={headSha:SHA,prNumber:212,principalActorRef:'github-app:ultron-operator',now:NOW};
+ const authorized=evaluateProtectedHead(evidence,opts);
+ assert.equal(authorized.ready,true,'no additional reviewer needed for owner-approved routine PR');
+ assert.equal(authorized.reason,'exact-head-checks-and-owner-authorization');
+ const bad=[
+  {...evidence,ownerApproval:undefined,
+    review:{state:'approved',headSha:SHA,independent:true,actorRef:'github:user:someone'}},
+  {...evidence,ownerApproval:{...ownerApproval,actor:'other-owner'}},
+  {...evidence,ownerApproval:{...ownerApproval,verified:false}},
+  {...evidence,ownerApproval:{...ownerApproval,approvedPrNumbers:[210]}},
+  {...evidence,githubRules:{...evidence.githubRules,eligible:false}},
+  {...evidence,materialSecurityFindingsClear:false},
+  {...evidence,dependenciesSatisfied:false},
+  {...evidence,observedAt:'2026-10-31T19:48:00Z'},
+ ];
+ for(const attempt of bad)assert.equal(evaluateProtectedHead(attempt,opts).ready,false);
+ const securityHold=evaluateProtectedHead(evidence,{...opts,prNumber:200});
+ assert.equal(securityHold.ready,false,'Reef #201 must keep independent security clearance');
+ const parked=evaluateProtectedHead({...evidence,ownerApproval:{
+   ...ownerApproval,approvedPrNumbers:[198,212]
+ }},{...opts,prNumber:198});
+ assert.equal(parked.ready,false,'parked Admin App cannot skip architecture reconciliation');
+});
