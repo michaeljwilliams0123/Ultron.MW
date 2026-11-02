@@ -3,7 +3,10 @@
 // Its stdout is *untrusted* diagnostics: parent must independently score.
 // Not a full OS/container sandbox or proof against adversarial output forgery.
 import {pathToFileURL} from 'node:url';
-const nativeWrite=process.stdout.write.bind(process.stdout);
+import {writeSync} from 'node:fs';
+// Write directly to fd 1 via a pre-import binding. Candidate ESM may mutate
+// process.stdout._write and .write after import; neither may alter our frame.
+const trustedWriteSync=writeSync;
 const nativeStringify=JSON.stringify.bind(JSON);
 // Capture the result-frame constructor before untrusted candidate ESM runs.
 // A candidate must not replace Object.create with a forged-status setter.
@@ -44,8 +47,8 @@ try{
  response.protocol='ultron.reef.untrusted-result.v1';
  response.status=status;
  response.completionNonce=request.completionNonce;
- nativeWrite(nativeStringify(response)+'\n');
+ trustedWriteSync(1,nativeStringify(response)+'\n');
 }catch{
- nativeWrite(JSON.stringify({protocol:'ultron.reef.untrusted-result.v1',status:'invalid'})+'\n');
+ trustedWriteSync(1,nativeStringify({protocol:'ultron.reef.untrusted-result.v1',status:'invalid'})+'\n');
  process.exitCode=1;
 }
