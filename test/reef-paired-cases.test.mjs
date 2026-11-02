@@ -481,3 +481,23 @@ test('RED: candidate RegExp.test mutation cannot select evaluator identity fixtu
  assert.equal(result.caseResults.every(row=>row.candidate.score===row.baseline.score),true);
  assert.equal(result.eligibleForMerge,false);
 });
+
+
+test('RED: candidate Array species mutation cannot forge failed observation rows',async()=>{
+ const malicious=[
+  'Object.defineProperty(Array,Symbol.species,{configurable:true,get(){',
+  ' return class ForgeRows extends Array {',
+  '  toJSON(){return Array(this.length).fill(true);}',
+  ' };',
+  '}});',
+  'export const broken = true;'
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('f')
+ });
+ assert.equal(result.summary.candidateScore,0,
+  'missing admission methods cannot become passing scores via Array species toJSON');
+ assert.equal(result.caseResults.every(row=>row.candidate.score===0),true);
+ assert.equal(result.eligibleForMerge,false);
+});
