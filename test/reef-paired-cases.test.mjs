@@ -506,10 +506,7 @@ test('RED: candidate Array species mutation cannot forge failed observation rows
 test('RED: candidate array-iterator mutation cannot rewrite case identities',async()=>{
  const simple=[
   "export function admitRepairTask({plan,identityEvidence,controls}){",
-  " if(plan.repository!=='michaeljwilliams0123/Ultron.MW'||plan.maxCostCents!==0||",
-  "    controls.paused||controls.revoked||identityEvidence.principal!=='repair-app'||",
-  "    identityEvidence.expiresAt!=='2026-10-31T17:50:00Z'||",
-  "    identityEvidence.permissions?.administration)",
+  " if(plan.repository!=='michaeljwilliams0123/Ultron.MW')",
   "  throw Error('Repair plan rejected');",
   " return {repository:plan.repository,baseSha:plan.baseSha};",
   "}",
