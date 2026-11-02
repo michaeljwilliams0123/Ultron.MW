@@ -129,11 +129,18 @@ function step(unified=false){return {
   baseSha:BASE,path:'src/brain.mjs',
   idempotencyKey:plan(unified).idempotencyKey,attempt:1
 };}
+// Candidate code executes in the same worker realm in this legacy evaluator.
+// Capture the native matcher *before* importing that code. In particular,
+// never call global String or a mutable RegExp.prototype.test after import:
+// a candidate can redefine them and falsely classify arbitrary crashes as
+// policy denials. Issue #201 still requires a fully independent trust boundary.
+const policyDenialPattern=/^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/;
+const isPolicyDenial=RegExp.prototype.test.bind(policyDenialPattern);
 function throws(callback){
   try{callback();return false;}catch(error){
-    // Import failures, missing functions or unexpected runtime exceptions are
-    // NOT evidence that a security policy correctly denied an operation.
-    return /^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(String(error?.message||''));
+    // An unexpected exception is a failed case, not valid security denial.
+    const message=error?.message;
+    return typeof message==='string'&&isPolicyDenial(message);
   }
 }
 function runCase(mod,id,unified=false){
