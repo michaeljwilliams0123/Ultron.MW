@@ -93,3 +93,25 @@ test('an exception-throwing evidence getter cannot bypass admission validation',
   Object.defineProperty(e,'headSha',{get(){throw Error('untrusted getter');}});
   assert.equal(assessContinuumEvidence(e,opts).disposition,'held');
 });
+
+test('coercible SHA and policy-version objects never satisfy primitive evidence requirements',()=>{
+  for(const mutation of [
+    e=>{e.baseSha={toString(){return A;}};},
+    e=>{e.deployedSha={toString(){return B;}};},
+    e=>{e.policyVersion={toString(){return 'v1';}};}
+  ]){
+    const e=base();mutation(e);
+    assert.equal(assessContinuumEvidence(e,opts).disposition,'held');
+  }
+});
+test('malformed batch identity cannot execute untrusted string coercion',()=>{
+  const e=base();
+  e.intent.preconditionSha={toString(){throw Error('untrusted-coercion');}};
+  assert.equal(assessContinuumEvidenceBatch([e],opts).disposition,'held');
+});
+test('batch evaluates each mutable caller envelope from one snapshot',()=>{
+  const e=base();let reads=0;
+  Object.defineProperty(e,'deliveryId',{get(){reads++;return reads===1?'delivery-001':'delivery-002';}});
+  assert.equal(assessContinuumEvidenceBatch([e],opts).disposition,'batch-unverified');
+  assert.equal(reads,1);
+});
