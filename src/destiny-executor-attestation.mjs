@@ -21,6 +21,7 @@ const FIELD_NAMES=[
   'schema','sourceSha','status','taskId'
 ].sort();
 const MAX_AGE=300000;
+const MAX_CLOCK_SKEW=30000;
 const maxSource=600000;
 const isRecord=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const validTime=x=>typeof x==='string'&&
@@ -105,7 +106,7 @@ export function assessDestinyCanary({intent,receipt,signature,trust,
     const issued=Date.parse(receipt.issuedAt);
     const expiry=Date.parse(receipt.expiresAt);
     if(!Number.isFinite(now)||expiry<=issued||expiry-issued>MAX_AGE||
-      issued>now+MAX_AGE||now>expiry||issued<now-maxSource)
+      issued>now+MAX_CLOCK_SKEW||now>expiry||issued<now-maxSource)
       return deny('blocked-expired');
     const bytes=validSignatureText(signature);
     if(!bytes)return deny('blocked-signature');
