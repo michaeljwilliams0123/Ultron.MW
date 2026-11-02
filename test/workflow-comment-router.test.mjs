@@ -23,7 +23,7 @@ test('owner commands retain exactly the original three independently scoped capa
  assert.match(yml,/startsWith\(github\.event\.issue\.body, 'ULTRON_CLOUD_V1'\)/);
  assert.match(yml,/github\.event\.issue\.pull_request != null/);
  assert.match(yml,/!startsWith\(github\.event\.comment\.body, '@coderabbitai'\)/);
- assert.match(yml,/contains\(github\.event\.comment\.body, '\/council'\)/);
+ assert.match(yml,/startsWith\(github\.event\.comment\.body, '\/council'\)/);
  assert.match(yml,/secrets: inherit/g);
 });
 
