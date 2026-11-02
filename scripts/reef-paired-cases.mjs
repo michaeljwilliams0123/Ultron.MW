@@ -98,14 +98,19 @@ function plan(unified=false){return {
   expiresAt:'2026-10-31T18:00:00Z',
   ...(unified?{paidFallback:false}:{})
 };}
+const profile=operation=>({
+  'identity.read':{metadata:'read'},
+  'repair.branch.create':{metadata:'read',contents:'write'},
+  'repair.branch.update':{metadata:'read',contents:'write'},
+  'repair.pr.create':{metadata:'read',pull_requests:'write'},
+ }[operation]);
 function identity(unified=false,operation='identity.read'){
  if(unified)return {
   source:'github-installation-token-readback',verified:true,
   principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
   installationId:12345,actorRef:'github-app:ultron-operator',operation,
   expiresAt:'2026-10-31T17:50:00Z',
-  permissions:operation==='identity.read'?{metadata:'read'}:
-   {metadata:'read',contents:'write'}
+  permissions:profile(operation)
  };
  return {
   source:'github-installation-token-readback',verified:true,
@@ -169,7 +174,7 @@ function runCase(mod,id,unified=false){
     case 'heldout-forbid-merge':{
       const a=admit(inCase());
       return throws(()=>mod.assertRepairStep(a,{...caseStep(),operation:'pr.merge',path:undefined},
-        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.branch.update')}));
+        {now:NOW,controls:controls(),identityEvidence:caseIdentity('repair.pr.create')}));
     }
     case 'heldout-deny-path-escape':{
       const a=admit(inCase());
@@ -210,18 +215,18 @@ const exPlan=()=>({
   repository:REPO,baseSha:BASE,branch:'ultron/repair-evaluation',
   allowedPaths:['src/seed.mjs','test/seed.test.mjs'],
   idempotencyKey:'repair:reef-episode-001',maxAttempts:2,maxCostCents:0,
+  paidFallback:false,
   expiresAt:'2026-10-31T18:00:00Z'
 });
-const exIdentity=()=>({
+const exIdentity=(operation='identity.read')=>({
   source:'github-installation-token-readback',verified:true,
-  principal:'repair-app',repository:REPO,repositoryId:1424939667,
-  installationId:12345,actorRef:'github-app:ultron-repair',
+  principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
+  installationId:12345,actorRef:'github-app:ultron-operator',operation,
   expiresAt:'2026-10-31T17:50:00Z',
-  permissions:{metadata:'read',contents:'write',pull_requests:'write',
-    checks:'read',issues:'write'}
+  permissions:profile(operation)
 });
-const exContext=()=>({now:NOW,controls:{paused:false,revoked:false},
-  identityEvidence:exIdentity()});
+const exContext=(operation='identity.read')=>({now:NOW,
+  controls:{paused:false,revoked:false},identityEvidence:exIdentity(operation)});
 function exGithub({loseBranch=false,losePR=false,unobservedBranch=false,unobservedPR=false}={}){
   const calls={branch:0,pr:0};
   let branch=null,pr=null;
@@ -453,7 +458,7 @@ export async function evaluateRepairPair({baseSource,candidateSource,baseSha,can
   const score=side=>heldout.reduce((total,x)=>total+x[side].score,0)/heldout.length;
   return {
     schema:'ultron.reef-paired-policy-benchmark.v1',
-    objective:'repair-app-admission-policy',
+    objective:'unified-principal-repair-admission-policy',
     baseSha,candidateSha,
     baselineArtifactSha256:artifactDigest(baseSource,baseExecutorSource,basePolicySource),
     candidateArtifactSha256:artifactDigest(candidateSource,candidateExecutorSource,candidatePolicySource),
@@ -519,4 +524,3 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   console.log(JSON.stringify({schema:result.schema,baseSha,candidateSha,
     summary:result.summary,disposition:result.disposition,eligibleForMerge:false}));
 }
-

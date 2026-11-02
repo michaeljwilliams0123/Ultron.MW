@@ -6,6 +6,14 @@ import { readFile } from 'node:fs/promises';
 
 const sha = x => x.repeat(40);
 const source = await readFile(new URL('../src/repair-admission.mjs', import.meta.url), 'utf8');
+const policy = await readFile(new URL('../src/github-principal-policy.mjs', import.meta.url), 'utf8');
+// Supply the real dependency only for the repository admission fixture. Synthetic
+// legacy modules keep their own explicit policy inputs and identity contract.
+const evaluate = args => evaluateRepairPair({
+  ...(args.baseSource===source?{basePolicySource:policy}:{}),
+  ...(args.candidateSource===source?{candidatePolicySource:policy}:{}),
+  ...args,
+});
 
 test('pinned repair benchmark has disjoint development and held-out security cases', () => {
   assert.equal(REPAIR_CASES.length >= 8, true);
@@ -16,7 +24,7 @@ test('pinned repair benchmark has disjoint development and held-out security cas
 });
 
 test('same source gives no claimed improvement or independent Reef acceptance', async () => {
-  const result = await evaluateRepairPair({
+  const result = await evaluate({
     baseSource: source, candidateSource: source, baseSha: sha('a'), candidateSha: sha('b'),
   });
   assert.equal(result.schema, 'ultron.reef-paired-policy-benchmark.v1');
@@ -27,16 +35,20 @@ test('same source gives no claimed improvement or independent Reef acceptance', 
   assert.equal(result.reefRunVerified, false);
   assert.equal(result.eligibleForMerge, false);
   assert.equal(result.baselineArtifactSha256, createHash('sha256').update(JSON.stringify([
-    source,{present:false},{present:false}
+    source,{present:false},{present:true,value:policy}
   ])).digest('hex'));
 });
 
 test('critical security regression is observed on actual candidate module behavior', async () => {
-  const altered = source.replace("const STEPS = new Set(['branch.create','branch.update','pr.create',",
-    "const STEPS = new Set(['pr.merge','branch.create','branch.update','pr.create',");
+  const altered = source
+    .replace("const STEPS = new Set(['branch.create','branch.update','pr.create',",
+      "const STEPS = new Set(['pr.merge','branch.create','branch.update','pr.create',")
+    .replace(".map(operation=>[operation,'repair.'+operation])));",
+      ".map(operation=>[operation,operation==='pr.merge'?'repair.pr.create':'repair.'+operation])));");
   assert.notEqual(altered, source);
-  const result = await evaluateRepairPair({
+  const result = await evaluate({
     baseSource: source, candidateSource: altered, baseSha: sha('a'), candidateSha: sha('c'),
+    candidatePolicySource:policy,
   });
   const prohibited = result.caseResults.find(x => x.id === 'heldout-forbid-merge');
   assert.equal(prohibited.baseline.score, 1);
@@ -46,10 +58,10 @@ test('critical security regression is observed on actual candidate module behavi
 });
 
 test('invalid source lineage or malformed candidate cannot be counted as success', async () => {
-  await assert.rejects(() => evaluateRepairPair({
+  await assert.rejects(() => evaluate({
     baseSource: source, candidateSource: source, baseSha: 'main', candidateSha: sha('b'),
   }), /lineage/);
-  const result = await evaluateRepairPair({
+  const result = await evaluate({
     baseSource: source, candidateSource: 'export const broken = true;', baseSha: sha('a'), candidateSha: sha('b'),
   });
   assert.equal(result.summary.candidateScore, 0);
@@ -58,7 +70,7 @@ test('invalid source lineage or malformed candidate cannot be counted as success
 
 test('protected evaluator measures actual Repair coordinator episodes, not just admission', async()=>{
   const validCandidate=`export const createMemoryRepairLedger=()=>({});\nexport async function runRepairPR(){return {status:'complete'};}`;
-  const result=await evaluateRepairPair({
+  const result=await evaluate({
     baseSource:source,candidateSource:source,
     baseSha:sha('a'),candidateSha:sha('b'),
     baseExecutorSource:null,candidateExecutorSource:validCandidate,
@@ -72,7 +84,7 @@ test('protected evaluator measures actual Repair coordinator episodes, not just 
 });
 
 test('malformed new Repair coordinator never scores security negatives as success', async()=>{
-  const report=await evaluateRepairPair({
+  const report=await evaluate({
     baseSource:source,candidateSource:source,
     baseSha:sha('a'),candidateSha:sha('b'),
     baseExecutorSource:null,candidateExecutorSource:'export function broken ( {',
@@ -85,14 +97,14 @@ test('malformed new Repair coordinator never scores security negatives as succes
 
 test('protected evaluator executes relative policy dependency for a candidate',async()=>{
  const imported="import {trusted} from './github-principal-policy.mjs';\nif(!trusted) throw Error('policy missing');\n"+source;
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:imported,baseSha:sha('a'),candidateSha:sha('b'),
-  candidatePolicySource:'export const trusted = true;',
+  candidatePolicySource:policy+'\nexport const trusted = true;',
  });
  assert.equal(result.summary.candidateScore,result.summary.baselineScore,
   'an admitted candidate with a valid local policy import must be evaluated');
  assert.notEqual(result.baselineArtifactSha256,result.candidateArtifactSha256);
- const missing=await evaluateRepairPair({
+ const missing=await evaluate({
   baseSource:source,candidateSource:imported,baseSha:sha('a'),candidateSha:sha('c'),
  });
  assert.equal(missing.summary.candidateScore,0,
@@ -122,7 +134,7 @@ test('protected evaluator accepts the unified operation-scoped identity fixture'
   'export const ULTRON_GITHUB_PRINCIPAL="ultron-github-app"; export const marker=true;',
   'const ULTRON_GITHUB_PRINCIPAL="ultron-github-app";export {ULTRON_GITHUB_PRINCIPAL};export const marker=true;'
  ]){
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:modernSource,
   baseSha:sha('a'),candidateSha:sha('b'),candidatePolicySource,
  });
@@ -144,7 +156,7 @@ test('candidate global mutation cannot influence score arithmetic',async()=>{
  ].join('\n');
  const original=globalThis.Number;
  try{
-  const result=await evaluateRepairPair({
+  const result=await evaluate({
    baseSource:source,candidateSource:candidate,baseSha:sha('a'),candidateSha:sha('c')
   });
   assert.equal(result.summary.candidateScore,0,
@@ -164,7 +176,7 @@ test('candidate cannot forge success by writing child stdout and exiting early',
   "export function admitRepairTask(){throw Error('invalid');}",
   "export function assertRepairStep(){throw Error('invalid');}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('d')
  });
@@ -185,7 +197,7 @@ test('candidate cannot fabricate an authenticated observation envelope',async()=
   "export function admitRepairTask(){throw Error('invalid');}",
   "export function assertRepairStep(){throw Error('invalid');}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('e')
  });
@@ -200,7 +212,7 @@ test('candidate cannot falsify signed observations with Array.prototype.toJSON',
   "export function admitRepairTask(){throw Error('invalid');}",
   "export function assertRepairStep(){throw Error('invalid');}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
  });
@@ -232,7 +244,7 @@ test('candidate cannot forge a signed report by patching native Hmac and stdout'
   "export function admitRepairTask(){throw Error('denied');}",
   "export function assertRepairStep(){throw Error('denied');}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
  });
@@ -252,7 +264,7 @@ test('untrusted candidate cannot leave inherited stdout alive and stall evaluato
   "export function assertRepairStep(){throw Error('invalid');}"
  ].join('\n');
  const started=Date.now();
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:candidate,
   baseSha:sha('a'),candidateSha:sha('c')
  });
@@ -281,7 +293,7 @@ test('candidate cannot forge valid signed successes by replacing crypto and fs E
   "export function admitRepairTask(){throw Error('always denied')}",
   "export function assertRepairStep(){throw Error('always denied')}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
  });
@@ -330,7 +342,7 @@ test('RED: candidate cannot spoof expected policy denials by replacing the evalu
   " throw new TypeError('unexpected programming failure');",
   "}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('e')
  });
@@ -361,7 +373,7 @@ test('candidate RegExp.exec mutation cannot forge admission policy denials',asyn
   " throw new TypeError('unexpected programming failure');",
   "}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
  });
@@ -379,7 +391,7 @@ test('candidate execution classifier mutation cannot forge denied episodes',asyn
   "export const createMemoryRepairLedger=()=>({});",
   "export async function runRepairPR(){throw new TypeError('unexpected programming failure');}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:source,
   baseSha:sha('a'),candidateSha:sha('f'),
   baseExecutorSource:null,candidateExecutorSource:maliciousExecutor
@@ -406,8 +418,8 @@ test('RED: candidate-runner cannot contain an HMAC signing oracle',async()=>{
    "};",
    source
  ].join('\n');
- const report=await evaluateRepairPair({
-   baseSource:source,candidateSource:monitored,
+ const report=await evaluate({
+   baseSource:source,candidateSource:monitored,candidatePolicySource:policy,
    baseSha:sha('a'),candidateSha:sha('d')
  });
  assert.equal(report.summary.candidateScore,report.summary.baselineScore,
@@ -439,7 +451,7 @@ test('candidate cannot rewrite the runner frame through Object.create and toJSON
   "export function admitRepairTask(){throw new TypeError('unexpected programming failure');}",
   "export function assertRepairStep(){throw new TypeError('unexpected programming failure');}"
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
  });
@@ -470,7 +482,7 @@ test('RED: candidate RegExp.test mutation cannot select evaluator identity fixtu
  ].join('\n');
  const candidate="RegExp.prototype.test=()=>true;\n"+regexFree;
  const policy='export const marker=true;';
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:regexFree,candidateSource:candidate,
   baseSha:sha('a'),candidateSha:sha('b'),
   basePolicySource:policy,candidatePolicySource:policy
@@ -492,7 +504,7 @@ test('RED: candidate Array species mutation cannot forge failed observation rows
   '}});',
   'export const broken = true;'
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
  });
@@ -526,7 +538,7 @@ test('RED: candidate array-iterator mutation cannot rewrite case identities',asy
   " return row;",
   "};",simple
  ].join('\n');
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:simple,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
  });
@@ -560,7 +572,7 @@ test('RED: candidate RegExp.exec mutation cannot select evaluator identity fixtu
  ].join('\n');
  const candidate="RegExp.prototype.exec=()=>['forged policy marker'];\n"+regexFree;
  const policy='export const marker=true;';
- const result=await evaluateRepairPair({
+ const result=await evaluate({
   baseSource:regexFree,candidateSource:candidate,
   baseSha:sha('a'),candidateSha:sha('b'),
   basePolicySource:policy,candidatePolicySource:policy
@@ -570,4 +582,16 @@ test('RED: candidate RegExp.exec mutation cannot select evaluator identity fixtu
    'candidate mutating RegExp.exec must not switch the harness identity fixtures');
  assert.equal(result.caseResults.every(row=>row.candidate.score===row.baseline.score),true);
  assert.equal(result.eligibleForMerge,false);
+});
+
+
+test('policy source is part of each distinct artifact fingerprint',async()=>{
+ const changed=await evaluateRepairPair({baseSource:source,candidateSource:source,
+  baseSha:sha('a'),candidateSha:sha('b'),
+  basePolicySource:policy,candidatePolicySource:policy+'\n'});
+ assert.notEqual(changed.baselineArtifactSha256,changed.candidateArtifactSha256);
+ const absent=await evaluateRepairPair({baseSource:source,candidateSource:source,
+  baseSha:sha('a'),candidateSha:sha('c'),
+  basePolicySource:undefined,candidatePolicySource:policy});
+ assert.notEqual(absent.baselineArtifactSha256,absent.candidateArtifactSha256);
 });
