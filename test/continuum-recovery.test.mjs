@@ -260,3 +260,42 @@ test('C02 permits native PostgreSQL Date and an ISO timestamp for expiry',async(
     assert.equal(result.receipts[0].disposition,'reconcile-required');
   }
 });
+
+
+test('RED: C02 never certifies malformed expiry on an already-uncertain intent',async()=>{
+  // A reconcile-required row still needs a valid immutable readback before
+  // the tick may certify a state, even though no CAS should be attempted.
+  const invalid=[
+    '2026-02-30T11:59:00Z',
+    '2026-11-31T11:59:00Z',
+    ['2026-11-01T11:59:00Z']
+  ];
+  for(const state of ['pending','reconcile-required']){
+    for(const expiresAt of invalid){
+      let writes=0;
+      const result=await reconcileContinuumTick({
+        now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
+        outbox:{
+          observe:async()=>row({state,expiresAt}),
+          markUnknown:async()=>{writes++;return {state:'reconcile-required'};}
+        }
+      });
+      assert.equal(result.status,'held-partial');
+      assert.equal(result.receipts[0].disposition,'held-unknown');
+      assert.equal(writes,0);
+      assert.equal(result.externalDispatches,0);
+    }
+  }
+});
+
+test('RED: C02 rejects impossible scheduler calendar timestamps before readControl',async()=>{
+  for(const now of ['2026-02-30T12:00:00Z','2026-11-31T12:00:00Z']){
+    let read=0;
+    await assert.rejects(reconcileContinuumTick({
+      now,readControl:async()=>{read++;return control();},
+      listDue:async()=>[delivery],
+      outbox:{observe:async()=>row(),markUnknown:async()=>({state:'reconcile-required'})}
+    }),/continuum-recovery-time-invalid/);
+    assert.equal(read,0);
+  }
+});
