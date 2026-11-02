@@ -143,3 +143,20 @@ test('RED: malformed envelope and invalid trusted intent do not throw into a suc
   assert.equal(inspect({intent:{...INTENT,maxPaidCents:1}}).status,'blocked-intent');
   assert.equal(inspect({intent:{...INTENT,sourceSha:'unknown'}}).status,'blocked-intent');
 });
+
+// Clock skew is bounded independently of the maximum receipt lifetime.
+test('RED: a signed result from more than 30 seconds in the future is rejected',()=>{
+  const report=inspect({receipt:payload({
+    issuedAt:'2026-11-02T20:00:31.000Z',
+    expiresAt:'2026-11-02T20:02:00.000Z'
+  })});
+  assert.equal(report.status,'blocked-expired');
+  assert.equal(report.verifiedReceipt,false);
+});
+
+test('RED: expired receipt remains rejected even for an identical prior receipt digest',()=>{
+  const first=inspect();
+  const expired=inspect({now:NOW+180000,priorReceiptSha:first.receiptSha});
+  assert.equal(expired.status,'blocked-expired');
+  assert.equal(expired.verifiedReceipt,false);
+});
