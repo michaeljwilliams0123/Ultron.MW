@@ -95,3 +95,38 @@ test('RED: mismatched signed identities cannot reconcile to a foreign ACK',async
   await assert.rejects(recordContinuumAck({db,ack}),/continuum-ack-conflict/);
   assert.equal(db.entries.size,1);
 });
+
+
+test('RED: C03 durable ACK is fenced to immutable delivery receiver and route',async()=>{
+  // A valid HMAC from *either* bridge is insufficient when the delivery was
+  // routed to a different receiver. The SQL boundary must consult a durable
+  // separately authorized route registration, never trust the signed ACK
+  // itself as evidence of destination selection.
+  const wire=await signed();
+  const ack=await verifyContinuumAck({...wire,secret,
+    expectedSource:'mahoraga-cloud',now,subtle:webcrypto.subtle});
+  const db=mockDb();
+  const query=db.query.bind(db);
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_receipts')){
+      assert.match(sql,/JOIN brain_continuum_routes\b/,
+        'ACK must join separately persisted route authority');
+      assert.match(sql,/r\.source\s*=\s*\$3\b/,
+        'ACK bridge identity must equal authorized receiver');
+      assert.match(sql,/r\.route_sha\s*=\s*\$9\b/,
+        'ACK route digest must equal authorized immutable route');
+    }
+    return query(sql,params);
+  };
+  assert.equal((await recordContinuumAck({db,ack})).created,true);
+});
+
+test('RED: C03 requires an immutable durable route registration migration',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const sql=await readFile(new URL('../cloud/hatchable/migrations/0014_continuum_receipts.sql',import.meta.url),'utf8');
+  assert.match(sql,/CREATE TABLE IF NOT EXISTS brain_continuum_routes\b/);
+  assert.match(sql,/delivery_id text NOT NULL (?:UNIQUE|PRIMARY KEY)/);
+  assert.match(sql,/source text NOT NULL CHECK/);
+  assert.match(sql,/route_sha text NOT NULL CHECK/);
+  assert.match(sql,/CREATE TRIGGER continuum_routes_immutable/);
+});
