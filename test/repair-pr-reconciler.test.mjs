@@ -137,7 +137,7 @@ test('pause, revoked identity and scope violation deny before branch or PR mutat
    {task:{...plan(),maxCostCents:10}},
  ]) {
    const service=fakeGitHub(),ledger=createMemoryRepairLedger();
-   await assert.rejects(runRepairPR(args({ledger,service,...changed})),/Repair/);
+   await assert.rejects(runRepairPR(args({ledger,service,...changed})),/Repair|Unified GitHub/);
    assert.deepEqual({branch:service.calls.branch,pr:service.calls.pr},{branch:0,pr:0});
  }
 });
@@ -218,9 +218,9 @@ test('stale branch-confirmed snapshot from concurrent loser never redelivers PR'
 test('fresh owner pause between branch confirmation and PR blocks new PR write',async()=>{
  const ledger=createMemoryRepairLedger(),service=fakeGitHub();
  let readCount=0;
- const readContext=async()=>{
+ const readContext=async operation=>{
    readCount++;
-   return readCount>=3?{...context(),controls:{paused:true,revoked:false}}:context();
+   return readCount>=3?{...context(operation),controls:{paused:true,revoked:false}}:context(operation);
  };
  await assert.rejects(
    runRepairPR(args({ledger,service,readContext})),/Repair step denied/
@@ -233,8 +233,8 @@ test('fresh owner pause between branch confirmation and PR blocks new PR write',
 test('fresh identity swap before branch dispatch blocks all mutations',async()=>{
  const ledger=createMemoryRepairLedger(),service=fakeGitHub();
  let n=0;
- const readContext=async()=>++n===1?context():{
-   ...context(),identityEvidence:{...identity(),installationId:98765}
+ const readContext=async operation=>++n===1?context(operation):{
+   ...context(operation),identityEvidence:{...identity(operation),installationId:98765}
  };
  await assert.rejects(runRepairPR(args({ledger,service,readContext})),/Repair step denied/);
  assert.equal(service.calls.branch,0);
