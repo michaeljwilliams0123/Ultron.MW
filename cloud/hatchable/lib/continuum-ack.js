@@ -90,11 +90,19 @@ export async function recordContinuumAck({db,ack}={}){
      reject('continuum-ack-write-uncertain');
  }
  // Explicit post-write observation: never repeat the INSERT on lost ACK.
- const observed=await db.query(`SELECT receipt_id AS "receiptId",
+ let observed;
+ try{
+  observed=await db.query(`SELECT receipt_id AS "receiptId",
    delivery_id AS "deliveryId",source,payload_sha256 AS "payloadSha",
    route_sha AS "routeSha" FROM brain_continuum_receipts WHERE delivery_id=$1`,
    [ack.deliveryId]);
- if(!observed||!Array.isArray(observed.rows)||observed.rows.length!==1)
+ }catch{
+  // The INSERT may already be committed when the readback transport fails.
+  // Preserve the stable unknown-write disposition rather than leaking SQL IO.
+  reject('continuum-ack-write-uncertain');
+ }
+ if(!observed||!Array.isArray(observed.rows)||observed.rows.length!==1||
+    !observed.rows[0]||typeof observed.rows[0]!=='object')
    reject('continuum-ack-write-uncertain');
  const stored=observed.rows[0];
  if(stored.receiptId!==ack.receiptId||stored.deliveryId!==ack.deliveryId||
