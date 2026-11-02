@@ -83,6 +83,9 @@ export async function reconcileContinuumTick({
     throw Error('continuum-recovery-input-invalid');
   const control=await readControl();
   if(control?.paused===true)return summary('paused');
+  // Revocation is an explicit admission fence. Missing or coerced values
+  // cannot certify an active owner authority for a recovery transition.
+  if(control?.revoked!==false)return summary('held-revoked');
   if(control?.paused!==false||control?.maxPaidCents!==0||
      control?.paidFallback!==false)
     return summary('held-zero-cost');
