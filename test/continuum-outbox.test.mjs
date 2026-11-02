@@ -654,3 +654,42 @@ test('C01: reservation never acknowledges a delivery that expired during databas
     assert.equal(db.entries.size,1,'persisted intent must be reconciled, not erased');
   }
 });
+
+test('C01 RED: malformed INSERT acknowledgement after commit must hold for reconciliation',async()=>{
+  for(const reply of [null,{rows:null},{rows:[{},{}]}]){
+    const db=fakeDb(),original=db.query.bind(db);let inserts=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;
+        await original(sql,params);
+        return reply;
+      }
+      return original(sql,params);
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(contract()),/continuum-outbox-reconcile-required/);
+    assert.equal(inserts,1,'never retry a malformed acknowledgement');
+    assert.equal(db.entries.size,1,'INSERT may have committed');
+  }
+});
+
+test('C01 RED: malformed UPDATE acknowledgement after commit must hold for reconciliation',async()=>{
+  for(const reply of [null,{rows:null},{rows:[{},{}]}]){
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    const c=contract();await outbox.reserve(c);
+    const original=db.query.bind(db);let updates=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('UPDATE brain_continuum_outbox')){
+        updates++;
+        await original(sql,params);
+        return reply;
+      }
+      return original(sql,params);
+    };
+    await assert.rejects(outbox.markUnknown({
+      deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+    }),/continuum-outbox-reconcile-required/);
+    assert.equal(updates,1,'never replay an uncertain CAS');
+    assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
+  }
+});
