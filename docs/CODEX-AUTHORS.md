@@ -131,12 +131,13 @@ C01/C03 delivery intent, and independently provisioned Ed25519 public key.
 The `destiny-codex` entry above describes a previously *enrolled Work GitHub
 event route*, **not** confirmation that a Codex Cloud environment is published,
 a GitHub trigger is delivering to it, or either OpenAI account is authenticated.
-As of 2026-11-02, the owner reports the cloud environment was created but Codex
-credits are exhausted. This is **owner-reported setup**, not independently
-observed live execution or account binding.
+As of 2026-11-02, the owner reports the cloud environment was **published**
+and Codex credits are available. This is **owner-reported setup**, not
+independently observed live execution or account binding.
 
-Do not trigger a cloud canary or invent an ACK, claim, signature, or result to
-fill the gap. Run source/CI checks without paid model usage and leave
+Run at most one read-only cloud canary through the published account-owned
+environment, as described in the linked runbook. Do not invent an ACK, claim,
+signature, or result; leave
 `workAccountAuthenticated=false`, `productionAccepted=false` and
 `liveExecution: not-verified` until independent cloud/receiver evidence exists.
 Track the external handoff under [Continuum C03 #185](https://github.com/michaeljwilliams0123/Ultron.MW/issues/185).
