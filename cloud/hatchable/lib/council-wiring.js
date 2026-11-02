@@ -42,7 +42,7 @@ export function assessCouncilWiring({
  const capabilities=Object.freeze([...runtime,...candidate]);
  const found=new Set(tables);
  const missing=required.filter(t=>!found.has(t));
- const appRoles=new Set();
+ const appRoles=new Set(),appIds=new Set(),installationIds=new Set();
  for(const item of installationObservations){
   if(!item||!roles.includes(item.role)||
     item.source!=='github-installations-api'||
@@ -52,7 +52,12 @@ export function assessCouncilWiring({
     item.repositoryMahoragaVerified!==true)
    throw Error('council-wiring-installation-invalid');
   if(appRoles.has(item.role))throw Error('council-wiring-duplicate-role');
+  if(appIds.has(item.appId))throw Error('council-wiring-duplicate-app');
+  if(installationIds.has(item.installationId))
+   throw Error('council-wiring-duplicate-installation');
   appRoles.add(item.role);
+  appIds.add(item.appId);
+  installationIds.add(item.installationId);
  }
  const rolesUnverified=roles.filter(r=>!appRoles.has(r));
  // Installation metadata alone never proves a worker is authenticated.
