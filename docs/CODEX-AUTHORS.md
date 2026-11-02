@@ -119,13 +119,24 @@ written branch receipt. Keep `liveExecution: not-verified` in static registry
 metadata until a separate reviewed evidence update cites a successful run.
 Tests prove source behavior; they do not establish webhook delivery.
 
-## Dedicated Destiny App and signed completion canary (draft implementation)
+## Dedicated Destiny Codex Cloud handoff (source-only)
 
-The proposed [Destiny executor App and canary contract](DESTINY-EXECUTOR-CANARY.md)
-adds a separately authenticated GitHub App actor **plus** a pinned external
-Ed25519 completion-signature check bound to the trusted C01/C03 delivery.
-It is source-only until Destiny enrolls and proves the actual Work event task,
-installs and scopes the App and provisions the private signing key outside Git.
-A signed receipt alone does **not** prove which ChatGPT account ran; the
-`workAccountAuthenticated` and `productionAccepted` claims remain false.
-Track live handoff acceptance under [Continuum C03 #185](https://github.com/michaeljwilliams0123/Ultron.MW/issues/185).
+The proposed [Codex Cloud environment and signed canary contract](DESTINY-EXECUTOR-CANARY.md)
+uses a separate account-owned **Codex Cloud environment** connected to the
+authorized GitHub repository. **It does not require registering or installing
+a custom GitHub App.** The signed completion is bound to a pinned environment
+fingerprint, actual GitHub event actor observed by API readback, immutable
+C01/C03 delivery intent, and independently provisioned Ed25519 public key.
+
+The `destiny-codex` entry above describes a previously *enrolled Work GitHub
+event route*, **not** confirmation that a Codex Cloud environment is published,
+a GitHub trigger is delivering to it, or either OpenAI account is authenticated.
+As of 2026-11-02, the owner reports the cloud environment was created but Codex
+credits are exhausted. This is **owner-reported setup**, not independently
+observed live execution or account binding.
+
+Do not trigger a cloud canary or invent an ACK, claim, signature, or result to
+fill the gap. Run source/CI checks without paid model usage and leave
+`workAccountAuthenticated=false`, `productionAccepted=false` and
+`liveExecution: not-verified` until independent cloud/receiver evidence exists.
+Track the external handoff under [Continuum C03 #185](https://github.com/michaeljwilliams0123/Ultron.MW/issues/185).
