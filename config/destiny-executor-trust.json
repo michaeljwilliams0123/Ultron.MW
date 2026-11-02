@@ -1,23 +1,20 @@
 {
-  "schema": "ultron.destiny.executor-trust.v1",
+  "schema": "ultron.destiny.executor-trust.v2",
   "state": "unconfigured",
   "repository": "michaeljwilliams0123/Ultron.MW",
   "authorId": "destiny-codex",
-  "executionLane": "work-github-event",
-  "githubApp": {
-    "proposedName": "ultron-destiny-executor",
-    "expectedActor": "ultron-destiny-executor[bot]",
-    "installationId": null,
-    "appId": null,
-    "grants": {
-      "metadata": "read",
-      "contents": "write",
-      "pull_requests": "read",
-      "issues": "read",
-      "actions": "read",
-      "administration": "none",
-      "workflows": "none"
-    }
+  "executionLane": "codex-cloud",
+  "cloud": {
+    "provider": "openai-codex-cloud",
+    "environmentPublished": false,
+    "taskObserved": false,
+    "workEventTriggerConfirmed": false,
+    "accountAuthenticated": false
+  },
+  "githubConnection": {
+    "repository": "michaeljwilliams0123/Ultron.MW",
+    "accountApproval": "not-verified",
+    "customGitHubAppRequired": false
   },
   "signing": {
     "algorithm": "Ed25519",
@@ -26,13 +23,14 @@
   "canary": {
     "effect": "read",
     "allowedRepository": "michaeljwilliams0123/Ultron.MW",
-    "allowedObjective": "Inspect trusted current-main docs/core/codex-authors.mjs and report the callable author IDs",
+    "allowedObjective": "Inspect trusted current-main docs/core/codex-authors.mjs and report callable author IDs",
     "maxPaidCents": 0,
     "allowMerge": false,
     "allowAdmin": false,
     "liveExecution": "not-verified"
   },
-  "appLogin": "ultron-destiny-executor[bot]",
+  "githubActor": null,
+  "environmentFingerprint": null,
   "keyId": null,
   "publicKeyPem": null
 }
