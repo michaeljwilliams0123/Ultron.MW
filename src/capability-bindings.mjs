@@ -47,6 +47,8 @@ export function validateCapabilityBinding(input) {
       new Set(input.operations.map(operation => operation.name)).size !== input.operations.length ||
       !Number.isSafeInteger(input.maxCostCents) || input.maxCostCents < 0 ||
       input.maxCostCents > 100_000 ||
+      typeof input.expiresAt !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(input.expiresAt) ||
       !Number.isFinite(Date.parse(input.expiresAt)) ||
       input.credentialRef !== null &&
         !(typeof input.credentialRef === 'string' &&
