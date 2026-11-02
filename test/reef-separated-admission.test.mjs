@@ -217,3 +217,22 @@ test('RED: candidate stdout internal writer cannot forge valid-nonce result stat
  assert.equal(x.resultIsUntrusted,true);
  assert.equal(x.eligibleForMerge,false);
 });
+
+// REEF_C201_OWN_MESSAGE_PROTO_SPOOF_RED_20261102
+// Candidate-controlled inherited Error.message must not turn an unexpected
+// programming exception into a valid policy denial. This does not certify
+// child output or establish independent observation provenance.
+test('Reef trust-plane: inherited Error.message cannot forge a denial',async()=>{
+ const malicious=[
+  "Object.defineProperty(Error.prototype,'message',{configurable:true,get(){return 'denied';}});",
+  'export function admitRepairTask(){throw new TypeError();}'
+ ].join('\\n');
+ const x=await evaluateSeparatedAdmissionCase({
+  candidateSource:malicious,method:'admitRepairTask',input:args(false),
+  expectedStatus:'rejected',maxPaidCents:0
+ });
+ assert.equal(x.observedStatus,'invalid',
+  'prototype-inherited error messages are not trusted policy denials');
+ assert.equal(x.score,0);
+ assert.equal(x.eligibleForMerge,false);
+});
