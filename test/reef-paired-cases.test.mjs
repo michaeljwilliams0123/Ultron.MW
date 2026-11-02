@@ -416,3 +416,35 @@ test('RED: candidate-runner cannot contain an HMAC signing oracle',async()=>{
  assert.equal(report.heldoutCertified,false);
  assert.equal(report.eligibleForMerge,false);
 });
+
+// REEF_C201_FRAME_MUTATION_REGRESSION_20261102
+// Candidate and runner still share a process. This is an interim regression,
+// NOT evidence of independently trusted observation or release certification.
+test('candidate cannot rewrite the runner frame through Object.create and toJSON',async()=>{
+ const malicious=[
+  'const originalCreate=Object.create;',
+  'Object.create=function(prototype,...rest){',
+  ' const value=originalCreate(prototype,...rest);',
+  ' if(prototype===null){',
+  "  Object.defineProperty(value,'toJSON',{value(){",
+  "   if(!this.observation||typeof this.completionNonce!=='string')return this;",
+  '   return {observation:{',
+  '    admission:this.observation.admission.map(()=>true),',
+  '    execution:this.observation.execution.map(()=>true)',
+  '   },completionNonce:this.completionNonce};',
+  '  }});',
+  ' }',
+  ' return value;',
+  '};',
+  "export function admitRepairTask(){throw new TypeError('unexpected programming failure');}",
+  "export function assertRepairStep(){throw new TypeError('unexpected programming failure');}"
+ ].join('\\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('f')
+ });
+ assert.equal(result.summary.candidateScore,0,
+  'candidate-controlled Object.create/toJSON must not forge all-true outcomes');
+ assert.equal(result.caseResults.every(x=>x.candidate.score===0),true);
+ assert.equal(result.eligibleForMerge,false);
+});
