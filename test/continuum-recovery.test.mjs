@@ -325,3 +325,28 @@ test('C02 rejects timezone-ambiguous or malformed persisted expiry without recov
     }
   }
 });
+
+test('RED: C02 scheduler clock requires an explicit bounded timezone before any storage access',async()=>{
+  // Date.parse accepts local-time strings and +14:30, making recovery
+  // eligibility depend on a worker timezone or an invalid offset.
+  for(const now of [
+    '2026-11-01T12:00:00',
+    '2026-11-01 12:00:00',
+    '2026-11-01T12:00:00+14:30',
+    '2026-11-01T24:00:00Z'
+  ]){
+    let controlReads=0,queueReads=0,writes=0;
+    await assert.rejects(reconcileContinuumTick({
+      now,
+      readControl:async()=>{controlReads++;return control();},
+      listDue:async()=>{queueReads++;return [delivery];},
+      outbox:{
+        observe:async()=>row(),
+        markUnknown:async()=>{writes++;return {state:'reconcile-required'};}
+      }
+    }),/continuum-recovery-time-invalid/,now);
+    assert.equal(controlReads,0,'reject untrusted clock before control read');
+    assert.equal(queueReads,0,'reject untrusted clock before due queue');
+    assert.equal(writes,0,'no reconciliation writes from untrusted clock');
+  }
+});
