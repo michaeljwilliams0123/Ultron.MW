@@ -746,3 +746,30 @@ test('C01 RED: reservation cannot accept normalized invalid or timezone-free exp
     assert.equal(db.statements.filter(s=>s.sql.includes('INSERT INTO brain_continuum_outbox')).length,1);
   }
 });
+
+
+test('C01 RED: invalid post-commit clock readback must remain reconcile-required',async()=>{
+  // A transient broken clock after a durable INSERT must not be mistaken for
+  // invalid caller input. Callers may retry admission on input-validation
+  // failures, which is unsafe when the INSERT might already have committed.
+  for(const mode of ['created','duplicate','lost-ack']){
+    const db=fakeDb(),original=db.query.bind(db),c=contract();
+    let clock=NOW,inserts=0;
+    const outbox=createContinuumOutbox({db,now:()=>clock});
+    if(mode==='duplicate')await outbox.reserve(c);
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;
+        const result=await original(sql,params);
+        clock='invalid-clock-after-commit';
+        if(mode==='lost-ack')throw Error('simulated lost INSERT response');
+        return result;
+      }
+      return original(sql,params);
+    };
+    await assert.rejects(outbox.reserve(c),/continuum-outbox-reconcile-required/,
+      mode+' must preserve uncertain durable outcome');
+    assert.equal(inserts,1,'never replay a write after the clock fails');
+    assert.equal(db.entries.size,1,'existing durable intent remains intact');
+  }
+});
