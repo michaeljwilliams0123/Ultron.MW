@@ -18,7 +18,14 @@ try{
  if(typeof candidate.admitRepairTask!=='function')throw Error('candidate-invalid');
  let status='returned';
  try{await candidate.admitRepairTask(request.input);}
- catch{status='rejected';}
+ catch(error){
+  // A crash, bad import or programming error is NOT proof that the candidate
+  // enforced a policy denial. Only explicit recognized denial errors can
+  // produce a negative-case observation. This output remains untrusted.
+  const message=String(error?.message||'');
+  status=(message==='denied'||/^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(message))
+   ?'rejected':'invalid';
+ }
  nativeWrite(JSON.stringify({protocol:'ultron.reef.untrusted-result.v1',status})+'\n');
 }catch{
  nativeWrite(JSON.stringify({protocol:'ultron.reef.untrusted-result.v1',status:'invalid'})+'\n');
