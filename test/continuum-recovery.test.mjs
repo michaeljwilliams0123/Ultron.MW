@@ -183,3 +183,41 @@ test('C02 nearly full seven-day success cannot meet target when one scheduler sl
  assert.equal(result.evidenceComplete,false);
  assert.equal(result.meetsTarget,false);
 });
+
+
+test('RED: C02 must reject noncanonical persisted lease generations before any reconciliation write',async()=>{
+  // C01's BIGINT parser accepts only safe integers and canonical unsigned
+  // decimal strings. The C02 recovery boundary must not coerce adapter data.
+  const invalid=[null,false,true,'','07','7\n','0x7','7.0',[7],['7'],{},new Number(7)];
+  for(const state of ['pending','reconcile-required']){
+    for(const leaseGeneration of invalid){
+      let writes=0,observations=0;
+      const result=await reconcileContinuumTick({
+        now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
+        outbox:{
+          observe:async()=>{observations++;return row({state,leaseGeneration});},
+          markUnknown:async()=>{writes++;return {state:'reconcile-required'};}
+        }
+      });
+      assert.equal(result.status,'held-partial',
+        'invalid persisted fence cannot authorize any recovery state');
+      assert.equal(result.receipts[0].disposition,'held-unknown');
+      assert.equal(observations,1);
+      assert.equal(writes,0,'no reconciliation transition for a coerced fence');
+      assert.equal(result.externalDispatches,0);
+    }
+  }
+});
+
+test('C02 accepts a canonical BIGINT string lease on the bounded recovery path',async()=>{
+  const calls=[];
+  const result=await reconcileContinuumTick({
+    now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
+    outbox:{
+      observe:async()=>row({leaseGeneration:'7'}),
+      markUnknown:async args=>{calls.push(args);return {state:'reconcile-required'};}
+    }
+  });
+  assert.deepEqual(calls,[{deliveryId:delivery,sourceSha:SHA,leaseGeneration:7}]);
+  assert.equal(result.receipts[0].disposition,'reconcile-required');
+});
