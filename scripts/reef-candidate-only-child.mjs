@@ -4,6 +4,7 @@
 // Not a full OS/container sandbox or proof against adversarial output forgery.
 import {pathToFileURL} from 'node:url';
 const nativeWrite=process.stdout.write.bind(process.stdout);
+const nativeStringify=JSON.stringify.bind(JSON);
 // Capture native matching primitives before importing untrusted candidate ESM.
 // Candidate realm changes to String, RegExp.test, or RegExp.exec cannot turn
 // unrelated exceptions into policy denials in this experimental worker.
@@ -19,7 +20,11 @@ try{
   if(Buffer.byteLength(text)>8192)throw Error('case-request-too-large');
  }
  const request=JSON.parse(text);
- if(request?.method!=='admitRepairTask')throw Error('method-not-allowed');
+ if(request?.method!=='admitRepairTask'||
+    typeof request.completionNonce!=='string'||
+    !/^[a-f0-9]{64}$/.test(request.completionNonce))
+   throw Error('method-or-completion-invalid');
+ // Never pass completionNonce to a candidate method or module scope.
  const modulePath=process.argv[2];
  if(!modulePath||!modulePath.endsWith('.mjs'))throw Error('candidate-missing');
  const candidate=await import(pathToFileURL(modulePath).href);
@@ -32,7 +37,11 @@ try{
   // produce a negative-case observation. This output remains untrusted.
   status=explicitDenial(error?.message)?'rejected':'invalid';
  }
- nativeWrite(JSON.stringify({protocol:'ultron.reef.untrusted-result.v1',status})+'\n');
+ const response=Object.create(null);
+ response.protocol='ultron.reef.untrusted-result.v1';
+ response.status=status;
+ response.completionNonce=request.completionNonce;
+ nativeWrite(nativeStringify(response)+'\n');
 }catch{
  nativeWrite(JSON.stringify({protocol:'ultron.reef.untrusted-result.v1',status:'invalid'})+'\n');
  process.exitCode=1;
