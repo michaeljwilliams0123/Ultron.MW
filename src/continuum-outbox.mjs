@@ -48,9 +48,9 @@ function validate(contract,now){
     typeof c.deliveryId!=='string'||!IDENTIFIER.test(c.deliveryId)||
     typeof c.idempotencyKey!=='string'||!IDENTIFIER.test(c.idempotencyKey)||
     c.repository!==REPO||
-    !SHA.test(c.sourceSha||'')||
-    !DIGEST.test(c.authoritySha||'')||
-    !DIGEST.test(c.requestSha||'')||
+    (typeof c.sourceSha!=='string'||!SHA.test(c.sourceSha))||
+    (typeof c.authoritySha!=='string'||!DIGEST.test(c.authoritySha))||
+    (typeof c.requestSha!=='string'||!DIGEST.test(c.requestSha))||
     !Number.isSafeInteger(c.leaseGeneration)||c.leaseGeneration<1||
     !['read','advisory'].includes(c.effect)||
     c.maxPaidCents!==0)
@@ -207,7 +207,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
     },
     async markUnknown({deliveryId,sourceSha,leaseGeneration}={}){
       if(typeof deliveryId!=='string'||!IDENTIFIER.test(deliveryId)||
-        !SHA.test(sourceSha||'')||
+        (typeof sourceSha!=='string'||!SHA.test(sourceSha))||
         !Number.isSafeInteger(leaseGeneration)||leaseGeneration<1)
         throw Error('continuum-outbox-fence-or-source-conflict');
       let updated;
