@@ -16,6 +16,10 @@ const trustedObjectCreate=Object.create;
 // unrelated exceptions into policy denials in this experimental worker.
 const nativeApply=Reflect.apply;
 const nativeExec=RegExp.prototype.exec;
+// Candidate code may rewrite Error/TypeError prototype message accessors.
+// Only an own primitive data message can count as an explicit denial.
+const nativeGetOwnDescriptor=Object.getOwnPropertyDescriptor;
+const nativeHasOwn=Object.prototype.hasOwnProperty;
 const POLICY_DENIAL=/^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/;
 const explicitDenial=message=>typeof message==='string'&&
   (message==='denied'||nativeApply(nativeExec,POLICY_DENIAL,[message])!==null);
@@ -41,7 +45,12 @@ try{
   // A crash, bad import or programming error is NOT proof that the candidate
   // enforced a policy denial. Only explicit recognized denial errors can
   // produce a negative-case observation. This output remains untrusted.
-  status=explicitDenial(error?.message)?'rejected':'invalid';
+  const descriptor=error!==null&&
+   (typeof error==='object'||typeof error==='function')?
+   nativeGetOwnDescriptor(error,'message'):undefined;
+  const ownMessage=descriptor&&nativeApply(nativeHasOwn,descriptor,['value'])&&
+   typeof descriptor.value==='string'?descriptor.value:undefined;
+  status=explicitDenial(ownMessage)?'rejected':'invalid';
  }
  const response=trustedObjectCreate(null);
  response.protocol='ultron.reef.untrusted-result.v1';
