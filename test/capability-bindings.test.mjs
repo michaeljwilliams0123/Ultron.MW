@@ -350,6 +350,30 @@ test('C05 zero-dollar global ceiling rejects paid estimates even when a binding 
 });
 
 
+test('C05 snapshots estimated cost once before provider dispatch',async()=>{
+ let reads=0;
+ let dispatchedCost=null;
+ const target=adapter({execute:async request=>{
+  dispatchedCost=request.estimatedCostCents;
+  return {status:200};
+ }});
+ const broker=createCapabilityBroker({clock:()=>now});
+ broker.bind(manifest({maxCostCents:500}),target);
+ await broker.health('github-owner');
+ const request={
+  operation:'repo.read',idempotencyKey:'read:cost-snapshot',
+  input:{repository:'Ultron.MW'},expected:{status:200}
+ };
+ Object.defineProperty(request,'estimatedCostCents',{
+  enumerable:true,
+  get(){reads++;return reads<=4?0:1;}
+ });
+ assert.equal((await broker.execute('github-owner',request)).status,'completed');
+ assert.equal(reads,1,'cost authority must be read exactly once');
+ assert.equal(dispatchedCost,0,'adapter receives the validated cost snapshot');
+});
+
+
 test('RED: binding authority expiry requires a canonical timestamp string, not coercion',()=>{
   const expires='2026-10-22T20:00:00Z';
   const malformed=[
