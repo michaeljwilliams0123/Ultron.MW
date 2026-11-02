@@ -175,14 +175,17 @@ export function createCapabilityBroker({ authorize = async () => false,
   async function execute(id, request) {
     const record = recordFor(id);
     if (record.readiness !== 'ready') throw Error('Capability binding not ready');
+    // Read once so an accessor cannot present one cost to validation and a
+    // different positive cost to the immutable dispatch snapshot.
+    const estimatedCostCents = request?.estimatedCostCents;
     if (!request || typeof request !== 'object' ||
         !NAME.test(request.operation || '') || !IDEMPOTENCY.test(request.idempotencyKey || '') ||
-        !Number.isSafeInteger(request.estimatedCostCents) ||
-        request.estimatedCostCents < 0 ||
+        !Number.isSafeInteger(estimatedCostCents) ||
+        estimatedCostCents < 0 ||
         // Continuum's hard $0/day external-paid policy is global. A provider
         // manifest's larger ceiling is descriptive, never spend authority.
-        request.estimatedCostCents > 0 ||
-        request.estimatedCostCents > record.binding.maxCostCents ||
+        estimatedCostCents > 0 ||
+        estimatedCostCents > record.binding.maxCostCents ||
         !serializable(request.input) || !serializable(request.expected, 4_000))
       throw Error('Invalid capability request');
     const operation = record.binding.operations.find(item => item.name === request.operation);
@@ -191,7 +194,7 @@ export function createCapabilityBroker({ authorize = async () => false,
     // untrusted caller must not mutate the dispatch payload after approval.
     const snapshot = {
       operation: request.operation, idempotencyKey: request.idempotencyKey,
-      estimatedCostCents: request.estimatedCostCents,
+      estimatedCostCents,
       input: JSON.parse(JSON.stringify(request.input)),
       expected: JSON.parse(JSON.stringify(request.expected)),
     };
