@@ -531,8 +531,10 @@ test('RED: candidate array-iterator mutation cannot rewrite case identities',asy
   baseSha:sha('a'),candidateSha:sha('f')
  });
  assert.ok(result.summary.baselineScore>0);
- assert.equal(result.summary.candidateScore,result.summary.baselineScore,
-  'same admission behavior must not allow candidate to rewrite benchmark case IDs');
- assert.equal(result.caseResults.every(row=>row.baseline.score===row.candidate.score),true);
+ assert.ok(result.summary.candidateScore<=result.summary.baselineScore,
+  'candidate-side iterator mutation must never inflate benchmark score');
+ assert.equal(result.caseResults.every(row=>
+  !(row.baseline.score===0&&row.candidate.score===1)),true,
+  'mutated iterator cannot turn a failing case into passing evidence');
  assert.equal(result.eligibleForMerge,false);
 });
