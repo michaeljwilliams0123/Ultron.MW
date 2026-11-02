@@ -135,7 +135,14 @@ function step(unified=false){return {
 // a candidate can redefine them and falsely classify arbitrary crashes as
 // policy denials. Issue #201 still requires a fully independent trust boundary.
 const policyDenialPattern=/^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/;
-const isPolicyDenial=RegExp.prototype.test.bind(policyDenialPattern);
+// Candidate ESM can replace RegExp.prototype.exec or global String.
+// Call the captured native matcher through captured Reflect.apply instead.
+const nativeRegExpExec=RegExp.prototype.exec;
+const nativeReflectApply=Reflect.apply;
+const trustedRegexMatch=(pattern,message)=>
+  typeof message==='string'&&
+  nativeReflectApply(nativeRegExpExec,pattern,[message])!==null;
+const isPolicyDenial=message=>trustedRegexMatch(policyDenialPattern,message);
 function throws(callback){
   try{callback();return false;}catch(error){
     // An unexpected exception is a failed case, not valid security denial.
@@ -247,7 +254,7 @@ const exArgs=(mod,db,extra={})=>({
 });
 const exRejects=async(promise,reason)=>{
   try{await promise;return false;}catch(error){
-    return reason.test(String(error?.message||''));
+    return trustedRegexMatch(reason,error?.message);
   }
 };
 async function executeCase(mod,id){
