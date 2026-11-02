@@ -226,7 +226,7 @@ test('Reef trust-plane: inherited Error.message cannot forge a denial',async()=>
  const malicious=[
   "Object.defineProperty(Error.prototype,'message',{configurable:true,get(){return 'denied';}});",
   'export function admitRepairTask(){throw new TypeError();}'
- ].join('\\n');
+ ].join('\n');
  const x=await evaluateSeparatedAdmissionCase({
   candidateSource:malicious,method:'admitRepairTask',input:args(false),
   expectedStatus:'rejected',maxPaidCents:0
