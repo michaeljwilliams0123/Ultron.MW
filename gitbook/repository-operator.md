@@ -21,8 +21,13 @@ GitHub App principal is already deployed.
 * **Routine repair and observation** require a bounded plan and revocable
   standing grant, while workflow state, repository settings and webhooks
   require a fresh independent owner step-up for one exact plan.
-* **Protected release** still requires exact-head CI and an independent review.
-  The App cannot review or merge its own work.
+* **Protected release** for routine source-only PRs uses verified owner queue
+  approval under [issue #209](https://github.com/michaeljwilliams0123/Ultron.MW/issues/209)
+  as Ultron's decision authority, plus exact-head CI, security/dependency
+  clearance and applicable GitHub-enforced branch/review protections. There is
+  no universal extra internal reviewer requirement. High-risk Reef #200/#201
+  retains its independent security assessment hold. The App cannot self-review,
+  bypass protected merge rules or merge from this source-only executor.
 * **Local execution** is an opt-in adapter with isolated credentials, timeouts
   and recovery; it cannot silently become the core or widen authority.
 
