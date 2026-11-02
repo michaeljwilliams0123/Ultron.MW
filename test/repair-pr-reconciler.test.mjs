@@ -12,7 +12,9 @@ const plan=()=>({
  allowedPaths:['src/seed.mjs','test/seed.test.mjs'],
  idempotencyKey:'repair:seeded-pr-001',maxAttempts:2,maxCostCents:0,
  paidFallback:false,
- expiresAt:'2026-// Every operation gets its own down-scoped installation token readback.
+ expiresAt:'2026-10-31T18:00:00Z'
+});
+// Each new external write obtains fresh operation-scoped installation evidence.
 const identity=(operation='identity.read')=>({
  source:'github-installation-token-readback',verified:true,
  principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
@@ -26,7 +28,6 @@ const identity=(operation='identity.read')=>({
 const context=(operation='identity.read')=>({
  now:NOW,controls:{paused:false,revoked:false},identityEvidence:identity(operation)
 });
-idence:identity()});
 function fakeGitHub({loseBranch=false,losePR=false,autoPrepare=true}={}){
  let branch=null,pr=null;
  const calls={branch:0,pr:0,reads:0};
