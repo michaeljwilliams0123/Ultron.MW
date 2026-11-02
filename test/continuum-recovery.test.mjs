@@ -299,3 +299,29 @@ test('RED: C02 rejects impossible scheduler calendar timestamps before readContr
     assert.equal(read,0);
   }
 });
+
+
+test('C02 rejects timezone-ambiguous or malformed persisted expiry without recovery transitions',async()=>{
+  const invalid=[
+    '2026-11-01T11:59:00','2026-11-01 11:59:00',
+    '2026-11-01T11:59:00Zgarbage','2026-11-01T25:59:00Z',
+    '2026-11-01T11:60:00Z','2026-11-01T11:59:00+14:30',
+    '2026-11-01T11:59:00+99:00','2026-11-01T11:59Z'
+  ];
+  for(const state of ['pending','reconcile-required']){
+    for(const expiresAt of invalid){
+      let transitions=0;
+      const result=await reconcileContinuumTick({
+        now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
+        outbox:{
+          observe:async()=>row({state,expiresAt}),
+          markUnknown:async()=>{transitions++;return {state:'reconcile-required'};}
+        }
+      });
+      assert.equal(result.status,'held-partial',expiresAt);
+      assert.equal(result.receipts[0].disposition,'held-unknown',expiresAt);
+      assert.equal(transitions,0,'invalid timestamp cannot cause reconciliation writes');
+      assert.equal(result.externalDispatches,0);
+    }
+  }
+});
