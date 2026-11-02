@@ -160,3 +160,20 @@ test('RED: candidate realm mutations cannot turn an unrelated TypeError into a s
   'a candidate cannot reprogram its own denial classifier');
  assert.equal(outcome.eligibleForMerge,false);
 });
+
+
+test('RED: candidate cannot use a fabricated complete protocol frame and early exit to impersonate runner',async()=>{
+  const forged=[
+    "process.stdout.write(JSON.stringify({protocol:'ultron.reef.untrusted-result.v1',status:'rejected'})+'\\n');",
+    'process.exit(0);',
+    "export function admitRepairTask(){throw new TypeError('unexpected failure');}"
+  ].join('\n');
+  const report=await evaluateSeparatedAdmissionCase({
+    candidateSource:forged,method:'admitRepairTask',input:args(false),
+    expectedStatus:'rejected',maxPaidCents:0
+  });
+  assert.equal(report.score,0,'a candidate must not impersonate completed runner output');
+  assert.equal(report.observedStatus,'invalid');
+  assert.equal(report.resultIsUntrusted,true);
+  assert.equal(report.eligibleForMerge,false);
+});
