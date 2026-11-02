@@ -23,6 +23,9 @@ const held=reason=>result('held',reason);
 // neither a second read nor JS coercion can be an authorization primitive.
 function snapshot(record){
   const a=record.authorization,i=record.intent,b=record.readback,v=record.review;
+  // Snapshot the artifact property once, just like the other evidence fields.
+  // A hostile accessor must not be re-entered during validation or hashing.
+  const artifacts=record.artifacts;
   return {
     schema:record.schema,objectiveId:record.objectiveId,taskId:record.taskId,
     deliveryId:record.deliveryId,actorId:record.actorId,runtimeId:record.runtimeId,
@@ -37,7 +40,7 @@ function snapshot(record){
     review:v&&{reviewerId:v.reviewerId,headSha:v.headSha,
       decision:v.decision,evidenceUrl:v.evidenceUrl},
     elapsedMs:record.elapsedMs,observedPaidCents:record.observedPaidCents,
-    artifacts:Array.isArray(record.artifacts)?[...record.artifacts]:record.artifacts
+    artifacts:Array.isArray(artifacts)?[...artifacts]:artifacts
   };
 }
 function validCore(c,expectedHeadSha,now){
