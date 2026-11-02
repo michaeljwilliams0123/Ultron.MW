@@ -53,6 +53,10 @@ function verifiedTrust(t){
      !DIGEST.test(t.environmentFingerprint)||
      typeof t.keyId!=='string'||!/^[-a-z0-9]{4,64}$/.test(t.keyId)||
      typeof t.publicKeyPem!=='string')return null;
+  // Node's createPublicKey() also derives public keys from private-key PEMs.
+  // This trust field is public repository metadata: reject secret PEM inputs.
+  if(!/^-----BEGIN PUBLIC KEY-----\r?\n(?:[A-Za-z0-9+/=]+\r?\n)+-----END PUBLIC KEY-----\r?\n?$/.test(t.publicKeyPem))
+    return null;
   try{
     const key=createPublicKey(t.publicKeyPem);
     return key.asymmetricKeyType==='ed25519'?key:null;
