@@ -54,6 +54,24 @@ function verifiedTrust(t){
     return key.asymmetricKeyType==='ed25519'?key:null;
   }catch{return null;}
 }
+// Capture one immutable set of own data properties before validating or
+// verifying a signature. Accessor-backed fields must not be able to change
+// between signature verification and the persisted receipt digest.
+function snapshotReceipt(receipt){
+  if(!isRecord(receipt))return null;
+  const descriptors=Object.getOwnPropertyDescriptors(receipt);
+  const keys=Object.keys(descriptors);
+  if(keys.length!==FIELDS.length||keys.sort().join(',')!==FIELDS.join(','))
+    return null;
+  const captured=Object.create(null);
+  for(const key of FIELDS){
+    const descriptor=descriptors[key];
+    if(!descriptor?.enumerable||
+       !Object.prototype.hasOwnProperty.call(descriptor,'value'))return null;
+    captured[key]=descriptor.value;
+  }
+  return Object.freeze(captured);
+}
 function validReceipt(r){
   return isRecord(r)&&Object.keys(r).sort().join(',')===FIELDS.join(',')&&
     r.schema===DESTINY_RECEIPT_SCHEMA&&r.repository===REPO&&
@@ -92,24 +110,25 @@ export function assessDestinyCanary({intent,receipt,signature,trust,
     if(!key)return deny('blocked-unconfigured');
     if(typeof observedGitHubActor!=='string'||
        observedGitHubActor!==trust.githubActor)return deny('blocked-actor');
-    if(!validReceipt(receipt))return deny('blocked-receipt');
-    if(receipt.keyId!==trust.keyId||
-       receipt.githubActor!==observedGitHubActor||
-       receipt.environmentFingerprint!==trust.environmentFingerprint||
-       receipt.executionLane!==trust.executionLane||
+    const capturedReceipt=snapshotReceipt(receipt);
+    if(!capturedReceipt||!validReceipt(capturedReceipt))return deny('blocked-receipt');
+    if(capturedReceipt.keyId!==trust.keyId||
+       capturedReceipt.githubActor!==observedGitHubActor||
+       capturedReceipt.environmentFingerprint!==trust.environmentFingerprint||
+       capturedReceipt.executionLane!==trust.executionLane||
        ['repository','taskId','deliveryId','requestSha','sourceSha','routeSha',
          'effect','maxPaidCents'].some(k=>receipt[k]!==intent[k]))
       return deny('blocked-correlation');
-    const issued=Date.parse(receipt.issuedAt),expiry=Date.parse(receipt.expiresAt);
+    const issued=Date.parse(capturedReceipt.issuedAt),expiry=Date.parse(capturedReceipt.expiresAt);
     if(!Number.isFinite(now)||expiry<=issued||expiry-issued>MAX_LIFETIME||
        issued>now+MAX_FUTURE_SKEW||now>expiry||issued<now-MAX_ISSUED_AGE)
       return deny('blocked-expired');
     const bytes=signatureBytes(signature);
     if(!bytes||!verifySignature(null,
-       Buffer.from(canonicalDestinyReceipt(receipt),'utf8'),key,bytes))
+       Buffer.from(canonicalDestinyReceipt(capturedReceipt),'utf8'),key,bytes))
       return deny('blocked-signature');
     const receiptSha=createHash('sha256')
-      .update(canonicalDestinyReceipt(receipt)).digest('hex');
+      .update(canonicalDestinyReceipt(capturedReceipt)).digest('hex');
     if(priorReceiptSha!==undefined&&priorReceiptSha!==null){
       if(typeof priorReceiptSha!=='string'||!DIGEST.test(priorReceiptSha)||
          priorReceiptSha!==receiptSha)return deny('reconcile-required');
