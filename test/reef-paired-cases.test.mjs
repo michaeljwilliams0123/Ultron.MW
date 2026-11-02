@@ -538,3 +538,36 @@ test('RED: candidate array-iterator mutation cannot rewrite case identities',asy
   'mutated iterator cannot turn a failing case into passing evidence');
  assert.equal(result.eligibleForMerge,false);
 });
+
+
+test('RED: candidate RegExp.exec mutation cannot select evaluator identity fixtures',async()=>{
+ // The source uses no regex: a failure isolates the harness's post-import
+ // policy-marker detection instead of mutating application policy behavior.
+ const regexFree=[
+  "export function admitRepairTask({plan,identityEvidence,controls}){",
+  " if(plan.repository!=='michaeljwilliams0123/Ultron.MW'||plan.maxCostCents!==0||",
+  "    controls.paused||controls.revoked||identityEvidence.principal!=='repair-app'||",
+  "    identityEvidence.expiresAt!=='2026-10-31T17:50:00Z'||",
+  "    identityEvidence.permissions?.administration)",
+  "  throw Error('Repair plan rejected');",
+  " return {repository:plan.repository,baseSha:plan.baseSha};",
+  "}",
+  "export function assertRepairStep(admission,step){",
+  " if(step.operation!=='branch.update'||step.path!=='src/brain.mjs'||step.branch==='main')",
+  "  throw Error('Repair step denied');",
+  " return {admitted:true};",
+  "}"
+ ].join('\n');
+ const candidate="RegExp.prototype.exec=()=>['forged policy marker'];\n"+regexFree;
+ const policy='export const marker=true;';
+ const result=await evaluateRepairPair({
+  baseSource:regexFree,candidateSource:candidate,
+  baseSha:sha('a'),candidateSha:sha('b'),
+  basePolicySource:policy,candidatePolicySource:policy
+ });
+ assert.ok(result.summary.baselineScore>0,'control fixture must have passing cases');
+ assert.equal(result.summary.candidateScore,result.summary.baselineScore,
+   'candidate mutating RegExp.exec must not switch the harness identity fixtures');
+ assert.equal(result.caseResults.every(row=>row.candidate.score===row.baseline.score),true);
+ assert.equal(result.eligibleForMerge,false);
+});
