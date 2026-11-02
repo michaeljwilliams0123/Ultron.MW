@@ -64,12 +64,15 @@ export async function verifyContinuumAck({
 export async function recordContinuumAck({db,ack}={}){
  if(!TRUSTED.has(ack))reject('continuum-ack-unverified');
  if(typeof db?.query!=='function')reject('continuum-ack-db-required');
- // A single SQL statement binds the independently authenticated bridge ACK
- // to an existing immutable C01 outbox intent. No worker execution is inferred.
+ // A single SQL statement binds the authenticated ACK to the immutable
+ // C01 outbox intent AND a separately registered receiver/route pair.
+ // The ACK endpoint never creates or changes route authority.
  const result=await db.query(`INSERT INTO brain_continuum_receipts
    (receipt_id,delivery_id,source,payload_sha256,route_sha)
    SELECT $1,$2,$3,$4,$9 FROM brain_continuum_outbox o
-   WHERE o.delivery_id=$2 AND o.task_id=$5
+   JOIN brain_continuum_routes r ON r.delivery_id=o.delivery_id
+   WHERE r.source=$3 AND r.route_sha=$9
+     AND o.delivery_id=$2 AND o.task_id=$5
      AND o.source_sha=$6 AND o.request_sha=$7 AND o.authority_sha=$8
      AND o.lease_generation=$10 AND o.max_paid_cents=$11
      AND o.effect IN ('read','advisory')
