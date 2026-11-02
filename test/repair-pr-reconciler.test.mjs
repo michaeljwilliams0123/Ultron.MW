@@ -267,3 +267,26 @@ test('wrong or missing prepared SHA fails closed before PR dispatch',async()=>{
     assert.equal(service.calls.pr,0);
   }
 });
+
+
+test('RED: memory reconciliation fixture enforces the durable ledger phase contract',async()=>{
+ const ledger=createMemoryRepairLedger();
+ const key='repair:phase-contract-001',fingerprint='a'.repeat(64);
+ const admitted=await ledger.claim({key,fingerprint});
+ assert.equal(admitted.entry.phase,'reserved');
+ assert.equal(await ledger.advance({key,fingerprint,
+   from:'reserved',to:'complete',prNumber:42}),false,
+   'cannot skip branch and PR reconciliation phases');
+ assert.equal(await ledger.advance({key,fingerprint,
+   from:'reserved',to:'pr-dispatch'}),false);
+ assert.equal((await ledger.get(key)).phase,'reserved');
+ assert.equal(await ledger.advance({key,fingerprint,
+   from:'reserved',to:'branch-dispatch'}),true);
+ assert.equal(await ledger.advance({key,fingerprint,
+   from:'branch-dispatch',to:'branch-confirmed'}),true);
+ assert.equal(await ledger.advance({key,fingerprint,
+   from:'branch-confirmed',to:'pr-dispatch'}),true);
+ assert.equal(await ledger.advance({key,fingerprint,
+   from:'pr-dispatch',to:'complete',prNumber:42}),true);
+ assert.equal((await ledger.get(key)).prNumber,42);
+});
