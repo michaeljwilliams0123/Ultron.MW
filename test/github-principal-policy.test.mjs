@@ -138,3 +138,20 @@ test('RED: impossible calendar timestamps cannot authorize GitHub principal or p
    headSha:SHA,principalActorRef:'github-app:ultron-operator',now:realNow
  }).ready,false);
 });
+
+
+test('RED: impossible RFC3339 clock fields and offsets never authorize principals',async()=>{
+ const {parseInstant}=await import('../src/github-principal-policy.mjs');
+ const invalid=[
+  '2026-11-01T24:00:00Z',
+  '2026-11-01T12:00:00+14:30',
+  '2026-11-01T12:00:00+23:59',
+  '2026-11-01T12:00:00-23:00',
+  '2026-11-01T12:00:00+14:01'
+ ];
+ for(const value of invalid)
+  assert.ok(Number.isNaN(parseInstant(value)),
+   'malformed or out-of-range global instant must fail closed: '+value);
+ assert.ok(Number.isFinite(parseInstant('2026-11-01T12:00:00+14:00')));
+ assert.ok(Number.isFinite(parseInstant('2026-11-01T12:00:00-05:00')));
+});
