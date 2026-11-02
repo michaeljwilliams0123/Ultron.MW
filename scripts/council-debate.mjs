@@ -4,6 +4,7 @@
  * Includes multi-turn inter-self dialogue transcripts.
  */
 import { writeFileSync } from 'node:fs';
+import {buildCouncilPublication} from '../src/council-publication.mjs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
 import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
@@ -15,11 +16,12 @@ const title = String(process.env.TITLE || 'untitled').slice(0, 240);
 const body = String(process.env.BODY || '').slice(0, MAX_BODY);
 const item = String(process.env.ITEM_NUMBER || '0');
 const isPr = process.env.IS_PR === 'true';
+const sourceSha = process.env.TARGET_SOURCE_SHA || '';
 const observedAt = new Date().toISOString();
 
 const lower = `${title}\n${body}`.toLowerCase();
 const flags = {
-  security: ['secret', 'credential', 'token', 'password', 'bypass security', 'fail-open', 'delete main', 'force push'].some(k => lower.includes(k)),
+  security: process.env.ORIGINAL_SECURITY_SIGNAL === '1' || ['secret', 'credential', 'token', 'password', 'bypass security', 'fail-open', 'delete main', 'force push'].some(k => lower.includes(k)),
   autonomy: ['autonomy', 'always-on', 'unattended', 'self-merge', 'auto-merge'].some(k => lower.includes(k)),
   multiFile: ['multi-file', 'multifile', 'across the codebase', 'refactor'].some(k => lower.includes(k)),
   infra: ['workflow', 'github actions', 'ci', 'deploy'].some(k => lower.includes(k)),
@@ -72,6 +74,27 @@ const dialogue = buildInterSelfDialogue({
   dissent: knownUnknowns,
   observedAt,
 });
+
+const publication=buildCouncilPublication({
+  title,body,isPr,sourceSha,positions:receipt.positions,
+  ownerMode,flags
+});
+const roleLabels={
+  'ultron-builder':'Builder','ultron-skeptic':'Skeptic',
+  'ultron-steward':'Steward','ultron-predictor':'Predictor',
+  'ultron-generator':'Generator','ultron-sentinel':'Sentinel',
+  'ultron-companion':'Companion'
+};
+const roleAssessments=publication.members.map(member=>{
+  const evidence=member.evidenceRefs.join(', ')||'none recorded';
+  const unknowns=member.unknowns.join(', ')||'none recorded';
+  const dissent=member.dissentTags.join(', ')||'none recorded';
+  return '- **'+roleLabels[member.roleId]+'** (`'+member.roleId+'`): '+
+    '**'+member.conclusion+'**, confidence '+member.confidence+
+    '; evidence: '+evidence+'; unknowns: '+unknowns+
+    '; dissent: '+dissent+
+    '; GitHub identity: unbound; independent model reasoning: not performed.';
+}).join('\n');
 
 const hold = receipt.decision !== 'proceed' || flags.security;
 const status = hold
@@ -142,18 +165,27 @@ const stage3 = `# Stage 3 — Architect rebuttal / refinement
 `;
 
 const stage4 = `# Ultron Council Report
+${publication.marker}
 
 **Target:** #${item} — ${title}  
 **Status:** **${status}**  
 **Observed:** ${observedAt}  
-**Fingerprint:** \`${receipt.fingerprint}\`  
+**Evidence fingerprint:** \`${publication.fingerprint}\`  
+**Run receipt (timestamp-dependent):** \`${receipt.fingerprint}\`  
 **Governor decision:** \`${receipt.decision}\`
 
 ### Summary
 **Ultron works for the owner, not the other way around.**  
 Owner-first deterministic deliberation with inter-self dialogue and action board.
 
-### Selves
+### Role-by-role evidence assessments
+**Individual GitHub principals:** unbound for all seven roles.
+**Execution:** deterministic rules only; modelInvocations=0; no independent model reasoning, no separate authenticated GitHub identities and no independent PR approval.
+These are auditable role-specific positions, not a transcript of private thoughts.
+
+${roleAssessments}
+
+### Legacy role summary
 ${selves}
 
 ${formatDialogueMarkdown(dialogue)}
@@ -175,6 +207,7 @@ ${actions.map((a, i) => `${i + 1}. ${a}`).join('\n')}
 writeFileSync('RFC_DRAFT.md', stage1);
 writeFileSync('CRITIQUE_MATRIX.md', stage2 + '\n' + stage3);
 writeFileSync('FINAL_SYNTHESIS.md', stage4);
+writeFileSync('council-publication.json', JSON.stringify(publication,null,2));
 writeFileSync('council-receipt.json', JSON.stringify({
   ...receipt,
   ownerMode,
@@ -183,6 +216,7 @@ writeFileSync('council-receipt.json', JSON.stringify({
   status,
   actions,
   dialogue,
+  publication,
 }, null, 2));
 
 console.log(status);

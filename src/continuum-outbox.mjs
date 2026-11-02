@@ -38,13 +38,53 @@ function validate(contract,now){
     throw Error('continuum-outbox-admission-denied-invalid-expiry');
   return Object.freeze({...Object.fromEntries(FIELDS.map(k=>[k,c[k]])),expiresAt});
 }
+// PostgreSQL bigint may arrive as a decimal string. Never use Number() on
+// arbitrary readback values: false, null, empty strings and arrays can
+// otherwise masquerade as the authorized zero-cost or fencing integer.
+function persistedInteger(value){
+  if(typeof value==='number')
+    return Number.isSafeInteger(value)?value:NaN;
+  if(typeof value==='string'&&/^(0|[1-9][0-9]*)$/.test(value)){
+    const parsed=Number(value);
+    return Number.isSafeInteger(parsed)?parsed:NaN;
+  }
+  return NaN;
+}
 function same(existing,expected){
   return FIELDS.every(key=>{
     const actual=key==='expiresAt'?iso(existing[key]):
       ['taskId','leaseGeneration','maxPaidCents'].includes(key)?
-        Number(existing[key]):existing[key];
+        persistedInteger(existing[key]):existing[key];
     return actual===expected[key];
   });
+}
+// A malformed adapter readback is a persisted-state mismatch, not invalid
+// caller input. Preserve the stable conflict/hold disposition after a write.
+function matchesPersisted(row,expected){
+  try {return same(row,expected);}
+  catch {return false;}
+}
+// A malformed or missing timestamp from an adapter cannot attest the
+// persisted immutable expiry, even when the fencing CAS itself succeeded.
+// Accept native PostgreSQL Date values and ordinary ISO/SQL date strings.
+function validPersistedExpiry(value){
+  if(value instanceof Date)return Number.isFinite(value.getTime());
+  return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}[T ]/.test(value)&&
+    Number.isFinite(Date.parse(value));
+}
+function matchesTransitionReadback(row,{deliveryId,sourceSha,leaseGeneration}){
+  return row?.deliveryId===deliveryId&&row.repository===REPO&&
+    validPersistedExpiry(row.expiresAt)&&
+    persistedInteger(row.taskId)>0&&
+    typeof row.objectiveId==='string'&&IDENTIFIER.test(row.objectiveId)&&
+    typeof row.idempotencyKey==='string'&&IDENTIFIER.test(row.idempotencyKey)&&
+    typeof row.authoritySha==='string'&&DIGEST.test(row.authoritySha)&&
+    typeof row.requestSha==='string'&&DIGEST.test(row.requestSha)&&
+    row.sourceSha===sourceSha&&
+    persistedInteger(row.leaseGeneration)===leaseGeneration&&
+    persistedInteger(row.maxPaidCents)===0&&
+    ['read','advisory'].includes(row.effect)&&
+    row.state==='reconcile-required';
 }
 function requireDb(db){
   if(typeof db?.query!=='function')throw Error('continuum-outbox-db-required');
@@ -65,27 +105,65 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
       throw Error('continuum-outbox-readback-unavailable');
     return result.rows[0]??null;
   };
+  // An acknowledged database write is still uncertain when its subsequent
+  // authoritative SELECT cannot be read. Normalize the outcome so callers
+  // must reconcile instead of interpreting a transport error as no commit.
+  const readbackOrHold=async deliveryId=>{
+    try {return await lookup(deliveryId);}
+    catch {throw Error('continuum-outbox-reconcile-required');}
+  };
+  // Admission is checked before SQL and again after the final readback.
+  // A slow or lost-ACK write must not return a delivery already expired.
+  const liveAtReadback=c=>Date.parse(c.expiresAt)>Date.parse(iso(now()));
   return Object.freeze({
     async reserve(contract){
       const c=validate(contract,iso(now()));
       const params=FIELDS.map(key=>c[key]);
-      const result=await db.query(`INSERT INTO brain_continuum_outbox
-        (task_id,objective_id,delivery_id,idempotency_key,repository,
-         source_sha,authority_sha,request_sha,lease_generation,
-         expires_at,effect,max_paid_cents)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11,$12)
-        ON CONFLICT DO NOTHING
-        RETURNING delivery_id AS "deliveryId",state`,params);
+      let result;
+      try {
+        result=await db.query(`INSERT INTO brain_continuum_outbox
+          (task_id,objective_id,delivery_id,idempotency_key,repository,
+           source_sha,authority_sha,request_sha,lease_generation,
+           expires_at,effect,max_paid_cents)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11,$12)
+          ON CONFLICT DO NOTHING
+          RETURNING delivery_id AS "deliveryId",state`,params);
+      } catch {
+        // The INSERT may have committed before its acknowledgement was lost.
+        // Repeating the write could create a duplicate or conceal conflict.
+        // Verify the complete immutable contract through readback only.
+        let confirmed;
+        try {
+          confirmed=await lookup(c.deliveryId);
+          if(confirmed&&matchesPersisted(confirmed,c)&&confirmed.state==='pending'&&
+            liveAtReadback(c))
+            return {created:false,deliveryId:c.deliveryId,state:'pending',
+              reconciled:true};
+        } catch {
+          // Readback failure or malformed stored fields remain unresolved.
+        }
+        throw Error('continuum-outbox-reconcile-required');
+      }
       if(result?.rows?.length===1){
         if(result.rows[0].deliveryId!==c.deliveryId||
           result.rows[0].state!=='pending')
           throw Error('continuum-outbox-admission-readback-mismatch');
+        // The INSERT result is not enough to attest durable identity or
+        // authorization. Read the stored row back before acknowledging a
+        // new reservation, just as uncertain transition recovery does.
+        const confirmed=await readbackOrHold(c.deliveryId);
+        if(!confirmed||confirmed.deliveryId!==c.deliveryId||
+          !matchesPersisted(confirmed,c)||confirmed.state!=='pending')
+          throw Error('continuum-outbox-admission-readback-mismatch');
+        if(!liveAtReadback(c))throw Error('continuum-outbox-reconcile-required');
         return {created:true,deliveryId:c.deliveryId,state:'pending'};
       }
-      if(result?.rows?.length!==0)throw Error('continuum-outbox-admission-unavailable');
-      const existing=await lookup(c.deliveryId);
-      if(!existing||!same(existing,c))
+      if(result?.rows?.length!==0)throw Error('continuum-outbox-reconcile-required');
+      const existing=await readbackOrHold(c.deliveryId);
+      if(!existing||!matchesPersisted(existing,c)||
+        !['pending','reconcile-required'].includes(existing.state))
         throw Error('continuum-outbox-delivery-conflict');
+      if(!liveAtReadback(c))throw Error('continuum-outbox-reconcile-required');
       return {created:false,deliveryId:c.deliveryId,state:existing.state};
     },
     async observe({deliveryId}={}){
@@ -98,20 +176,47 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         !SHA.test(sourceSha||'')||
         !Number.isSafeInteger(leaseGeneration)||leaseGeneration<1)
         throw Error('continuum-outbox-fence-or-source-conflict');
-      const updated=await db.query(`UPDATE brain_continuum_outbox
-        SET state='reconcile-required',updated_at=now()
-        WHERE delivery_id=$1 AND source_sha=$2 AND lease_generation=$3
-          AND state='pending'
-        RETURNING delivery_id AS "deliveryId",state`,
-      [deliveryId,sourceSha,leaseGeneration]);
-      if(updated?.rows?.length===1)
+      let updated;
+      try {
+        updated=await db.query(`UPDATE brain_continuum_outbox
+          SET state='reconcile-required',updated_at=now()
+          WHERE delivery_id=$1 AND source_sha=$2 AND lease_generation=$3
+            AND state='pending'
+          RETURNING delivery_id AS "deliveryId",state`,
+        [deliveryId,sourceSha,leaseGeneration]);
+      } catch {
+        // A lost database response cannot prove that the CAS did not commit.
+        // Perform readback ONLY; never repeat the uncertain UPDATE.
+        let current;
+        try {current=await lookup(deliveryId);}
+        catch {throw Error('continuum-outbox-reconcile-required');}
+        if(matchesTransitionReadback(current,{deliveryId,sourceSha,leaseGeneration}))
+          return {changed:false,deliveryId,state:'reconcile-required',reconciled:true};
+        // Pending, missing, or contradictory readback cannot establish the
+        // outcome. The caller must reconcile rather than blindly retry.
+        throw Error('continuum-outbox-reconcile-required');
+      }
+      if(updated?.rows?.length===1){
+        // A successful SQL response is not an independently reconciled
+        // transition until both the returned identity and fresh persisted
+        // readback agree with the exact delivery/source/fencing contract.
+        const returned=updated.rows[0];
+        if(returned?.deliveryId!==deliveryId||
+          returned?.state!=='reconcile-required')
+          throw Error('continuum-outbox-transition-readback-mismatch');
+        const confirmed=await readbackOrHold(deliveryId);
+        if(!matchesTransitionReadback(confirmed,{deliveryId,sourceSha,leaseGeneration}))
+          throw Error('continuum-outbox-transition-readback-mismatch');
         return {changed:true,deliveryId,state:'reconcile-required'};
+      }
       if(updated?.rows?.length!==0)
-        throw Error('continuum-outbox-transition-unavailable');
-      const current=await lookup(deliveryId);
-      if(!current||current.sourceSha!==sourceSha||
-        Number(current.leaseGeneration)!==leaseGeneration||
-        current.state!=='reconcile-required')
+        throw Error('continuum-outbox-reconcile-required');
+      const current=await readbackOrHold(deliveryId);
+      // A no-op CAS still needs the same delivery identity as its SELECT key.
+      // An adapter returning a foreign row must not certify reconciliation.
+      if(current&&current.deliveryId!==deliveryId)
+        throw Error('continuum-outbox-transition-readback-mismatch');
+      if(!matchesTransitionReadback(current,{deliveryId,sourceSha,leaseGeneration}))
         throw Error('continuum-outbox-fence-or-source-conflict');
       return {changed:false,deliveryId,state:'reconcile-required'};
     }

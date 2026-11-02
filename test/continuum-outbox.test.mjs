@@ -51,7 +51,9 @@ test('reserve atomically records a zero-cost, source-and-fence-bound intent befo
   assert.match(sql.sql,/INSERT INTO brain_continuum_outbox/);
   assert.match(sql.sql,/ON CONFLICT DO NOTHING/);
   assert.equal(sql.params[11],0);
-  assert.equal(db.statements.length,1);
+  assert.equal(db.statements.length,2);
+  assert.match(db.statements[1].sql,/FROM brain_continuum_outbox/);
+  assert.deepEqual(db.statements[1].params,[contract().deliveryId]);
   assert.equal(typeof outbox.dispatch,'undefined');
 });
 
@@ -148,4 +150,546 @@ test('outbox migration stamps created_at from statement time and prevents future
  const sql=readFileSync(new URL('../cloud/hatchable/migrations/0013_continuum_outbox.sql',import.meta.url),'utf8');
  assert.match(sql,/NEW\.created_at\s*:=\s*statement_timestamp\(\)/i);
  assert.match(sql,/BEFORE INSERT ON brain_continuum_outbox/i);
+});
+
+
+test('RED: a successful fenced transition requires matching RETURNING and durable readback',async()=>{
+  for(const returned of [
+    {deliveryId:'continuum-delivery-foreign',state:'reconcile-required'},
+    {deliveryId:contract().deliveryId,state:'pending'},
+    {}
+  ]){
+    const db=fakeDb(),original=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      return sql.includes('UPDATE brain_continuum_outbox')?{rows:[returned]}:result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await outbox.reserve(contract());
+    await assert.rejects(outbox.markUnknown({
+      deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
+    }),/continuum-outbox-transition-readback-mismatch/);
+  }
+});
+
+test('RED: a successful CAS cannot report reconciliation when independent SQL readback is stale',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  let transitioned=false;
+  db.query=async(sql,params)=>{
+    const result=await original(sql,params);
+    if(sql.includes('UPDATE brain_continuum_outbox'))transitioned=true;
+    if(transitioned&&sql.includes('SELECT')&&sql.includes('brain_continuum_outbox')){
+      return {rows:result.rows.map(row=>({...row,state:'pending'}))};
+    }
+    return result;
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  await outbox.reserve(contract());
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
+  }),/continuum-outbox-transition-readback-mismatch/);
+});
+
+
+test('confirmed CAS holds when fresh readback is absent or has a different fence',async()=>{
+  for(const transform of [
+    ()=>[],
+    rows=>rows.map(row=>({...row,deliveryId:'continuum-delivery-foreign'})),
+    rows=>rows.map(row=>({...row,sourceSha:'d'.repeat(40)})),
+    rows=>rows.map(row=>({...row,leaseGeneration:3}))
+  ]){
+    const db=fakeDb(),original=db.query.bind(db);
+    let updated=false;
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('UPDATE brain_continuum_outbox'))updated=true;
+      if(updated&&sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:transform(result.rows)};
+      return result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await outbox.reserve(contract());
+    await assert.rejects(outbox.markUnknown({
+      deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
+    }),/continuum-outbox-transition-readback-mismatch/);
+    assert.equal(db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length,1);
+  }
+});
+
+
+test('RED: no-op CAS cannot accept a foreign delivery identity in fresh persisted readback',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  await outbox.markUnknown({deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration});
+  const original=db.query.bind(db);
+  db.query=async(sql,params)=>{
+    const result=await original(sql,params);
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      return {rows:result.rows.map(row=>({...row,deliveryId:'continuum-delivery-foreign'}))};
+    return result;
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-transition-readback-mismatch/);
+});
+
+test('RED: successful outbox reservation must verify persisted immutable intent before acknowledging creation',async()=>{
+  // A matching INSERT RETURNING id/state alone cannot attest the stored
+  // objective, authority, request, cost or fencing contract.
+  for(const mutate of [
+    // A matching immutable identity is insufficient if the persisted state
+    // was already moved out of pending before reservation acknowledgement.
+    rows=>rows.map(row=>({...row,state:'reconcile-required'})),
+    rows=>rows.map(row=>({...row,authoritySha:'d'.repeat(64)})),
+    rows=>rows.map(row=>({...row,requestSha:'d'.repeat(64)})),
+    rows=>rows.map(row=>({...row,leaseGeneration:3})),
+    rows=>rows.map(row=>({...row,deliveryId:'continuum-delivery-foreign'})),
+    ()=>[]
+  ]){
+    const db=fakeDb(),original=db.query.bind(db);
+    let inserted=false;
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('INSERT INTO brain_continuum_outbox'))inserted=true;
+      if(inserted&&sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:mutate(result.rows)};
+      return result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(contract()),
+      /continuum-outbox-admission-readback-mismatch/);
+    assert.equal(db.statements.filter(s=>s.sql.includes('INSERT INTO brain_continuum_outbox')).length,1);
+  }
+});
+
+test('successful outbox reservation is acknowledged only after fresh exact-contract readback',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  assert.deepEqual(await outbox.reserve(contract()),{
+    created:true,deliveryId:contract().deliveryId,state:'pending'
+  });
+  assert.equal(db.statements.filter(s=>s.sql.includes('SELECT')&&s.sql.includes('brain_continuum_outbox')).length,1);
+});
+
+test('RED: immutable persisted numeric readback must not coerce invalid cost, task or fence types',async()=>{
+  for(const [field,value] of [
+    ['maxPaidCents',false],['maxPaidCents',null],['maxPaidCents',''],
+    ['maxPaidCents',[]],['taskId',[71]],['leaseGeneration',[2]]
+  ]){
+    const db=fakeDb(),original=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,[field]:value}))};
+      return result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(contract()),
+      /continuum-outbox-admission-readback-mismatch/);
+  }
+});
+
+test('RED: successful fenced transition rejects coerced persisted lease generation',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  let transitioned=false;
+  db.query=async(sql,params)=>{
+    const result=await original(sql,params);
+    if(sql.includes('UPDATE brain_continuum_outbox'))transitioned=true;
+    if(transitioned&&sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      return {rows:result.rows.map(row=>({...row,leaseGeneration:[2]}))};
+    return result;
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  await outbox.reserve(contract());
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:contract().deliveryId,sourceSha:contract().sourceSha,leaseGeneration:2
+  }),/continuum-outbox-transition-readback-mismatch/);
+});
+
+test('canonical persisted bigint strings reject trailing newlines on fresh and duplicate reservation',async()=>{
+  for(const duplicate of [false,true]){
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    if(duplicate)await outbox.reserve(contract());
+    const original=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,leaseGeneration:'2\n'}))};
+      return result;
+    };
+    await assert.rejects(outbox.reserve(contract()),
+      duplicate?/continuum-outbox-delivery-conflict/:/continuum-outbox-admission-readback-mismatch/);
+  }
+});
+
+test('no-op fenced reconciliation rejects noncanonical persisted bigint strings',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  await outbox.markUnknown({deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration});
+  const original=db.query.bind(db);
+  db.query=async(sql,params)=>{
+    const result=await original(sql,params);
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      return {rows:result.rows.map(row=>({...row,leaseGeneration:'2\n'}))};
+    return result;
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-fence-or-source-conflict/);
+});
+
+
+test('RED: fenced reconciliation must not certify an unauthorized persisted cost or effect',async()=>{
+  for(const altered of [
+    {maxPaidCents:1},{maxPaidCents:false},{effect:'write'}
+  ]){
+    for(const premarked of [false,true]){
+      const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+      const c=contract();
+      await outbox.reserve(c);
+      if(premarked)await outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      });
+      const query=db.query.bind(db);
+      db.query=async(sql,params)=>{
+        const result=await query(sql,params);
+        if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+          return {rows:result.rows.map(row=>({...row,...altered}))};
+        return result;
+      };
+      await assert.rejects(outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      }),/continuum-outbox-(transition-readback-mismatch|fence-or-source-conflict)/);
+    }
+  }
+});
+
+test('RED: duplicate outbox reservation must not certify an unrecognized persisted state',async()=>{
+  for(const foreignState of ['completed','delivered','failed']){
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    await outbox.reserve(contract());
+    const query=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await query(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,state:foreignState}))};
+      return result;
+    };
+    await assert.rejects(outbox.reserve(contract()),/continuum-outbox-delivery-conflict/);
+    assert.equal(db.entries.size,1);
+  }
+});
+
+test('RED: unknown UPDATE response after durable commit reconciles via readback without replay',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  const original=db.query.bind(db);
+  let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('UPDATE brain_continuum_outbox')){
+      writes++;
+      await original(sql,params);
+      throw Error('simulated lost PostgreSQL UPDATE response');
+    }
+    return original(sql,params);
+  };
+  assert.deepEqual(await outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),{changed:false,deliveryId:c.deliveryId,state:'reconcile-required',reconciled:true});
+  assert.equal(writes,1,'never replay an uncertain UPDATE');
+  assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
+});
+
+test('RED: unknown UPDATE response before commit stays unresolved, never silently retries',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  const original=db.query.bind(db);
+  let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('UPDATE brain_continuum_outbox')){
+      writes++;
+      throw Error('simulated lost response before any commit');
+    }
+    return original(sql,params);
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1,'never replay an uncertain UPDATE');
+  assert.equal(db.entries.get(c.deliveryId).state,'pending');
+});
+
+test('RED: lost INSERT acknowledgement after commit reconciles immutable persisted intent without replay',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  const c=contract();let inserts=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_outbox')){
+      inserts++;
+      await original(sql,params);
+      throw Error('simulated lost INSERT response after PostgreSQL commit');
+    }
+    return original(sql,params);
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  assert.deepEqual(await outbox.reserve(c),{
+    created:false,deliveryId:c.deliveryId,state:'pending',reconciled:true
+  });
+  assert.equal(inserts,1,'unknown INSERT must never be blindly repeated');
+  assert.equal(db.entries.size,1);
+  assert.equal(db.entries.get(c.deliveryId).authoritySha,c.authoritySha);
+});
+
+test('RED: lost INSERT acknowledgement before commit holds reconcile-required with no replay',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  const c=contract();let inserts=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_outbox')){
+      inserts++;
+      throw Error('simulated lost INSERT response before PostgreSQL commit');
+    }
+    return original(sql,params);
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  await assert.rejects(outbox.reserve(c),/continuum-outbox-reconcile-required/);
+  assert.equal(inserts,1,'do not replay an uncertain INSERT');
+  assert.equal(db.entries.size,0);
+});
+
+test('RED: lost INSERT acknowledgement cannot certify mismatched authority or unavailable readback',async()=>{
+  for(const mode of ['foreign-authority','readback-failure']){
+    const db=fakeDb(),original=db.query.bind(db),c=contract();let inserts=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;await original(sql,params);
+        throw Error('simulated lost INSERT response after commit');
+      }
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox')){
+        if(mode==='readback-failure')throw Error('readback transport failure');
+        const result=await original(sql,params);
+        return {rows:result.rows.map(row=>({...row,authoritySha:'d'.repeat(64)}))};
+      }
+      return original(sql,params);
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(c),/continuum-outbox-reconcile-required/);
+    assert.equal(inserts,1,'mismatched/unknown state must not trigger another INSERT');
+  }
+});
+
+test('C01: transition readback cannot certify foreign repository or malformed immutable identity',async()=>{
+  for(const premarked of [false,true]){
+    for(const corrupted of [
+      {repository:'foreign/repository'},
+      {authoritySha:'invalid-authority'},
+      {requestSha:'invalid-request'},
+      {taskId:0}
+    ]){
+      const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+      const c=contract();
+      await outbox.reserve(c);
+      if(premarked)await outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      });
+      const original=db.query.bind(db);
+      db.query=async(sql,params)=>{
+        const result=await original(sql,params);
+        if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+          return {rows:result.rows.map(row=>({...row,...corrupted}))};
+        return result;
+      };
+      const before=db.statements.filter(x=>x.sql.includes('UPDATE brain_continuum_outbox')).length;
+      await assert.rejects(outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      }),premarked?/continuum-outbox-fence-or-source-conflict/:
+          /continuum-outbox-transition-readback-mismatch/);
+      assert.equal(db.statements.filter(x=>x.sql.includes('UPDATE brain_continuum_outbox')).length,
+        before+1,'no blind replay of the transition');
+    }
+  }
+});
+
+
+test('C01: acknowledged INSERT with unavailable durable readback is reconcile-required, never a raw transport failure',async()=>{
+  const db=fakeDb(),original=db.query.bind(db);
+  let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_outbox'))writes++;
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      throw Error('simulated readback transport timeout');
+    return original(sql,params);
+  };
+  const outbox=createContinuumOutbox({db,now:()=>NOW});
+  await assert.rejects(outbox.reserve(contract()),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1,'never replay an acknowledged INSERT after readback loss');
+  assert.equal(db.entries.size,1,'the INSERT may already have committed');
+});
+
+test('C01: conflicting INSERT with unavailable duplicate readback stays reconcile-required',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  await outbox.reserve(contract());
+  const original=db.query.bind(db);let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_outbox'))writes++;
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      throw Error('simulated duplicate readback timeout');
+    return original(sql,params);
+  };
+  await assert.rejects(outbox.reserve(contract()),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1,'one caller attempt, no internal retry');
+  assert.equal(db.entries.size,1);
+});
+
+test('C01: acknowledged fenced UPDATE with unavailable durable readback stays reconcile-required',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();await outbox.reserve(c);
+  const original=db.query.bind(db);let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('UPDATE brain_continuum_outbox'))writes++;
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      throw Error('simulated transition readback timeout');
+    return original(sql,params);
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1,'never replay an acknowledged CAS after readback loss');
+  assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
+});
+
+test('C01: no-op fenced UPDATE with unavailable readback stays reconcile-required',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();await outbox.reserve(c);
+  await outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  });
+  const original=db.query.bind(db);let writes=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('UPDATE brain_continuum_outbox'))writes++;
+    if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+      throw Error('simulated no-op readback timeout');
+    return original(sql,params);
+  };
+  await assert.rejects(outbox.markUnknown({
+    deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+  }),/continuum-outbox-reconcile-required/);
+  assert.equal(writes,1);
+  assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
+});
+
+test('C01: malformed persisted expiry on acknowledged or duplicate reservation is a stable mismatch, never raw input validation',async()=>{
+  // The database adapter can return malformed fields despite PostgreSQL
+  // enforcing valid timestamps. Readback corruption is not caller input.
+  for(const duplicate of [false,true]){
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    const c=contract();
+    if(duplicate)await outbox.reserve(c);
+    const original=db.query.bind(db);
+    let writes=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox'))writes++;
+      const result=await original(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,expiresAt:'not-a-timestamp'}))};
+      return result;
+    };
+    await assert.rejects(outbox.reserve(c),
+      duplicate?/continuum-outbox-delivery-conflict/:
+        /continuum-outbox-admission-readback-mismatch/);
+    assert.equal(writes,1,'never replay INSERT on malformed authoritative readback');
+    assert.equal(db.entries.size,1);
+  }
+});
+
+test('C01: fenced transition must not certify missing or malformed persisted expiry',async()=>{
+  for(const premarked of [false,true]){
+    for(const expiresAt of [undefined,null,'not-a-timestamp']){
+      const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+      const c=contract();
+      await outbox.reserve(c);
+      if(premarked)await outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      });
+      const original=db.query.bind(db);
+      db.query=async(sql,params)=>{
+        const result=await original(sql,params);
+        if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+          return {rows:result.rows.map(row=>({...row,expiresAt}))};
+        return result;
+      };
+      const before=db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length;
+      await assert.rejects(outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      }),premarked?/continuum-outbox-fence-or-source-conflict/:
+        /continuum-outbox-transition-readback-mismatch/);
+      assert.equal(db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length,
+        before+1,'an uncertain or contradictory readback must never replay the CAS');
+    }
+  }
+});
+
+
+test('C01: reservation never acknowledges a delivery that expired during database latency',async()=>{
+  // A valid intent can expire between admission and durable SQL readback.
+  // The INSERT may have committed: hold for reconciliation, never replay.
+  for(const mode of ['created','duplicate','lost-ack']){
+    const db=fakeDb(),original=db.query.bind(db),c=contract();
+    let clock=NOW,inserts=0;
+    const outbox=createContinuumOutbox({db,now:()=>clock});
+    if(mode==='duplicate')await outbox.reserve(c);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;
+        clock=c.expiresAt;
+        if(mode==='lost-ack')throw Error('simulated lost INSERT acknowledgement');
+      }
+      return result;
+    };
+    await assert.rejects(outbox.reserve(c),/continuum-outbox-reconcile-required/,
+      mode+' must not report a live delivery after its expiry');
+    assert.equal(inserts,1,'never repeat an expired or uncertain INSERT');
+    assert.equal(db.entries.size,1,'persisted intent must be reconciled, not erased');
+  }
+});
+
+test('C01 RED: malformed INSERT acknowledgement after commit must hold for reconciliation',async()=>{
+  for(const reply of [null,{rows:null},{rows:[{},{}]}]){
+    const db=fakeDb(),original=db.query.bind(db);let inserts=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;
+        await original(sql,params);
+        return reply;
+      }
+      return original(sql,params);
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(contract()),/continuum-outbox-reconcile-required/);
+    assert.equal(inserts,1,'never retry a malformed acknowledgement');
+    assert.equal(db.entries.size,1,'INSERT may have committed');
+  }
+});
+
+test('C01 RED: malformed UPDATE acknowledgement after commit must hold for reconciliation',async()=>{
+  for(const reply of [null,{rows:null},{rows:[{},{}]}]){
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    const c=contract();await outbox.reserve(c);
+    const original=db.query.bind(db);let updates=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('UPDATE brain_continuum_outbox')){
+        updates++;
+        await original(sql,params);
+        return reply;
+      }
+      return original(sql,params);
+    };
+    await assert.rejects(outbox.markUnknown({
+      deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+    }),/continuum-outbox-reconcile-required/);
+    assert.equal(updates,1,'never replay an uncertain CAS');
+    assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
+  }
 });
