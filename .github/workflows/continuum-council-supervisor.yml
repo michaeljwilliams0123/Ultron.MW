@@ -55,6 +55,7 @@ jobs:
                 const {data:issue}=await github.rest.issues.get({owner,repo,issue_number});
                 const activity=await readCouncilActivity({
                   issue,owner,
+                  fetchIssue:async()=>(await github.rest.issues.get({owner,repo,issue_number})).data,
                   fetchPage:async page=>(await github.rest.issues.listComments({
                     owner,repo,issue_number,per_page:100,page
                   })).data
@@ -75,14 +76,42 @@ jobs:
               }
             }
             const picked=selectCouncilReviews(inputs,{now:new Date().toISOString(),limit:2,refreshHours:24});
+            const dispatched=[];
             for(const issue_number of picked){
+              // The initial scan is advisory. Revalidate the selected issue
+              // immediately before dispatch: a new report may have arrived
+              // while later roadmap issues were being scanned.
+              try {
+                const {data:latestIssue}=await github.rest.issues.get({owner,repo,issue_number});
+                const latestActivity=await readCouncilActivity({
+                  issue:latestIssue,owner,
+                  fetchIssue:async()=>(await github.rest.issues.get({owner,repo,issue_number})).data,
+                  fetchPage:async page=>(await github.rest.issues.listComments({
+                    owner,repo,issue_number,per_page:100,page
+                  })).data
+                });
+                const stillDue=latestActivity.complete&&selectCouncilReviews([{
+                  number:issue_number,state:latestIssue.state,
+                  lastReviewAt:latestActivity.lastReviewAt,
+                  lastMeaningfulAt:latestActivity.lastMeaningfulAt
+                }],{now:new Date().toISOString(),limit:1,refreshHours:24}).length>0;
+                if(!stillDue){
+                  core.info('Council activity changed for #'+issue_number+'; skip stale dispatch.');
+                  continue;
+                }
+              } catch {
+                core.warning('Council revalidation unavailable for #'+issue_number+
+                  '; skip its dispatch without replay.');
+                continue;
+              }
               await github.rest.actions.createWorkflowDispatch({
                 owner,repo,workflow_id:'council-debate.yml',ref:'main',
                 inputs:{item_number:String(issue_number),is_pr:'false'}
               });
+              dispatched.push(issue_number);
               core.info('Dispatched advisory council review on #'+issue_number);
             }
             await core.summary.addHeading('Continuum Council Supervisor')
               .addRaw('Open roadmap: #182; monitored: '+inputs.filter(x=>x.state==='open').length+
-                '; council reviews dispatched: '+picked.length+'; issue numbers: '+picked.join(', '))
+                '; council reviews dispatched: '+dispatched.length+'; issue numbers: '+dispatched.join(', '))
               .write();

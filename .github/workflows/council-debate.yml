@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ultron-council-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
-  cancel-in-progress: true
+  group: ultron-council-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.item_number || github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   council-debate:
@@ -73,9 +73,11 @@ jobs:
             let isPr = 'false';
             let originalIssueBody = '';
             let securitySignal = false;
+            let targetSourceSha = '';
             const riskWords = ['secret','credential','token','password','bypass security','fail-open','delete main','force push'];
             if (context.eventName === 'pull_request') {
               const pr = context.payload.pull_request || {};
+              targetSourceSha = String(pr.head?.sha || '');
               title = String(pr.title || '');
               body = String(pr.body || '');
               itemNumber = Number(pr.number) || 0;
@@ -105,6 +107,7 @@ jobs:
                 ? await github.rest.pulls.get({...selector,pull_number:itemNumber})
                 : await github.rest.issues.get({...selector,issue_number:itemNumber});
               const target = response.data;
+              if (isPr === 'true') targetSourceSha = String(target.head?.sha || '');
               if (isPr === 'false' && target.pull_request)
                 throw Error('Council dispatch target type mismatch');
               if (target.state !== 'open') throw Error('Council dispatch target not open');
@@ -156,6 +159,7 @@ jobs:
             core.exportVariable('OWNER_MODE', ownerMode);
             core.exportVariable('IS_PR', isPr);
             core.exportVariable('ITEM_NUMBER', String(itemNumber));
+            core.exportVariable('TARGET_SOURCE_SHA', targetSourceSha);
             core.exportVariable('TITLE_FILE', path.join(dir, 'title.txt'));
             core.exportVariable('BODY_FILE', path.join(dir, 'body.txt'));
 
@@ -165,6 +169,7 @@ jobs:
           TITLE_FILE: ${{ env.TITLE_FILE }}
           BODY_FILE: ${{ env.BODY_FILE }}
           ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
+          TARGET_SOURCE_SHA: ${{ env.TARGET_SOURCE_SHA }}
           IS_PR: ${{ env.IS_PR }}
           OWNER_MODE: ${{ env.OWNER_MODE }}
           ORIGINAL_SECURITY_SIGNAL: ${{ env.ORIGINAL_SECURITY_SIGNAL }}
@@ -194,12 +199,35 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
+            const path=require('node:path');
+            const {pathToFileURL}=require('node:url');
+            // Pull-request workflows check out trusted main. Until the stable
+            // publication module and artifact are merged there, do not import
+            // candidate-only code or post an unverifiable replacement report.
+            if(!fs.existsSync('council-publication.json')){
+              core.info('Council publication v2 absent on trusted main; source-only candidate, no comment.');
+              return;
+            }
+            const {alreadyPublished}=await import(pathToFileURL(
+              path.join(process.env.GITHUB_WORKSPACE,'src/council-publication.mjs')).href);
+            const publication=JSON.parse(fs.readFileSync('council-publication.json','utf8'));
             const synthesis = fs.readFileSync('FINAL_SYNTHESIS.md', 'utf8').slice(0, 60000);
             const critique = fs.readFileSync('CRITIQUE_MATRIX.md', 'utf8').slice(0, 25000);
             const body = `${synthesis}\n\n<details><summary><b>Stages 2–3 (Crucible + Rebuttal)</b></summary>\n\n${critique}\n\n</details>`;
             const itemNumber = parseInt(process.env.ITEM_NUMBER, 10);
             if (!Number.isFinite(itemNumber) || itemNumber < 1) {
               core.setFailed('Missing ITEM_NUMBER');
+              return;
+            }
+            // Per-item workflow concurrency prevents same-target racing.
+            // Paginate completely: partial history must hold rather than claim no duplicate.
+            const previous=await github.paginate(github.rest.issues.listComments,{
+              owner:context.repo.owner,repo:context.repo.repo,
+              issue_number:itemNumber,per_page:100
+            });
+            if(alreadyPublished(publication,previous)){
+              core.info('Council evidence unchanged: '+publication.fingerprint+
+                '; suppress duplicate report, no GitHub write.');
               return;
             }
             await github.rest.issues.createComment({
@@ -229,5 +257,6 @@ jobs:
             CRITIQUE_MATRIX.md
             RFC_DRAFT.md
             council-receipt.json
+            council-publication.json
           if-no-files-found: ignore
           retention-days: 30
