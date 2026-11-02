@@ -798,3 +798,27 @@ test('C01 RED: mutable admission getters cannot change the persisted authorized 
     assert.equal(reads,1,field+' must be snapshotted only once');
   }
 });
+
+
+test('RED: null-row INSERT acknowledgement after durable commit must hold without replay',async()=>{
+  // PostgreSQL may commit while an adapter returns a structurally corrupt
+  // single-row response. A raw TypeError is not evidence that no write occurred.
+  for(const reportedRow of [null,undefined]){
+    const db=fakeDb(),original=db.query.bind(db);
+    let inserts=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;
+        await original(sql,params);
+        return {rows:[reportedRow]};
+      }
+      return original(sql,params);
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(contract()),
+      /continuum-outbox-reconcile-required/,
+      'a committed write with malformed ACK must stay unknown');
+    assert.equal(inserts,1,'do not replay after malformed one-row acknowledgment');
+    assert.equal(db.entries.size,1,'committed durable intent is retained');
+  }
+});
