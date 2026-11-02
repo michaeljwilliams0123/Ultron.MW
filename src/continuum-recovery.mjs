@@ -126,6 +126,15 @@ export async function reconcileContinuumTick({
         receipts.push(receipt(deliveryId,'pending'));
         continue;
       }
+      // Owner authority may change during asynchronous observation. Recheck
+      // immediately before a database transition, not only at tick admission.
+      // The DB adapter must still enforce its own atomic authority fence.
+      const currentControl=await readControl();
+      if(currentControl?.paused!==false||currentControl?.revoked!==false||
+         currentControl?.maxPaidCents!==0||currentControl?.paidFallback!==false){
+        receipts.push(receipt(deliveryId,'held-unknown'));
+        continue;
+      }
       const result=await outbox.markUnknown({
         deliveryId,sourceSha:row.sourceSha,
         leaseGeneration
