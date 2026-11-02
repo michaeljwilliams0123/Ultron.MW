@@ -158,7 +158,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         if(!liveAtReadback(c))throw Error('continuum-outbox-reconcile-required');
         return {created:true,deliveryId:c.deliveryId,state:'pending'};
       }
-      if(result?.rows?.length!==0)throw Error('continuum-outbox-admission-unavailable');
+      if(result?.rows?.length!==0)throw Error('continuum-outbox-reconcile-required');
       const existing=await readbackOrHold(c.deliveryId);
       if(!existing||!matchesPersisted(existing,c)||
         !['pending','reconcile-required'].includes(existing.state))
@@ -210,7 +210,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         return {changed:true,deliveryId,state:'reconcile-required'};
       }
       if(updated?.rows?.length!==0)
-        throw Error('continuum-outbox-transition-unavailable');
+        throw Error('continuum-outbox-reconcile-required');
       const current=await readbackOrHold(deliveryId);
       // A no-op CAS still needs the same delivery identity as its SELECT key.
       // An adapter returning a foreign row must not certify reconciliation.
