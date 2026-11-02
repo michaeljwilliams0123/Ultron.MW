@@ -822,3 +822,22 @@ test('RED: null-row INSERT acknowledgement after durable commit must hold withou
     assert.equal(db.entries.size,1,'committed durable intent is retained');
   }
 });
+
+test('C01 RED: coercible non-string source SHA must not reach fenced SQL',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  const before=db.statements.length;
+  for(const sourceSha of [
+    new String(c.sourceSha),
+    [c.sourceSha],
+    {toString(){return c.sourceSha;}}
+  ]){
+    await assert.rejects(outbox.markUnknown({
+      deliveryId:c.deliveryId,sourceSha,leaseGeneration:c.leaseGeneration
+    }),/continuum-outbox-fence-or-source-conflict/);
+    assert.equal(db.statements.length,before,
+      'coercible non-string fence must be rejected before any SQL');
+    assert.equal(db.entries.get(c.deliveryId).state,'pending');
+  }
+});
