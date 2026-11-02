@@ -250,3 +250,14 @@ test('RED: trusted intent and trust input getters cannot swap identity during ve
   assert.equal(trustReport.verifiedReceipt,false,
     'mutable trust fields must not change after signer admission');
 });
+
+// The trust configuration is public repository metadata. Never accept a
+// PKCS#8 private-key PEM as a "public" trust key, even though Node's
+// createPublicKey() can derive an Ed25519 public key from that secret.
+test('RED: a private signing key must never be accepted as a pinned public trust key',()=>{
+  const privatePem=privateKey.export({type:'pkcs8',format:'pem'});
+  const result=inspect({trust:{...TRUST,publicKeyPem:privatePem}});
+  assert.equal(result.status,'blocked-unconfigured');
+  assert.equal(result.verifiedReceipt,false);
+  assert.equal(result.productionAccepted,false);
+});
