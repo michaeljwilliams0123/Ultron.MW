@@ -438,7 +438,7 @@ test('candidate cannot rewrite the runner frame through Object.create and toJSON
   '};',
   "export function admitRepairTask(){throw new TypeError('unexpected programming failure');}",
   "export function assertRepairStep(){throw new TypeError('unexpected programming failure');}"
- ].join('\\n');
+ ].join('\n');
  const result=await evaluateRepairPair({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
