@@ -19,6 +19,22 @@ const result=(disposition,reason)=>Object.freeze({
 });
 const held=reason=>result('held',reason);
 
+// Do not trust an array's caller-supplied Symbol.iterator. Capture its own
+// indexed data descriptors once; reject sparse/accessor-backed evidence.
+function snapshotArtifacts(value){
+  if(!Array.isArray(value))return value;
+  const descriptors=Object.getOwnPropertyDescriptors(value);
+  const length=descriptors.length?.value;
+  if(!Number.isSafeInteger(length)||length<0||length>100)return null;
+  const result=[];
+  for(let index=0;index<length;index++){
+    const descriptor=descriptors[String(index)];
+    if(!descriptor?.enumerable||
+       !Object.prototype.hasOwnProperty.call(descriptor,'value'))return null;
+    result.push(descriptor.value);
+  }
+  return result;
+}
 // Capture all caller-controlled properties once. Getters/proxies may throw;
 // neither a second read nor JS coercion can be an authorization primitive.
 function snapshot(record){
@@ -40,7 +56,7 @@ function snapshot(record){
     review:v&&{reviewerId:v.reviewerId,headSha:v.headSha,
       decision:v.decision,evidenceUrl:v.evidenceUrl},
     elapsedMs:record.elapsedMs,observedPaidCents:record.observedPaidCents,
-    artifacts:Array.isArray(artifacts)?[...artifacts]:artifacts
+    artifacts:snapshotArtifacts(artifacts)
   };
 }
 function validCore(c,expectedHeadSha,now){
