@@ -227,3 +227,26 @@ test('RED: a signed foreign source cannot be correlated through Proxy get spoofi
   assert.equal(report.verifiedReceipt,false);
   assert.equal(report.productionAccepted,false);
 });
+
+test('RED: trusted intent and trust input getters cannot swap identity during verification',()=>{
+  const signed=wire();
+  let intentReads=0;
+  const tamperedIntent={...INTENT};
+  Object.defineProperty(tamperedIntent,'sourceSha',{
+    enumerable:true,
+    get(){ return ++intentReads===1?'f'.repeat(40):INTENT.sourceSha; }
+  });
+  const intentReport=inspect({...signed,intent:tamperedIntent});
+  assert.equal(intentReport.verifiedReceipt,false,
+    'mutable intent fields must not be correlated to a value different from admission');
+
+  let trustReads=0;
+  const tamperedTrust={...TRUST};
+  Object.defineProperty(tamperedTrust,'environmentFingerprint',{
+    enumerable:true,
+    get(){ return ++trustReads===1?'f'.repeat(64):TRUST.environmentFingerprint; }
+  });
+  const trustReport=inspect({...signed,trust:tamperedTrust});
+  assert.equal(trustReport.verifiedReceipt,false,
+    'mutable trust fields must not change after signer admission');
+});
