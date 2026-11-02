@@ -9,6 +9,12 @@ import { admitRepairTask, assertRepairStep } from './repair-admission.mjs';
  */
 const sha256 = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const PHASES = new Set(['reserved','branch-dispatch','branch-confirmed','pr-dispatch','complete']);
+const NEXT = Object.freeze({
+  'reserved':'branch-dispatch',
+  'branch-dispatch':'branch-confirmed',
+  'branch-confirmed':'pr-dispatch',
+  'pr-dispatch':'complete',
+});
 
 export function createMemoryRepairLedger() {
   // Test fixture only; NOT crash durable and cannot prove live acceptance.
@@ -28,8 +34,12 @@ export function createMemoryRepairLedger() {
     },
     async advance({key,fingerprint,from,to,prNumber=null}){
       const entry=state.get(key);
+      // Match the production PostgreSQL CAS state machine exactly.
       if(!entry||entry.fingerprint!==fingerprint||
-          entry.phase!==from || !PHASES.has(to))
+         entry.phase!==from||NEXT[from]!==to||
+         (to==='complete'
+          ? !Number.isSafeInteger(prNumber)||prNumber<1
+          : prNumber!==null))
         return false;
       state.set(key,{...entry,phase:to,
         prNumber:prNumber??entry.prNumber});
