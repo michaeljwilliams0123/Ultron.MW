@@ -43,7 +43,7 @@ test('C02 expired pending intent is fenced into reconcile-required without repla
     now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
     outbox:{
       observe:async({deliveryId})=>{assert.equal(deliveryId,delivery);return row();},
-      markUnknown:async args=>{transitions.push(args);return {changed:true,state:'reconcile-required'};}
+      markUnknown:async args=>{transitions.push(args);return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
     }
   });
   assert.deepEqual(transitions,[{deliveryId:delivery,sourceSha:SHA,leaseGeneration:7}]);
@@ -83,7 +83,7 @@ test('C02 rejects coercible but invalid paid-cost values before any state transi
     const result=await reconcileContinuumTick({
       now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
       outbox:{observe:async()=>row({maxPaidCents:badCost}),
-        markUnknown:async()=>{writes++;return {state:'reconcile-required'};}}
+        markUnknown:async()=>{writes++;return {changed:true,deliveryId:delivery,state:'reconcile-required'};}}
     });
     assert.equal(result.status,'held-partial');
     assert.equal(result.receipts[0].disposition,'held-unknown');
@@ -196,7 +196,7 @@ test('RED: C02 must reject noncanonical persisted lease generations before any r
         now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
         outbox:{
           observe:async()=>{observations++;return row({state,leaseGeneration});},
-          markUnknown:async()=>{writes++;return {state:'reconcile-required'};}
+          markUnknown:async()=>{writes++;return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
         }
       });
       assert.equal(result.status,'held-partial',
@@ -215,7 +215,7 @@ test('C02 accepts a canonical BIGINT string lease on the bounded recovery path',
     now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
     outbox:{
       observe:async()=>row({leaseGeneration:'7'}),
-      markUnknown:async args=>{calls.push(args);return {state:'reconcile-required'};}
+      markUnknown:async args=>{calls.push(args);return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
     }
   });
   assert.deepEqual(calls,[{deliveryId:delivery,sourceSha:SHA,leaseGeneration:7}]);
@@ -235,7 +235,7 @@ test('RED: C02 rejects malformed or coerced persisted expiration timestamps befo
       now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
       outbox:{
         observe:async()=>row({expiresAt}),
-        markUnknown:async()=>{transitions++;return {state:'reconcile-required'};}
+        markUnknown:async()=>{transitions++;return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
       }
     });
     assert.equal(result.status,'held-partial',
@@ -253,7 +253,7 @@ test('C02 permits native PostgreSQL Date and an ISO timestamp for expiry',async(
       now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
       outbox:{
         observe:async()=>row({expiresAt}),
-        markUnknown:async()=>({state:'reconcile-required'})
+        markUnknown:async()=>({changed:true,deliveryId:delivery,state:'reconcile-required'})
       }
     });
     assert.equal(result.status,'observed');
@@ -277,7 +277,7 @@ test('RED: C02 never certifies malformed expiry on an already-uncertain intent',
         now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
         outbox:{
           observe:async()=>row({state,expiresAt}),
-          markUnknown:async()=>{writes++;return {state:'reconcile-required'};}
+          markUnknown:async()=>{writes++;return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
         }
       });
       assert.equal(result.status,'held-partial');
@@ -294,7 +294,7 @@ test('RED: C02 rejects impossible scheduler calendar timestamps before readContr
     await assert.rejects(reconcileContinuumTick({
       now,readControl:async()=>{read++;return control();},
       listDue:async()=>[delivery],
-      outbox:{observe:async()=>row(),markUnknown:async()=>({state:'reconcile-required'})}
+      outbox:{observe:async()=>row(),markUnknown:async()=>({changed:true,deliveryId:delivery,state:'reconcile-required'})}
     }),/continuum-recovery-time-invalid/);
     assert.equal(read,0);
   }
@@ -315,7 +315,7 @@ test('C02 rejects timezone-ambiguous or malformed persisted expiry without recov
         now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
         outbox:{
           observe:async()=>row({state,expiresAt}),
-          markUnknown:async()=>{transitions++;return {state:'reconcile-required'};}
+          markUnknown:async()=>{transitions++;return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
         }
       });
       assert.equal(result.status,'held-partial',expiresAt);
@@ -342,7 +342,7 @@ test('RED: C02 scheduler clock requires an explicit bounded timezone before any 
       listDue:async()=>{queueReads++;return [delivery];},
       outbox:{
         observe:async()=>row(),
-        markUnknown:async()=>{writes++;return {state:'reconcile-required'};}
+        markUnknown:async()=>{writes++;return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
       }
     }),/continuum-recovery-time-invalid/,now);
     assert.equal(controlReads,0,'reject untrusted clock before control read');

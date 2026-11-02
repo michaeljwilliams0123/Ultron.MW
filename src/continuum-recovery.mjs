@@ -128,7 +128,8 @@ export async function reconcileContinuumTick({
         leaseGeneration
       });
       receipts.push(receipt(deliveryId,
-        result?.state==='reconcile-required'?'reconcile-required':'held-unknown'));
+        result?.deliveryId===deliveryId&&typeof result.changed==='boolean'&&
+        result.state==='reconcile-required'?'reconcile-required':'held-unknown'));
     }catch{
       // A possible database transition may have committed before a lost ACK.
       // The next tick can only read back; never repeat an external effect.
