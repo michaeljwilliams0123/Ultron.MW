@@ -21,8 +21,6 @@
   },
   "signing": {
     "algorithm": "Ed25519",
-    "keyId": null,
-    "publicKeyPem": null,
     "signerAccountBinding": "not-attested"
   },
   "canary": {
@@ -33,5 +31,8 @@
     "allowMerge": false,
     "allowAdmin": false,
     "liveExecution": "not-verified"
-  }
+  },
+  "appLogin": "ultron-destiny-executor[bot]",
+  "keyId": null,
+  "publicKeyPem": null
 }
