@@ -348,3 +348,20 @@ test('C05 zero-dollar global ceiling rejects paid estimates even when a binding 
  // A declared allowance is metadata, not an entitlement to spend.
  assert.equal(broker.status('github-owner').maxCostCents,500);
 });
+
+
+test('RED: binding authority expiry requires a canonical timestamp string, not coercion',()=>{
+  const expires='2026-10-22T20:00:00Z';
+  const malformed=[
+    [expires],new Date(expires),
+    {toString:()=>expires},'10/22/2026 20:00:00',
+    ' '+expires,expires+' ', '',null,0
+  ];
+  for(const expiresAt of malformed){
+    assert.throws(()=>validateCapabilityBinding(manifest({expiresAt})),
+      /Invalid capability binding manifest/,
+      'authority expiry must reject coerced or noncanonical values');
+  }
+  const valid=validateCapabilityBinding(manifest({expiresAt:expires}));
+  assert.equal(valid.expiresAt,'2026-10-22T20:00:00.000Z');
+});
