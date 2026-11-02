@@ -773,3 +773,28 @@ test('C01 RED: invalid post-commit clock readback must remain reconcile-required
     assert.equal(db.entries.size,1,'existing durable intent remains intact');
   }
 });
+
+
+test('C01 RED: mutable admission getters cannot change the persisted authorized intent',async()=>{
+  // The admission validator and the SQL payload must observe the SAME
+  // immutable snapshot. A changing getter must not turn approved read/$0
+  // authority into a different persisted request after validation.
+  for(const [field,approved,changed,sqlIndex] of [
+    ['maxPaidCents',0,1,11],
+    ['effect','read','write',10],
+    ['sourceSha','a'.repeat(40),'d'.repeat(40),5]
+  ]){
+    const db=fakeDb(),intent=contract();
+    let reads=0;
+    Object.defineProperty(intent,field,{enumerable:true,get(){
+      return ++reads===1?approved:changed;
+    }});
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    assert.deepEqual(await outbox.reserve(intent),{
+      created:true,deliveryId:contract().deliveryId,state:'pending'
+    });
+    assert.equal(db.statements[0].params[sqlIndex],approved,
+      field+' must remain the value authorized by validation');
+    assert.equal(reads,1,field+' must be snapshotted only once');
+  }
+});
