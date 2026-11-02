@@ -118,3 +118,26 @@ test('RED: malformed or oversized separated policy source is rejected at admissi
      /Reef separated admission invalid/);
  }
 });
+
+
+test('RED: unexpected candidate exceptions cannot satisfy held-out policy denial',async()=>{
+ const failures=[
+  "export function admitRepairTask(){throw new TypeError('policy crashed');}",
+  "export function admitRepairTask(){throw new ReferenceError('missing variable');}",
+  "export function admitRepairTask(){throw Error('unexpected runtime failure');}"
+ ];
+ for(const candidateSource of failures){
+  const result=await evaluateSeparatedAdmissionCase({
+   candidateSource,method:'admitRepairTask',input:args(false),
+   expectedStatus:'rejected',maxPaidCents:0
+  });
+  assert.equal(result.score,0,'a runtime crash must not be scored as a policy denial');
+  assert.equal(result.observedStatus,'invalid');
+  assert.equal(result.eligibleForMerge,false);
+ }
+ const expectedDenial=await evaluateSeparatedAdmissionCase({
+  candidateSource:"export function admitRepairTask(){throw Error('denied');}",
+  method:'admitRepairTask',input:args(false),expectedStatus:'rejected'
+ });
+ assert.equal(expectedDenial.score,1,'an explicit policy denial remains observable');
+});
