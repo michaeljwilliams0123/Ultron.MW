@@ -1,4 +1,4 @@
-import { createHash,createHmac,randomBytes,timingSafeEqual } from 'node:crypto';
+import { createHash,randomBytes } from 'node:crypto';
 import { spawn,execFileSync } from 'node:child_process';
 import { readFileSync,writeSync } from 'node:fs';
 import { writeFile,readFile,mkdir,mkdtemp,rm } from 'node:fs/promises';
@@ -12,17 +12,11 @@ const NOW='2026-10-31T17:00:00.000Z';
 const sha=/^[a-f0-9]{40}$/;
 const digest=x=>createHash('sha256').update(x).digest('hex');
 const trustedStringify=JSON.stringify.bind(JSON);
-// Capture these built-ins before importing any candidate ES modules.
-// This blocks syncBuiltinESMExports() from rebinding the trusted call sites.
-// It is interim hardening, not a security boundary for hostile code.
-const trustedCreateHmac=createHmac;
+// Candidate output is untrusted. The controller owns case IDs, scoring and
+// release decisions. Never keep an HMAC signing oracle in the candidate realm.
 const trustedWriteSync=writeSync;
-const observationMac=(key,observation)=>trustedCreateHmac('sha256',key)
- .update(trustedStringify(observation)).digest('hex');
-/** Keep the observation key out of Node's shared small-buffer slab.
- * This is defense in depth only. It is NOT process separation: the candidate
- * still shares a process with the observation signer until #201 is completed.
- */
+/** Compatibility helper for old diagnostic callers. The candidate runner no
+ * longer creates, receives, or uses a signing key. Not a provenance claim. */
 export function createNonPooledObservationKey(keyHex){
  if(typeof keyHex!=='string'||!/^[a-f0-9]{64}$/.test(keyHex))
   throw Error('Invalid evaluator observation key');
@@ -40,9 +34,9 @@ export function selectNodePermissionFlag(allowed=process.allowedNodeEnvironmentF
  if(allowed?.has?.('--experimental-permission'))return '--experimental-permission';
  throw Error('Reef permission flag unavailable');
 }
-// Key travels over one-use stdin before importing candidate code. Candidate
-// stdout is not evidence; only a message with the trusted runner MAC qualifies.
-function spawnObservedChild(inputPath,key,cwd){
+// A one-use completion nonce correlates runner finalization, not provenance.
+// Candidate code and its output remain untrusted; release certification is off.
+function spawnObservedChild(inputPath,completionNonce,cwd){
  return new Promise((resolve,reject)=>{
   // Run candidate modules in an OS process with deny-by-default Node
   // permissions. The evaluator source and its scratch directory are the only
@@ -66,7 +60,7 @@ function spawnObservedChild(inputPath,key,cwd){
    }
   });
   child.stdin.on('error',()=>{}); // early candidate exit must fail on close
-  child.stdin.end(key.toString('hex'));
+  child.stdin.end(completionNonce);
   child.once('error',error=>{clearTimeout(timer);reject(error);});
   child.once('close',(code,signal)=>{
    clearTimeout(timer);
@@ -403,20 +397,17 @@ async function runIsolatedVariant(source,policySource,executorSource,includeExec
   const file=join(dir,'input.json');
   await writeFile(file,JSON.stringify({source,policySource,executorSource,includeExecutors}),
    {mode:0o600});
-  const key=randomBytes(32);
-  const stdout=await spawnObservedChild(file,key,dir);
+  const completionNonce=randomBytes(32).toString('hex');
+  const stdout=await spawnObservedChild(file,completionNonce,dir);
   const envelope=JSON.parse(stdout.trim());
   const value=envelope?.observation;
   const valid=(rows,n)=>Array.isArray(rows)&&rows.length===n&&
    rows.every(x=>typeof x==='boolean');
   if(!valid(value?.admission,REPAIR_CASES.length)||
      !valid(value?.execution,includeExecutors?EXECUTION_CASES.length:0)||
-     typeof envelope?.signature!=='string'||
-     !/^[a-f0-9]{64}$/.test(envelope.signature))
+     envelope?.completionNonce!==completionNonce||
+     Object.keys(envelope).sort().join(',')!=='completionNonce,observation')
     return failed();
-  const expected=observationMac(key,value);
-  if(!timingSafeEqual(Buffer.from(envelope.signature,'hex'),Buffer.from(expected,'hex')))
-   return failed();
   return value;
  }catch{return failed();}
  finally{await rm(dir,{recursive:true,force:true});}
@@ -478,18 +469,15 @@ function tryGitSource(revision,path){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href&&
    process.argv[2]==='--reef-child'){
- // Consume stdin fully before loading candidate code: never place the MAC key
- // in command arguments, environment variables, or candidate-readable files.
- const keyHex=readFileSync(0,'utf8').trim();
- if(!/^[a-f0-9]{64}$/.test(keyHex))throw Error('Invalid evaluator observation key');
- const observationKey=createNonPooledObservationKey(keyHex);
- // Candidate ESM must not mutate prototype or JSON serialization used by
- // the trusted runner to authenticate score observations.
- // Cryptographic signing and final output are trusted harness operations.
- // Protect their native prototypes before executing untrusted ESM.
- const hmacPrototype=Object.getPrototypeOf(createHmac('sha256',observationKey));
+ // Consume one-use completion correlation before importing any candidate.
+ // This is not a signing key and does not authenticate candidate behavior.
+ const completionNonce=readFileSync(0,'utf8').trim();
+ if(!/^[a-f0-9]{64}$/.test(completionNonce))
+  throw Error('Invalid Reef completion nonce');
+ // Keep basic serialization invariants stable, but do not pretend the child
+ // is a trusted evaluator. Scoring and certification belong to the parent.
  for(const intrinsic of [Array.prototype,Object.prototype,Promise.prototype,
-  Buffer.prototype,hmacPrototype,JSON]){
+  Buffer.prototype,JSON]){
   Object.freeze(intrinsic);
  }
  const input=JSON.parse(await readFile(process.argv[3],'utf8'));
@@ -497,8 +485,10 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  const execution=input.includeExecutors?
   await runExecutionVariant(input.executorSource,input.source,input.policySource):[];
  const observation={admission,execution};
- const signature=observationMac(observationKey,observation);
- trustedWriteSync(1,trustedStringify({observation,signature})+'\n');
+ const envelope=Object.create(null);
+ envelope.observation=observation;
+ envelope.completionNonce=completionNonce;
+ trustedWriteSync(1,trustedStringify(envelope)+'\n');
 }else if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const [baseSha,candidateSha,output='artifacts/reef-paired-source-benchmark.json']=process.argv.slice(2);
   const path='src/repair-admission.mjs';
