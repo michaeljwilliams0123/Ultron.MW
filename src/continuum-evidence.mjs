@@ -103,8 +103,11 @@ export function assessContinuumEvidenceBatch(records,options={}){
     // avoids coercing untrusted objects or reading caller getters twice.
     const assessed=assessContinuumEvidence(c,options);
     if(assessed.disposition==='held')return assessed;
-    const identity=[c.headSha,c.idempotencyKey,c.intent.preconditionSha,
-      c.intent.effect,c.authorization.fence].join('|');
+    // A delivery ID binds the complete validated immutable envelope, not
+    // just the execution precondition. Conflicting outcomes, actors, attempts
+    // or purported independent receipts must never be silently deduplicated.
+    // Validation above guarantees these snapshot fields are plain primitives.
+    const identity=JSON.stringify(c);
     if(seen.has(c.deliveryId)&&seen.get(c.deliveryId)!==identity)
       return held('conflicting-delivery');
     seen.set(c.deliveryId,identity);
