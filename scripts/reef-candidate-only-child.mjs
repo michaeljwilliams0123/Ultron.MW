@@ -4,6 +4,14 @@
 // Not a full OS/container sandbox or proof against adversarial output forgery.
 import {pathToFileURL} from 'node:url';
 const nativeWrite=process.stdout.write.bind(process.stdout);
+// Capture native matching primitives before importing untrusted candidate ESM.
+// Candidate realm changes to String, RegExp.test, or RegExp.exec cannot turn
+// unrelated exceptions into policy denials in this experimental worker.
+const nativeApply=Reflect.apply;
+const nativeExec=RegExp.prototype.exec;
+const POLICY_DENIAL=/^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/;
+const explicitDenial=message=>typeof message==='string'&&
+  (message==='denied'||nativeApply(nativeExec,POLICY_DENIAL,[message])!==null);
 let text='';
 try{
  for await(const part of process.stdin){
@@ -22,9 +30,7 @@ try{
   // A crash, bad import or programming error is NOT proof that the candidate
   // enforced a policy denial. Only explicit recognized denial errors can
   // produce a negative-case observation. This output remains untrusted.
-  const message=String(error?.message||'');
-  status=(message==='denied'||/^(Repair plan rejected|Repair App identity readback invalid|Unified GitHub App identity readback invalid|Repair admission paused or revoked|Repair step denied)/.test(message))
-   ?'rejected':'invalid';
+  status=explicitDenial(error?.message)?'rejected':'invalid';
  }
  nativeWrite(JSON.stringify({protocol:'ultron.reef.untrusted-result.v1',status})+'\n');
 }catch{
