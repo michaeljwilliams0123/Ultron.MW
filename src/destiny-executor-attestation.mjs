@@ -20,6 +20,10 @@ const FIELDS=[
   'expiresAt','githubActor','issuedAt','keyId','maxPaidCents','repository',
   'requestSha','resultSha','routeSha','schema','sourceSha','status','taskId'
 ].sort();
+const INTENT_FIELDS=['repository','taskId','deliveryId','requestSha','sourceSha',
+  'routeSha','effect','maxPaidCents'];
+const TRUST_FIELDS=['state','executionLane','githubActor',
+  'environmentFingerprint','keyId','publicKeyPem'];
 const MAX_LIFETIME=300000,MAX_FUTURE_SKEW=30000,MAX_ISSUED_AGE=600000;
 const isRecord=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const validTime=x=>typeof x==='string'&&
@@ -54,23 +58,24 @@ function verifiedTrust(t){
     return key.asymmetricKeyType==='ed25519'?key:null;
   }catch{return null;}
 }
-// Capture one immutable set of own data properties before validating or
-// verifying a signature. Accessor-backed fields must not be able to change
-// between signature verification and the persisted receipt digest.
-function snapshotReceipt(receipt){
-  if(!isRecord(receipt))return null;
-  const descriptors=Object.getOwnPropertyDescriptors(receipt);
-  const keys=Object.keys(descriptors);
-  if(keys.length!==FIELDS.length||keys.sort().join(',')!==FIELDS.join(','))
+// Capture an immutable set of *own data properties* once. Data readback
+// and trust inputs must not change between admission and signed correlation.
+function snapshotFields(record,fields,{exact=false}={}){
+  if(!isRecord(record))return null;
+  const descriptors=Object.getOwnPropertyDescriptors(record);
+  if(exact&&Object.keys(descriptors).sort().join(',')!==fields.join(','))
     return null;
   const captured=Object.create(null);
-  for(const key of FIELDS){
-    const descriptor=descriptors[key];
+  for(const field of fields){
+    const descriptor=descriptors[field];
     if(!descriptor?.enumerable||
        !Object.prototype.hasOwnProperty.call(descriptor,'value'))return null;
-    captured[key]=descriptor.value;
+    captured[field]=descriptor.value;
   }
   return Object.freeze(captured);
+}
+function snapshotReceipt(receipt){
+  return snapshotFields(receipt,FIELDS,{exact:true});
 }
 function validReceipt(r){
   return isRecord(r)&&Object.keys(r).sort().join(',')===FIELDS.join(',')&&
@@ -105,19 +110,21 @@ function signatureBytes(s){
 export function assessDestinyCanary({intent,receipt,signature,trust,
   observedGitHubActor,now=Date.now(),priorReceiptSha}={}){
   try{
-    if(!validIntent(intent))return deny('blocked-intent');
-    const key=verifiedTrust(trust);
+    const capturedIntent=snapshotFields(intent,INTENT_FIELDS);
+    if(!capturedIntent||!validIntent(capturedIntent))return deny('blocked-intent');
+    const capturedTrust=snapshotFields(trust,TRUST_FIELDS);
+    const key=verifiedTrust(capturedTrust);
     if(!key)return deny('blocked-unconfigured');
     if(typeof observedGitHubActor!=='string'||
-       observedGitHubActor!==trust.githubActor)return deny('blocked-actor');
+       observedGitHubActor!==capturedTrust.githubActor)return deny('blocked-actor');
     const capturedReceipt=snapshotReceipt(receipt);
     if(!capturedReceipt||!validReceipt(capturedReceipt))return deny('blocked-receipt');
-    if(capturedReceipt.keyId!==trust.keyId||
+    if(capturedReceipt.keyId!==capturedTrust.keyId||
        capturedReceipt.githubActor!==observedGitHubActor||
-       capturedReceipt.environmentFingerprint!==trust.environmentFingerprint||
-       capturedReceipt.executionLane!==trust.executionLane||
+       capturedReceipt.environmentFingerprint!==capturedTrust.environmentFingerprint||
+       capturedReceipt.executionLane!==capturedTrust.executionLane||
        ['repository','taskId','deliveryId','requestSha','sourceSha','routeSha',
-         'effect','maxPaidCents'].some(k=>capturedReceipt[k]!==intent[k]))
+         'effect','maxPaidCents'].some(k=>capturedReceipt[k]!==capturedIntent[k]))
       return deny('blocked-correlation');
     const issued=Date.parse(capturedReceipt.issuedAt),expiry=Date.parse(capturedReceipt.expiresAt);
     if(!Number.isFinite(now)||expiry<=issued||expiry-issued>MAX_LIFETIME||
