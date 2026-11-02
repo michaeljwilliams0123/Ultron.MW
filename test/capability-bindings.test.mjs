@@ -381,3 +381,29 @@ test('C05 rejects impossible calendar dates in capability expiry, including offs
     expiresAt:'2024-02-29T20:00:00+02:00',
   })).expiresAt,'2024-02-29T18:00:00.000Z');
 });
+
+
+test('RED: invalid broker clock cannot extend expired capability authority',async()=>{
+  // Date.parse(invalid) produces NaN; expiry <= NaN is false, so the
+  // broker must fail closed instead of allowing an expired app token.
+  for(const invalidNow of ['not-a-time','','2026-02-30T00:00:00Z']){
+    const target=adapter();
+    const broker=createCapabilityBroker({
+      clock:()=>invalidNow,
+      authorize:async()=>true
+    });
+    broker.bind(manifest({expiresAt:'2026-10-20T00:00:00Z'}),target);
+    await assert.rejects(
+      broker.health('github-owner'),
+      /clock|expired|time|invalid/i
+    );
+    await assert.rejects(
+      broker.execute('github-owner',{
+        operation:'repo.read',idempotencyKey:'read:badclock08',
+        estimatedCostCents:0,input:{},expected:{}
+      }),
+      /clock|expired|time|invalid|not ready/i
+    );
+    assert.equal(target.executions,0,'bad clock must not dispatch');
+  }
+});
