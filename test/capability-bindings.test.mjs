@@ -365,3 +365,19 @@ test('RED: binding authority expiry requires a canonical timestamp string, not c
   const valid=validateCapabilityBinding(manifest({expiresAt:expires}));
   assert.equal(valid.expiresAt,'2026-10-22T20:00:00.000Z');
 });
+
+
+test('C05 rejects impossible calendar dates in capability expiry, including offset dates',()=>{
+  for(const expiresAt of [
+    '2026-02-30T20:00:00Z',
+    '2025-02-29T20:00:00Z',
+    '2026-04-31T20:00:00+02:00',
+  ]){
+    assert.throws(()=>validateCapabilityBinding(manifest({expiresAt})),
+      /Invalid capability binding manifest/,
+      'impossible local calendar date must not normalize into different expiry authority');
+  }
+  assert.equal(validateCapabilityBinding(manifest({
+    expiresAt:'2024-02-29T20:00:00+02:00',
+  })).expiresAt,'2024-02-29T18:00:00.000Z');
+});
