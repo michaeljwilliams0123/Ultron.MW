@@ -71,3 +71,50 @@ test('Reef trust-plane: bad methods, positive spend and invalid expected status 
  await assert.rejects(evaluateSeparatedAdmissionCase({...base,method:'constructor'}),/Reef separated admission invalid/);
  await assert.rejects(evaluateSeparatedAdmissionCase({...base,expectedStatus:'allowed'}),/Reef separated admission invalid/);
 });
+
+
+test('RED: separated evaluator supports relative policy imports without trusting candidate scoring',async()=>{
+ // This is the path needed for the unified principal (#199); policy source
+ // is an explicit digest-bound artifact in the *restricted candidate worker*.
+ const dependent=[
+   "import {check} from './github-principal-policy.mjs';",
+   "export function admitRepairTask({plan}){",
+   " if(!check(plan))throw Error('denied');",
+   " return {admitted:true};",
+   "}"
+ ].join('\n');
+ const permit="export const check = plan => plan?.allow === true;";
+ const deny="export const check = plan => plan?.allow === false;";
+ const context={candidateSource:dependent,method:'admitRepairTask',
+   input:args(true),expectedStatus:'returned',maxPaidCents:0};
+ const permitted=await evaluateSeparatedAdmissionCase({...context,
+   candidatePolicySource:permit});
+ const denied=await evaluateSeparatedAdmissionCase({...context,
+   candidatePolicySource:deny});
+ assert.equal(permitted.score,1,'relative policy must load inside the keyless worker');
+ assert.equal(permitted.observedStatus,'returned');
+ assert.equal(denied.score,0,'parent must score denied candidate behavior itself');
+ assert.equal(denied.observedStatus,'rejected');
+ assert.equal(permitted.candidateSha256,denied.candidateSha256);
+ assert.match(permitted.candidateArtifactSha256,/^[a-f0-9]{64}$/);
+ assert.match(denied.candidateArtifactSha256,/^[a-f0-9]{64}$/);
+ assert.notEqual(permitted.candidateArtifactSha256,denied.candidateArtifactSha256,
+   'changes to imported policy must change trusted artifact identity');
+ for(const result of [permitted,denied]){
+   assert.equal(result.eligibleForMerge,false);
+   assert.equal(result.signingKeyInChild,false);
+   assert.equal(result.independentlyCertified,false);
+   assert.equal(result.resultIsUntrusted,true);
+   assert.equal(result.paidCents,0);
+ }
+});
+
+test('RED: malformed or oversized separated policy source is rejected at admission',async()=>{
+ const args0={candidateSource:normal,method:'admitRepairTask',
+   input:args(true),expectedStatus:'returned'};
+ for(const candidatePolicySource of [null,{},'', ' '.repeat(100),
+   'x'.repeat(128*1024+1)]){
+   await assert.rejects(evaluateSeparatedAdmissionCase({...args0,candidatePolicySource}),
+     /Reef separated admission invalid/);
+ }
+});
