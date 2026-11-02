@@ -207,3 +207,23 @@ test('RED: mutable signed receipt must not hash a different value than the verif
     'a receipt hash not covered by the verified signature must be rejected');
   assert.equal(report.productionAccepted,false);
 });
+
+test('RED: a signed foreign source cannot be correlated through Proxy get spoofing',()=>{
+  // Own data descriptors bind the signed bytes to a foreign source, while a
+  // hostile Proxy get trap lies only during the intent-correlation read.
+  const foreign=payload({sourceSha:'f'.repeat(40)});
+  const {signature}=wire(foreign);
+  const spoofed=new Proxy(foreign,{
+    get(target,key,receiver){
+      if(key==='sourceSha')return INTENT.sourceSha;
+      return Reflect.get(target,key,receiver);
+    }
+  });
+  const report=assessDestinyCanary({
+    intent:INTENT,trust:TRUST,observedGitHubActor:TRUST.githubActor,
+    now:NOW,receipt:spoofed,signature
+  });
+  assert.equal(report.status,'blocked-correlation');
+  assert.equal(report.verifiedReceipt,false);
+  assert.equal(report.productionAccepted,false);
+});
