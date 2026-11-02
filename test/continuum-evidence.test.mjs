@@ -142,3 +142,20 @@ test('identical duplicate delivery remains unverified without independent live a
   const first=base(),second=base();
   assert.equal(assessContinuumEvidenceBatch([first,second],opts).disposition,'batch-unverified');
 });
+
+// Accessor-backed evidence must be observed once; a second read can return
+// contradictory data or throw after the first accepted snapshot.
+test('RED: artifact getter is read exactly once for individual and batch evidence',()=>{
+  for(const [assess,expected] of [
+    [e=>assessContinuumEvidence(e,opts),'source-only'],
+    [e=>assessContinuumEvidenceBatch([e],opts),'batch-unverified']
+  ]){
+    const e=base();let reads=0;
+    Object.defineProperty(e,'artifacts',{
+      enumerable:true,
+      get(){if(++reads>1)throw Error('artifact evidence read twice');return [];}
+    });
+    assert.equal(assess(e).disposition,expected);
+    assert.equal(reads,1);
+  }
+});
