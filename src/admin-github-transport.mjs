@@ -29,6 +29,19 @@ export function createAdminGitHubTransport({getToken,fetchImpl=globalThis.fetch}
    if(typeof method!=='string'||typeof path!=='string'||
      !routeAllowed(method,path)||path.includes('?')||path.includes('#'))
     throw Error('Admin transport path or method denied');
+   // Capture the exact request bytes before any asynchronous credential
+   // operation. Mutable caller objects must not change a reviewed action
+   // after token issuance or silently widen its submitted payload.
+   let serializedBody;
+   try {
+     if(data!==undefined){
+       serializedBody=JSON.stringify(data);
+       if(typeof serializedBody!=='string')
+         throw Error('invalid body');
+     }
+   }catch{
+     throw Error('Admin transport request body invalid');
+   }
    const grant=await getToken();
    if(!grant||typeof grant.token!=='string'||grant.token.length<1)
     throw Error('Admin transport credential unavailable');
@@ -37,12 +50,12 @@ export function createAdminGitHubTransport({getToken,fetchImpl=globalThis.fetch}
     Authorization:'Bearer '+grant.token,
     'X-GitHub-Api-Version':'2026-03-10',
    };
-   if(data!==undefined)headers['Content-Type']='application/json';
+   if(serializedBody!==undefined)headers['Content-Type']='application/json';
    let response;
    try{
     response=await fetchImpl('https://api.github.com'+path,{
      method,headers,redirect:'error',
-     ...(data===undefined?{}:{body:JSON.stringify(data)}),
+     ...(serializedBody===undefined?{}:{body:serializedBody}),
      signal:AbortSignal.timeout(15000),
     });
    }catch{
