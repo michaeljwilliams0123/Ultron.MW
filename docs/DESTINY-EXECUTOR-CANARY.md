@@ -1,6 +1,6 @@
 # Destiny Codex Cloud — separate execution lane and evidence canary
 
-**Status: SOURCE-ONLY / ENVIRONMENT OWNER-REPORTED, NOT INDEPENDENTLY VERIFIED / LIVE TASK BLOCKED BY EXHAUSTED CODEX CREDITS.**
+**Status: SOURCE-ONLY / OWNER REPORTS CODEX CLOUD ENVIRONMENT PUBLISHED AND CREDITS AVAILABLE / LIVE EXECUTION NOT YET VERIFIED.**
 Tracking: [issue #185](https://github.com/michaeljwilliams0123/Ultron.MW/issues/185), [C01 #183](https://github.com/michaeljwilliams0123/Ultron.MW/issues/183), [acceptance #204](https://github.com/michaeljwilliams0123/Ultron.MW/issues/204).
 
 ## Which cloud integration?
@@ -87,39 +87,53 @@ Capture the actual Codex Cloud task link/ID, account-side execution record, sele
 | Requirement | Current evidence | State |
 | --- | --- | --- |
 | Source verifier + synthetic negative tests | PR #216 branch & exact-head CI | Check CI after edits |
-| Account-owned cloud environment published | Owner reports setup complete; no independently verified environment ID | **Reported, not attested** |
+| Account-owned cloud environment published | Owner reports environment published and credits restored; no independently verified environment ID | **Reported, not attested** |
 | Real account/GitHub repo binding | GitHub connector alone cannot attest Work/Codex account | **Blocked** |
 | External signer independently bound | No pinned authorized key | **Blocked** |
-| One live read-only cloud task | No independent task receipt | **Blocked** |
+| One live read-only cloud task | One task now feasible in published environment; no task URL/execution receipt yet | **Pending external task** |
 | C01/C03 persisted end-to-end result and replay | Missing live receiver and completion proof | **Blocked** |
 | Production release | No positive live acceptance; `productionAccepted=false` | **Not accepted** |
 
-## While Codex Cloud credits are exhausted (2026-11-02)
+## Published environment: one live read-only canary (owner update 2026-11-02)
 
-The owner reports the environment is set up, but new model-based Codex tasks
-cannot be relied on until an eligible usage limit resets or credits become
-available. [OpenAI's usage guidance](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan)
-notes that prepared environments do not have a separate standard VM charge,
-but model use counts toward plan limits. Neither publishing an environment nor
-passing GitHub Actions tests proves a completed Codex execution.
+The owner reports **the Codex Cloud environment has been published and
+Codex credits are available again**. This removes two *owner-reported
+setup blockers*, not the independent task execution or C03 receipt gates.
 
-**Credit-free work that is valid now:** review the exact PR head and test
-results, run GitHub Actions source and database regression checks, verify that
-the trust manifest stays unconfigured, inspect author/route admission rules,
-and document blockers. Do not substitute a synthetic signature or a GitHub
-Actions bot run for the real Codex Cloud/Work receipt.
+For this **Codex Cloud** canary (not a Work/GitHub webhook test), open
+Codex in the **intended ChatGPT account**, choose the **published**
+environment for `michaeljwilliams0123/Ultron.MW`, and submit **one**
+read-only task:
 
-**Resume after usage refresh:** from the same intended account and already
-published environment, run a single new read-only task pinned to current main,
-capture the actual task link/ID, independently verify account/environment/repo
-and request/route/source/commit identity, and only then evaluate a signed C03
-completion and duplicate-notification behavior. Before retrying any delivery
-with uncertain effects, reconcile the authoritative outbox and receipt first.
-Do not trigger multiple canaries merely to check whether credits returned.
+```text
+Run one read-only Codex Cloud identity/connectivity canary against
+michaeljwilliams0123/Ultron.MW. Inspect trusted current main and
+docs/core/codex-authors.mjs; report the observed main commit SHA,
+the two registered author IDs and their actual configured binding/live
+execution fields. Confirm repository access and list what you actually
+observed. Make NO edits or commits, PRs, deployments, new tasks,
+credential reads, paid API fallbacks, route registration, or merges.
+Clearly distinguish this cloud run from any GitHub-triggered Work lane.
+Return a task link and inspectable execution/test evidence; do not claim
+account authentication, signed C03 completion, replay safety or
+production acceptance from this read-only inspection.
+```
 
-This PR must remain source-only; credit exhaustion is an **external acceptance
-blocker**, not a reason to widen GitHub permissions, spend outside the $0
-budget or relax CI and replay protection.
+Capture the actual **Codex Cloud task URL** and independently read back
+the current GitHub main SHA after execution. If no task URL or account-side
+record can be inspected, mark `cloud-execution-unverified`; do not
+manufacture a receipt or rerun blindly. A task transcript shows the
+executor's observations but **does not itself prove an independent
+OpenAI account identity**.
+
+After the read-only task, separately enroll/verify the Work GitHub
+event trigger if an unattended issue/PR bridge is wanted. Publishing
+Codex Cloud does not enable that trigger. A full C03 acceptance still
+requires a separately controlled execution signer, immutable outbox/route,
+actual provider receipt, and authoritative database+GitHub reconciliation.
+Keep the $0 incremental paid-spend policy, no bypass and one attempt per
+request. All previously uncertain deliveries remain reconcile-required,
+not replay candidates.
 
 ## Recovery
 
