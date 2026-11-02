@@ -41,12 +41,14 @@ function snapshot(record){
   };
 }
 function validCore(c,expectedHeadSha,now){
-  if(c.schema!==SCHEMA||!SHA.test(expectedHeadSha)||!validTime(now))return false;
+  if(c.schema!==SCHEMA||typeof expectedHeadSha!=='string'||!SHA.test(expectedHeadSha)||!validTime(now))return false;
   for(const key of ['objectiveId','taskId','deliveryId','actorId','runtimeId','capability','idempotencyKey'])
     if(typeof c[key]!=='string'||!ID.test(c[key]))return false;
-  if(!SHA.test(c.baseSha)||!SHA.test(c.headSha)||c.headSha!==expectedHeadSha||
-    (c.deployedSha!==null&&c.deployedSha!==undefined&&!SHA.test(c.deployedSha))||
-    !VERSION.test(c.policyVersion))return false;
+  if(typeof c.baseSha!=='string'||!SHA.test(c.baseSha)||
+    typeof c.headSha!=='string'||!SHA.test(c.headSha)||c.headSha!==expectedHeadSha||
+    (c.deployedSha!==null&&c.deployedSha!==undefined&&
+      (typeof c.deployedSha!=='string'||!SHA.test(c.deployedSha)))||
+    typeof c.policyVersion!=='string'||!VERSION.test(c.policyVersion))return false;
   const a=c.authorization,i=c.intent;
   if(!a||typeof a.grantId!=='string'||!ID.test(a.grantId)||
     typeof a.resource!=='string'||!ID.test(a.resource)||
@@ -97,13 +99,15 @@ export function assessContinuumEvidenceBatch(records,options={}){
     let c;
     try {c=snapshot(record);}catch{return held('invalid-envelope');}
     if(typeof c.deliveryId!=='string')return held('invalid-delivery');
-    const identity=[c.headSha,c.idempotencyKey,c.intent?.preconditionSha,
-      c.intent?.effect,c.authorization?.fence].join('|');
+    // Validate the one captured snapshot before comparing identities. This
+    // avoids coercing untrusted objects or reading caller getters twice.
+    const assessed=assessContinuumEvidence(c,options);
+    if(assessed.disposition==='held')return assessed;
+    const identity=[c.headSha,c.idempotencyKey,c.intent.preconditionSha,
+      c.intent.effect,c.authorization.fence].join('|');
     if(seen.has(c.deliveryId)&&seen.get(c.deliveryId)!==identity)
       return held('conflicting-delivery');
     seen.set(c.deliveryId,identity);
-    const assessed=assessContinuumEvidence(record,options);
-    if(assessed.disposition==='held')return assessed;
   }
   return result('batch-unverified','per-record-independent-readback-required');
 }
