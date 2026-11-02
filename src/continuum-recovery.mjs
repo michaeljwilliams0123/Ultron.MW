@@ -30,6 +30,16 @@ function persistedLease(value){
   }
   return null;
 }
+// A PostgreSQL timestamptz readback must be a Date or an ISO/SQL
+// timestamp string. Date.parse alone coerces arrays and arbitrary objects,
+// which cannot attest the stored expiry of an immutable delivery.
+function persistedExpiry(value){
+  if(value instanceof Date)return Number.isFinite(value.getTime())?value.getTime():null;
+  if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}[T ]/.test(value))
+    return null;
+  const parsed=Date.parse(value);
+  return Number.isFinite(parsed)?parsed:null;
+}
 function receipt(deliveryId,disposition){
   return Object.freeze({deliveryId,disposition,externalDispatches:0});
 }
@@ -84,8 +94,8 @@ export async function reconcileContinuumTick({
         receipts.push(receipt(deliveryId,'reconcile-required'));
         continue;
       }
-      const expiry=Date.parse(row.expiresAt);
-      if(!Number.isFinite(expiry)){
+      const expiry=persistedExpiry(row.expiresAt);
+      if(expiry===null){
         receipts.push(receipt(deliveryId,'held-unknown'));
         continue;
       }
