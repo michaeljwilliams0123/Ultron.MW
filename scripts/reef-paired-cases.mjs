@@ -358,7 +358,8 @@ async function runExecutionVariant(executorSource,admissionSource,policySource){
     const results=[];
     // Each scenario gets fresh ledger and fake GitHub objects. No live network
     // or owned PR mutation, no evaluator code supplied by the candidate.
-    for(const item of EXECUTION_CASES){
+    for(let i=0;i<EXECUTION_CASES.length;i++){
+      const item=EXECUTION_CASES[i];
       try{results.push(await executeCase(mod,item.id)===true);}
       catch{results.push(false);}
     }
@@ -394,7 +395,8 @@ async function runVariant(source,policySource){
       return falseRows(REPAIR_CASES.length);
   }catch{return falseRows(REPAIR_CASES.length);}
   const outcomes=[];
-  for(const item of REPAIR_CASES){
+  for(let i=0;i<REPAIR_CASES.length;i++){
+    const item=REPAIR_CASES[i];
     let ok=false;
     try{if(mod)ok=runCase(mod,item.id,unified)===true;}catch{ok=false;}
     outcomes.push(ok);
@@ -492,6 +494,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   Buffer.prototype,JSON]){
   Object.freeze(intrinsic);
  }
+ // Freeze iterator next before untrusted imports, preventing candidate ESM
+ // from replacing the case walker. Benchmark loops also use indexed access.
+ Object.freeze(Object.getPrototypeOf([][Symbol.iterator]()));
  const input=JSON.parse(await readFile(process.argv[3],'utf8'));
  const admission=await runVariant(input.source,input.policySource);
  const execution=input.includeExecutors?
