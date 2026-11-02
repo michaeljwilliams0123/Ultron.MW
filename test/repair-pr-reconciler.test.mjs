@@ -11,16 +11,22 @@ const plan=()=>({
  baseSha:SHA,preparedHeadSha:PREPARED,branch:'ultron/repair-seeded-case',
  allowedPaths:['src/seed.mjs','test/seed.test.mjs'],
  idempotencyKey:'repair:seeded-pr-001',maxAttempts:2,maxCostCents:0,
- expiresAt:'2026-10-31T18:00:00Z'
-});
-const identity=()=>({
+ paidFallback:false,
+ expiresAt:'2026-// Every operation gets its own down-scoped installation token readback.
+const identity=(operation='identity.read')=>({
  source:'github-installation-token-readback',verified:true,
- principal:'repair-app',repository:REPO,repositoryId:1424939667,
- installationId:12345,actorRef:'github-app:ultron-repair',
+ principal:'ultron-github-app',repository:REPO,repositoryId:1424939667,
+ installationId:12345,actorRef:'github-app:ultron-operator',operation,
  expiresAt:'2026-10-31T17:50:00Z',
- permissions:{metadata:'read',contents:'write',pull_requests:'write',checks:'read',issues:'write'}
+ permissions:operation==='identity.read'?{metadata:'read'}:
+   operation==='repair.branch.create'||operation==='repair.branch.update'?
+    {metadata:'read',contents:'write'}:
+    {metadata:'read',pull_requests:'write'}
 });
-const context=()=>({now:NOW,controls:{paused:false,revoked:false},identityEvidence:identity()});
+const context=(operation='identity.read')=>({
+ now:NOW,controls:{paused:false,revoked:false},identityEvidence:identity(operation)
+});
+idence:identity()});
 function fakeGitHub({loseBranch=false,losePR=false,autoPrepare=true}={}){
  let branch=null,pr=null;
  const calls={branch:0,pr:0,reads:0};
@@ -289,4 +295,13 @@ test('RED: memory reconciliation fixture enforces the durable ledger phase contr
  assert.equal(await ledger.advance({key,fingerprint,
    from:'pr-dispatch',to:'complete',prNumber:42}),true);
  assert.equal((await ledger.get(key)).prNumber,42);
+});
+
+
+test('unified identity is freshly scoped for each repair operation',async()=>{
+ const seen=[];
+ const source=async operation=>{seen.push(operation??'identity.read');return context(operation);};
+ const done=await runRepairPR(args({readContext:source}));
+ assert.equal(done.status,'complete');
+ assert.deepEqual(seen.slice(0,3),['identity.read','repair.branch.create','repair.pr.create']);
 });

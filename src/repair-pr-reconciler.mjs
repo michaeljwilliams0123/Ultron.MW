@@ -120,7 +120,8 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
     return read;
   };
   async function stepGate(operation){
-    const next=await readContext();
+    // Fresh operation-specific readback: never reuse the broader identity.read token.
+    const next=await readContext('repair.'+operation);
     assertRepairStep(admission,{
       operation,repository:admission.repository,branch:admission.branch,
       baseSha:admission.baseSha,idempotencyKey:key,attempt:1,
