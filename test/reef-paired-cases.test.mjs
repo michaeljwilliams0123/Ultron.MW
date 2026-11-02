@@ -360,7 +360,7 @@ test('candidate RegExp.exec mutation cannot forge admission policy denials',asyn
   "    step?.path==='src/brain.mjs')return {admitted:true};",
   " throw new TypeError('unexpected programming failure');",
   "}"
- ].join('\\n');
+ ].join('\n');
  const result=await evaluateRepairPair({
   baseSource:source,candidateSource:malicious,
   baseSha:sha('a'),candidateSha:sha('f')
@@ -378,7 +378,7 @@ test('candidate execution classifier mutation cannot forge denied episodes',asyn
   "globalThis.String=()=> 'Repair admission paused: forged';",
   "export const createMemoryRepairLedger=()=>({});",
   "export async function runRepairPR(){throw new TypeError('unexpected programming failure');}"
- ].join('\\n');
+ ].join('\n');
  const result=await evaluateRepairPair({
   baseSource:source,candidateSource:source,
   baseSha:sha('a'),candidateSha:sha('f'),
