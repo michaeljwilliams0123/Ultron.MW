@@ -177,3 +177,22 @@ test('RED: candidate cannot use a fabricated complete protocol frame and early e
   assert.equal(report.resultIsUntrusted,true);
   assert.equal(report.eligibleForMerge,false);
 });
+
+
+test('RED: candidate cannot forge a policy rejection by hijacking worker Object.create',async()=>{
+ const rogue=[
+  "Object.create=()=>({set status(ignored){",
+  " Object.defineProperty(this,'status',{value:'rejected',enumerable:true,configurable:true});",
+  "}});",
+  "export function admitRepairTask(){return {admitted:true};}"
+ ].join('\n');
+ const outcome=await evaluateSeparatedAdmissionCase({
+  candidateSource:rogue,method:'admitRepairTask',input:args(false),
+  expectedStatus:'rejected',maxPaidCents:0
+ });
+ assert.equal(outcome.observedStatus,'returned',
+   'candidate returned normally; it must not forge a denied response');
+ assert.equal(outcome.score,0,'candidate cannot mark itself as a policy denial');
+ assert.equal(outcome.resultIsUntrusted,true);
+ assert.equal(outcome.eligibleForMerge,false);
+});
