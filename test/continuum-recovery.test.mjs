@@ -350,3 +350,21 @@ test('RED: C02 scheduler clock requires an explicit bounded timezone before any 
     assert.equal(writes,0,'no reconciliation writes from untrusted clock');
   }
 });
+
+
+test('RED: C02 SLO target cannot be lowered below the mandatory 99.5% seven-day release objective',()=>{
+  const start=Date.parse('2026-10-25T12:00:00Z');
+  const runs=Array.from({length:168},(_,i)=>({
+    scheduledAt:new Date(start+i*60*60*1000).toISOString(),
+    success:i!==100,source:'scheduler'
+  }));
+  const args={startAt:new Date(start).toISOString(),
+    endAt:new Date(start+168*60*60*1000).toISOString(),runs};
+  const baseline=measureObservedSchedulerSlo(args);
+  assert.equal(baseline.evidenceComplete,true);
+  assert.equal(baseline.successfulSlots,167);
+  assert.equal(baseline.meetsTarget,false);
+  // A caller-supplied 50% threshold must not certify a failed 99.5% pilot.
+  assert.throws(()=>measureObservedSchedulerSlo({...args,target:0.5}),
+    /continuum-slo-input-invalid/);
+});
