@@ -159,3 +159,22 @@ test('RED: artifact getter is read exactly once for individual and batch evidenc
     assert.equal(reads,1);
   }
 });
+
+// A hostile array can advertise unsafe indexed evidence while supplying a
+// different iterator sequence. The validator must inspect its own data slots.
+test('RED: custom artifact iterators cannot substitute signed evidence indexes',()=>{
+  for(const assess of [
+    e=>assessContinuumEvidence(e,opts),
+    e=>assessContinuumEvidenceBatch([e],opts)
+  ]){
+    const e=base();
+    e.artifacts=['javascript:untrusted-evidence'];
+    e.artifacts[Symbol.iterator]=function*(){
+      yield 'https://github.com/michaeljwilliams0123/Ultron.MW/issues/204';
+    };
+    const result=assess(e);
+    assert.equal(result.disposition,'held',
+      'a forged iterator must not launder an invalid indexed artifact');
+    assert.equal(result.productionAccepted,false);
+  }
+});
