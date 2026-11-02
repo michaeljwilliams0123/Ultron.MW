@@ -326,3 +326,25 @@ test('a reused durable action key cannot adopt a different provider authority',a
  assert.equal(firstTarget.executions,1);
  assert.equal(secondTarget.executions,0);
 });
+
+
+test('C05 zero-dollar global ceiling rejects paid estimates even when a binding permits cost',async()=>{
+ const target=adapter();
+ let approvals=0;
+ const broker=createCapabilityBroker({clock:()=>now,authorize:async()=>{
+  approvals++;return true;
+ }});
+ broker.bind(manifest({maxCostCents:500}),target);
+ await broker.health('github-owner');
+ for(const operation of ['repo.read','issue.write']){
+  await assert.rejects(broker.execute('github-owner',{
+   operation,idempotencyKey:'paid:'+operation.replace('.','-')+':001',
+   estimatedCostCents:1,input:{title:'must not dispatch'},
+   expected:{status:200}
+  }),/paid|cost|Invalid capability request/i);
+ }
+ assert.equal(approvals,0,'paid fallback must be denied before owner authorization');
+ assert.equal(target.executions,0,'no paid provider operation may be dispatched');
+ // A declared allowance is metadata, not an entitlement to spend.
+ assert.equal(broker.status('github-owner').maxCostCents,500);
+});
