@@ -185,3 +185,25 @@ test('RED: cloud environment fingerprint drift or signing-key rotation fails clo
     {...TRUST,keyId:'rotated-key-id'},
   ]) assert.equal(inspect({trust}).verifiedReceipt,false);
 });
+
+test('RED: mutable signed receipt must not hash a different value than the verified signature',()=>{
+  const signed=wire();
+  let reads=0;
+  const mutable={...signed.receipt};
+  Object.defineProperty(mutable,'resultSha',{
+    enumerable:true,
+    get(){
+      reads++;
+      // Two reads by validation, one by signature verification, then a
+      // different result at receiptSha computation.
+      return reads<=3?'d'.repeat(64):'e'.repeat(64);
+    }
+  });
+  const report=assessDestinyCanary({
+    intent:INTENT,trust:TRUST,observedGitHubActor:TRUST.githubActor,
+    now:NOW,receipt:mutable,signature:signed.signature
+  });
+  assert.equal(report.verifiedReceipt,false,
+    'a receipt hash not covered by the verified signature must be rejected');
+  assert.equal(report.productionAccepted,false);
+});
