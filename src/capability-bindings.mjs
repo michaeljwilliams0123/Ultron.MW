@@ -12,6 +12,19 @@ const BINDING_KEYS = new Set(['id', 'provider', 'runtime', 'actorRef', 'authMeth
 const OPERATION_KEYS = new Set(['name', 'effect', 'scope']);
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
+// Date.parse normalizes impossible days (e.g. February 30) instead of rejecting
+// them. An authority expiry must denote the exact local calendar date supplied.
+function validExpiryTimestamp(value) {
+  if (typeof value !== 'string') return false;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts || !Number.isFinite(Date.parse(value))) return false;
+  const year = Number(parts[1]), month = Number(parts[2]), day = Number(parts[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day >= 1 && day <= (days[month - 1] ?? 0);
+}
+
+
 function serializable(value, max = 20_000) {
   try {
     const encoded = JSON.stringify(value);
@@ -47,9 +60,7 @@ export function validateCapabilityBinding(input) {
       new Set(input.operations.map(operation => operation.name)).size !== input.operations.length ||
       !Number.isSafeInteger(input.maxCostCents) || input.maxCostCents < 0 ||
       input.maxCostCents > 100_000 ||
-      typeof input.expiresAt !== 'string' ||
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(input.expiresAt) ||
-      !Number.isFinite(Date.parse(input.expiresAt)) ||
+      !validExpiryTimestamp(input.expiresAt) ||
       input.credentialRef !== null &&
         !(typeof input.credentialRef === 'string' &&
           /^env:ULTRON_[A-Z0-9_]{3,60}$/.test(input.credentialRef)))
