@@ -130,3 +130,29 @@ test('RED: C03 requires an immutable durable route registration migration',async
   assert.match(sql,/route_sha text NOT NULL CHECK/);
   assert.match(sql,/CREATE TRIGGER continuum_routes_immutable/);
 });
+
+
+test('RED C03: post-INSERT readback failures must be stable uncertain outcomes without replay',async()=>{
+ const wire=await signed();
+ for(const fault of ['null-row','transport-error']){
+  const db=mockDb(),original=db.query.bind(db);
+  let inserts=0,reads=0;
+  db.query=async(sql,params)=>{
+    if(sql.includes('INSERT INTO brain_continuum_receipts'))inserts++;
+    if(sql.includes('FROM brain_continuum_receipts')){
+      reads++;
+      if(fault==='null-row')return {rows:[null]};
+      throw Error('simulated PostgreSQL readback connection reset');
+    }
+    return original(sql,params);
+  };
+  const ack=await verifyContinuumAck({...wire,secret,
+    expectedSource:'mahoraga-cloud',now,subtle:webcrypto.subtle});
+  await assert.rejects(recordContinuumAck({db,ack}),
+    /continuum-ack-write-uncertain/,
+    'no raw adapter/TypeError may imply an uncommitted receipt: '+fault);
+  assert.equal(inserts,1,'never repeat an uncertain INSERT');
+  assert.equal(reads,1,'read back at most once');
+  assert.equal(db.entries.size,1,'durable receipt must remain persisted');
+ }
+});
