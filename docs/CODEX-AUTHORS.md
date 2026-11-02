@@ -118,3 +118,14 @@ through the real Issue-to-PR route. Observe the Work run and its independently
 written branch receipt. Keep `liveExecution: not-verified` in static registry
 metadata until a separate reviewed evidence update cites a successful run.
 Tests prove source behavior; they do not establish webhook delivery.
+
+## Dedicated Destiny App and signed completion canary (draft implementation)
+
+The proposed [Destiny executor App and canary contract](DESTINY-EXECUTOR-CANARY.md)
+adds a separately authenticated GitHub App actor **plus** a pinned external
+Ed25519 completion-signature check bound to the trusted C01/C03 delivery.
+It is source-only until Destiny enrolls and proves the actual Work event task,
+installs and scopes the App and provisions the private signing key outside Git.
+A signed receipt alone does **not** prove which ChatGPT account ran; the
+`workAccountAuthenticated` and `productionAccepted` claims remain false.
+Track live handoff acceptance under [Continuum C03 #185](https://github.com/michaeljwilliams0123/Ultron.MW/issues/185).
