@@ -10,7 +10,7 @@ const row=(extra={})=>({
   state:'pending', effect:'advisory', maxPaidCents:0,
   expiresAt:'2026-11-01T11:59:00.000Z', ...extra
 });
-const control=(extra={})=>({paused:false,maxPaidCents:0,paidFallback:false,...extra});
+const control=(extra={})=>({paused:false,revoked:false,maxPaidCents:0,paidFallback:false,...extra});
 
 test('C02 pause prevents due-list reads, external dispatch and database transitions',async()=>{
   let reads=0,writes=0;
@@ -392,6 +392,29 @@ test('RED: C02 rejects a mismatched or unverified markUnknown receipt',async()=>
     assert.equal(result.status,'held-partial');
     assert.equal(result.receipts[0].disposition,'held-unknown',
       'unverified state must not certify reconciliation');
+    assert.equal(result.externalDispatches,0);
+  }
+});
+
+
+test('C02 revoked or malformed control cannot transition durable recovery state',async()=>{
+  // Revocation must be enforced at the scheduler admission boundary,
+  // not silently ignored when the control is loaded from storage.
+  for(const revoked of [true,undefined,null,'false',0,1]){
+    let queueReads=0,observations=0,transitions=0;
+    const result=await reconcileContinuumTick({
+      now:NOW,readControl:async()=>control({revoked}),
+      listDue:async()=>{queueReads++;return [delivery];},
+      outbox:{
+        observe:async()=>{observations++;return row();},
+        markUnknown:async()=>{transitions++;return {changed:true,deliveryId:delivery,state:'reconcile-required'};}
+      }
+    });
+    assert.equal(result.status,'held-revoked',
+      'missing, malformed or revoked control must fail closed');
+    assert.equal(queueReads,0,'do not read due work after revocation');
+    assert.equal(observations,0,'do not inspect a revoked delivery');
+    assert.equal(transitions,0,'do not transition a revoked delivery');
     assert.equal(result.externalDispatches,0);
   }
 });
