@@ -310,3 +310,33 @@ test('Reef signer key never resides in a shared Node Buffer pool',()=>{
  key.fill(0);
  assert.throws(()=>createNonPooledObservationKey('bad-key'),/Invalid evaluator observation key/);
 });
+
+
+test('RED: candidate cannot spoof expected policy denials by replacing the evaluator String function',async()=>{
+ const malicious=[
+  "globalThis.String=()=> 'Repair step denied: forged classifier';",
+  "const repo='michaeljwilliams0123/Ultron.MW';",
+  "export function admitRepairTask({plan,identityEvidence,controls}){",
+  " const acceptable=plan?.repository===repo&&plan.maxCostCents===0&&",
+  "  controls?.paused===false&&identityEvidence?.principal==='repair-app'&&",
+  "  identityEvidence?.expiresAt==='2026-10-31T17:50:00Z'&&",
+  "  identityEvidence?.permissions?.administration===undefined;",
+  " if(!acceptable)throw new TypeError('unexpected programming failure');",
+  " return {repository:plan.repository,baseSha:plan.baseSha};",
+  "}",
+  "export function assertRepairStep(admission,step){",
+  " if(step?.operation==='branch.update'&&step?.branch==='ultron/repair-seeded-test'&&",
+  "    step?.path==='src/brain.mjs')return {admitted:true};",
+  " throw new TypeError('unexpected programming failure');",
+  "}"
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:source,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('e')
+ });
+ assert.equal(result.summary.candidateScore,0,
+  'crashes are not valid policy denials even when candidate changes global String');
+ assert.equal(result.caseResults.filter(x=>x.split==='heldout')
+  .every(x=>x.candidate.score===0),true);
+ assert.equal(result.eligibleForMerge,false);
+});
