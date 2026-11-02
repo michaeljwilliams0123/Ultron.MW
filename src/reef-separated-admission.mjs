@@ -55,10 +55,13 @@ function executeCandidate({dir,candidate,input,method,timeoutMs}){
  });
 }
 export async function evaluateSeparatedAdmissionCase({
- candidateSource,method,input,expectedStatus,maxPaidCents=0,timeoutMs=5000
+ candidateSource,candidatePolicySource=undefined,method,input,expectedStatus,maxPaidCents=0,timeoutMs=5000
 }={}){
  if(typeof candidateSource!=='string'||!candidateSource.trim()||
    Buffer.byteLength(candidateSource)>128*1024||
+   (candidatePolicySource!==undefined&&(
+    typeof candidatePolicySource!=='string'||!candidatePolicySource.trim()||
+    Buffer.byteLength(candidatePolicySource)>128*1024))||
    method!=='admitRepairTask'||
    !input||typeof input!=='object'||Array.isArray(input)||
    !['returned','rejected'].includes(expectedStatus)||maxPaidCents!==0||
@@ -68,18 +71,29 @@ export async function evaluateSeparatedAdmissionCase({
  try{request=JSON.stringify(input);}catch{reject();}
  if(!request||Buffer.byteLength(request)>MAX_BYTES)reject();
  const candidateSha256=createHash('sha256').update(candidateSource).digest('hex');
+ // The entire candidate revision, not only its entrypoint, is the evaluated
+ // artifact. An absent policy and a present policy must never hash alike.
+ const candidateArtifactSha256=createHash('sha256').update(JSON.stringify([
+  candidateSource,candidatePolicySource===undefined?
+   {present:false}:{present:true,source:candidatePolicySource}
+ ])).digest('hex');
  const dir=await mkdtemp(join(tmpdir(),'ultron-reef-separate-'));
  try{
   const file=join(dir,'candidate.mjs');
   await writeFile(join(dir,'package.json'),'{"type":"module"}',{mode:0o600});
   await writeFile(file,candidateSource,{mode:0o600});
+  // Stage the sole allowlisted relative dependency in the same restricted
+  // child directory. No policy, scorer or signing secret enters this process.
+  if(candidatePolicySource!==undefined)
+   await writeFile(join(dir,'github-principal-policy.mjs'),candidatePolicySource,
+    {mode:0o600});
   const observed=await executeCandidate({
    dir,candidate:file,input:JSON.parse(request),method,timeoutMs
   });
   const score=Number(observed.status===expectedStatus);
   return Object.freeze({
    schema:'ultron.reef.separated-admission-prototype.v1',
-   candidateSha256,executionPlane:'restricted-child',
+   candidateSha256,candidateArtifactSha256,executionPlane:'restricted-child',
    expectedStatus,observedStatus:observed.status,
    score,paidCents:0,resultIsUntrusted:true,signingKeyInChild:false,
    independentlyCertified:false,eligibleForMerge:false,
