@@ -175,6 +175,10 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         throw Error('continuum-outbox-reconcile-required');
       }
       if(result?.rows?.length===1){
+        // A malformed single-row ACK may follow a committed INSERT.
+        // Do not leak an adapter TypeError that callers might retry.
+        if(result.rows[0]==null)
+          throw Error('continuum-outbox-reconcile-required');
         if(result.rows[0].deliveryId!==c.deliveryId||
           result.rows[0].state!=='pending')
           throw Error('continuum-outbox-admission-readback-mismatch');
