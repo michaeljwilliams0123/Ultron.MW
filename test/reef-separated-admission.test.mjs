@@ -224,7 +224,7 @@ test('RED: candidate stdout internal writer cannot forge valid-nonce result stat
 // child output or establish independent observation provenance.
 test('Reef trust-plane: inherited Error.message cannot forge a denial',async()=>{
  const malicious=[
-  "Object.defineProperty(Error.prototype,'message',{configurable:true,get(){return 'denied';}});",
+  "Object.defineProperty(TypeError.prototype,'message',{configurable:true,get(){return 'denied';}});",
   'export function admitRepairTask(){throw new TypeError();}'
  ].join('\n');
  const x=await evaluateSeparatedAdmissionCase({
