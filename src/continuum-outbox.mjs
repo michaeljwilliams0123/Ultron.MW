@@ -11,10 +11,28 @@ const FIELDS=['taskId','objectiveId','deliveryId','idempotencyKey','repository',
   'sourceSha','authoritySha','requestSha','leaseGeneration','expiresAt',
   'effect','maxPaidCents'];
 
+// PostgreSQL timestamptz is a global instant, not a worker-local time.
+// Reject Date.parse normalization of impossible calendar days, timezone-free
+// strings, malformed offsets and coerced adapter objects before attestation.
+function strictInstant(value){
+  if(value instanceof Date)
+    return Number.isFinite(value.getTime())?value.toISOString():null;
+  if(typeof value!=='string')return null;
+  const match=/^(\d{4})-(\d{2})-(\d{2})[T ](?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:0\d|1[0-4])(?::?[0-5]\d)?)$/.exec(value);
+  if(!match)return null;
+  const y=Number(match[1]),m=Number(match[2]),d=Number(match[3]);
+  const leap=y%4===0&&(y%100!==0||y%400===0);
+  const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+  if(d<1||d>(days[m-1]??0))return null;
+  const zone=/[+-](\d{2})(?::?(\d{2}))?$/.exec(value);
+  if(zone&&Number(zone[1])===14&&Number(zone[2]??0)!==0)return null;
+  const parsed=Date.parse(value);
+  return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
+}
 function iso(value){
-  const timestamp=new Date(value);
-  if(!Number.isFinite(timestamp.getTime()))throw Error('continuum-outbox-time-invalid');
-  return timestamp.toISOString();
+  const timestamp=strictInstant(value);
+  if(timestamp===null)throw Error('continuum-outbox-time-invalid');
+  return timestamp;
 }
 function validate(contract,now){
   const c=contract;
@@ -68,9 +86,7 @@ function matchesPersisted(row,expected){
 // persisted immutable expiry, even when the fencing CAS itself succeeded.
 // Accept native PostgreSQL Date values and ordinary ISO/SQL date strings.
 function validPersistedExpiry(value){
-  if(value instanceof Date)return Number.isFinite(value.getTime());
-  return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}[T ]/.test(value)&&
-    Number.isFinite(Date.parse(value));
+  return strictInstant(value)!==null;
 }
 function matchesTransitionReadback(row,{deliveryId,sourceSha,leaseGeneration}){
   return row?.deliveryId===deliveryId&&row.repository===REPO&&
