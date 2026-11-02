@@ -134,6 +134,7 @@ const policyDenialPattern=/^(Repair plan rejected|Repair App identity readback i
 // Candidate ESM can replace RegExp.prototype.exec or global String.
 // Call the captured native matcher through captured Reflect.apply instead.
 const nativeRegExpExec=RegExp.prototype.exec;
+const nativeRegExpTest=RegExp.prototype.test;
 const nativeReflectApply=Reflect.apply;
 const trustedRegexMatch=(pattern,message)=>
   typeof message==='string'&&
@@ -372,8 +373,10 @@ async function loadModule(source,policySource){
 async function runVariant(source,policySource){
   const mod=await loadModule(source,policySource);
   const unified=typeof policySource==='string'&&
-    (/export\s+const\s+ULTRON_GITHUB_PRINCIPAL\s*=/.test(policySource)||
-     /export\s*\{[^}]*\bULTRON_GITHUB_PRINCIPAL\b[^}]*\}/.test(policySource));
+    (nativeReflectApply(nativeRegExpTest,
+      /export\s+const\s+ULTRON_GITHUB_PRINCIPAL\s*=/,[policySource])||
+     nativeReflectApply(nativeRegExpTest,
+      /export\s*\{[^}]*\bULTRON_GITHUB_PRINCIPAL\b[^}]*\}/,[policySource]));
   if(!mod || typeof mod.admitRepairTask!=='function' ||
       typeof mod.assertRepairStep!=='function')
     return REPAIR_CASES.map(()=>false);
