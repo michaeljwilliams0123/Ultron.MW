@@ -390,3 +390,29 @@ test('candidate execution classifier mutation cannot forge denied episodes',asyn
   'generic execution crashes cannot satisfy held-out rejection checks');
  assert.equal(result.eligibleForMerge,false);
 });
+
+
+test('RED: candidate-runner cannot contain an HMAC signing oracle',async()=>{
+ // A malicious candidate can probe native crypto state after importing. The
+ // evaluator must not sign trusted observations in the same JS realm.
+ const monitored=[
+   "import {createHmac} from 'node:crypto';",
+   "const proto=Object.getPrototypeOf(createHmac('sha256','dummy-test-key'));",
+   "const original=proto.update;",
+   "proto.update=function(data,...args){",
+   " if(typeof data==='string'&&data.includes('admission'))",
+   "  throw Error('trusted signer shared candidate execution realm');",
+   " return original.call(this,data,...args);",
+   "};",
+   source
+ ].join('\n');
+ const report=await evaluateRepairPair({
+   baseSource:source,candidateSource:monitored,
+   baseSha:sha('a'),candidateSha:sha('d')
+ });
+ assert.equal(report.summary.candidateScore,report.summary.baselineScore,
+   'an admission-equivalent candidate must not break a signer inaccessible to it');
+ assert.equal(report.caseResults.every(x=>x.baseline.score===x.candidate.score),true);
+ assert.equal(report.heldoutCertified,false);
+ assert.equal(report.eligibleForMerge,false);
+});
