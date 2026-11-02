@@ -368,3 +368,30 @@ test('RED: C02 SLO target cannot be lowered below the mandatory 99.5% seven-day 
   assert.throws(()=>measureObservedSchedulerSlo({...args,target:0.5}),
     /continuum-slo-input-invalid/);
 });
+
+test('RED: C02 rejects a mismatched or unverified markUnknown receipt',async()=>{
+  // C01's actual markUnknown contract includes a durable delivery identity
+  // and a boolean CAS outcome. An adapter returning a foreign or bare state
+  // must not be allowed to certify the target delivery's reconciliation.
+  const malformed=[
+    {state:'reconcile-required'},
+    {changed:true,deliveryId:'continuum:foreign-0001',state:'reconcile-required'},
+    {changed:'true',deliveryId:delivery,state:'reconcile-required'},
+    {changed:true,deliveryId:delivery,state:'pending'}
+  ];
+  for(const returned of malformed){
+    let transitions=0;
+    const result=await reconcileContinuumTick({
+      now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
+      outbox:{
+        observe:async()=>row(),
+        markUnknown:async()=>{transitions++;return returned;}
+      }
+    });
+    assert.equal(transitions,1,'a single fenced CAS attempt is allowed');
+    assert.equal(result.status,'held-partial');
+    assert.equal(result.receipts[0].disposition,'held-unknown',
+      'unverified state must not certify reconciliation');
+    assert.equal(result.externalDispatches,0);
+  }
+});
