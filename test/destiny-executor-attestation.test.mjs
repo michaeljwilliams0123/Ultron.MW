@@ -19,7 +19,9 @@ const INTENT=Object.freeze({
 });
 const TRUST=Object.freeze({
   state:'configured',
-  appLogin:'ultron-destiny-executor[bot]',
+  executionLane:'codex-cloud',
+  githubActor:'michaeljwilliams0123',
+  environmentFingerprint:'e'.repeat(64),
   keyId:'destiny-executor-k1',
   publicKeyPem
 });
@@ -30,7 +32,9 @@ function payload(patch={}){
     deliveryId:INTENT.deliveryId,requestSha:INTENT.requestSha,
     sourceSha:INTENT.sourceSha,routeSha:INTENT.routeSha,
     authorId:'destiny-codex',
-    appLogin:TRUST.appLogin,
+    executionLane:TRUST.executionLane,
+    githubActor:TRUST.githubActor,
+    environmentFingerprint:TRUST.environmentFingerprint,
     keyId:TRUST.keyId,
     effect:'read',maxPaidCents:0,
     status:'completed',
@@ -51,7 +55,7 @@ function inspect(options={}){
   const signed=wire(signable);
   return assessDestinyCanary({
     intent:INTENT,trust:TRUST,
-    observedGitHubActor:TRUST.appLogin,
+    observedGitHubActor:TRUST.githubActor,
     now:NOW,...signed,...options
   });
 }
@@ -63,19 +67,21 @@ test('RED: a separately signed scoped completion is a receipt, not Work account 
   assert.equal(report.workAccountAuthenticated,false);
   assert.match(report.receiptSha,/^[a-f0-9]{64}$/);
 });
-test('RED: missing App enrollment or independently pinned public key fails closed',()=>{
+test('RED: unconfigured cloud environment or missing independently pinned public key fails closed',()=>{
   for(const trust of [
     {...TRUST,state:'unconfigured'},
     {...TRUST,publicKeyPem:null},
     {...TRUST,keyId:null},
+    {...TRUST,environmentFingerprint:null},
+    {...TRUST,executionLane:'unverified'},
   ]){
     const report=inspect({trust});
     assert.equal(report.verifiedReceipt,false);
     assert.equal(report.status,'blocked-unconfigured');
   }
 });
-test('RED: GitHub owner, fake app login, or missing actor cannot attest Destiny',()=>{
-  for(const observedGitHubActor of ['michaeljwilliams0123','github-actions[bot]','ultron-destiny-executor',null]){
+test('RED: unobserved or wrong GitHub actors fail closed',()=>{
+  for(const observedGitHubActor of ['github-actions[bot]','other-actor','ultron-destiny-executor',null]){
     const report=inspect({observedGitHubActor});
     assert.equal(report.status,'blocked-actor');
     assert.equal(report.verifiedReceipt,false);
@@ -99,7 +105,9 @@ test('RED: exact intent/source/route/delivery and zero-spend are mandatory',()=>
     {requestSha:'e'.repeat(64)},{sourceSha:'0'.repeat(40)},
     {routeSha:'1'.repeat(64)},{repository:'another/repo'},
     {effect:'write'},{maxPaidCents:1},
-    {authorId:'mike-codex'},{appLogin:'github-actions[bot]'},
+    {authorId:'mike-codex'},{githubActor:'github-actions[bot]'},
+    {executionLane:'work-github-event'},
+    {environmentFingerprint:'f'.repeat(64)},
     {keyId:'previous-rotation'}
   ]){
     const report=inspect({receipt:payload(patch)});
@@ -159,4 +167,21 @@ test('RED: expired receipt remains rejected even for an identical prior receipt 
   const expired=inspect({now:NOW+180000,priorReceiptSha:first.receiptSha});
   assert.equal(expired.status,'blocked-expired');
   assert.equal(expired.verifiedReceipt,false);
+});
+
+// A connected GitHub account can legitimately be the repository owner. This
+// proves only that a separately pinned signer issued the receipt, not which
+// ChatGPT account ran the cloud task.
+test('RED: matching owner GitHub actor does not become Work-account proof',()=>{
+  const r=inspect();
+  assert.equal(r.verifiedReceipt,true);
+  assert.equal(r.workAccountAuthenticated,false);
+  assert.equal(r.productionAccepted,false);
+});
+test('RED: cloud environment fingerprint drift or signing-key rotation fails closed',()=>{
+  for(const trust of [
+    {...TRUST,environmentFingerprint:'0'.repeat(64)},
+    {...TRUST,githubActor:'other-actor'},
+    {...TRUST,keyId:'rotated-key-id'},
+  ]) assert.equal(inspect({trust}).verifiedReceipt,false);
 });
