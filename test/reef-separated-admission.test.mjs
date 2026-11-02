@@ -196,3 +196,24 @@ test('RED: candidate cannot forge a policy rejection by hijacking worker Object.
  assert.equal(outcome.resultIsUntrusted,true);
  assert.equal(outcome.eligibleForMerge,false);
 });
+
+
+test('RED: candidate stdout internal writer cannot forge valid-nonce result status',async()=>{
+ const malicious=[
+  'const nativeStreamWrite=process.stdout._write;',
+  'process.stdout._write=function(data,encoding,done){',
+  " const raw=Buffer.isBuffer(data)?data.toString('utf8'):String(data);",
+  " return nativeStreamWrite.call(this,raw.replace('\"status\":\"returned\"','\"status\":\"rejected\"'),encoding,done);",
+  '};',
+  'export function admitRepairTask(){return {admitted:true};}'
+ ].join('\n');
+ const x=await evaluateSeparatedAdmissionCase({
+  candidateSource:malicious,method:'admitRepairTask',input:args(false),
+  expectedStatus:'rejected',maxPaidCents:0
+ });
+ assert.equal(x.observedStatus,'returned',
+  'candidate-mutated process.stdout internals may not forge a protocol denial');
+ assert.equal(x.score,0,'parent may not award a score for candidate-forged denial');
+ assert.equal(x.resultIsUntrusted,true);
+ assert.equal(x.eligibleForMerge,false);
+});
