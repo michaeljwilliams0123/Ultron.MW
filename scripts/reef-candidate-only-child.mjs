@@ -5,6 +5,9 @@
 import {pathToFileURL} from 'node:url';
 const nativeWrite=process.stdout.write.bind(process.stdout);
 const nativeStringify=JSON.stringify.bind(JSON);
+// Capture the result-frame constructor before untrusted candidate ESM runs.
+// A candidate must not replace Object.create with a forged-status setter.
+const trustedObjectCreate=Object.create;
 // Capture native matching primitives before importing untrusted candidate ESM.
 // Candidate realm changes to String, RegExp.test, or RegExp.exec cannot turn
 // unrelated exceptions into policy denials in this experimental worker.
@@ -37,7 +40,7 @@ try{
   // produce a negative-case observation. This output remains untrusted.
   status=explicitDenial(error?.message)?'rejected':'invalid';
  }
- const response=Object.create(null);
+ const response=trustedObjectCreate(null);
  response.protocol='ultron.reef.untrusted-result.v1';
  response.status=status;
  response.completionNonce=request.completionNonce;
