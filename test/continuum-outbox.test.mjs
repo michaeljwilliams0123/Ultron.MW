@@ -841,3 +841,16 @@ test('C01 RED: coercible non-string source SHA must not reach fenced SQL',async(
     assert.equal(db.entries.get(c.deliveryId).state,'pending');
   }
 });
+
+test('C01 RED: coercible digest objects cannot authorize durable intent',async()=>{
+  for(const field of ['sourceSha','authoritySha','requestSha']){
+    const c=contract();
+    c[field]={toString(){return contract()[field];}};
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(c),
+      /continuum-outbox-admission-denied-invalid-or-metered/,
+      field+' must be a primitive string, never a mutable coercible object');
+    assert.equal(db.statements.length,0,
+      field+' must be rejected before durable SQL');
+  }
+});
