@@ -150,7 +150,8 @@ export function measureObservedSchedulerSlo({
   const start=Date.parse(clock(startAt));
   const end=Date.parse(clock(endAt));
   if(!Number.isSafeInteger(intervalMinutes)||intervalMinutes<1||
-     intervalMinutes>1440||typeof target!=='number'||target<=0||target>1||
+     // Never allow caller-configured acceptance to weaken the mandatory 99.5% SLO.
+     intervalMinutes>1440||!Number.isFinite(target)||target<0.995||target>1||
      !Array.isArray(runs)||runs.length>10000)
     throw Error('continuum-slo-input-invalid');
   const interval=intervalMinutes*60000;
