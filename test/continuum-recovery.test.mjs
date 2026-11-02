@@ -221,3 +221,42 @@ test('C02 accepts a canonical BIGINT string lease on the bounded recovery path',
   assert.deepEqual(calls,[{deliveryId:delivery,sourceSha:SHA,leaseGeneration:7}]);
   assert.equal(result.receipts[0].disposition,'reconcile-required');
 });
+
+
+test('RED: C02 rejects malformed or coerced persisted expiration timestamps before reconciliation',async()=>{
+  // PostgreSQL returns a Date or parsable ISO/SQL timestamp; adapter arrays,
+  // boxed strings, arbitrary objects and locale-only strings are not evidence.
+  const valid='2026-11-01T11:59:00.000Z';
+  const bad=[null,undefined,false,0,[valid],new String(valid),
+    {toString:()=>valid},'11/1/2026 11:59:00',' '+valid,''];
+  for(const expiresAt of bad){
+    let transitions=0;
+    const result=await reconcileContinuumTick({
+      now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
+      outbox:{
+        observe:async()=>row({expiresAt}),
+        markUnknown:async()=>{transitions++;return {state:'reconcile-required'};}
+      }
+    });
+    assert.equal(result.status,'held-partial',
+      'noncanonical expiry must not certify the intent or state transition');
+    assert.equal(result.receipts[0].disposition,'held-unknown');
+    assert.equal(transitions,0,'never issue SQL CAS for untrusted expiry readback');
+    assert.equal(result.externalDispatches,0);
+  }
+});
+
+test('C02 permits native PostgreSQL Date and an ISO timestamp for expiry',async()=>{
+  for(const expiresAt of [new Date('2026-11-01T11:59:00.000Z'),
+    '2026-11-01T11:59:00.000Z']){
+    const result=await reconcileContinuumTick({
+      now:NOW,readControl:async()=>control(),listDue:async()=>[delivery],
+      outbox:{
+        observe:async()=>row({expiresAt}),
+        markUnknown:async()=>({state:'reconcile-required'})
+      }
+    });
+    assert.equal(result.status,'observed');
+    assert.equal(result.receipts[0].disposition,'reconcile-required');
+  }
+});
