@@ -693,3 +693,56 @@ test('C01 RED: malformed UPDATE acknowledgement after commit must hold for recon
     assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
   }
 });
+
+
+test('C01 RED: transition readback rejects impossible calendar and unzoned expiry without replay',async()=>{
+  // Date.parse silently normalizes February 30 and November 31 and accepts
+  // worker-local timestamps. Neither is a trustworthy PostgreSQL readback.
+  const invalid=[
+    '2026-02-30T20:00:00Z',
+    '2026-11-31T20:00:00Z',
+    '2026-11-01T20:00:00',
+    '2026-11-01 20:00:00',
+    '2026-11-01T20:00:00+14:30'
+  ];
+  for(const premarked of [false,true]){
+    for(const expiresAt of invalid){
+      const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+      const c=contract();await outbox.reserve(c);
+      if(premarked)await outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      });
+      const original=db.query.bind(db);
+      db.query=async(sql,params)=>{
+        const result=await original(sql,params);
+        if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+          return {rows:result.rows.map(row=>({...row,expiresAt}))};
+        return result;
+      };
+      const before=db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length;
+      await assert.rejects(outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      }),premarked?/continuum-outbox-fence-or-source-conflict/:
+          /continuum-outbox-transition-readback-mismatch/,expiresAt);
+      assert.equal(db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length,
+        before+1,'one CAS attempt only; never retry an uncertain transition');
+    }
+  }
+});
+
+test('C01 RED: reservation cannot accept normalized invalid or timezone-free expiry readback',async()=>{
+  const c={...contract(),expiresAt:'2026-12-01T20:00:00.000Z'};
+  for(const expiresAt of ['2026-11-31T20:00:00Z','2026-12-01T20:00:00']){
+    const db=fakeDb(),original=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,expiresAt}))};
+      return result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=> '2026-11-15T20:00:00.000Z'});
+    await assert.rejects(outbox.reserve(c),
+      /continuum-outbox-admission-readback-mismatch/,expiresAt);
+    assert.equal(db.statements.filter(s=>s.sql.includes('INSERT INTO brain_continuum_outbox')).length,1);
+  }
+});
