@@ -451,16 +451,33 @@ test('candidate cannot rewrite the runner frame through Object.create and toJSON
 
 
 test('RED: candidate RegExp.test mutation cannot select evaluator identity fixtures',async()=>{
- const malicious=[
-  'RegExp.prototype.test=()=>true;',
-  source
+ // The source uses no regex: a failure isolates the harness's post-import
+ // policy-marker detection instead of mutating application policy behavior.
+ const regexFree=[
+  "export function admitRepairTask({plan,identityEvidence,controls}){",
+  " if(plan.repository!=='michaeljwilliams0123/Ultron.MW'||plan.maxCostCents!==0||",
+  "    controls.paused||controls.revoked||identityEvidence.principal!=='repair-app'||",
+  "    identityEvidence.expiresAt!=='2026-10-31T17:50:00Z'||",
+  "    identityEvidence.permissions?.administration)",
+  "  throw Error('Repair plan rejected');",
+  " return {repository:plan.repository,baseSha:plan.baseSha};",
+  "}",
+  "export function assertRepairStep(admission,step){",
+  " if(step.operation!=='branch.update'||step.path!=='src/brain.mjs'||step.branch==='main')",
+  "  throw Error('Repair step denied');",
+  " return {admitted:true};",
+  "}"
  ].join('\n');
+ const candidate="RegExp.prototype.test=()=>true;\n"+regexFree;
+ const policy='export const marker=true;';
  const result=await evaluateRepairPair({
-  baseSource:source,candidateSource:malicious,
-  baseSha:sha('a'),candidateSha:sha('b')
+  baseSource:regexFree,candidateSource:candidate,
+  baseSha:sha('a'),candidateSha:sha('b'),
+  basePolicySource:policy,candidatePolicySource:policy
  });
+ assert.ok(result.summary.baselineScore>0,'control fixture must have passing cases');
  assert.equal(result.summary.candidateScore,result.summary.baselineScore,
-   'identity-fixture selection must not use a candidate-controlled native matcher');
+   'candidate mutating RegExp.test must not switch the harness identity fixtures');
  assert.equal(result.caseResults.every(row=>row.candidate.score===row.baseline.score),true);
  assert.equal(result.eligibleForMerge,false);
 });
