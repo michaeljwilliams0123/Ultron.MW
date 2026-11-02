@@ -117,7 +117,7 @@ export function assessDestinyCanary({intent,receipt,signature,trust,
        capturedReceipt.environmentFingerprint!==trust.environmentFingerprint||
        capturedReceipt.executionLane!==trust.executionLane||
        ['repository','taskId','deliveryId','requestSha','sourceSha','routeSha',
-         'effect','maxPaidCents'].some(k=>receipt[k]!==intent[k]))
+         'effect','maxPaidCents'].some(k=>capturedReceipt[k]!==intent[k]))
       return deny('blocked-correlation');
     const issued=Date.parse(capturedReceipt.issuedAt),expiry=Date.parse(capturedReceipt.expiresAt);
     if(!Number.isFinite(now)||expiry<=issued||expiry-issued>MAX_LIFETIME||
