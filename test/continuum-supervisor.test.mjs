@@ -62,14 +62,14 @@ test('scan backward past the final comment page to find last genuine council rep
     owner('2026-10-31T09:00:00Z'),
     ...Array.from({length:98},(_,i)=>({user:{login:'someone'},body:'noise '+i})),
     bot('2026-10-31T10:00:00Z')
-  ],1:[bot('2026-10-30T08:00:00Z')]};
+  ],1:[...Array.from({length:99},(_,i)=>({user:{login:'someone'},body:'old noise '+i})),bot('2026-10-30T08:00:00Z')]};
   const calls=[];
   const result=await readCouncilActivity({
     issue:{comments:201,created_at:'2026-10-29T08:00:00Z'},
     owner:'michaeljwilliams0123',
     fetchPage:async page=>{calls.push(page);return pages[page]||[];}
   });
-  assert.deepEqual(calls,[4,3,2]);
+  assert.deepEqual(calls,[4,3,2,1]);
   assert.equal(result.complete,true);
   assert.equal(result.lastReviewAt,'2026-10-31T10:00:00Z');
   assert.equal(result.lastMeaningfulAt,'2026-10-29T08:00:00Z');
@@ -83,7 +83,7 @@ test('owner change after older report is retained even across page boundary',asy
       page===2?[
       {user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z'},
       ...Array.from({length:99},()=>({user:{login:'someone'},body:'noise'}))
-    ]:[]
+    ]:page===1?Array.from({length:100},(_,i)=>({user:{login:'someone'},body:'older '+i})):[]
   });
   assert.equal(result.complete,true);
   assert.equal(result.lastMeaningfulAt,'2026-10-31T11:00:00Z');
@@ -219,7 +219,8 @@ test('hourly council supervisor isolates unreadable issue and dispatches a later
  await fn(name=>{if(name==='node:url')return {pathToFileURL:()=>({href:'mock'})};if(name==='node:path')return {join:()=>''};throw Error('unexpected require')},
   {env:{GITHUB_WORKSPACE:'/tmp'}},{repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'}},
   github,core,deps);
- assert.deepEqual(lookups,[182,183,184,185]);
+ assert.deepEqual(lookups,[182,183,184,185,184,185],
+  'selected issues must be reread immediately before dispatch');
  assert.deepEqual(dispatched.map(x=>Number(x.inputs.item_number)),[184,185]);
  assert.equal(warnings.length,1);
  assert.match(warnings[0],/#183/);
@@ -318,4 +319,163 @@ test('comments appended after issue snapshot must not be hidden by stale page co
  });
  assert.equal(result.complete,false,
   'an extra page created after the issue snapshot must force reconciliation before dispatch');
+});
+
+
+test('RED: same-count replacement of newest council comment invalidates scan',async()=>{
+  let newestReads=0;
+  const original={id:101,user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z'};
+  const replacement={id:102,user:{login:'michaeljwilliams0123'},body:'New owner scope',created_at:'2026-10-31T11:00:00Z'};
+  const result=await readCouncilActivity({
+    issue:{comments:1,created_at:'2026-10-29T08:00:00Z',updated_at:'2026-10-31T10:00:00Z'},
+    owner:'michaeljwilliams0123',
+    fetchPage:async page=>{
+      if(page!==1)return [];
+      newestReads++;
+      return [newestReads===1?original:replacement];
+    },
+    fetchIssue:async()=>({comments:1,updated_at:'2026-10-31T10:00:00Z'})
+  });
+  assert.equal(result.complete,false,'replaced newest comment must not certify stale council evidence');
+  assert.ok(newestReads>=2,'newest comment boundary must be rechecked');
+});
+
+test('RED: selected council issue is revalidated before workflow dispatch',async()=>{
+  const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+  const fragment=yml.match(/          script: \|\n([\s\S]*?)\n(?=\S|$)/);
+  assert.ok(fragment,'supervisor inline script must exist');
+  let source=fragment[1].split('\n').map(x=>x.replace(/^ {12}/,'')).join('\n');
+  const moduleImport=/const \{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\}=await import\([\s\S]*?\);/;
+  assert.match(source,moduleImport);
+  source=source.replace(moduleImport,'const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=deps;');
+  const dispatched=[];
+  let reads=0;
+  const github={rest:{
+    issues:{
+      get:async({issue_number})=>({data:{number:issue_number,state:'open',comments:0,created_at:'2026-10-31T12:00:00Z'}}),
+      listComments:async()=>({data:[]})
+    },
+    actions:{createWorkflowDispatch:async args=>{dispatched.push(args);}}
+  }};
+  const deps={
+    CONTINUUM_ISSUES:[183],
+    selectCouncilReviews:rows=>rows.filter(x=>x.lastReviewAt===null).map(x=>x.number),
+    readCouncilActivity:async()=>{
+      reads++;
+      return {complete:true,lastReviewAt:reads===1?null:'2026-11-01T11:59:59Z',lastMeaningfulAt:'2026-10-31T12:00:00Z'};
+    }
+  };
+  const summary={addHeading(){return this;},addRaw(){return this;},async write(){}};
+  const core={info(){},warning(){},summary};
+  const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+  const fn=new AsyncFunction('require','process','context','github','core','deps',source);
+  await fn(name=>{
+    if(name==='node:url')return {pathToFileURL:()=>({href:'mock'})};
+    if(name==='node:path')return {join:()=>''};
+    throw Error('unexpected require');
+  },{env:{GITHUB_WORKSPACE:'/tmp'}},
+  {repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'}},github,core,deps);
+  assert.equal(reads,2,'selected issue must be read again before dispatch');
+  assert.deepEqual(dispatched,[],'new council report must suppress stale dispatch');
+});
+
+
+test('RED: same-second edit on earlier scanned council page invalidates complete history',async()=>{
+ const bot={id:90,user:{login:'github-actions[bot]'},body:'# Ultron Council Report',created_at:'2026-10-31T10:00:00Z',updated_at:'2026-10-31T10:00:00Z'};
+ const firstPage=[...Array.from({length:99},(_,i)=>({id:i+1,user:{login:'someone'},body:'noise '+i,created_at:'2026-10-30T10:00:00Z',updated_at:'2026-10-30T10:00:00Z'})),bot];
+ const newest=[{id:101,user:{login:'someone'},body:'ordinary',created_at:'2026-10-31T11:00:00Z',updated_at:'2026-10-31T11:00:00Z'}];
+ let oldPageReads=0;
+ const result=await readCouncilActivity({
+  issue:{comments:101,created_at:'2026-10-29T08:00:00Z',updated_at:'2026-10-31T11:00:00Z'},
+  owner:'michaeljwilliams0123',
+  fetchPage:async page=>{
+   if(page===2)return newest;
+   if(page===1){
+    oldPageReads++;
+    return oldPageReads===1?firstPage:firstPage.map((c,i)=>i===0?{...c,body:'edited without timestamp granularity'}:c);
+   }
+   return [];
+  },
+  fetchIssue:async()=>({comments:101,updated_at:'2026-10-31T11:00:00Z'})
+ });
+ assert.equal(result.complete,false,'an edit to any scanned page must invalidate council classification');
+ assert.ok(oldPageReads>=2,'all scanned pages must be rechecked, not only newest');
+});
+
+test('RED: supervisor summary counts only successful council workflow dispatches',async()=>{
+ const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+ const fragment=yml.match(/          script: \|\n([\s\S]*?)\n(?=\S|$)/);
+ assert.ok(fragment);
+ let source=fragment[1].split('\n').map(x=>x.replace(/^ {12}/,'')).join('\n');
+ const moduleImport=/const \{CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity\}=await import\([\s\S]*?\);/;
+ assert.match(source,moduleImport);
+ source=source.replace(moduleImport,'const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=deps;');
+ const dispatched=[],summaries=[],reads=new Map();
+ const github={rest:{
+  issues:{
+   get:async({issue_number})=>({data:{number:issue_number,state:'open',comments:0,created_at:'2026-10-31T12:00:00Z'}}),
+   listComments:async()=>({data:[]})
+  },
+  actions:{createWorkflowDispatch:async args=>{dispatched.push(Number(args.inputs.item_number));}}
+ }};
+ const deps={
+  CONTINUUM_ISSUES:[183,184],
+  selectCouncilReviews:rows=>rows.filter(x=>x.lastReviewAt===null).map(x=>x.number),
+  readCouncilActivity:async({issue})=>{
+   const seen=(reads.get(issue.number)||0)+1;
+   reads.set(issue.number,seen);
+   return {complete:true,lastReviewAt:issue.number===183&&seen>1?'2026-11-01T11:59:59Z':null,lastMeaningfulAt:'2026-10-31T12:00:00Z'};
+  }
+ };
+ const summary={addHeading(){return this;},addRaw(s){summaries.push(s);return this;},async write(){}};
+ const core={info(){},warning(){},summary};
+ const fn=new AsyncFunction('require','process','context','github','core','deps',source);
+ await fn(name=>{
+  if(name==='node:url')return {pathToFileURL:()=>({href:'mock'})};
+  if(name==='node:path')return {join:()=>''};
+  throw Error('unexpected require');
+ },{env:{GITHUB_WORKSPACE:'/tmp'}},{repo:{owner:'michaeljwilliams0123',repo:'Ultron.MW'}},github,core,deps);
+ assert.deepEqual(dispatched,[184]);
+ assert.match(summaries.join(''),/council reviews dispatched: 1; issue numbers: 184/);
+});
+
+
+test('RED: editing an older owner comment after a council report requires fresh review',async()=>{
+ const issue={comments:2,created_at:'2026-10-30T08:00:00Z',updated_at:'2026-11-01T11:00:00Z'};
+ const olderOwner={id:1,user:{login:'michaeljwilliams0123'},body:'Updated security constraints',
+   created_at:'2026-10-31T09:00:00Z',updated_at:'2026-11-01T11:00:00Z'};
+ const report={id:2,user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
+   created_at:'2026-10-31T10:00:00Z',updated_at:'2026-10-31T10:00:00Z'};
+ const activity=await readCouncilActivity({
+   issue,owner:'michaeljwilliams0123',
+   fetchPage:async page=>page===1?[olderOwner,report]:[],
+   fetchIssue:async()=>({...issue})
+ });
+ assert.equal(activity.complete,true);
+ assert.equal(activity.lastReviewAt,report.created_at);
+ assert.equal(activity.lastMeaningfulAt,olderOwner.updated_at,
+   'owner edits after the last council report must trigger review, not wait 24 hours');
+ assert.deepEqual(selectCouncilReviews([item(183,{lastReviewAt:activity.lastReviewAt,
+   lastMeaningfulAt:activity.lastMeaningfulAt})],{now:'2026-11-01T12:00:00Z'}),[183]);
+});
+
+
+test('RED: owner edit on older comment page after newest council report is never skipped',async()=>{
+ const issue={comments:101,created_at:'2026-10-30T08:00:00Z',updated_at:'2026-11-01T11:00:00Z'};
+ const owner={id:1,user:{login:'michaeljwilliams0123'},body:'Security instruction revised',
+   created_at:'2026-10-31T09:00:00Z',updated_at:'2026-11-01T11:00:00Z'};
+ const oldest=[owner,...Array.from({length:99},(_,i)=>({
+   id:i+2,user:{login:'someone'},body:'noise '+i,created_at:'2026-10-31T09:01:00Z'
+ }))];
+ const newest=[{id:101,user:{login:'github-actions[bot]'},body:'# Ultron Council Report',
+   created_at:'2026-10-31T10:00:00Z',updated_at:'2026-10-31T10:00:00Z'}];
+ const pages=[];
+ const activity=await readCouncilActivity({
+   issue,owner:'michaeljwilliams0123',
+   fetchPage:async page=>{pages.push(page);return page===1?oldest:page===2?newest:[];},
+   fetchIssue:async()=>({...issue})
+ });
+ assert.equal(activity.complete,true);
+ assert.ok(pages.includes(1),'older owner edits must be inspected despite a newer council report');
+ assert.equal(activity.lastMeaningfulAt,owner.updated_at);
 });

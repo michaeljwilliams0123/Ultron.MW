@@ -326,3 +326,162 @@ test('a reused durable action key cannot adopt a different provider authority',a
  assert.equal(firstTarget.executions,1);
  assert.equal(secondTarget.executions,0);
 });
+
+
+test('C05 zero-dollar global ceiling rejects paid estimates even when a binding permits cost',async()=>{
+ const target=adapter();
+ let approvals=0;
+ const broker=createCapabilityBroker({clock:()=>now,authorize:async()=>{
+  approvals++;return true;
+ }});
+ broker.bind(manifest({maxCostCents:500}),target);
+ await broker.health('github-owner');
+ for(const operation of ['repo.read','issue.write']){
+  await assert.rejects(broker.execute('github-owner',{
+   operation,idempotencyKey:'paid:'+operation.replace('.','-')+':001',
+   estimatedCostCents:1,input:{title:'must not dispatch'},
+   expected:{status:200}
+  }),/paid|cost|Invalid capability request/i);
+ }
+ assert.equal(approvals,0,'paid fallback must be denied before owner authorization');
+ assert.equal(target.executions,0,'no paid provider operation may be dispatched');
+ // A declared allowance is metadata, not an entitlement to spend.
+ assert.equal(broker.status('github-owner').maxCostCents,500);
+});
+
+
+test('C05 snapshots estimated cost once before provider dispatch',async()=>{
+ let reads=0;
+ let dispatchedCost=null;
+ const target=adapter({execute:async request=>{
+  dispatchedCost=request.estimatedCostCents;
+  return {status:200};
+ }});
+ const broker=createCapabilityBroker({clock:()=>now});
+ broker.bind(manifest({maxCostCents:500}),target);
+ await broker.health('github-owner');
+ const request={
+  operation:'repo.read',idempotencyKey:'read:cost-snapshot',
+  input:{repository:'Ultron.MW'},expected:{status:200}
+ };
+ Object.defineProperty(request,'estimatedCostCents',{
+  enumerable:true,
+  get(){reads++;return reads<=4?0:1;}
+ });
+ assert.equal((await broker.execute('github-owner',request)).status,'completed');
+ assert.equal(reads,1,'cost authority must be read exactly once');
+ assert.equal(dispatchedCost,0,'adapter receives the validated cost snapshot');
+});
+
+
+test('RED: binding authority expiry requires a canonical timestamp string, not coercion',()=>{
+  const expires='2026-10-22T20:00:00Z';
+  const malformed=[
+    [expires],new Date(expires),
+    {toString:()=>expires},'10/22/2026 20:00:00',
+    ' '+expires,expires+' ', '',null,0
+  ];
+  for(const expiresAt of malformed){
+    assert.throws(()=>validateCapabilityBinding(manifest({expiresAt})),
+      /Invalid capability binding manifest/,
+      'authority expiry must reject coerced or noncanonical values');
+  }
+  const valid=validateCapabilityBinding(manifest({expiresAt:expires}));
+  assert.equal(valid.expiresAt,'2026-10-22T20:00:00.000Z');
+});
+
+
+test('C05 rejects impossible calendar dates in capability expiry, including offset dates',()=>{
+  for(const expiresAt of [
+    '2026-02-30T20:00:00Z',
+    '2025-02-29T20:00:00Z',
+    '2026-04-31T20:00:00+02:00',
+  ]){
+    assert.throws(()=>validateCapabilityBinding(manifest({expiresAt})),
+      /Invalid capability binding manifest/,
+      'impossible local calendar date must not normalize into different expiry authority');
+  }
+  assert.equal(validateCapabilityBinding(manifest({
+    expiresAt:'2024-02-29T20:00:00+02:00',
+  })).expiresAt,'2024-02-29T18:00:00.000Z');
+});
+
+
+test('RED: invalid broker clock cannot extend expired capability authority',async()=>{
+  // Date.parse(invalid) produces NaN; expiry <= NaN is false, so the
+  // broker must fail closed instead of allowing an expired app token.
+  for(const invalidNow of ['not-a-time','','2026-02-30T00:00:00Z']){
+    const target=adapter();
+    const broker=createCapabilityBroker({
+      clock:()=>invalidNow,
+      authorize:async()=>true
+    });
+    broker.bind(manifest({expiresAt:'2026-10-20T00:00:00Z'}),target);
+    await assert.rejects(
+      broker.health('github-owner'),
+      /clock|expired|time|invalid/i
+    );
+    await assert.rejects(
+      broker.execute('github-owner',{
+        operation:'repo.read',idempotencyKey:'read:badclock08',
+        estimatedCostCents:0,input:{},expected:{}
+      }),
+      /clock|expired|time|invalid|not ready/i
+    );
+    assert.equal(target.executions,0,'bad clock must not dispatch');
+  }
+});
+
+
+test('C05 revocation during a durable checkpoint cannot dispatch stale authority', async () => {
+  let checkpointEntered, releaseCheckpoint;
+  const entered = new Promise(resolve => { checkpointEntered = resolve; });
+  const checkpointGate = new Promise(resolve => { releaseCheckpoint = resolve; });
+  const rows = new Map();
+  const store = {
+    async claim({ id, fingerprint, receipt }) {
+      if (rows.has(id)) return { claimed: false, ...rows.get(id) };
+      rows.set(id, { fingerprint, receipt });
+      return { claimed: true, fingerprint, receipt };
+    },
+    async advance({ id, fingerprint, expectedStatus, receipt }) {
+      const old = rows.get(id);
+      assert.equal(old?.fingerprint, fingerprint);
+      assert.equal(old?.receipt.status, expectedStatus);
+      rows.set(id, { fingerprint, receipt });
+      if (expectedStatus === 'approval-pending') {
+        checkpointEntered();
+        await checkpointGate;
+      }
+      return true;
+    },
+    async release({ id, fingerprint }) {
+      const old = rows.get(id);
+      if (old?.fingerprint !== fingerprint || old.receipt.status !== 'approval-pending')
+        throw Error('cannot release persisted uncertain checkpoint');
+      rows.delete(id);
+      return true;
+    },
+  };
+  const target = adapter();
+  const broker = createCapabilityBroker({
+    clock: () => now, attemptStore: store, authorize: async () => true,
+  });
+  broker.bind(manifest(), target);
+  await broker.health('github-owner');
+  const actionKey = 'write:revoked-advance';
+  const pending = broker.execute('github-owner', {
+    operation: 'issue.write', idempotencyKey: actionKey,
+    estimatedCostCents: 0, input: { title: 'must not dispatch' },
+    expected: { issueCreated: true },
+  });
+  await entered;
+  assert.equal((await broker.unbind('github-owner')).status, 'unbound');
+  releaseCheckpoint();
+  const receipt = await pending;
+  assert.equal(receipt.status, 'reconcile-required',
+    'revocation after durable checkpoint must preserve uncertain outcome');
+  assert.equal(target.executions, 0, 'revoked authority must never reach provider');
+  assert.equal(rows.get('github-owner:' + actionKey).receipt.status,
+    'reconcile-required', 'checkpoint must survive for no-replay recovery');
+});
