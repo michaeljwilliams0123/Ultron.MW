@@ -11,22 +11,46 @@ const FIELDS=['taskId','objectiveId','deliveryId','idempotencyKey','repository',
   'sourceSha','authoritySha','requestSha','leaseGeneration','expiresAt',
   'effect','maxPaidCents'];
 
+// PostgreSQL timestamptz is a global instant, not a worker-local time.
+// Reject Date.parse normalization of impossible calendar days, timezone-free
+// strings, malformed offsets and coerced adapter objects before attestation.
+function strictInstant(value){
+  if(value instanceof Date)
+    return Number.isFinite(value.getTime())?value.toISOString():null;
+  if(typeof value!=='string')return null;
+  const match=/^(\d{4})-(\d{2})-(\d{2})[T ](?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:0\d|1[0-4])(?::?[0-5]\d)?)$/.exec(value);
+  if(!match)return null;
+  const y=Number(match[1]),m=Number(match[2]),d=Number(match[3]);
+  const leap=y%4===0&&(y%100!==0||y%400===0);
+  const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+  if(d<1||d>(days[m-1]??0))return null;
+  const zone=/[+-](\d{2})(?::?(\d{2}))?$/.exec(value);
+  if(zone&&Number(zone[1])===14&&Number(zone[2]??0)!==0)return null;
+  const parsed=Date.parse(value);
+  return Number.isFinite(parsed)?new Date(parsed).toISOString():null;
+}
 function iso(value){
-  const timestamp=new Date(value);
-  if(!Number.isFinite(timestamp.getTime()))throw Error('continuum-outbox-time-invalid');
-  return timestamp.toISOString();
+  const timestamp=strictInstant(value);
+  if(timestamp===null)throw Error('continuum-outbox-time-invalid');
+  return timestamp;
 }
 function validate(contract,now){
-  const c=contract;
-  if(!c||typeof c!=='object'||Array.isArray(c)||
-    !Number.isSafeInteger(c.taskId)||c.taskId<1||
+  // Snapshot each caller-controlled field exactly once BEFORE validating.
+  // A getter or proxy must not change cost, effect or authority between the
+  // admission decision and the SQL payload persisted for later readback.
+  if(!contract||typeof contract!=='object'||Array.isArray(contract))
+    throw Error('continuum-outbox-admission-denied-invalid-or-metered');
+  let c;
+  try {c=Object.fromEntries(FIELDS.map(key=>[key,contract[key]]));}
+  catch {throw Error('continuum-outbox-admission-denied-invalid-or-metered');}
+  if(!Number.isSafeInteger(c.taskId)||c.taskId<1||
     typeof c.objectiveId!=='string'||!IDENTIFIER.test(c.objectiveId)||
     typeof c.deliveryId!=='string'||!IDENTIFIER.test(c.deliveryId)||
     typeof c.idempotencyKey!=='string'||!IDENTIFIER.test(c.idempotencyKey)||
     c.repository!==REPO||
-    !SHA.test(c.sourceSha||'')||
-    !DIGEST.test(c.authoritySha||'')||
-    !DIGEST.test(c.requestSha||'')||
+    (typeof c.sourceSha!=='string'||!SHA.test(c.sourceSha))||
+    (typeof c.authoritySha!=='string'||!DIGEST.test(c.authoritySha))||
+    (typeof c.requestSha!=='string'||!DIGEST.test(c.requestSha))||
     !Number.isSafeInteger(c.leaseGeneration)||c.leaseGeneration<1||
     !['read','advisory'].includes(c.effect)||
     c.maxPaidCents!==0)
@@ -68,9 +92,7 @@ function matchesPersisted(row,expected){
 // persisted immutable expiry, even when the fencing CAS itself succeeded.
 // Accept native PostgreSQL Date values and ordinary ISO/SQL date strings.
 function validPersistedExpiry(value){
-  if(value instanceof Date)return Number.isFinite(value.getTime());
-  return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}[T ]/.test(value)&&
-    Number.isFinite(Date.parse(value));
+  return strictInstant(value)!==null;
 }
 function matchesTransitionReadback(row,{deliveryId,sourceSha,leaseGeneration}){
   return row?.deliveryId===deliveryId&&row.repository===REPO&&
@@ -114,7 +136,15 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
   };
   // Admission is checked before SQL and again after the final readback.
   // A slow or lost-ACK write must not return a delivery already expired.
-  const liveAtReadback=c=>Date.parse(c.expiresAt)>Date.parse(iso(now()));
+  const liveAtReadback=c=>{
+    // The INSERT may already be durable when the clock fails after SQL.
+    // Do not leak a pre-admission input-validation error: callers must
+    // reconcile the unknown outcome instead of retrying the write.
+    let observed;
+    try {observed=Date.parse(iso(now()));}
+    catch {throw Error('continuum-outbox-reconcile-required');}
+    return Date.parse(c.expiresAt)>observed;
+  };
   return Object.freeze({
     async reserve(contract){
       const c=validate(contract,iso(now()));
@@ -145,6 +175,10 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
         throw Error('continuum-outbox-reconcile-required');
       }
       if(result?.rows?.length===1){
+        // A malformed single-row ACK may follow a committed INSERT.
+        // Do not leak an adapter TypeError that callers might retry.
+        if(result.rows[0]==null)
+          throw Error('continuum-outbox-reconcile-required');
         if(result.rows[0].deliveryId!==c.deliveryId||
           result.rows[0].state!=='pending')
           throw Error('continuum-outbox-admission-readback-mismatch');
@@ -173,7 +207,7 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
     },
     async markUnknown({deliveryId,sourceSha,leaseGeneration}={}){
       if(typeof deliveryId!=='string'||!IDENTIFIER.test(deliveryId)||
-        !SHA.test(sourceSha||'')||
+        (typeof sourceSha!=='string'||!SHA.test(sourceSha))||
         !Number.isSafeInteger(leaseGeneration)||leaseGeneration<1)
         throw Error('continuum-outbox-fence-or-source-conflict');
       let updated;

@@ -693,3 +693,164 @@ test('C01 RED: malformed UPDATE acknowledgement after commit must hold for recon
     assert.equal(db.entries.get(c.deliveryId).state,'reconcile-required');
   }
 });
+
+
+test('C01 RED: transition readback rejects impossible calendar and unzoned expiry without replay',async()=>{
+  // Date.parse silently normalizes February 30 and November 31 and accepts
+  // worker-local timestamps. Neither is a trustworthy PostgreSQL readback.
+  const invalid=[
+    '2026-02-30T20:00:00Z',
+    '2026-11-31T20:00:00Z',
+    '2026-11-01T20:00:00',
+    '2026-11-01 20:00:00',
+    '2026-11-01T20:00:00+14:30'
+  ];
+  for(const premarked of [false,true]){
+    for(const expiresAt of invalid){
+      const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+      const c=contract();await outbox.reserve(c);
+      if(premarked)await outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      });
+      const original=db.query.bind(db);
+      db.query=async(sql,params)=>{
+        const result=await original(sql,params);
+        if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+          return {rows:result.rows.map(row=>({...row,expiresAt}))};
+        return result;
+      };
+      const before=db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length;
+      await assert.rejects(outbox.markUnknown({
+        deliveryId:c.deliveryId,sourceSha:c.sourceSha,leaseGeneration:c.leaseGeneration
+      }),premarked?/continuum-outbox-fence-or-source-conflict/:
+          /continuum-outbox-transition-readback-mismatch/,expiresAt);
+      assert.equal(db.statements.filter(s=>s.sql.includes('UPDATE brain_continuum_outbox')).length,
+        before+1,'one CAS attempt only; never retry an uncertain transition');
+    }
+  }
+});
+
+test('C01 RED: reservation cannot accept normalized invalid or timezone-free expiry readback',async()=>{
+  const c={...contract(),expiresAt:'2026-12-01T20:00:00.000Z'};
+  for(const expiresAt of ['2026-11-31T20:00:00Z','2026-12-01T20:00:00']){
+    const db=fakeDb(),original=db.query.bind(db);
+    db.query=async(sql,params)=>{
+      const result=await original(sql,params);
+      if(sql.includes('SELECT')&&sql.includes('brain_continuum_outbox'))
+        return {rows:result.rows.map(row=>({...row,expiresAt}))};
+      return result;
+    };
+    const outbox=createContinuumOutbox({db,now:()=> '2026-11-15T20:00:00.000Z'});
+    await assert.rejects(outbox.reserve(c),
+      /continuum-outbox-admission-readback-mismatch/,expiresAt);
+    assert.equal(db.statements.filter(s=>s.sql.includes('INSERT INTO brain_continuum_outbox')).length,1);
+  }
+});
+
+
+test('C01 RED: invalid post-commit clock readback must remain reconcile-required',async()=>{
+  // A transient broken clock after a durable INSERT must not be mistaken for
+  // invalid caller input. Callers may retry admission on input-validation
+  // failures, which is unsafe when the INSERT might already have committed.
+  for(const mode of ['created','duplicate','lost-ack']){
+    const db=fakeDb(),original=db.query.bind(db),c=contract();
+    let clock=NOW,inserts=0;
+    const outbox=createContinuumOutbox({db,now:()=>clock});
+    if(mode==='duplicate')await outbox.reserve(c);
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;
+        const result=await original(sql,params);
+        clock='invalid-clock-after-commit';
+        if(mode==='lost-ack')throw Error('simulated lost INSERT response');
+        return result;
+      }
+      return original(sql,params);
+    };
+    await assert.rejects(outbox.reserve(c),/continuum-outbox-reconcile-required/,
+      mode+' must preserve uncertain durable outcome');
+    assert.equal(inserts,1,'never replay a write after the clock fails');
+    assert.equal(db.entries.size,1,'existing durable intent remains intact');
+  }
+});
+
+
+test('C01 RED: mutable admission getters cannot change the persisted authorized intent',async()=>{
+  // The admission validator and the SQL payload must observe the SAME
+  // immutable snapshot. A changing getter must not turn approved read/$0
+  // authority into a different persisted request after validation.
+  for(const [field,approved,changed,sqlIndex] of [
+    ['maxPaidCents',0,1,11],
+    ['effect','read','write',10],
+    ['sourceSha','a'.repeat(40),'d'.repeat(40),5]
+  ]){
+    const db=fakeDb(),intent=contract();
+    let reads=0;
+    Object.defineProperty(intent,field,{enumerable:true,get(){
+      return ++reads===1?approved:changed;
+    }});
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    assert.deepEqual(await outbox.reserve(intent),{
+      created:true,deliveryId:contract().deliveryId,state:'pending'
+    });
+    assert.equal(db.statements[0].params[sqlIndex],approved,
+      field+' must remain the value authorized by validation');
+    assert.equal(reads,1,field+' must be snapshotted only once');
+  }
+});
+
+
+test('RED: null-row INSERT acknowledgement after durable commit must hold without replay',async()=>{
+  // PostgreSQL may commit while an adapter returns a structurally corrupt
+  // single-row response. A raw TypeError is not evidence that no write occurred.
+  for(const reportedRow of [null,undefined]){
+    const db=fakeDb(),original=db.query.bind(db);
+    let inserts=0;
+    db.query=async(sql,params)=>{
+      if(sql.includes('INSERT INTO brain_continuum_outbox')){
+        inserts++;
+        await original(sql,params);
+        return {rows:[reportedRow]};
+      }
+      return original(sql,params);
+    };
+    const outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(contract()),
+      /continuum-outbox-reconcile-required/,
+      'a committed write with malformed ACK must stay unknown');
+    assert.equal(inserts,1,'do not replay after malformed one-row acknowledgment');
+    assert.equal(db.entries.size,1,'committed durable intent is retained');
+  }
+});
+
+test('C01 RED: coercible non-string source SHA must not reach fenced SQL',async()=>{
+  const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+  const c=contract();
+  await outbox.reserve(c);
+  const before=db.statements.length;
+  for(const sourceSha of [
+    new String(c.sourceSha),
+    [c.sourceSha],
+    {toString(){return c.sourceSha;}}
+  ]){
+    await assert.rejects(outbox.markUnknown({
+      deliveryId:c.deliveryId,sourceSha,leaseGeneration:c.leaseGeneration
+    }),/continuum-outbox-fence-or-source-conflict/);
+    assert.equal(db.statements.length,before,
+      'coercible non-string fence must be rejected before any SQL');
+    assert.equal(db.entries.get(c.deliveryId).state,'pending');
+  }
+});
+
+test('C01 RED: coercible digest objects cannot authorize durable intent',async()=>{
+  for(const field of ['sourceSha','authoritySha','requestSha']){
+    const c=contract();
+    c[field]={toString(){return contract()[field];}};
+    const db=fakeDb(),outbox=createContinuumOutbox({db,now:()=>NOW});
+    await assert.rejects(outbox.reserve(c),
+      /continuum-outbox-admission-denied-invalid-or-metered/,
+      field+' must be a primitive string, never a mutable coercible object');
+    assert.equal(db.statements.length,0,
+      field+' must be rejected before durable SQL');
+  }
+});
