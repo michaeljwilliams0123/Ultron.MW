@@ -19,12 +19,34 @@ qualifying independent security review or Reef pre-merge acceptance.
   `independentlyCertified:false`, `resultIsUntrusted:true` and
   `signingKeyInChild:false`. No production release operation reads this
   prototype to authorize a change.
-- The existing `scripts/reef-paired-cases.mjs` pipeline is **unchanged**.
-  Its unresolved signer/candidate same-process trust boundary remains a
-  release blocker until genuinely independent execution and trusted scoring
-  are built and empirically validated.
+- The legacy `scripts/reef-paired-cases.mjs` pipeline has now been **changed**:
+  its candidate-executing child receives no HMAC key and no longer signs an
+  observation or exposes a signer oracle. The controller accepts only a
+  bounded, structurally checked runner frame correlated to a one-use nonce;
+  the controller computes case scores from that untrusted frame.
+- **A nonce is not cryptographic provenance or independent evidence.** Case
+  harness logic and candidate modules still share the restricted child
+  process, and a malicious candidate may influence the harness's observations.
+  The parent still lacks a separate trusted behavioral oracle. Therefore
+  `reefRunVerified:false`, `heldoutCertified:false`, and
+  `eligibleForMerge:false` remain mandatory.
+- The signer co-location finding has been addressed at source level, but the
+  broader #201 trusted-scoring, sandbox, cleanup, independently reviewed
+  security acceptance, and protected release gates remain **OPEN**.
 
 ## Test-first evidence
+
+- On 2026-11-02, RED `55a70760` showed policy-denial classifier spoofing;
+  GREEN `897c8120` restored primitive-only native error matching.
+- RED `7ce137a6` proved a candidate could forge a completed worker result
+  and exit without running the policy; GREEN `b481d52e` added one-use
+  completion correlation while retaining untrusted-output status.
+- RED `6934aba0` demonstrated a malicious candidate could interfere with
+  legacy HMAC signing in the same process; GREEN `d75dcd41` removed signing
+  and the key from that child. GitHub exact-head core, fixed comparison,
+  Reef runtime probe and Council checks all passed at `d75dcd41`.
+- These fixes are incremental evidence, **not** a positive security
+  certification or protected merge authorization.
 
 - A regression suite drives ordinary accept/reject inputs, early-exit
   stdout forgery, inherited environment secret isolation, and denial of
