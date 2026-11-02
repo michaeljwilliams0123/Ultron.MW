@@ -78,3 +78,22 @@ test('C04 cloud readiness imports the current deployed Brain capability inventor
  assert.match(src,/CAPABILITIES/);
  assert.match(src,/runtimeCapabilities\s*:\s*CAPABILITIES/);
 });
+
+
+test('RED: each Council role requires a distinct verified App and installation',()=>{
+ // Seven role names must NOT manufacture seven separately authorized
+ // principals from one installation ID or reused GitHub App identity.
+ const installs=COUNCIL_ROLES.map((role,i)=>({
+   role,source:'github-installations-api',appId:1000+i,
+   installationId:2000+i,
+   repositoryUltronVerified:true,repositoryMahoragaVerified:true
+ }));
+ assert.equal(assessCouncilWiring({tables:COUNCIL_TABLES,
+   installationObservations:installs}).githubRoleInstallationsObserved,7);
+ for(const duplicateKey of ['appId','installationId']){
+   const forged=installs.map(x=>({...x}));
+   forged[1][duplicateKey]=forged[0][duplicateKey];
+   assert.throws(()=>assessCouncilWiring({tables:COUNCIL_TABLES,
+     installationObservations:forged}),/council-wiring-duplicate-(app|installation)/);
+ }
+});
