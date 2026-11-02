@@ -6,6 +6,16 @@ Recorded: October 31, 2026
 
 Canonical execution tracker: [#167](https://github.com/michaeljwilliams0123/Ultron.MW/issues/167)
 
+## Source-reconciliation checkpoint — November 2, 2026
+
+**Authoritative current status:** [#167](https://github.com/michaeljwilliams0123/Ultron.MW/issues/167), [#168](https://github.com/michaeljwilliams0123/Ultron.MW/issues/168), [#169](https://github.com/michaeljwilliams0123/Ultron.MW/issues/169), [#170](https://github.com/michaeljwilliams0123/Ultron.MW/issues/170), and [#173](https://github.com/michaeljwilliams0123/Ultron.MW/issues/173) remain open acceptance workstreams. Since this record was authored, [PR #176](https://github.com/michaeljwilliams0123/Ultron.MW/pull/176) (Repair source), [#198](https://github.com/michaeljwilliams0123/Ultron.MW/pull/198) (separate Admin source), [#199](https://github.com/michaeljwilliams0123/Ultron.MW/pull/199) (unified-principal policy source) and [#200](https://github.com/michaeljwilliams0123/Ultron.MW/pull/200) (trusted Reef evaluator support) were **squash merged** into protected `main`.
+
+The historical text below defines the *target design*, **not** the installed or active runtime. #198's separate-Admin implementation and #199's unified-principal plan both landed, so establish the effective code path and deny conflicting activation before calling the identity/authority migration accepted. Live installation token scope, admin step-up, negative authorization tests, authoritative PostgreSQL/provider readback, independent Reef cases and Hatchable-only UI parity are still unverified in this audit. The owner-led PR squash of [#213](https://github.com/michaeljwilliams0123/Ultron.MW/pull/213) does not, by itself, fulfill those runtime tests. The current independent *human PR reviewer* requirement was removed by the owner; project-specific evidence and authority boundaries are not silently replaced by that choice.
+
+Track current cross-workstream evidence in [Acceptance status](ACCEPTANCE-STATUS.md). Do not use old `open`/parked-PR references below as current GitHub state.
+
+---
+
 ## Outcome
 
 Ultron will become one cloud-first repository operator that can diagnose a
