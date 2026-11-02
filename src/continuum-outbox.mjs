@@ -130,7 +130,15 @@ export function createContinuumOutbox({db,now=()=>new Date().toISOString()}={}){
   };
   // Admission is checked before SQL and again after the final readback.
   // A slow or lost-ACK write must not return a delivery already expired.
-  const liveAtReadback=c=>Date.parse(c.expiresAt)>Date.parse(iso(now()));
+  const liveAtReadback=c=>{
+    // The INSERT may already be durable when the clock fails after SQL.
+    // Do not leak a pre-admission input-validation error: callers must
+    // reconcile the unknown outcome instead of retrying the write.
+    let observed;
+    try {observed=Date.parse(iso(now()));}
+    catch {throw Error('continuum-outbox-reconcile-required');}
+    return Date.parse(c.expiresAt)>observed;
+  };
   return Object.freeze({
     async reserve(contract){
       const c=validate(contract,iso(now()));
