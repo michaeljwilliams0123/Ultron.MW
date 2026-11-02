@@ -161,6 +161,9 @@ export function createCapabilityBroker({ authorize = async () => false,
         !NAME.test(request.operation || '') || !IDEMPOTENCY.test(request.idempotencyKey || '') ||
         !Number.isSafeInteger(request.estimatedCostCents) ||
         request.estimatedCostCents < 0 ||
+        // Continuum's hard $0/day external-paid policy is global. A provider
+        // manifest's larger ceiling is descriptive, never spend authority.
+        request.estimatedCostCents > 0 ||
         request.estimatedCostCents > record.binding.maxCostCents ||
         !serializable(request.input) || !serializable(request.expected, 4_000))
       throw Error('Invalid capability request');
