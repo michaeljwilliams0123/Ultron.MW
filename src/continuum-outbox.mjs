@@ -35,9 +35,15 @@ function iso(value){
   return timestamp;
 }
 function validate(contract,now){
-  const c=contract;
-  if(!c||typeof c!=='object'||Array.isArray(c)||
-    !Number.isSafeInteger(c.taskId)||c.taskId<1||
+  // Snapshot each caller-controlled field exactly once BEFORE validating.
+  // A getter or proxy must not change cost, effect or authority between the
+  // admission decision and the SQL payload persisted for later readback.
+  if(!contract||typeof contract!=='object'||Array.isArray(contract))
+    throw Error('continuum-outbox-admission-denied-invalid-or-metered');
+  let c;
+  try {c=Object.fromEntries(FIELDS.map(key=>[key,contract[key]]));}
+  catch {throw Error('continuum-outbox-admission-denied-invalid-or-metered');}
+  if(!Number.isSafeInteger(c.taskId)||c.taskId<1||
     typeof c.objectiveId!=='string'||!IDENTIFIER.test(c.objectiveId)||
     typeof c.deliveryId!=='string'||!IDENTIFIER.test(c.deliveryId)||
     typeof c.idempotencyKey!=='string'||!IDENTIFIER.test(c.idempotencyKey)||
