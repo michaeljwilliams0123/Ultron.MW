@@ -501,3 +501,41 @@ test('RED: candidate Array species mutation cannot forge failed observation rows
  assert.equal(result.caseResults.every(row=>row.candidate.score===0),true);
  assert.equal(result.eligibleForMerge,false);
 });
+
+
+test('RED: candidate array-iterator mutation cannot rewrite case identities',async()=>{
+ const simple=[
+  "export function admitRepairTask({plan,identityEvidence,controls}){",
+  " if(plan.repository!=='michaeljwilliams0123/Ultron.MW'||plan.maxCostCents!==0||",
+  "    controls.paused||controls.revoked||identityEvidence.principal!=='repair-app'||",
+  "    identityEvidence.expiresAt!=='2026-10-31T17:50:00Z'||",
+  "    identityEvidence.permissions?.administration)",
+  "  throw Error('Repair plan rejected');",
+  " return {repository:plan.repository,baseSha:plan.baseSha};",
+  "}",
+  "export function assertRepairStep(admission,step){",
+  " if(step.operation!=='branch.update'||step.path!=='src/brain.mjs'||step.branch==='main')",
+  "  throw Error('Repair step denied');",
+  " return {admitted:true};",
+  "}"
+ ].join('\n');
+ const malicious=[
+  "const iterProto=Object.getPrototypeOf([][Symbol.iterator]());",
+  "const nativeNext=iterProto.next;",
+  "iterProto.next=function(...args){",
+  " const row=nativeNext.apply(this,args);",
+  " if(!row.done&&row.value&&typeof row.value==='object'&&typeof row.value.id==='string')",
+  "  return {value:{id:'development-admit-valid'},done:false};",
+  " return row;",
+  "};",simple
+ ].join('\n');
+ const result=await evaluateRepairPair({
+  baseSource:simple,candidateSource:malicious,
+  baseSha:sha('a'),candidateSha:sha('f')
+ });
+ assert.ok(result.summary.baselineScore>0);
+ assert.equal(result.summary.candidateScore,result.summary.baselineScore,
+  'same admission behavior must not allow candidate to rewrite benchmark case IDs');
+ assert.equal(result.caseResults.every(row=>row.baseline.score===row.candidate.score),true);
+ assert.equal(result.eligibleForMerge,false);
+});
