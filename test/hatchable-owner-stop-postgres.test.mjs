@@ -85,7 +85,6 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   assert.equal(await claim,'');
   assert.equal(await sql('SELECT state FROM mahoraga_actions WHERE id='+actionId),'prepared');
  });
-}
 
  test('C18 PostgreSQL owner profile blocks queued work and only authorizes a mapped objective after a committed profile change',async()=>{
   // Isolated ephemeral database: this never touches the Hatchable project.
@@ -107,3 +106,5 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   assert.equal(await sql("SELECT status||':'||attempts FROM brain_tasks WHERE task_key='c18-unknown-future'"),'queued:0');
   await assert.rejects(sql("UPDATE brain_owner_autonomy_profile SET max_paid_cents=1 WHERE id=1"),/check constraint/);
  });
+
+}
