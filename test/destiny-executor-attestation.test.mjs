@@ -261,3 +261,19 @@ test('RED: a private signing key must never be accepted as a pinned public trust
   assert.equal(result.verifiedReceipt,false);
   assert.equal(result.productionAccepted,false);
 });
+
+for(const replay of [false,true]) {
+  test(`receipt expires at its deadline for ${replay?'recorded':'new'} deliveries`,()=>{
+    const expiry=Date.parse('2026-11-02T20:01:00.000Z');
+    const priorReceiptSha=replay?inspect().receiptSha:undefined;
+    const before=inspect({now:expiry-1,priorReceiptSha});
+    assert.equal(before.status,replay?'already-recorded':'verified-executor-receipt');
+    for(const now of [expiry,expiry+1]) {
+      const expired=inspect({now,priorReceiptSha});
+      assert.equal(expired.status,'blocked-expired');
+      assert.equal(expired.verifiedReceipt,false);
+      assert.equal(expired.receiptSha,null);
+    }
+  });
+}
+

@@ -132,7 +132,7 @@ export function assessDestinyCanary({intent,receipt,signature,trust,
       return deny('blocked-correlation');
     const issued=Date.parse(capturedReceipt.issuedAt),expiry=Date.parse(capturedReceipt.expiresAt);
     if(!Number.isFinite(now)||expiry<=issued||expiry-issued>MAX_LIFETIME||
-       issued>now+MAX_FUTURE_SKEW||now>expiry||issued<now-MAX_ISSUED_AGE)
+       issued>now+MAX_FUTURE_SKEW||now>=expiry||issued<now-MAX_ISSUED_AGE)
       return deny('blocked-expired');
     const bytes=signatureBytes(signature);
     if(!bytes||!verifySignature(null,
