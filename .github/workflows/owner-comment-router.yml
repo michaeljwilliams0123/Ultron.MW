@@ -27,7 +27,8 @@ jobs:
       github.event.issue.pull_request != null &&
       github.event.issue.state == 'open' &&
       !startsWith(github.event.comment.body, '@coderabbitai') &&
-      !startsWith(github.event.comment.body, '/council')
+      !startsWith(github.event.comment.body, '/council') &&
+      !startsWith(github.event.comment.body, '/codex run ')
     permissions:
       contents: write
       pull-requests: write
