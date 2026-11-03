@@ -28,10 +28,25 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
  // prevents the claim, or waits until this claim and receipt have committed.
  const claim=await db.query(`WITH control AS MATERIALIZED (
    SELECT paused FROM brain_runtime_control WHERE id=1 FOR SHARE
+ ), autonomy AS MATERIALIZED (
+   SELECT owner,allowed_operations,max_paid_cents
+   FROM brain_owner_autonomy_profile WHERE id=1 FOR SHARE
  ), selected AS (
-   SELECT brain_tasks.id FROM brain_tasks CROSS JOIN control
+   SELECT brain_tasks.id FROM brain_tasks CROSS JOIN control CROSS JOIN autonomy
    WHERE status='queued' AND attempts < max_attempts
      AND NOT control.paused
+     AND autonomy.owner='michaeljwilliams0123' AND autonomy.max_paid_cents=0
+     -- This transaction locks the owner preference row while claiming; a
+     -- concurrent profile update cannot retrospectively authorize a claim.
+     -- Unknown objectives remain held, never upgraded by generic permission.
+     AND CASE brain_tasks.objective
+       WHEN 'repo.inspect' THEN autonomy.allowed_operations ? 'repo.inspect'
+       WHEN 'repo.prs' THEN autonomy.allowed_operations ? 'evidence.read'
+       WHEN 'repo.ci' THEN autonomy.allowed_operations ? 'evidence.read'
+       WHEN 'site.render' THEN autonomy.allowed_operations ? 'research.public'
+       WHEN 'council.review' THEN autonomy.allowed_operations ? 'plan.create'
+       ELSE FALSE
+     END
      AND (lease_until IS NULL OR lease_until <= now())
    ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED
  ), moved AS (
