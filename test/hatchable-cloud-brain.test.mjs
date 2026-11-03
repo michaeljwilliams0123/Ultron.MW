@@ -208,9 +208,11 @@ async function endpointUnderTest(name){
  const platform=dependency('export const db=globalThis.__cloudEndpoint.db; export const browser={}; export const scheduler=globalThis.__cloudEndpoint.scheduler; export const config={};');
  const runner=dependency('export const runOne=(...args)=>globalThis.__cloudEndpoint.runOne(...args);');
  const mahoraga=dependency('export const resumePendingMahoragaActions=(...args)=>globalThis.__cloudEndpoint.resumePendingMahoragaActions(...args);');
+ const profile=dependency('export const readOwnerProfile=async()=>globalThis.__cloudEndpoint.readOwnerProfile?.()??{limits:{maxSteps:4}};');
  const transformed=source.replace("from 'hatchable'","from '"+platform+"'")
   .replace("from 'lib/brain-runner.js'","from '"+runner+"'")
-  .replace("from 'lib/mahoraga-actions.js'","from '"+mahoraga+"'");
+  .replace("from 'lib/mahoraga-actions.js'","from '"+mahoraga+"'")
+  .replace("from 'lib/owner-autonomy-control.js'","from '"+profile+"'");
  return (await import(dependency(transformed))).default;
 }
 
@@ -380,4 +382,27 @@ test('cloud: hourly tick schedules recovery when only an external canary is pend
   assert.deepEqual(scheduled,[{path:'/api/brain/run',payload:{via:'hourly-backlog'}}]);
   assert.equal(sql.filter(x=>x.includes('FROM mahoraga_actions')).length,1);
  }finally{delete globalThis.__cloudEndpoint;}
+});
+
+
+test('cloud: owner maxSteps caps actual scheduler work from 1 to 8 without unbounded loops',async()=>{
+ const original=globalThis.__cloudEndpoint;
+ let count=0;const db={async query(){return {rows:[{n:0}]}}};
+ globalThis.__cloudEndpoint={
+  db,scheduler:{async now(){throw Error('unexpected continuation')}},
+  async readOwnerProfile(){return {limits:{maxSteps:1}}},
+  async runOne(){count++;return {status:'done'};},
+  async resumePendingMahoragaActions(){return {scanned:0,observed:0,pending:0,outcomes:[]}}
+ };
+ try{
+  const run=await endpointUnderTest('run');
+  const res={json:value=>value};
+  const small=await run({body:{via:'bounded-continuation'}},res);
+  assert.equal(small.results.length,1);
+  assert.equal(count,1);
+  globalThis.__cloudEndpoint.readOwnerProfile=async()=>({limits:{maxSteps:256}});
+  const large=await run({body:{via:'bounded-continuation'}},res);
+  assert.equal(large.results.length,8);
+  assert.equal(count,9,'untrusted large budgets cannot exceed an eight-task invocation cap');
+ }finally{globalThis.__cloudEndpoint=original;}
 });
