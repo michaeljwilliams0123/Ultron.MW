@@ -139,3 +139,28 @@ test('complete is a verified plan, never a fabricated production acceptance',asy
  assert.equal(r.status,'verified-plan');
  assert.equal(r.productionAccepted,false);
 });
+
+test('already-verified steps demand fresh authentic readback before resumption',async()=>{
+ const h=harness(),p=plan();
+ assert.equal((await runDeepTask({plan:p,...h})).status,'verified-plan');
+ const calls=h.performed.length;
+ const original=h.bridge.observe;
+ h.bridge.observe=async({plan,step,key})=>
+  step.id==='branch-created'?null:original({plan,step,key});
+ const stale=await runDeepTask({plan:p,...h});
+ assert.equal(stale.status,'reconcile-required');
+ assert.equal(stale.stepId,'branch-created');
+ assert.equal(h.performed.length,calls,'repeated verification must never replay writes');
+});
+test('changed receipt identity on a completed step is a ledger conflict, not proof',async()=>{
+ const h=harness(),p=plan();
+ await runDeepTask({plan:p,...h});
+ h.bridge.observe=async({plan,step})=>({
+  verified:true,owner:OWNER,repository:REPO,objectiveId:plan.objectiveId,
+  sourceSha:SHA,stepId:step.id,operation:step.type,
+  receiptId:'github-receipt:forged',readbackDigest:hash(step.id)
+ });
+ const mismatch=await runDeepTask({plan:p,...h});
+ assert.equal(mismatch.status,'held');
+ assert.equal(mismatch.reason,'verified-receipt-conflict');
+});
