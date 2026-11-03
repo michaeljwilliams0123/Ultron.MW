@@ -179,3 +179,34 @@ uncertain claims, orphan receipts and false Destiny account proof.
 This work is deliberately on a separate source PR. PR #83 is closed as a
 historical stale task; its product-source prohibition and absent executor
 receipt must not be rewritten into a successful run.
+
+
+## C03 owner-comment trigger audit (PR #223)
+
+Owner GitHub PR comments starting with the exact `/codex run <author-id>` command
+have a **dedicated read-only GitHub workflow**:
+`.github/workflows/codex-trigger-audit.yml`. The generic PR conversation
+handler explicitly excludes these commands. This separates the two workflows
+and prevents the old generic handler's successful exit from being reported as
+proof of an external Codex execution.
+
+The audit reads the actual originating GitHub comment ID and authenticated
+owner actor, live task PR, original owner issue, exact PR-head proposal, current
+main SHA, enrolled public route fingerprint, prior owner triggers, and optional
+claim/receipt paths. It rejects altered tasks, wrong authors, stale source,
+unknown external outcomes, and duplicate trigger attempts. It writes only a
+GitHub Actions job summary and does not publish new claims or receipts.
+
+**Interpretation:** `transport-observed-executor-unverified` means GitHub
+accepted the owner command and its source identity; it does **not** mean
+Codex Cloud or Work received, acknowledged, ran, or signed the task. A green
+GitHub job means only that this audit executed. A missing/uncertain receipt
+still requires independent account-side/receiver observation under #185 and
+must not be retried blindly. This workflow has read-only GitHub permissions,
+no model/API billing, no token provisioning and no merge/deployment action.
+
+**Live acceptance still required:** independently authorized Work event
+subscription or other supported account-side task launch, authenticated
+executor claim, external readback, independently bound signing key, durable
+C01/C03 completion and duplicate/lost-ACK reconciliation. Do not promote
+`workAccountAuthenticated` or `productionAccepted` based on this workflow.
