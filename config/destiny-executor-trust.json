@@ -1,0 +1,36 @@
+{
+  "schema": "ultron.destiny.executor-trust.v2",
+  "state": "unconfigured",
+  "repository": "michaeljwilliams0123/Ultron.MW",
+  "authorId": "destiny-codex",
+  "executionLane": "codex-cloud",
+  "cloud": {
+    "provider": "openai-codex-cloud",
+    "environmentPublished": false,
+    "taskObserved": false,
+    "workEventTriggerConfirmed": false,
+    "accountAuthenticated": false
+  },
+  "githubConnection": {
+    "repository": "michaeljwilliams0123/Ultron.MW",
+    "accountApproval": "not-verified",
+    "customGitHubAppRequired": false
+  },
+  "signing": {
+    "algorithm": "Ed25519",
+    "signerAccountBinding": "not-attested"
+  },
+  "canary": {
+    "effect": "read",
+    "allowedRepository": "michaeljwilliams0123/Ultron.MW",
+    "allowedObjective": "Inspect trusted current-main docs/core/codex-authors.mjs and report callable author IDs",
+    "maxPaidCents": 0,
+    "allowMerge": false,
+    "allowAdmin": false,
+    "liveExecution": "not-verified"
+  },
+  "githubActor": null,
+  "environmentFingerprint": null,
+  "keyId": null,
+  "publicKeyPem": null
+}

@@ -118,3 +118,26 @@ through the real Issue-to-PR route. Observe the Work run and its independently
 written branch receipt. Keep `liveExecution: not-verified` in static registry
 metadata until a separate reviewed evidence update cites a successful run.
 Tests prove source behavior; they do not establish webhook delivery.
+
+## Dedicated Destiny Codex Cloud handoff (source-only)
+
+The proposed [Codex Cloud environment and signed canary contract](DESTINY-EXECUTOR-CANARY.md)
+uses a separate account-owned **Codex Cloud environment** connected to the
+authorized GitHub repository. **It does not require registering or installing
+a custom GitHub App.** The signed completion is bound to a pinned environment
+fingerprint, actual GitHub event actor observed by API readback, immutable
+C01/C03 delivery intent, and independently provisioned Ed25519 public key.
+
+The `destiny-codex` entry above describes a previously *enrolled Work GitHub
+event route*, **not** confirmation that a Codex Cloud environment is published,
+a GitHub trigger is delivering to it, or either OpenAI account is authenticated.
+As of 2026-11-02, the owner reports the cloud environment was **published**
+and Codex credits are available. This is **owner-reported setup**, not
+independently observed live execution or account binding.
+
+Run at most one read-only cloud canary through the published account-owned
+environment, as described in the linked runbook. Do not invent an ACK, claim,
+signature, or result; leave
+`workAccountAuthenticated=false`, `productionAccepted=false` and
+`liveExecution: not-verified` until independent cloud/receiver evidence exists.
+Track the external handoff under [Continuum C03 #185](https://github.com/michaeljwilliams0123/Ultron.MW/issues/185).
