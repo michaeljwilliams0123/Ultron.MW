@@ -55,6 +55,8 @@ async function observe(){
     bindingFingerprint,
     ownerTriggerCount:comments.filter(c=>c?.user?.login==='michaeljwilliams0123'&&
       c.body==='/codex run '+call.authorId).length,
+    ownerTriggerIds:comments.filter(c=>c?.user?.login==='michaeljwilliams0123'&&
+      c.body==='/codex run '+call.authorId).map(c=>c.id),
     claimState:claim===null?'missing':'present',
     receiptState:receipt===null?'missing':'present',
   });
