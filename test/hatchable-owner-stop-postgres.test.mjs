@@ -59,7 +59,8 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   await sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   for(const name of ['0001_tasks.sql','0002_events.sql','0004_mahoraga_actions.sql',
    '0005_mahoraga_scan_fairness.sql','0007_cooperative_fencing.sql',
-   '0010_runtime_stop.sql','0016_owner_autonomy_profile.sql']){
+   '0010_runtime_stop.sql','0016_owner_autonomy_profile.sql',
+   '0017_owner_autonomy_capacity.sql']){
    await sql(readFileSync(new URL('../cloud/hatchable/migrations/'+name,
     import.meta.url),'utf8'));
   }
@@ -135,6 +136,37 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   assert.equal(persisted.profileVersion,version,
     'later owner changes must not alter historical authorization evidence');
   assert.equal(persisted.stopVersion,stop);
+ });
+
+
+ test('C18 real PostgreSQL enforces one active lease across overlapping claims and restores capacity on completion',async()=>{
+  // Only the ephemeral CI database is modified.
+  await sql("UPDATE brain_runtime_control SET paused=FALSE WHERE id=1");
+  await sql("UPDATE brain_tasks SET status='done',owner_token=NULL,lease_until=NULL WHERE status IN ('leased','queued')");
+  await sql("UPDATE brain_owner_autonomy_profile SET allowed_operations='[\\\"repo.inspect\\\"]'::jsonb,"+
+    "limits=jsonb_set(limits,'{maxConcurrent}','1'::jsonb),version=version+1 WHERE id=1");
+  assert.equal(await sql('SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1'),'0');
+  await sql("INSERT INTO brain_tasks(task_key,objective) VALUES('c18-capacity-a','repo.inspect'),('c18-capacity-b','repo.inspect')");
+  const outcomes=await Promise.all([
+    sql(taskClaim.replaceAll('$1',"'capacity-worker-a'")),
+    sql(taskClaim.replaceAll('$1',"'capacity-worker-b'")),
+  ]);
+  assert.equal(outcomes.filter(Boolean).length,1,'only one task may lease under cap=1');
+  assert.equal(await sql("SELECT count(*) FROM brain_tasks WHERE status='leased'"),'1');
+  assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'1');
+  assert.equal(await sql(taskClaim.replaceAll('$1',"'capacity-worker-c'")),'',
+    'capacity cannot be bypassed by a third worker');
+  await sql("UPDATE brain_tasks SET status='done',owner_token=NULL,lease_until=NULL WHERE status='leased'");
+  assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'0');
+  const next=await sql(taskClaim.replaceAll('$1',"'capacity-worker-d'"));
+  assert.match(next,/repo\\.inspect/);
+  assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'1');
+  await sql("UPDATE brain_tasks SET status='queued',owner_token=NULL,lease_until=NULL WHERE status='leased'");
+  assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'0',
+    'crash recovery must return a capacity slot');
+  await sql("UPDATE brain_runtime_control SET paused=TRUE,version=version+1 WHERE id=1");
+  assert.equal(await sql(taskClaim.replaceAll('$1',"'capacity-worker-e'")),'');
+  assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'0');
  });
 
 }
