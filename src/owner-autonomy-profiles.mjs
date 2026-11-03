@@ -158,3 +158,6 @@ export function assessOwnerAutonomyRequest({
   }
   return decision('routine-preflight-eligible','policy-profile-matched',checks);
 }
+
+/** The profile object must come from the validated constructor in this process. */
+export function isOwnerAutonomyProfile(value){return trusted.has(value);}
