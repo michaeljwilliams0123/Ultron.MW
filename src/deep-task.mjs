@@ -119,7 +119,23 @@ export async function runDeepTask({plan,ledger,readAuthority,bridge,
   let state=await ledger.read(key);
   if(state&&state.digest!==plan.digest)
    return refused('idempotency-fingerprint-conflict');
-  if(state?.phase==='verified'){done++;continue;}
+  if(state?.phase==='verified'){
+   // A historic status alone is not independently verified completion.
+   // Re-observe the actual external effect and compare immutable evidence.
+   let current;
+   try{current=await bridge.observe({plan,step,key});}
+   catch{return Object.freeze({status:'reconcile-required',
+    reason:'verified-step-readback-unavailable',stepId:step.id,
+    completed:done,dispatched,productionAccepted:false});}
+   if(!authenticObservation(plan,step,current))
+    return Object.freeze({status:'reconcile-required',
+     reason:'verified-step-postcondition-unavailable',stepId:step.id,
+     completed:done,dispatched,productionAccepted:false});
+   if(state.receiptId!==current.receiptId||
+      state.readbackDigest!==current.readbackDigest)
+    return refused('verified-receipt-conflict');
+   done++;continue;
+  }
   if(done>=maxSteps)return Object.freeze({status:'partial',
    completed:done,dispatched,remaining:plan.steps.length-done,
    productionAccepted:false});
