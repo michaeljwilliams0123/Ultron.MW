@@ -24,7 +24,7 @@ const clean=()=>({
     title:'[Ultron PR] Create proposal',
     body:'ULTRON_PR_V1\n'+call.request},
   proposalText:formatCodexCall(call),
-  ownerTriggerCount:1,
+  ownerTriggerCount:1,ownerTriggerIds:[123],
   claimState:'missing',receiptState:'missing',
 });
 
@@ -101,4 +101,12 @@ test('owner Codex command has its own GitHub event audit, not generic PR convers
   assert.match(audit,/node scripts\/codex-trigger-audit\.mjs/);
   assert.match(audit,/pull-requests: read/);
   assert.doesNotMatch(audit,/contents: write|pull-requests: write|actions: write|issues: write/);
+});
+
+test('trigger identity is bound to the exact authenticated GitHub comment ID',()=>{
+  for(const ownerTriggerIds of [[],[124],[123,124],[123,123],null]){
+    const result=assessCodexTrigger({...clean(),ownerTriggerIds});
+    assert.equal(result.state,'held');
+    assert.equal(result.externalExecutionVerified,false);
+  }
 });
