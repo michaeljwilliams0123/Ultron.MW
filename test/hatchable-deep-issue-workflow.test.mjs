@@ -120,3 +120,15 @@ test('RED: migration holds immutable identity and unique work receipts',async()=
  assert.match(text,/CREATE TRIGGER deep_objectives_guard/);
  assert.match(text,/BEFORE UPDATE OR DELETE ON brain_deep_objectives/);
 });
+
+test('RED: owner pause/profile revisions are transactionally fenced with external dispatch claim',async()=>{
+ const source=await readFile(new URL('../cloud/hatchable/lib/deep-issue-workflow.js',import.meta.url),'utf8');
+ const claim=source.match(/const CLAIM_SQL=`([\s\S]*?)`;/)?.[1];
+ assert.ok(claim,'extract real runtime SQL');
+ assert.match(claim,/WITH control AS MATERIALIZED/);
+ assert.match(claim,/FROM brain_runtime_control WHERE id=1 FOR SHARE/);
+ assert.match(claim,/FROM brain_owner_autonomy_profile WHERE id=1 FOR SHARE/);
+ assert.match(claim,/NOT control.paused/);
+ assert.match(claim,/profile.version=d.profile_version/);
+ assert.match(claim,/control.version=d.stop_version/);
+});
