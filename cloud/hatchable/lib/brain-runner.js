@@ -40,11 +40,11 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
      -- concurrent profile update cannot retrospectively authorize a claim.
      -- Unknown objectives remain held, never upgraded by generic permission.
      AND CASE brain_tasks.objective
-       WHEN 'repo.inspect' THEN autonomy.allowed_operations ? 'repo.inspect'
-       WHEN 'repo.prs' THEN autonomy.allowed_operations ? 'evidence.read'
-       WHEN 'repo.ci' THEN autonomy.allowed_operations ? 'evidence.read'
-       WHEN 'site.render' THEN autonomy.allowed_operations ? 'research.public'
-       WHEN 'council.review' THEN autonomy.allowed_operations ? 'plan.create'
+       WHEN 'repo.inspect' THEN jsonb_exists(autonomy.allowed_operations,'repo.inspect')
+       WHEN 'repo.prs' THEN jsonb_exists(autonomy.allowed_operations,'evidence.read')
+       WHEN 'repo.ci' THEN jsonb_exists(autonomy.allowed_operations,'evidence.read')
+       WHEN 'site.render' THEN jsonb_exists(autonomy.allowed_operations,'research.public')
+       WHEN 'council.review' THEN jsonb_exists(autonomy.allowed_operations,'plan.create')
        ELSE FALSE
      END
      AND (lease_until IS NULL OR lease_until <= now())
