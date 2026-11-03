@@ -1,46 +1,136 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="robots" content="noindex,nofollow">
-  <meta name="referrer" content="strict-origin-when-cross-origin">
-  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <title>Ultron.MW — Cloud Brain</title>
-  <style>
-    :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;background:#080e1b;color:#e9effd;
-      background-image:radial-gradient(ellipse at 30% 0%,#183561 0%,transparent 47%)}
-    .shell{max-width:1000px;margin:auto;padding:clamp(24px,6vw,70px) 24px}
-    .eyebrow{font-size:12px;font-weight:750;letter-spacing:.17em;color:#96b7ff}
-    h1{font-size:clamp(37px,6vw,60px);line-height:1.08;letter-spacing:-.035em;margin:18px 0}
-    .intro{font-size:17px;color:#b5c2dd;line-height:1.6;max-width:720px}
-    .cards{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;margin-top:35px;max-width:700px}
-    .card{background:#101b2f;border:1px solid #324362;border-radius:17px;padding:25px}
-    .card h2{font-size:19px;margin:0 0 10px}
-    .card p{font-size:14px;color:#b8c5de;line-height:1.6}
-    .button{display:inline-block;background:#5a86ff;color:#06132d;text-decoration:none;
-      font-weight:750;border-radius:10px;padding:12px 16px;margin:12px 8px 0 0}
-    .outline{background:transparent;color:#dee8ff;border:1px solid #59729b}
-    .small{font-size:12px;color:#96a8c9}
-    @media(max-width:690px){.cards{grid-template-columns:1fr}.shell{padding:30px 18px}}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<title>Ultron.MW — Cloud Brain</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 75% 0,#17365e,transparent 47%),#080e1b;color:#e9effd;min-height:100vh}
+.shell{max-width:940px;margin:auto;padding:clamp(22px,5vw,55px) 18px}
+.eyebrow{font-weight:750;letter-spacing:.17em;color:#96b7ff;font-size:12px}h1{font-size:clamp(32px,6vw,53px);margin:10px 0;line-height:1.1}
+.intro,.muted{color:#bdc9dd;line-height:1.6}a{color:#b6d8ff}
+.grid{display:grid;grid-template-columns:1.5fr 1fr;gap:15px;margin-top:22px}
+.card{padding:21px;border:1px solid #314665;border-radius:15px;background:#111e33}
+h2{font-size:20px;margin:0 0 10px}h3{font-size:15px;margin:19px 0 8px}
+label{display:block;font-size:13px;color:#ccdafa;margin:8px 0 5px}
+input,select{background:#192b45;border:1px solid #466283;border-radius:9px;color:#f1f5ff;padding:10px;width:100%;font:inherit}
+input:focus,select:focus{outline:2px solid #94c6ff}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+button{border:0;border-radius:9px;padding:11px 15px;font-weight:760;background:#82a7ff;color:#081628;cursor:pointer;margin-top:12px}
+button:disabled{opacity:.4;cursor:not-allowed}
+.button-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.small{font-size:12px;color:#aabdd9}.status{padding:12px;border:1px solid #4e6686;border-radius:10px;background:#17283e;margin:16px 0;font-size:13px}
+.status.error{border-color:#8e4e54;color:#ffd8d8}
+.ops{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+.ops label{display:flex;gap:8px;align-items:center;background:#1a2b43;padding:8px;border-radius:8px;margin:0;overflow-wrap:anywhere}
+.ops input{width:16px;min-width:16px;padding:0}
+.chip{display:inline-block;padding:4px 9px;border-radius:99px;border:1px solid #435e7d;font-size:11px;color:#b9d5ff}
+@media(max-width:730px){.grid,.metrics{grid-template-columns:1fr}.ops{grid-template-columns:1fr}}
+</style>
 </head>
 <body>
-  <main class="shell">
-    <div class="eyebrow">ULTRON.MW / CLOUD RUNTIME</div>
-    <h1>Persistent cloud brain</h1>
-    <p class="intro">This is Ultron's hosted service landing page. The primary control interface remains GitHub Pages, while protected tasks and APIs run in the Hatchable backend.</p>
-    <section class="cards">
-      <div class="card">
-        <h2>Open the Ultron interface</h2>
-        <p>Use the existing console to inspect Ultron, manage objectives, and follow verified development results.</p>
-        <a class="button" href="https://michaeljwilliams0123.github.io/Ultron.MW/">Open Ultron UI</a>
-        <a class="button outline" href="https://hatchable.com/console/projects/ultron-mw-cloud/setup">Owner setup</a>
-        <p class="small">The cloud API is not a public interactive dashboard. Owner-only functions remain protected by Hatchable access controls.</p>
-      </div>
-    </section>
-  </main>
+<main class="shell">
+<div class="eyebrow">ULTRON.MW / ONE OWNER CONTROL SURFACE</div>
+<h1>Persistent cloud brain</h1>
+<p class="intro">Review and customize Ultron's autonomy preferences without granting new credentials or bypassing runtime authorization. Build is the default; Release remains subject to independently verified CI, reviewer, GitHub and rollback gates.</p>
+<div class="status" id="status" role="status" aria-live="polite">Checking authenticated owner controls…</div>
+<section class="grid">
+<div class="card">
+<h2>Autonomy profiles</h2>
+<p class="small">Preferences are stored only after the protected owner API confirms your session. Changes use version matching and a readback receipt.</p>
+<form id="form">
+<label for="preset">Preferred autonomy mode</label>
+<select id="preset" disabled>
+<option value="observe">Observe — research and evidence</option>
+<option value="build" selected>Build — scoped branches, PRs and sandbox capabilities</option>
+<option value="release">Release — proposal only, execution gated</option>
+</select>
+<div class="metrics">
+<div><label for="maxFiles">Max files</label><input id="maxFiles" type="number" min="1" max="64" value="12" disabled></div>
+<div><label for="maxConcurrent">Concurrent objectives</label><input id="maxConcurrent" type="number" min="1" max="8" value="4" disabled></div>
+<div><label for="maxSteps">Max steps</label><input id="maxSteps" type="number" min="1" max="256" value="32" disabled></div>
+</div>
+<label for="operations">Allowed candidate operation families</label>
+<div id="operations" class="ops" aria-label="Candidate operations"></div>
+<label for="reason">Reason for change</label>
+<input id="reason" maxlength="200" value="Owner autonomy preference update" disabled>
+<div class="button-line"><button id="save" type="submit" disabled>Save owner preferences</button><span class="small" id="revision">Version not loaded</span></div>
+</form>
+</div>
+<div class="card">
+<h2>Execution safeguards</h2>
+<p><span class="chip">Current profile is NOT a permission grant</span></p>
+<p class="muted">Actual execution requires a verified owner grant, provider capabilities, durable stop/fencing, idempotency and independent external readback. Squash merges and reversible releases additionally require applicable review and exact-head checks.</p>
+<h3>Current pause state</h3><p class="small" id="pause">Readback pending…</p>
+<h3>Spend ceiling</h3><p class="small">Approved incremental paid spend: <strong>$0</strong>.</p>
+<h3>Development backend</h3><p class="small"><a href="https://github.com/michaeljwilliams0123/Ultron.MW" rel="noreferrer">GitHub source and CI</a> remain separate from this owner-facing console.</p>
+<p class="small">Owner-only functions remain protected by Hatchable access controls. If authentication is unavailable, nothing can be saved.</p>
+</div>
+</section>
+</main>
+<script>
+(()=>{
+'use strict';
+const uri='/api/brain/autonomy';
+const modes={
+observe:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read'],
+limits:{maxFiles:4,maxFileBytes:6500,maxTotalBytes:18000,maxConcurrent:1,maxSteps:8}},
+build:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read','branch.create','branch.update','pr.open','pr.comment','verify.dispatch','capability.sandbox.propose','capability.sandbox.test'],
+limits:{maxFiles:12,maxFileBytes:24000,maxTotalBytes:96000,maxConcurrent:4,maxSteps:32}},
+release:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read','branch.create','branch.update','pr.open','pr.comment','verify.dispatch','capability.sandbox.propose','capability.sandbox.test','pr.squash.merge','deploy.reversible'],
+limits:{maxFiles:24,maxFileBytes:36000,maxTotalBytes:192000,maxConcurrent:4,maxSteps:48}}
+};
+const all=modes.release.operations;
+const ids=['preset','maxFiles','maxConcurrent','maxSteps','reason'];
+const el=id=>document.getElementById(id);
+let profile=null;
+function message(txt,bad=false){el('status').textContent=txt;el('status').classList.toggle('error',bad)}
+function enable(on){for(const id of ids)el(id).disabled=!on;el('save').disabled=!on;
+ for(const x of document.querySelectorAll('#operations input'))x.disabled=!on}
+function drawOps(active){el('operations').replaceChildren();
+ for(const op of all){const label=document.createElement('label'),box=document.createElement('input'),span=document.createElement('span');
+ box.type='checkbox';box.value=op;box.checked=active.includes(op);box.disabled=!profile;
+ span.textContent=op.replaceAll('.',' · ');label.append(box,span);el('operations').appendChild(label)}
+}
+function refresh(p){profile=p;el('preset').value=p.preset;el('maxFiles').value=p.limits.maxFiles;
+ el('maxConcurrent').value=p.limits.maxConcurrent;el('maxSteps').value=p.limits.maxSteps;
+ el('revision').textContent='Version '+p.version;el('pause').textContent=p.paused?'PAUSED — no new work permitted':'Not paused (separate execution grants still required)';
+ drawOps(p.allowedOperations);enable(true);
+ message('Authenticated preferences loaded. No execution authority has been granted.')}
+el('preset').addEventListener('change',()=>{const p=modes[el('preset').value];drawOps(p.operations);
+ for(const key of ['maxFiles','maxConcurrent','maxSteps'])el(key).value=p.limits[key]});
+el('form').addEventListener('submit',async event=>{
+ event.preventDefault();if(!profile)return;
+ const selected=[...el('operations').querySelectorAll('input:checked')].map(x=>x.value);
+ const limits={...modes[el('preset').value].limits,
+ maxFiles:Number(el('maxFiles').value),maxConcurrent:Number(el('maxConcurrent').value),
+ maxSteps:Number(el('maxSteps').value)};
+ const data={expectedVersion:profile.version,preset:el('preset').value,
+ allowedOperations:selected,limits,reason:el('reason').value.trim()};
+ enable(false);message('Validating and saving owner preference…');
+ try{const r=await fetch(uri,{method:'POST',credentials:'same-origin',cache:'no-store',
+ headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+ const payload=await r.json();
+ if(!r.ok||!payload.ok||!payload.profile)throw Error(payload.error||'change-not-accepted');
+ refresh(payload.profile);
+ message(payload.reconciled?'Saved; readback reconciled an uncertain write.':'Saved and independently read back preference version '+payload.profile.version+'.');
+ }catch(e){message('Preference not confirmed: '+String(e.message||'unknown-error')+'. Refresh before retrying.',true);
+ enable(true)}
+});
+async function load(){
+ enable(false);
+ try{const r=await fetch(uri,{credentials:'same-origin',cache:'no-store'});
+ if(!r.ok)throw Error(r.status===401||r.status===403?'owner-authentication-required':'owner-profile-unavailable-'+r.status);
+ const payload=await r.json();if(!payload.ok||!payload.profile)throw Error('owner-profile-unavailable');
+ refresh(payload.profile);
+ }catch(e){message('Owner controls unavailable: '+String(e.message||'authentication-or-deployment-pending')+'. Sign in through the Hatchable owner session.',true);el('pause').textContent='Not independently read';}
+}
+load();
+})();
+</script>
 </body>
 </html>
