@@ -111,10 +111,22 @@ export function assessContinuumEvidence(record,{expectedHeadSha,now}={}){
   return result('observed-not-accepted','external-attestation-required');
 }
 export function assessContinuumEvidenceBatch(records,options={}){
-  if(!Array.isArray(records)||records.length===0||records.length>100)
+  if(!Array.isArray(records))return held('invalid-batch');
+  // The outer batch array is untrusted too. Never use its Symbol.iterator or
+  // invoke accessor-backed indexes to select which evidence gets assessed.
+  let descriptors;
+  try {descriptors=Object.getOwnPropertyDescriptors(records);}
+  catch {return held('invalid-batch');}
+  const length=descriptors.length?.value;
+  if(!Number.isSafeInteger(length)||length<1||length>100)
     return held('invalid-batch');
   const seen=new Map();
-  for(const record of records){
+  for(let index=0;index<length;index++){
+    const descriptor=descriptors[String(index)];
+    if(!descriptor?.enumerable||
+       !Object.prototype.hasOwnProperty.call(descriptor,'value'))
+      return held('invalid-batch');
+    const record=descriptor.value;
     let c;
     try {c=snapshot(record);}catch{return held('invalid-envelope');}
     if(typeof c.deliveryId!=='string')return held('invalid-delivery');
