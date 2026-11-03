@@ -59,7 +59,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   await sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   for(const name of ['0001_tasks.sql','0002_events.sql','0004_mahoraga_actions.sql',
    '0005_mahoraga_scan_fairness.sql','0007_cooperative_fencing.sql',
-   '0010_runtime_stop.sql']){
+   '0010_runtime_stop.sql','0016_owner_autonomy_profile.sql']){
    await sql(readFileSync(new URL('../cloud/hatchable/migrations/'+name,
     import.meta.url),'utf8'));
   }
@@ -86,3 +86,24 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   assert.equal(await sql('SELECT state FROM mahoraga_actions WHERE id='+actionId),'prepared');
  });
 }
+
+ test('C18 PostgreSQL owner profile blocks queued work and only authorizes a mapped objective after a committed profile change',async()=>{
+  // Isolated ephemeral database: this never touches the Hatchable project.
+  await sql("UPDATE brain_runtime_control SET paused=FALSE WHERE id=1");
+  await sql("UPDATE brain_tasks SET status='canceled' WHERE task_key='stop-claim'");
+  await sql("UPDATE brain_owner_autonomy_profile SET allowed_operations='[\"research.public\"]'::jsonb,version=version+1 WHERE id=1");
+  await sql("INSERT INTO brain_tasks(task_key,objective) VALUES('c18-profile-hold','repo.inspect')");
+  assert.equal(await sql(taskClaim.replaceAll('$1',"'c18-owner-token'")),'');
+  assert.equal(await sql("SELECT status||':'||attempts FROM brain_tasks WHERE task_key='c18-profile-hold'"),'queued:0');
+  assert.equal(await sql("SELECT count(*) FROM brain_events WHERE event_type='claimed' AND task_id=(SELECT id FROM brain_tasks WHERE task_key='c18-profile-hold')"),'0');
+  await sql("UPDATE brain_owner_autonomy_profile SET allowed_operations='[\"repo.inspect\"]'::jsonb,version=version+1 WHERE id=1");
+  const admitted=await sql(taskClaim.replaceAll('$1',"'c18-owner-token'"));
+  assert.match(admitted,/repo\.inspect/);
+  assert.equal(await sql("SELECT status||':'||attempts FROM brain_tasks WHERE task_key='c18-profile-hold'"),'leased:1');
+
+  // Unknown objective cannot borrow generic repo.inspect authority.
+  await sql("INSERT INTO brain_tasks(task_key,objective) VALUES('c18-unknown-future','unregistered.write')");
+  assert.equal(await sql(taskClaim.replaceAll('$1',"'c18-second-token'")),'');
+  assert.equal(await sql("SELECT status||':'||attempts FROM brain_tasks WHERE task_key='c18-unknown-future'"),'queued:0');
+  await assert.rejects(sql("UPDATE brain_owner_autonomy_profile SET max_paid_cents=1 WHERE id=1"),/check constraint/);
+ });
