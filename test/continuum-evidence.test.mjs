@@ -115,3 +115,84 @@ test('batch evaluates each mutable caller envelope from one snapshot',()=>{
   assert.equal(assessContinuumEvidenceBatch([e],opts).disposition,'batch-unverified');
   assert.equal(reads,1);
 });
+
+test('same delivery with contradictory outcome or actor is a conflicting receipt',()=>{
+  for(const mutation of [
+    e=>{e.outcome='unknown';},
+    e=>{e.actorId='different-authorized-actor';},
+    e=>{e.attempt=2;}
+  ]){
+    const first=base(),second=base();mutation(second);
+    const assessed=assessContinuumEvidenceBatch([first,second],opts);
+    assert.equal(assessed.disposition,'held');
+    assert.equal(assessed.reason,'conflicting-delivery');
+  }
+});
+test('same delivery with contradictory independent readback is held, not silently deduplicated',()=>{
+  const first=base(),second=base();
+  for(const e of [first,second]){
+    e.intent.effect='write';e.readback=receipt();e.review=approval();
+  }
+  second.readback.observedEffect='absent';
+  const assessed=assessContinuumEvidenceBatch([first,second],opts);
+  assert.equal(assessed.disposition,'held');
+  assert.equal(assessed.reason,'conflicting-delivery');
+});
+test('identical duplicate delivery remains unverified without independent live attestation',()=>{
+  const first=base(),second=base();
+  assert.equal(assessContinuumEvidenceBatch([first,second],opts).disposition,'batch-unverified');
+});
+
+// Accessor-backed evidence must be observed once; a second read can return
+// contradictory data or throw after the first accepted snapshot.
+test('RED: artifact getter is read exactly once for individual and batch evidence',()=>{
+  for(const [assess,expected] of [
+    [e=>assessContinuumEvidence(e,opts),'source-only'],
+    [e=>assessContinuumEvidenceBatch([e],opts),'batch-unverified']
+  ]){
+    const e=base();let reads=0;
+    Object.defineProperty(e,'artifacts',{
+      enumerable:true,
+      get(){if(++reads>1)throw Error('artifact evidence read twice');return [];}
+    });
+    assert.equal(assess(e).disposition,expected);
+    assert.equal(reads,1);
+  }
+});
+
+// A hostile array can advertise unsafe indexed evidence while supplying a
+// different iterator sequence. The validator must inspect its own data slots.
+test('RED: custom artifact iterators cannot substitute signed evidence indexes',()=>{
+  for(const assess of [
+    e=>assessContinuumEvidence(e,opts),
+    e=>assessContinuumEvidenceBatch([e],opts)
+  ]){
+    const e=base();
+    e.artifacts=['javascript:untrusted-evidence'];
+    e.artifacts[Symbol.iterator]=function*(){
+      yield 'https://github.com/michaeljwilliams0123/Ultron.MW/issues/204';
+    };
+    const result=assess(e);
+    assert.equal(result.disposition,'held',
+      'a forged iterator must not launder an invalid indexed artifact');
+    assert.equal(result.productionAccepted,false);
+  }
+});
+
+
+// The outer batch array is also caller-controlled: its iterator or index
+// accessors must not replace the indexed records that the caller supplied.
+test('RED: batch array cannot substitute indexed records through a forged iterator or accessor',()=>{
+  const invalid=base();invalid.intent.estimatedPaidCents=1;
+  const forged=[invalid];
+  forged[Symbol.iterator]=function*(){yield base();};
+  const substituted=assessContinuumEvidenceBatch(forged,opts);
+  assert.equal(substituted.disposition,'held','forged iterator must not hide a paid record');
+  assert.equal(substituted.productionAccepted,false);
+
+  const accessor=[invalid];
+  Object.defineProperty(accessor,'0',{enumerable:true,configurable:true,get(){return base();}});
+  const laundered=assessContinuumEvidenceBatch(accessor,opts);
+  assert.equal(laundered.disposition,'held','accessor must not launder an invalid indexed record');
+  assert.equal(laundered.productionAccepted,false);
+});
