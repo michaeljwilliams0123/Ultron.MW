@@ -178,3 +178,21 @@ test('RED: custom artifact iterators cannot substitute signed evidence indexes',
     assert.equal(result.productionAccepted,false);
   }
 });
+
+
+// The outer batch array is also caller-controlled: its iterator or index
+// accessors must not replace the indexed records that the caller supplied.
+test('RED: batch array cannot substitute indexed records through a forged iterator or accessor',()=>{
+  const invalid=base();invalid.intent.estimatedPaidCents=1;
+  const forged=[invalid];
+  forged[Symbol.iterator]=function*(){yield base();};
+  const substituted=assessContinuumEvidenceBatch(forged,opts);
+  assert.equal(substituted.disposition,'held','forged iterator must not hide a paid record');
+  assert.equal(substituted.productionAccepted,false);
+
+  const accessor=[invalid];
+  Object.defineProperty(accessor,'0',{enumerable:true,configurable:true,get(){return base();}});
+  const laundered=assessContinuumEvidenceBatch(accessor,opts);
+  assert.equal(laundered.disposition,'held','accessor must not launder an invalid indexed record');
+  assert.equal(laundered.productionAccepted,false);
+});
