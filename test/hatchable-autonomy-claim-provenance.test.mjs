@@ -7,7 +7,7 @@ const claim=runner.match(/const claim=await db\.query\(`([\s\S]*?)`,\[token\]\)/
 test('C18 RED: durable claim records the exact profile and stop revisions observed at admission',()=>{
  assert.ok(claim,'extract actual SQL used in cloud executor');
  assert.match(claim,/SELECT paused,version AS stop_version\b/);
- assert.match(claim,/max_paid_cents,version AS profile_version\b/);
+ assert.match(claim,/max_paid_cents,\s*version AS profile_version\b/);
  assert.match(claim,/autonomy\.profile_version/);
  assert.match(claim,/control\.stop_version/);
  assert.match(claim,/jsonb_build_object\('objective',objective,'attempt',attempts,'profileVersion'/);
