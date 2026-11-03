@@ -91,3 +91,14 @@ test('invalid comment counts cannot be admitted as a first trigger',()=>{
     assert.equal(assessCodexTrigger({...clean(),ownerTriggerCount}).state,'held');
   }
 });
+
+test('owner Codex command has its own GitHub event audit, not generic PR conversation',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const owner=await readFile(new URL('../.github/workflows/owner-comment-router.yml',import.meta.url),'utf8');
+  const audit=await readFile(new URL('../.github/workflows/codex-trigger-audit.yml',import.meta.url),'utf8');
+  assert.match(owner,/!startsWith\(github\.event\.comment\.body, '\/codex run '\)/);
+  assert.match(audit,/issue_comment:/);
+  assert.match(audit,/node scripts\/codex-trigger-audit\.mjs/);
+  assert.match(audit,/pull-requests: read/);
+  assert.doesNotMatch(audit,/contents: write|pull-requests: write|actions: write|issues: write/);
+});
