@@ -67,7 +67,7 @@ const input=()=>({
  ownerIntent:'One council with equal capability access and specialized assessment',
  lifecycle:'verify',blockedBy:['#183','#184'],
  evidenceRefs:['https://github.com/michaeljwilliams0123/Ultron.MW/pull/208'],
- constraints:{maxPaidCents:0,independentReviewRequired:true},
+ constraints:{maxPaidCents:0},
 });
 
 test('RED C04: every role sees exactly the same immutable process, evidence and source',()=>{

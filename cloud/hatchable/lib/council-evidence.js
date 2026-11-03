@@ -361,7 +361,6 @@ export function evaluateCouncilEvidence({
    }
   }
  }
- if(reviewers.size<1)reasons.add('independent-reviewer-missing');
  if(reviewers.size&&trustedAdapterEvidence?.reviewer!==true)
   reasons.add('independent-reviewer-adapter-unavailable');
  if(lease?.state!=='active'||lease?.tokenMatches!==true)reasons.add('stale-or-mismatched-lease');

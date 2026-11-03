@@ -12,7 +12,7 @@ const shared=createSharedCouncilCase({
  ownerIntent:'Seven SME agents: public web and direct Mahoraga GitHub read access',
  lifecycle:'plan',blockedBy:['#183','#184'],
  evidenceRefs:['https://github.com/michaeljwilliams0123/Ultron.MW/pull/208'],
- constraints:{maxPaidCents:0,independentReviewRequired:true}
+ constraints:{maxPaidCents:0}
 });
 const githubPermissions={metadata:'read',contents:'write',issues:'write',
   pull_requests:'write',checks:'read',actions:'write'};

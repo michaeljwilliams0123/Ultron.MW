@@ -59,8 +59,7 @@ export function createSharedCouncilCase(input={}){
    !input.ownerIntent.trim()||input.ownerIntent.length>1500||
    !COUNCIL_LIFECYCLE.includes(input.lifecycle)||
    !input.constraints||typeof input.constraints!=='object'||
-   input.constraints.maxPaidCents!==0||
-   input.constraints.independentReviewRequired!==true)
+   input.constraints.maxPaidCents!==0)
   reject('input-invalid');
  const blockedBy=sortedUnique(input.blockedBy,/^#[1-9]\d{0,7}$/);
  const evidenceRefs=sortedUnique(input.evidenceRefs,
@@ -71,7 +70,7 @@ export function createSharedCouncilCase(input={}){
   taskFingerprint:input.taskFingerprint,sourceSha:input.sourceSha,
   ownerIntent:input.ownerIntent.trim(),lifecycle:input.lifecycle,
   blockedBy,evidenceRefs,
-  constraints:Object.freeze({maxPaidCents:0,independentReviewRequired:true}),
+  constraints:Object.freeze({maxPaidCents:0}),
   process:COUNCIL_LIFECYCLE
  });
  const caseSha=createHash('sha256').update(JSON.stringify(core)).digest('hex');

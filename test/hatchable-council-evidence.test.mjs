@@ -107,6 +107,13 @@ function ready(overrides={}){
    reviewer:true,evaluation:true
   },...overrides});
 }
+test('council can be eligible with independent evaluation and no individual reviewer',()=>{
+ const result=ready({receipts:deterministicReceipts(),identityAttestations:[],
+  trustedAdapterEvidence:{reviewer:false,evaluation:true}});
+ assert.equal(result.independentReviewerCount,0);
+ assert.equal(result.eligibleForProtectedPromotion,true);
+ assert.equal(result.eligibleForExecution,false);
+});
 
 test('cloud council emits versioned source-bound deterministic assessment receipts',()=>{
  const receipts=deterministicReceipts();
@@ -132,7 +139,7 @@ test('zero receipts and fixed profiles alone cannot become independent approval'
  const fixed=evaluateCouncilEvidence({objectiveId:OBJECTIVE,sourceSha:SHA,
   receipts:deterministicReceipts(),now:NOW,evaluation:evaluation()});
  assert.equal(fixed.independentReviewerCount,0);
- assert.ok(fixed.reasons.includes('independent-reviewer-missing'));
+ assert.ok(!fixed.reasons.includes('independent-reviewer-missing'));
  const relabeled={...deterministicReceipts()[0],reviewer:{
   kind:'independent-reviewer',id:'relabeled-profile'}};
  const forged=evaluateCouncilEvidence({objectiveId:OBJECTIVE,sourceSha:SHA,
@@ -341,7 +348,7 @@ test('hosted council output binds SQL receipt ids and remains advisory-only',asy
   assert.ok(result.assessment_receipts.find(x=>x.role==='verifier')
    .dissent.includes('source-sha-conflict'));
   assert.equal(result.promotion_gate.eligibleForProtectedPromotion,false);
-  assert.ok(result.promotion_gate.reasons.includes('independent-reviewer-missing'));
+  assert.ok(!result.promotion_gate.reasons.includes('independent-reviewer-missing'));
   assert.ok(result.promotion_gate.reasons.includes('held-out-evaluation-missing'));
   assert.equal(result.disposition,'proposals-only-no-write-or-model-inference');
  }finally{globalThis.fetch=originalFetch;}

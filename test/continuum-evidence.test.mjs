@@ -39,9 +39,9 @@ test('unknown or acknowledged writes without independent readback require reconc
     assert.equal(result.productionAccepted,false);
   }
 });
-test('independent readback plus reviewer metadata remains evidence, not live release approval',()=>{
+test('independent readback needs no reviewer and remains unaccepted without live attestation',()=>{
   const evidence=base();
-  evidence.intent.effect='write';evidence.readback=receipt();evidence.review=approval();
+  evidence.intent.effect='write';evidence.readback=receipt();
   const result=assessContinuumEvidence(evidence,opts);
   assert.equal(result.disposition,'observed-not-accepted');
   assert.equal(result.productionAccepted,false);

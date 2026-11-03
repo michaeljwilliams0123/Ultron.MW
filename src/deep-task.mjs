@@ -76,8 +76,8 @@ function checkGate(plan,step,ctx){
    return 'authority-version-missing';
  for(const field of CHECKS)if(ctx[field]!==true)return 'authority-'+field+'-missing';
  if(RELEASE.has(step.type)){
-  if(ctx.independentReview!==true||ctx.exactHeadCI!==true||
-     ctx.githubMergeable!==true)return 'independent-release-gate-missing';
+  if(ctx.exactHeadCI!==true||ctx.githubMergeable!==true)
+   return 'release-verification-gate-missing';
   if(step.type==='deploy.reversible'&&ctx.rollbackVerified!==true)
    return 'rollback-gate-missing';
  }

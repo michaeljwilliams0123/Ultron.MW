@@ -38,6 +38,12 @@ test('100 paired and attributable cases have weighted results and cryptographic 
  assert.equal(result.eligibleForProtectedPromotion,false);
  assert.equal(result.researchGate,'held-out-evaluation-not-proven');
 });
+test('independent evaluator can score without an individual reviewer',async()=>{
+ const {reviewer,...input}=fixture();
+ const result=await evaluateSharedEvaluation(input);
+ assert.equal(result.sharedThresholdMet,true);
+ assert.equal(result.eligibleForProtectedPromotion,false);
+});
 test('shared benchmark never certifies unseen-task generalization or release authority',async()=>{
  const r=await evaluateSharedEvaluation(fixture());
  assert.equal(r.independentExecutionClaim,'unverified-caller-provided-identities');

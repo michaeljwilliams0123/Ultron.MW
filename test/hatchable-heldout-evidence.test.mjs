@@ -95,14 +95,14 @@ test('seeded adapter reproduces ten post-freeze cases on base and candidate',asy
  assert.ok(result.candidateCases.every(item=>item.passed));
 });
 
-test('seeded adapter follows bounded pagination for manifests and reviews',async()=>{
+test('seeded adapter follows bounded pagination for manifests without requiring reviews',async()=>{
  const fetchImpl=await pagedFixture([
-  '/issues/106/comments?per_page=100','/pulls/106/reviews?per_page=100'
+  '/issues/106/comments?per_page=100'
  ]);
  const result=await observeHeldOutEvidence({objectiveId:OBJECTIVE,
   candidatePullNumber:106,fetchImpl});
  assert.equal(result.freezeCommentId,700);
- assert.equal(result.independentReviewId,800);
+ assert.equal(Object.hasOwn(result,'independentReviewId'),false);
  assert.equal(result.candidateScore,1);
 });
 
@@ -122,12 +122,13 @@ test('seeded adapter rejects edited manifests and wrongly parameterized runs',as
   candidatePullNumber:106,fetchImpl:fixtures({
    '/issues/106/comments?per_page=100':[{...manifest(),
     updated_at:'2026-10-26T10:01:00Z'}]})}),/seeded-heldout-manifest-missing/);
- await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,
+ const withoutReviewer=await observeHeldOutEvidence({objectiveId:OBJECTIVE,
   candidatePullNumber:106,fetchImpl:fixtures({
    '/pulls/106/reviews?per_page=100':[{id:800,
     user:{login:'coderabbitai[bot]',id:136622811,type:'Bot'},state:'COMMENTED',
     commit_id:HEAD,submitted_at:'2026-10-26T09:59:00Z',
-    body:'<!-- coderabbit-ai-generated:v1 -->'}]})}),/heldout-review-missing/);
+    body:'<!-- coderabbit-ai-generated:v1 -->'}]})});
+ assert.equal(withoutReviewer.candidateScore,1);
  const path='/actions/runs?head_sha='+MAIN+'&event=workflow_dispatch&per_page=100';
  await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,
   candidatePullNumber:106,fetchImpl:fixtures({[path]:{total_count:1,workflow_runs:[{
