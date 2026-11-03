@@ -195,7 +195,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
  test('C06 PostgreSQL owner pause commits before any queued external deep-task dispatch',async()=>{
   const source=readFileSync(new URL('../cloud/hatchable/lib/deep-issue-workflow.js',
     import.meta.url),'utf8');
-  const claim=source.match(/const CLAIM_SQL=`([\\s\\S]*?)`;/)?.[1];
+  const claim=source.match(/const CLAIM_SQL=`([\s\S]*?)`;/)?.[1];
   assert.ok(claim,'real deep-issue dispatch admission SQL');
   await sql("UPDATE brain_runtime_control SET paused=FALSE,version=version+1 WHERE id=1");
   await sql("UPDATE brain_owner_autonomy_profile SET preset='release',version=version+1 WHERE id=1");
