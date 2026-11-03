@@ -143,7 +143,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   // Only the ephemeral CI database is modified.
   await sql("UPDATE brain_runtime_control SET paused=FALSE WHERE id=1");
   await sql("UPDATE brain_tasks SET status='done',owner_token=NULL,lease_until=NULL WHERE status IN ('leased','queued')");
-  await sql("UPDATE brain_owner_autonomy_profile SET allowed_operations='[\\\"repo.inspect\\\"]'::jsonb,"+
+  await sql("UPDATE brain_owner_autonomy_profile SET allowed_operations='[\"repo.inspect\"]'::jsonb,"+
     "limits=jsonb_set(limits,'{maxConcurrent}','1'::jsonb),version=version+1 WHERE id=1");
   assert.equal(await sql('SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1'),'0');
   await sql("INSERT INTO brain_tasks(task_key,objective) VALUES('c18-capacity-a','repo.inspect'),('c18-capacity-b','repo.inspect')");
@@ -159,7 +159,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   await sql("UPDATE brain_tasks SET status='done',owner_token=NULL,lease_until=NULL WHERE status='leased'");
   assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'0');
   const next=await sql(taskClaim.replaceAll('$1',"'capacity-worker-d'"));
-  assert.match(next,/repo\\.inspect/);
+  assert.match(next,/repo\.inspect/);
   assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'1');
   await sql("UPDATE brain_tasks SET status='queued',owner_token=NULL,lease_until=NULL WHERE status='leased'");
   assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'0',
