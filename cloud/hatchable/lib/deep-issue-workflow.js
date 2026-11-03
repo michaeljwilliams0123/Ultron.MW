@@ -47,10 +47,21 @@ const READ_SQL=`SELECT task_key AS key,fingerprint,
  profile_version AS "profileVersion",stop_version AS "stopVersion",
  state,issue_number AS "issueNumber",external_url AS url
  FROM brain_deep_objectives WHERE task_key=$1`;
-const CLAIM_SQL=`UPDATE brain_deep_objectives
+const CLAIM_SQL=`WITH control AS MATERIALIZED (
+ SELECT paused,version FROM brain_runtime_control WHERE id=1 FOR SHARE
+), profile AS MATERIALIZED (
+ SELECT owner,preset,version,max_paid_cents
+ FROM brain_owner_autonomy_profile WHERE id=1 FOR SHARE
+)
+UPDATE brain_deep_objectives d
  SET state='dispatching',updated_at=now()
- WHERE task_key=$1 AND fingerprint=$2 AND state='prepared'
- RETURNING task_key AS key,fingerprint,state`;
+ FROM control,profile
+ WHERE d.task_key=$1 AND d.fingerprint=$2 AND d.state='prepared'
+   AND NOT control.paused AND profile.owner='michaeljwilliams0123'
+   AND profile.preset='release' AND profile.max_paid_cents=0
+   AND profile.version=d.profile_version
+   AND control.version=d.stop_version
+ RETURNING d.task_key AS key,d.fingerprint,d.state`;
 const UNKNOWN_SQL=`UPDATE brain_deep_objectives
  SET state='reconcile-required',updated_at=now()
  WHERE task_key=$1 AND fingerprint=$2 AND state='dispatching'
