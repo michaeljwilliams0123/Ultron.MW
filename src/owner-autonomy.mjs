@@ -1,3 +1,5 @@
+import {isOwnerAutonomyProfile} from './owner-autonomy-profiles.mjs';
+
 /**
  * Owner-autonomy policy for Ultron.
  * Default posture: maximize useful work for the single owner while keeping
@@ -18,8 +20,9 @@ export function ownerAutonomyEnabled(env = process.env) {
 }
 
 /** Multifile / planning budgets under owner autonomy vs baseline. */
-export function autonomyLimits(env = process.env) {
+export function autonomyLimits(env = process.env, profile = null) {
   if (ownerAutonomyEnabled(env)) {
+    const configured=isOwnerAutonomyProfile(profile)?profile:null;
     return Object.freeze({
       mode: 'owner-autonomy',
       maxFiles: 12,
@@ -33,6 +36,14 @@ export function autonomyLimits(env = process.env) {
       governorMaxConflicts: 2,
       observer: 'passive',
       verifyPreference: 'advisory-for-planning',
+      ...(configured?{
+        maxFiles:configured.limits.maxFiles,
+        maxFileBytes:configured.limits.maxFileBytes,
+        maxTotalBytes:configured.limits.maxTotalBytes,
+        maxConcurrent:configured.limits.maxConcurrent,
+        maxSteps:configured.limits.maxSteps,
+        profileDigest:configured.digest,
+      }:{}),
     });
   }
   return Object.freeze({
