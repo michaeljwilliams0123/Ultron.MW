@@ -107,4 +107,34 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   await assert.rejects(sql("UPDATE brain_owner_autonomy_profile SET max_paid_cents=1 WHERE id=1"),/check constraint/);
  });
 
+
+ test('C18 PostgreSQL claim preserves the exact owner profile and stop-control versions in its immutable event',async()=>{
+  await sql("UPDATE brain_runtime_control SET paused=FALSE WHERE id=1");
+  await sql('UPDATE brain_owner_autonomy_profile SET '+
+    'allowed_operations='+"'[\"repo.inspect\"]'::jsonb"+
+    ',version=version+1 WHERE id=1');
+  const version=Number(await sql('SELECT version FROM brain_owner_autonomy_profile WHERE id=1'));
+  const stop=Number(await sql('SELECT version FROM brain_runtime_control WHERE id=1'));
+  await sql("INSERT INTO brain_tasks(task_key,objective) VALUES('c18-profile-receipt','repo.inspect')");
+  const claimReceipt=await sql(taskClaim.replaceAll('$1',"'policy-receipt-token'"));
+  assert.match(claimReceipt,/repo\.inspect/);
+  const id=Number(await sql("SELECT id FROM brain_tasks WHERE task_key='c18-profile-receipt'"));
+  const details=JSON.parse(await sql('SELECT details::text FROM brain_events '+
+    "WHERE task_id="+id+" AND event_type='claimed' ORDER BY id DESC LIMIT 1"));
+  assert.equal(details.objective,'repo.inspect');
+  assert.equal(details.attempt,1);
+  assert.equal(details.profileVersion,version,
+    'record exactly which owner-selected profile governed the claim');
+  assert.equal(details.stopVersion,stop,
+    'record exactly which independent pause-control version governed the claim');
+  await sql('UPDATE brain_owner_autonomy_profile SET '+
+    'allowed_operations='+"'[\"research.public\"]'::jsonb"+
+    ',version=version+1 WHERE id=1');
+  const persisted=JSON.parse(await sql('SELECT details::text FROM brain_events '+
+    "WHERE task_id="+id+" AND event_type='claimed' ORDER BY id DESC LIMIT 1"));
+  assert.equal(persisted.profileVersion,version,
+    'later owner changes must not alter historical authorization evidence');
+  assert.equal(persisted.stopVersion,stop);
+ });
+
 }

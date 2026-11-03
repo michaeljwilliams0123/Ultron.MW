@@ -27,12 +27,14 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
  // Lock the singleton for this statement. A pause either commits first and
  // prevents the claim, or waits until this claim and receipt have committed.
  const claim=await db.query(`WITH control AS MATERIALIZED (
-   SELECT paused FROM brain_runtime_control WHERE id=1 FOR SHARE
+   SELECT paused,version AS stop_version FROM brain_runtime_control WHERE id=1 FOR SHARE
  ), autonomy AS MATERIALIZED (
-   SELECT owner,allowed_operations,max_paid_cents
+   SELECT owner,allowed_operations,max_paid_cents,
+     version AS profile_version
    FROM brain_owner_autonomy_profile WHERE id=1 FOR SHARE
  ), selected AS (
-   SELECT brain_tasks.id FROM brain_tasks CROSS JOIN control CROSS JOIN autonomy
+   SELECT brain_tasks.id,autonomy.profile_version,control.stop_version
+   FROM brain_tasks CROSS JOIN control CROSS JOIN autonomy
    WHERE status='queued' AND attempts < max_attempts
      AND NOT control.paused
      AND autonomy.owner='michaeljwilliams0123' AND autonomy.max_paid_cents=0
@@ -56,9 +58,12 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
    WHERE id IN (SELECT id FROM selected) RETURNING id,task_key,objective,attempts,fencing_generation
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type,details)
-   SELECT id,'claimed',jsonb_build_object('objective',objective,'attempt',attempts)
-   FROM moved RETURNING task_id
- ) SELECT id,task_key,objective,attempts,fencing_generation FROM moved`,[token]);
+   SELECT moved.id,'claimed',jsonb_build_object('objective',objective,'attempt',attempts,'profileVersion',selected.profile_version,'stopVersion',selected.stop_version)
+   FROM moved JOIN selected ON selected.id=moved.id RETURNING task_id
+ ) SELECT moved.id,moved.task_key,moved.objective,moved.attempts,
+     moved.fencing_generation,selected.profile_version AS "profileVersion",
+     selected.stop_version AS "stopVersion"
+   FROM moved JOIN selected ON selected.id=moved.id`,[token]);
  const task=claim.rows[0];
  if(!task)return {status:'idle',recovered:recovered.rows.length,blocked:blocked.rows.length};
 
