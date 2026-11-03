@@ -24,11 +24,11 @@ test('C18 RED: every currently executable read/advisory task has an explicit pro
   'council.review':'plan.create'
  };
  for(const [objective,op] of Object.entries(map)){
-  assert.ok(claim.includes("WHEN '"+objective+"' THEN autonomy.allowed_operations ? '"+op+"'"),
+  assert.ok(claim.includes("WHEN '"+objective+"' THEN jsonb_exists(autonomy.allowed_operations,'"+op+"')"),
     objective+' must map to a bounded owner profile operation');
  }
  assert.match(claim,/ELSE FALSE/);
- assert.match(claim,/profile\.allowed_operations|autonomy\.allowed_operations/);
+ assert.match(claim,/jsonb_exists\(autonomy\.allowed_operations/);
 });
 
 test('C18 RED: routine task claim remains fenced, durable, and skip-locked',()=>{
