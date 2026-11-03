@@ -31,7 +31,7 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
  ), autonomy AS MATERIALIZED (
    SELECT owner,allowed_operations,max_paid_cents,
      version AS profile_version
-   FROM brain_owner_autonomy_profile WHERE id=1 FOR SHARE
+   FROM brain_owner_autonomy_profile WHERE id=1 FOR UPDATE
  ), selected AS (
    SELECT brain_tasks.id,autonomy.profile_version,control.stop_version
    FROM brain_tasks CROSS JOIN control CROSS JOIN autonomy
