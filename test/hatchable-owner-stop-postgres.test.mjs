@@ -191,4 +191,23 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
     /deep objective deletion denied/);
  });
 
+
+ test('C06 PostgreSQL owner pause commits before any queued external deep-task dispatch',async()=>{
+  const source=readFileSync(new URL('../cloud/hatchable/lib/deep-issue-workflow.js',
+    import.meta.url),'utf8');
+  const claim=source.match(/const CLAIM_SQL=`([\\s\\S]*?)`;/)?.[1];
+  assert.ok(claim,'real deep-issue dispatch admission SQL');
+  await sql("UPDATE brain_runtime_control SET paused=FALSE,version=version+1 WHERE id=1");
+  await sql("UPDATE brain_owner_autonomy_profile SET preset='release',version=version+1 WHERE id=1");
+  await sql("INSERT INTO brain_deep_objectives(task_key,fingerprint,profile_version,stop_version) "+
+    "SELECT 'deep-pause-race',repeat('e',64),p.version,c.version "+
+    "FROM brain_owner_autonomy_profile p JOIN brain_runtime_control c ON c.id=1 WHERE p.id=1");
+  const commit=await startUncommittedPause();
+  const admission=sql(claim.replaceAll('$1',"'deep-pause-race'").replaceAll('$2',"repeat('e',64)"));
+  await waitForBlockedClaim();
+  await commit();
+  assert.equal(await admission,'');
+  assert.equal(await sql("SELECT state FROM brain_deep_objectives WHERE task_key='deep-pause-race'"),'prepared');
+ });
+
 }
