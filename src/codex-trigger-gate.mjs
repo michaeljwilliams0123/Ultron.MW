@@ -14,7 +14,7 @@ const evidence=(state,reason,extra={})=>Object.freeze({
 
 export function assessCodexTrigger({
   repository,actor,event,pr,issue,mainSha,proposalText,
-  bindingFingerprint,ownerTriggerCount,claimState='unknown',receiptState='unknown',
+  bindingFingerprint,ownerTriggerCount,ownerTriggerIds,claimState='unknown',receiptState='unknown',
 }={}){
   if(repository!==CODEX_REPOSITORY||actor!==CODEX_OWNER||
     event?.action!=='created'||
@@ -48,6 +48,9 @@ export function assessCodexTrigger({
     return evidence('held','owner-trigger-unobserved',identity);
   if(ownerTriggerCount!==1)
     return evidence('reconcile-required','duplicate-owner-trigger',identity);
+  if(!Array.isArray(ownerTriggerIds)||ownerTriggerIds.length!==1||
+    ownerTriggerIds[0]!==event.comment.id)
+    return evidence('held','unmatched-original-owner-event',identity);
   if(!['missing','present','unknown'].includes(claimState)||
     !['missing','present','unknown'].includes(receiptState))
     return evidence('held','invalid-record-inventory',identity);
