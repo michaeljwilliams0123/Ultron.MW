@@ -142,3 +142,40 @@ On receipt conflict, unknown write, revoked/expired signer, mismatched main SHA 
 ## What this PR may be merged as
 
 At most this is a source-only contract and guided account-side setup for a Codex Cloud identity. **Do not describe it as live Cloud enabled, Work account proven, C03 authenticated end-to-end or production accepted.** Merge eligibility is separately determined by exact-head CI, review and repository protections; the external acceptance gates in #185 remain open until real observations exist.
+
+
+## Durable signed-completion custody — C03 source milestone (#224)
+
+The migration `cloud/hatchable/migrations/0015_destiny_completions.sql`
+introduces one immutable `brain_destiny_completions` record per C01 delivery
+and a distinct, separately registered `destiny-codex-cloud` route value.
+**The migration's presence in GitHub is not proof it has been applied to
+Hatchable production or that any route is registered.**
+
+The source-only `recordDestinyCompletion` function:
+
+- Requires independently read C01 intent, pinned public Ed25519 verifier
+  metadata, real GitHub-authoritative actor observation and an appropriately
+  signed, time-bounded read-only receipt.
+- Requires the C01 `objective_id` to match the admitted Codex task ID,
+  while the delivery/source/request/route and zero-cost read-only action
+  match the immutable outbox and destination-specific route.
+- Stores the canonical signed bytes, signature and correlation digests
+  behind a unique delivery ID; fresh SQL readback must agree.
+- Handles duplicate receipts as already recorded; a conflicting second
+  signature/result is held. A lost database write acknowledgment is
+  **read back once without reissuing the INSERT**.
+- Returns `workAccountAuthenticated=false` and
+  `productionAccepted=false` even for a correctly signed receipt.
+
+**Owner/executor rollout dependency:** an authorized operator must
+independently provision and observe the actual Codex Cloud account,
+trusted signer public-key binding, receiver task and C01 route, then
+apply the reviewed database migration under a separately approved
+deployment. No automatic task dispatch, credentials, environment
+enrollment or production mutation is implied by this PR.
+
+Source verification must include Ed25519 invalid/future/expired
+receipts, unknown writes, mismatched routes, and PostgreSQL unique
+and immutable-table protections. Follow #185 for live execution and
+#204 for independently observed production acceptance.
