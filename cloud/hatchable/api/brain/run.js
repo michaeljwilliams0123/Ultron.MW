@@ -1,11 +1,17 @@
 import { db,browser,scheduler,config } from 'hatchable';
 import { runOne } from 'lib/brain-runner.js';
+import { readOwnerProfile } from 'lib/owner-autonomy-control.js';
 import { resumePendingMahoragaActions } from 'lib/mahoraga-actions.js';
 export const access='scheduler';
 export const methods=['POST'];
 export default async function(req,res){
+ const profile=await readOwnerProfile({db});
+ // Each task remains independently admitted under the current locked profile.
+ // This upper bound prevents untrusted configuration from creating unlimited
+ // scheduler work in one invocation, while expanding the old fixed four.
+ const batchLimit=Math.min(8,profile.limits.maxSteps);
  const results=[];
- for(let i=0;i<4;i++){
+ for(let i=0;i<batchLimit;i++){
   const result=await runOne({db,browser});
   results.push(result);
   if(result.status==='idle'||result.status==='lost-lease'||result.status==='paused')break;
@@ -18,7 +24,7 @@ export default async function(req,res){
    catch {mahoraga={status:'reconcile-unavailable',scanned:0};}
  }
  let continuation_scheduled=false;
- if(results.length===4 && req?.body?.via!=='bounded-continuation'){
+ if(results.length===batchLimit && req?.body?.via!=='bounded-continuation'){
   const remaining=await db.query(`SELECT count(*)::int AS n FROM brain_tasks
    WHERE (status='queued' AND attempts < max_attempts
     AND (lease_until IS NULL OR lease_until <= now()))
