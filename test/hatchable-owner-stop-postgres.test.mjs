@@ -60,7 +60,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   for(const name of ['0001_tasks.sql','0002_events.sql','0004_mahoraga_actions.sql',
    '0005_mahoraga_scan_fairness.sql','0007_cooperative_fencing.sql',
    '0010_runtime_stop.sql','0016_owner_autonomy_profile.sql',
-   '0017_owner_autonomy_capacity.sql']){
+   '0017_owner_autonomy_capacity.sql','0018_deep_objectives.sql']){
    await sql(readFileSync(new URL('../cloud/hatchable/migrations/'+name,
     import.meta.url),'utf8'));
   }
@@ -167,6 +167,47 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   await sql("UPDATE brain_runtime_control SET paused=TRUE,version=version+1 WHERE id=1");
   assert.equal(await sql(taskClaim.replaceAll('$1',"'capacity-worker-e'")),'');
   assert.equal(await sql("SELECT active_leases FROM brain_owner_autonomy_profile WHERE id=1"),'0');
+ });
+
+
+ test('C06 deep objective is durable, unique, transition-fenced and deletion-protected',async()=>{
+  const key='c06-deep-postgres-canary';
+  await sql("INSERT INTO brain_deep_objectives (task_key,fingerprint,profile_version,stop_version) VALUES ('"+
+    key+"',repeat('a',64),4,3)");
+  await sql("INSERT INTO brain_deep_objectives (task_key,fingerprint,profile_version,stop_version) VALUES ('"+
+    key+"',repeat('a',64),4,3) ON CONFLICT(task_key) DO NOTHING");
+  assert.equal(await sql("SELECT count(*) FROM brain_deep_objectives WHERE task_key='"+key+"'"),'1');
+  await assert.rejects(sql("UPDATE brain_deep_objectives SET profile_version=5 WHERE task_key='"+key+"'"),
+    /deep objective identity immutable/);
+  await sql("UPDATE brain_deep_objectives SET state='dispatching' WHERE task_key='"+key+"'");
+  await sql("UPDATE brain_deep_objectives SET state='reconcile-required' WHERE task_key='"+key+"'");
+  await sql("UPDATE brain_deep_objectives SET state='observed',issue_number=1200,"+
+    "external_url='https://github.com/michaeljwilliams0123/mahoraga/issues/1200' WHERE task_key='"+key+"'");
+  assert.equal(await sql("SELECT state||':'||issue_number FROM brain_deep_objectives WHERE task_key='"+key+"'"),
+    'observed:1200');
+  await assert.rejects(sql("UPDATE brain_deep_objectives SET state='prepared' WHERE task_key='"+key+"'"),
+    /deep objective transition denied/);
+  await assert.rejects(sql("DELETE FROM brain_deep_objectives WHERE task_key='"+key+"'"),
+    /deep objective deletion denied/);
+ });
+
+
+ test('C06 PostgreSQL owner pause commits before any queued external deep-task dispatch',async()=>{
+  const source=readFileSync(new URL('../cloud/hatchable/lib/deep-issue-workflow.js',
+    import.meta.url),'utf8');
+  const claim=source.match(/const CLAIM_SQL=`([\s\S]*?)`;/)?.[1];
+  assert.ok(claim,'real deep-issue dispatch admission SQL');
+  await sql("UPDATE brain_runtime_control SET paused=FALSE,version=version+1 WHERE id=1");
+  await sql("UPDATE brain_owner_autonomy_profile SET preset='release',version=version+1 WHERE id=1");
+  await sql("INSERT INTO brain_deep_objectives(task_key,fingerprint,profile_version,stop_version) "+
+    "SELECT 'deep-pause-race',repeat('e',64),p.version,c.version "+
+    "FROM brain_owner_autonomy_profile p JOIN brain_runtime_control c ON c.id=1 WHERE p.id=1");
+  const commit=await startUncommittedPause();
+  const admission=sql(claim.replaceAll('$1',"'deep-pause-race'").replaceAll('$2',"repeat('e',64)"));
+  await waitForBlockedClaim();
+  await commit();
+  assert.equal(await admission,'');
+  assert.equal(await sql("SELECT state FROM brain_deep_objectives WHERE task_key='deep-pause-race'"),'prepared');
  });
 
 }
