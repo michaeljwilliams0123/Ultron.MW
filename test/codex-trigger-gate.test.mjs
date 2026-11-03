@@ -60,7 +60,7 @@ test('closed PR, stale source or changed request fail closed',()=>{
     {mainSha:'c'.repeat(40)},
     {pr:{...clean().pr,state:'closed'}},
     {issue:{...clean().issue,body:'ULTRON_PR_V1\nchanged'}},
-    {proposalText:formatCodexCall({...call,authorId:'mike-codex'})},
+    {proposalText:'tampered proposal envelope'},
     {bindingFingerprint:'f'.repeat(64)},
   ]){
     const a=assessCodexTrigger({...clean(),...delta});
