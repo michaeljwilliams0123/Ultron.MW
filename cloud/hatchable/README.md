@@ -1,5 +1,7 @@
 # Ultron.MW — Hatchable cloud brain (v2 design, deployment v3)
 
+**Cloud action extension (November 3, 2026):** `cloud.note.create` is a bounded Hatchable native write outside GitHub. The admin route also checks the authenticated owner handle, versioned Build/Release operation membership, current stop version, pause state and $0 paid ceiling. One PostgreSQL statement creates a keyed note and event receipt; replay reads the original without another write. An uncertain response is reconciled by the same key. This is not a generic HTTP executor or proof of a Destiny/Codex handoff.
+
 Source snapshot of the **deployed private owner-only** `ultron-mw-cloud` Hatchable backend. This is a source-review PR, not a GitHub Pages/UI replacement.
 
 **Current release evidence (October 24, 2026):** Hatchable deployment v3 is

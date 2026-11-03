@@ -17,8 +17,8 @@
 .card{padding:21px;border:1px solid #314665;border-radius:15px;background:#111e33}
 h2{font-size:20px;margin:0 0 10px}h3{font-size:15px;margin:19px 0 8px}
 label{display:block;font-size:13px;color:#ccdafa;margin:8px 0 5px}
-input,select{background:#192b45;border:1px solid #466283;border-radius:9px;color:#f1f5ff;padding:10px;width:100%;font:inherit}
-input:focus,select:focus{outline:2px solid #94c6ff}
+input,select,textarea{background:#192b45;border:1px solid #466283;border-radius:9px;color:#f1f5ff;padding:10px;width:100%;font:inherit}
+input:focus,select:focus,textarea:focus{outline:2px solid #94c6ff}
 .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
 button{border:0;border-radius:9px;padding:11px 15px;font-weight:760;background:#82a7ff;color:#081628;cursor:pointer;margin-top:12px}
 button:disabled{opacity:.4;cursor:not-allowed}
@@ -62,6 +62,17 @@ button:disabled{opacity:.4;cursor:not-allowed}
 </form>
 </div>
 <div class="card">
+<h2>Cloud actions</h2>
+<p class="small">Create one owner-scoped note in the cloud. Keep its key when retrying an uncertain result.</p>
+<form id="cloudForm">
+<label for="cloudKey">Action key</label><input id="cloudKey" readonly>
+<label for="cloudKind">Kind</label><select id="cloudKind"><option value="observation">Observation</option><option value="goal">Goal</option><option value="decision">Decision</option></select>
+<label for="cloudBody">Note</label><textarea id="cloudBody" maxlength="1200" rows="4" required></textarea>
+<button id="cloudSubmit" type="submit" disabled>Create cloud note</button>
+</form>
+<p class="small" id="cloudResult" role="status" aria-live="polite">Owner profile pending.</p>
+</div>
+<div class="card">
 <h2>Execution safeguards</h2>
 <p><span class="chip">Current profile is NOT a permission grant</span></p>
 <p class="muted">Actual execution requires a verified owner grant, provider capabilities, durable stop/fencing, idempotency and independent external readback. Squash merges and reversible releases additionally require exact-head CI and GitHub eligibility checks.</p>
@@ -79,18 +90,22 @@ const uri='/api/brain/autonomy';
 const modes={
 observe:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read'],
 limits:{maxFiles:4,maxFileBytes:6500,maxTotalBytes:18000,maxConcurrent:1,maxSteps:8}},
-build:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read','branch.create','branch.update','pr.open','pr.comment','verify.dispatch','capability.sandbox.propose','capability.sandbox.test'],
+build:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read','branch.create','branch.update','pr.open','pr.comment','verify.dispatch','capability.sandbox.propose','capability.sandbox.test','cloud.note.create'],
 limits:{maxFiles:12,maxFileBytes:24000,maxTotalBytes:96000,maxConcurrent:4,maxSteps:32}},
-release:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read','branch.create','branch.update','pr.open','pr.comment','verify.dispatch','capability.sandbox.propose','capability.sandbox.test','pr.squash.merge','deploy.reversible'],
+release:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read','branch.create','branch.update','pr.open','pr.comment','verify.dispatch','capability.sandbox.propose','capability.sandbox.test','cloud.note.create','pr.squash.merge','deploy.reversible'],
 limits:{maxFiles:24,maxFileBytes:36000,maxTotalBytes:192000,maxConcurrent:4,maxSteps:48}}
 };
 const all=modes.release.operations;
 const ids=['preset','maxFiles','maxConcurrent','maxSteps','reason'];
 const el=id=>document.getElementById(id);
 let profile=null;
+let pendingCloud=null;
+const nextCloudKey=()=> 'cloud:note:'+crypto.randomUUID();
+el('cloudKey').value=nextCloudKey();
 function message(txt,bad=false){el('status').textContent=txt;el('status').classList.toggle('error',bad)}
 function enable(on){for(const id of ids)el(id).disabled=!on;el('save').disabled=!on;
- for(const x of document.querySelectorAll('#operations input'))x.disabled=!on}
+ for(const x of document.querySelectorAll('#operations input'))x.disabled=!on;
+ el('cloudSubmit').disabled=!on||!profile?.allowedOperations.includes('cloud.note.create')||profile.paused}
 function drawOps(active){el('operations').replaceChildren();
  for(const op of all){const label=document.createElement('label'),box=document.createElement('input'),span=document.createElement('span');
  box.type='checkbox';box.value=op;box.checked=active.includes(op);box.disabled=!profile;
@@ -101,6 +116,26 @@ function refresh(p){profile=p;el('preset').value=p.preset;el('maxFiles').value=p
  el('revision').textContent='Version '+p.version;el('pause').textContent=p.paused?'PAUSED — no new work permitted':'Not paused (separate execution grants still required)';
  drawOps(p.allowedOperations);enable(true);
  message('Authenticated preferences loaded. No execution authority has been granted.')}
+el('cloudForm').addEventListener('submit',async event=>{
+ event.preventDefault();if(!profile||el('cloudSubmit').disabled)return;
+ const key=el('cloudKey').value,kind=el('cloudKind').value,body=el('cloudBody').value.trim();
+ if(!body)return;
+ if(!pendingCloud||pendingCloud.key!==key||pendingCloud.kind!==kind||pendingCloud.body!==body){
+  pendingCloud={key,kind,body,expectedProfileVersion:profile.version,
+   expectedStopVersion:profile.stopVersion};
+ }
+ enable(false);el('cloudResult').textContent='Writing and reading back the cloud receipt…';
+ try{
+  const response=await fetch('/api/brain/cloud-action',{method:'POST',credentials:'same-origin',
+   cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(pendingCloud)});
+  const result=await response.json();
+  if(!response.ok||!result.ok)throw Error(result.reason||'cloud-action-unverified');
+  el('cloudResult').textContent='Cloud note '+result.noteId+' confirmed with receipt '+result.receiptId+'.';
+  pendingCloud=null;el('cloudBody').value='';el('cloudKey').value=nextCloudKey();
+ }catch(error){el('cloudResult').textContent='Action unconfirmed: '+String(error.message||error)+
+  '. Retry with the same key and unchanged note.';}
+ enable(true);
+});
 el('preset').addEventListener('change',()=>{const p=modes[el('preset').value];drawOps(p.operations);
  for(const key of ['maxFiles','maxConcurrent','maxSteps'])el(key).value=p.limits[key]});
 el('form').addEventListener('submit',async event=>{

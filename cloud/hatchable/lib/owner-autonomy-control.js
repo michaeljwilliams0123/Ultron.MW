@@ -2,7 +2,8 @@
 const OWNER='michaeljwilliams0123';
 const OBSERVE=['research.public','repo.inspect','plan.create','test.local','evidence.read'];
 const BUILD=[...OBSERVE,'branch.create','branch.update','pr.open','pr.comment',
- 'verify.dispatch','capability.sandbox.propose','capability.sandbox.test'];
+ 'verify.dispatch','capability.sandbox.propose','capability.sandbox.test',
+ 'cloud.note.create'];
 const RELEASE=[...BUILD,'pr.squash.merge','deploy.reversible'];
 export const DEFAULT_OPERATIONS=Object.freeze({
  observe:Object.freeze(OBSERVE),build:Object.freeze(BUILD),release:Object.freeze(RELEASE)
