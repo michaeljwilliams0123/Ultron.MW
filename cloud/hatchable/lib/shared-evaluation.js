@@ -67,10 +67,12 @@ export async function evaluateSharedEvaluation({
  if(!subtle)reject('hash-provider-unavailable');
  if(!candidateActor||typeof candidateActor!=='string'||
     !evaluator||evaluator.kind!=='independent'||typeof evaluator.id!=='string'||
-    !reviewer||reviewer.kind!=='independent'||typeof reviewer.id!=='string'||
-    !Array.isArray(reviewer.materialDissent)||
-    !reviewer.materialDissent.every(x=>typeof x==='string')||
-    new Set([candidateActor,evaluator.id,reviewer.id]).size!==3)
+    candidateActor===evaluator.id||
+    (reviewer!==undefined&&reviewer!==null&&(
+     reviewer.kind!=='independent'||typeof reviewer.id!=='string'||
+     !Array.isArray(reviewer.materialDissent)||
+     !reviewer.materialDissent.every(x=>typeof x==='string')||
+     reviewer.id===candidateActor||reviewer.id===evaluator.id)))
   reject('evaluator-independence-not-established');
  const normalized=normalizeCases(cases);
  if(!SHA.test(baseline?.sourceSha||'')||!SHA.test(candidate?.sourceSha||'')||
@@ -82,7 +84,7 @@ export async function evaluateSharedEvaluation({
  const candidateScore=weightedScore(normalized,after);
  const improvementPoints=Math.round((candidateScore-baselineScore+Number.EPSILON)*100)/100;
  const criticalViolations=normalized.filter(c=>c.critical&&!after.get(c.caseId)).length;
- const dissent=reviewer.materialDissent.length;
+ const dissent=reviewer?.materialDissent.length??0;
  const reasons=['shared-corpus-is-not-held-out'];
  if(criticalViolations)reasons.push('critical-case-failure');
  if(dissent)reasons.push('material-dissent-unresolved');

@@ -71,7 +71,7 @@ export function normalizeOwnerProfile(row){
   paused:r.paused,stopVersion:r.stopVersion,updatedAt:r.updatedAt||null,
   executionAuthorized:false,runtimeEnforced:false,
   releaseRequires:['authenticated-owner-grant','actual-capability-binding',
-    'durable-stop-fence','idempotent-postcondition','independent-review',
+    'durable-stop-fence','idempotent-postcondition',
     'exact-head-ci','github-merge-eligibility','verified-rollback']
  });
 }

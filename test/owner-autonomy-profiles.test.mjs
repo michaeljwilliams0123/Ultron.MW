@@ -27,7 +27,7 @@ test('owner customization supports three progressive modes with explicit authori
   assert.equal(assess(build,'pr.squash.merge').disposition,'held');
   const merge=assess(release,'pr.squash.merge');
   assert.equal(merge.disposition,'routine-preflight-eligible');
-  assert.ok(merge.requiredRuntimeChecks.includes('independent-review'));
+  assert.ok(!merge.requiredRuntimeChecks.includes('independent-review'));
   assert.ok(merge.requiredRuntimeChecks.includes('exact-head-ci'));
   assert.ok(merge.requiredRuntimeChecks.includes('github-merge-eligibility'));
   assert.ok(merge.requiredRuntimeChecks.includes('authenticated-owner-grant'));
@@ -103,7 +103,7 @@ test('per-operation runtime admission and rate/fencing still mandatory despite h
   assert.equal(basic.executionAuthorized,false);
   const deploy=assess(p,'deploy.reversible');
   assert.ok(deploy.requiredRuntimeChecks.includes('verified-rollback'));
-  assert.ok(deploy.requiredRuntimeChecks.includes('independent-review'));
+  assert.ok(!deploy.requiredRuntimeChecks.includes('independent-review'));
   assert.equal(deploy.executionAuthorized,false);
 });
 

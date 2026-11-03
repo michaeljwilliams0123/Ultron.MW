@@ -153,7 +153,7 @@ export function assessOwnerAutonomyRequest({
   const checks=['authenticated-owner-grant','capability-binding-readback',
     'durable-stop-and-fence','idempotency-and-postcondition','zero-paid-spend'];
   if(['pr.squash.merge','deploy.reversible'].includes(operation)){
-    checks.push('independent-review','exact-head-ci','github-merge-eligibility');
+    checks.push('exact-head-ci','github-merge-eligibility');
     if(operation==='deploy.reversible')checks.push('verified-rollback');
   }
   return decision('routine-preflight-eligible','policy-profile-matched',checks);

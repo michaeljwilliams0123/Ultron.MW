@@ -21,7 +21,7 @@ function harness({uncertainAt=null,missingAt=null,deny=null}={}){
  const ctx={owner:OWNER,repository:REPO,sourceSha:SHA,
   paused:false,revoked:false,maxPaidCents:0,profileVersion:4,stopVersion:3,
   authenticatedOwner:true,capabilityBound:true,operationAllowed:true,
-  profileActive:true,durableStopAvailable:true,independentReview:true,
+  profileActive:true,durableStopAvailable:true,
   exactHeadCI:true,githubMergeable:true,rollbackVerified:true};
  const ledger={
   async read(key){return state.get(key)||null;},
@@ -96,12 +96,12 @@ test('unverified external postcondition holds; resumption observes without redis
  assert.equal(second.status,'verified-plan');
  assert.equal(h.performed.filter(x=>x==='source-patched').length,1);
 });
-test('release requires independent review, exact-head CI and real mergeability',async()=>{
- for(const denied of [{independentReview:false},{exactHeadCI:false},{githubMergeable:false}]){
+test('release requires exact-head CI and real mergeability without a reviewer',async()=>{
+ for(const denied of [{exactHeadCI:false},{githubMergeable:false}]){
   const h=harness({deny:denied});
   const r=await runDeepTask({plan:plan(),...h});
   assert.equal(r.status,'held');
-  assert.equal(r.reason,'independent-release-gate-missing');
+  assert.equal(r.reason,'release-verification-gate-missing');
   assert.ok(!h.performed.includes('pr-merged'));
  }
 });

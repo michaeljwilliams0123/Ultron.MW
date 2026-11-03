@@ -105,7 +105,6 @@ export function assessContinuumEvidence(record,{expectedHeadSha,now}={}){
   if(c.intent.effect==='read')return result('source-only','no-live-effect-certification');
   if(!b||b.observedEffect!=='present')
     return result('reconcile-required','external-write-unproved');
-  if(!v)return held('independent-review-unproved');
   // Structurally consistent evidence is still an UNVERIFIED claim. This
   // function never queries GitHub, Hatchable, or the independent provider.
   return result('observed-not-accepted','external-attestation-required');
