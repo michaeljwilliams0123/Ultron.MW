@@ -200,3 +200,64 @@ test('C03 PostgreSQL route registration prevents cross-receiver ACK and immutabl
  assert.equal(await sql(ack('0003')),'','exact duplicate must not insert twice');
  assert.equal(await sql('SELECT count(*) FROM brain_continuum_receipts'),'1');
 });
+
+test('C03 signed Cloud completion ledger enforces route-bound PostgreSQL custody',options,async t=>{
+  const schema='ultron_destiny_'+randomUUID().replaceAll('-');
+  async function sql(statement){
+    const result=await run('docker',['exec',container,'psql','-U','ultron','-d','ultron',
+      '-X','-q','-t','-A','-v','ON_ERROR_STOP=1','-c',
+      'SET search_path TO '+schema+'; '+statement],
+      {timeout:10_000,maxBuffer:1024*1024});
+    return result.stdout.trim();
+  }
+  const joined=(...parts)=>parts.join(' ');
+  await sql('CREATE SCHEMA '+schema);
+  t.after(()=>sql('DROP SCHEMA '+schema+' CASCADE'));
+  for(const file of ['0001_tasks.sql','0013_continuum_outbox.sql',
+    '0014_continuum_receipts.sql','0015_destiny_completions.sql'])
+    await sql(await readFile(new URL('../cloud/hatchable/migrations/'+file,import.meta.url),'utf8'));
+  await sql("INSERT INTO brain_tasks(task_key,objective) VALUES('destiny-ledger-test','repo.inspect')");
+  await sql(joined(
+    'INSERT INTO brain_continuum_outbox',
+    '(task_id,objective_id,delivery_id,idempotency_key,repository,',
+    'source_sha,authority_sha,request_sha,lease_generation,',
+    'expires_at,effect,max_paid_cents)',
+    "VALUES(1,'ucc-canary-000000000001','continuum-destiny-0001',",
+    "'continuum:destiny:0001','michaeljwilliams0123/Ultron.MW',",
+    "repeat('b',40),repeat('c',64),repeat('a',64),2,",
+    "statement_timestamp()+interval '1 day','read',0)"
+  ));
+  const completion=joined(
+    'INSERT INTO brain_destiny_completions',
+    '(delivery_id,task_id,source_sha,request_sha,route_sha,receipt_sha,',
+    'canonical_receipt,signature_base64,github_actor,environment_fingerprint,',
+    'key_id,result_sha)',
+    "SELECT 'continuum-destiny-0001','ucc-canary-000000000001',",
+    "repeat('b',40),repeat('a',64),repeat('c',64),repeat('f',64),",
+    "repeat('z',200),repeat('A',86)||'==','michaeljwilliams0123',",
+    "repeat('e',64),'destiny-executor-k1',repeat('d',64)",
+    'FROM brain_continuum_outbox o',
+    'JOIN brain_continuum_routes r ON r.delivery_id=o.delivery_id',
+    "WHERE o.delivery_id='continuum-destiny-0001'",
+    "AND o.objective_id='ucc-canary-000000000001'",
+    "AND o.repository='michaeljwilliams0123/Ultron.MW'",
+    "AND o.source_sha=repeat('b',40) AND o.request_sha=repeat('a',64)",
+    "AND r.route_sha=repeat('c',64) AND r.source='destiny-codex-cloud'",
+    "AND o.effect='read' AND o.max_paid_cents=0 AND o.state='pending'",
+    'ON CONFLICT DO NOTHING RETURNING delivery_id'
+  );
+  assert.equal(await sql(completion),'','missing route must not persist a receipt');
+  await sql(joined(
+    'INSERT INTO brain_continuum_routes(delivery_id,source,route_sha)',
+    "VALUES('continuum-destiny-0001','destiny-codex-cloud',repeat('c',64))"
+  ));
+  assert.equal(await sql(completion),'continuum-destiny-0001');
+  assert.equal(await sql(completion),'','duplicate must not create another receipt');
+  assert.equal(await sql('SELECT count(*) FROM brain_destiny_completions'),'1');
+  await assert.rejects(sql("UPDATE brain_destiny_completions SET result_sha=repeat('0',64)"),
+    /destiny completion mutation forbidden/);
+  await assert.rejects(sql('DELETE FROM brain_destiny_completions'),
+    /destiny completion mutation forbidden/);
+  await assert.rejects(sql("UPDATE brain_continuum_routes SET source='destiny-work'"),
+    /continuum route mutation forbidden/);
+});
