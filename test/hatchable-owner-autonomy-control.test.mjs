@@ -6,7 +6,8 @@ import {readFile} from 'node:fs/promises';
 
 const BUILD=['research.public','repo.inspect','plan.create','test.local',
 'evidence.read','branch.create','branch.update','pr.open','pr.comment',
-'verify.dispatch','capability.sandbox.propose','capability.sandbox.test'];
+'verify.dispatch','capability.sandbox.propose','capability.sandbox.test',
+'cloud.note.create'];
 const before=()=>({owner:'michaeljwilliams0123',preset:'build',version:7,
   maxPaidCents:0,paused:false,stopVersion:3,
   allowedOperations:[...BUILD],

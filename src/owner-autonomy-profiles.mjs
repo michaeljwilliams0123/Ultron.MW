@@ -19,13 +19,13 @@ const PRESETS=Object.freeze({
   build:Object.freeze({
     operations:['research.public','repo.inspect','plan.create','test.local','evidence.read',
       'branch.create','branch.update','pr.open','pr.comment','verify.dispatch',
-      'capability.sandbox.propose','capability.sandbox.test'],
+      'capability.sandbox.propose','capability.sandbox.test','cloud.note.create'],
     limits:{maxFiles:12,maxFileBytes:24000,maxTotalBytes:96000,maxConcurrent:4,maxSteps:32},
   }),
   release:Object.freeze({
     operations:['research.public','repo.inspect','plan.create','test.local','evidence.read',
       'branch.create','branch.update','pr.open','pr.comment','verify.dispatch',
-      'capability.sandbox.propose','capability.sandbox.test',
+      'capability.sandbox.propose','capability.sandbox.test','cloud.note.create',
       'pr.squash.merge','deploy.reversible'],
     limits:{maxFiles:24,maxFileBytes:36000,maxTotalBytes:192000,maxConcurrent:4,maxSteps:48},
   }),

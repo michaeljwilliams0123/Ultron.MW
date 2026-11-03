@@ -24,6 +24,7 @@ test('owner customization supports three progressive modes with explicit authori
   assert.equal(assess(observe,'research.public').disposition,'routine-preflight-eligible');
   assert.equal(assess(observe,'branch.update').disposition,'held');
   assert.equal(assess(build,'branch.update').disposition,'routine-preflight-eligible');
+  assert.equal(assess(build,'cloud.note.create').disposition,'routine-preflight-eligible');
   assert.equal(assess(build,'pr.squash.merge').disposition,'held');
   const merge=assess(release,'pr.squash.merge');
   assert.equal(merge.disposition,'routine-preflight-eligible');
