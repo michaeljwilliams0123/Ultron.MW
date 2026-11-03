@@ -18,7 +18,7 @@ async function get(path,{optional=false}={}){
       {windowsHide:true,timeout:15000,maxBuffer:2000000});
     return JSON.parse(stdout);
   }catch(err){
-    if(optional&&/HTTP 404\\b/.test(String(err.stderr||'')))return null;
+    if(optional&&/HTTP 404\b/.test(String(err.stderr||'')))return null;
     throw Error('GitHub admission readback unavailable; executor not attested');
   }
 }
