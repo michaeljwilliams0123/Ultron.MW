@@ -1,4 +1,5 @@
-import {db} from 'hatchable';
+import {db,events} from 'hatchable';
+import {notifyOwner} from 'lib/owner-live-events.js';
 import {readExecutionControl,setExecutionControl} from 'lib/runtime-control.js';
 export const access='admin';
 export const methods=['GET','POST'];
@@ -13,6 +14,7 @@ export default async function(req,res){
   const body=req.body||{};
   const result=await setExecutionControl({db,action:body.action,
    expectedVersion:body.expectedVersion,reason:body.reason});
+  if(result.ok)await notifyOwner(events,'runtime');
   return res.status(result.ok?200:409).json({
    schema:'ultron.owner-stop.v1',...result});
  }catch(error){

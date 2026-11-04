@@ -1,8 +1,9 @@
 import { ALLOWED,CAPABILITIES } from 'lib/brain-core.js';
+import {notifyOwner} from 'lib/owner-live-events.js';
 import { persistAcceptanceEvidence } from 'lib/acceptance-evidence.js';
 import { persistHeldOutEvidence } from 'lib/heldout-evidence.js';
 const IDKEY=/^[a-z0-9-]{6,80}$/;
-export async function queueObjective({db,scheduler},objective,key){
+export async function queueObjective({db,scheduler,events},objective,key){
  if(!ALLOWED.has(objective))return {ok:false,error:'unsupported-objective'};
  if(key!=null && (typeof key!=='string'||!IDKEY.test(key)))return {ok:false,error:'invalid-idempotency-key'};
  const taskKey=key||('owner-'+crypto.randomUUID());
@@ -23,9 +24,10 @@ export async function queueObjective({db,scheduler},objective,key){
   try{await scheduler.now('/api/brain/run',{via:'owner'});scheduled=true;}
   catch(_e){scheduled=false;}
  }
+ if(added.rows.length)await notifyOwner(events,'task',Number(exists.id));
  return {ok:true,task:exists,created:!!added.rows.length,immediate_scheduled:scheduled,scheduled_fallback:'hourly'};
 }
-export async function saveNote({db},kind,body){
+export async function saveNote({db,events},kind,body){
  if(!['goal','observation','decision'].includes(kind)||typeof body!=='string'||!body.trim()||body.trim().length>1200)return {ok:false,error:'invalid-note'};
  // The receipt deliberately excludes the private note content.
  const r=await db.query(`WITH created AS (
@@ -36,9 +38,10 @@ export async function saveNote({db},kind,body){
    SELECT 'owner-note',jsonb_build_object('note_id',id,'kind',kind) FROM created
    RETURNING id
  ) SELECT id,kind,body,created_at FROM created`,[kind,body.trim()]);
+ await notifyOwner(events,'note',Number(r.rows[0]?.id));
  return {ok:true,note:r.rows[0]};
 }
-export async function controlTask({db},action,id){
+export async function controlTask({db,events},action,id){
  if(!Number.isInteger(id)||id<=0||id>1000000000)return {ok:false,error:'invalid-task-id'};
  if(action!=='cancel'&&action!=='retry')return {ok:false,error:'unsupported-action'};
  const transition=action==='cancel'
@@ -54,6 +57,7 @@ export async function controlTask({db},action,id){
    SELECT id,$2 FROM moved RETURNING task_id
  ) SELECT id,status FROM moved`,[id,event]);
  if(!r.rows.length)return {ok:false,error:'task-not-eligible'};
+ await notifyOwner(events,'task',Number(r.rows[0]?.id));
  return {ok:true,task:r.rows[0]};
 }
 export async function admitAcceptanceEvidence({db},objectiveId,pullNumber){

@@ -1,4 +1,4 @@
-import { db,scheduler } from 'hatchable';
+import { db,scheduler,events } from 'hatchable';
 import { queueObjective,saveNote,snapshot } from 'lib/brain-owner.js';
 export const access='admin';
 export const methods=['POST'];
@@ -13,12 +13,12 @@ export default async function(req,res){
  if(command==='/help')return res.json({commands:['/help','/status',...Object.keys(ROUTES),'/remember <note>'],mode:'deterministic-no-llm'});
  if(command==='/status')return res.json(await snapshot({db}));
  if(ROUTES[command]){
-  const r=await queueObjective({db,scheduler},ROUTES[command],req.body.key);
+  const r=await queueObjective({db,scheduler,events},ROUTES[command],req.body.key);
   return res.status(r.ok?202:400).json({command,r});
  }
  if(command.startsWith('/remember ')){
   const note=m.trim().slice('/remember '.length);
-  const r=await saveNote({db},'observation',note);
+  const r=await saveNote({db,events},'observation',note);
   return res.status(r.ok?200:400).json(r);
  }
  return res.status(400).json({error:'unknown-command',hint:'Use /help; model-based chat not configured'});

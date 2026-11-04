@@ -6,6 +6,9 @@ const coreSource = `export const ALLOWED=new Set(['repo.inspect']);
 export const CAPABILITIES=[{id:'repo.inspect'}];
 export async function executeObjective(objective){return {objective,source:'fixture',sha:'fixed-test-sha'};}`;
 const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource).toString('base64');
+const liveUrl='data:text/javascript;base64,'+Buffer.from(
+ "export async function notifyOwner(){return true;}"
+ ).toString('base64');
 const stopUrl='data:text/javascript;base64,'+Buffer.from(
  "export async function readExecutionControl(){return {paused:false,version:1};}"
  ).toString('base64');
@@ -20,7 +23,8 @@ async function moduleUnderTest(path,core=coreUrl){
  const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'")
   .replace("from 'lib/runtime-control.js'","from '"+stopUrl+"'")
   .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'")
-  .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'");
+  .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'")
+  .replace("from 'lib/owner-live-events.js'","from '"+liveUrl+"'");
  assert.notEqual(transformed,source,'test import alias should be replaced');
  return import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 }
@@ -205,14 +209,15 @@ async function endpointUnderTest(name){
  const source=await readFile(new URL('../cloud/hatchable/api/brain/'+name+'.js',import.meta.url),'utf8');
  // Keep test fixture modules independent: Node caches identical data URLs.
  const dependency=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64')+'#'+(++endpointImportSequence);
- const platform=dependency('export const db=globalThis.__cloudEndpoint.db; export const browser={}; export const scheduler=globalThis.__cloudEndpoint.scheduler; export const config={};');
+ const platform=dependency('export const db=globalThis.__cloudEndpoint.db; export const browser={}; export const scheduler=globalThis.__cloudEndpoint.scheduler; export const config={}; export const events={publish:async()=>({id:1})};');
  const runner=dependency('export const runOne=(...args)=>globalThis.__cloudEndpoint.runOne(...args);');
  const mahoraga=dependency('export const resumePendingMahoragaActions=(...args)=>globalThis.__cloudEndpoint.resumePendingMahoragaActions(...args);');
  const profile=dependency('export const readOwnerProfile=async()=>globalThis.__cloudEndpoint.readOwnerProfile?.()??{limits:{maxSteps:4}};');
  const transformed=source.replace("from 'hatchable'","from '"+platform+"'")
   .replace("from 'lib/brain-runner.js'","from '"+runner+"'")
   .replace("from 'lib/mahoraga-actions.js'","from '"+mahoraga+"'")
-  .replace("from 'lib/owner-autonomy-control.js'","from '"+profile+"'");
+  .replace("from 'lib/owner-autonomy-control.js'","from '"+profile+"'")
+  .replace("from 'lib/owner-live-events.js'","from '"+liveUrl+"'");
  return (await import(dependency(transformed))).default;
 }
 

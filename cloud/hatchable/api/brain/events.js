@@ -1,4 +1,5 @@
-import {db,scheduler,config} from 'hatchable';
+import {db,scheduler,config,events} from 'hatchable';
+import {notifyOwner} from 'lib/owner-live-events.js';
 import {verifySignedEvent,admitSignedEvent} from 'lib/signed-event-inbox.js';
 
 // This public endpoint is exclusively for HMAC-authenticated event-bridge
@@ -29,6 +30,7 @@ export default async function(req,res){
   if(!admitted.ok)return res.status(admitted.error==='queue-full'?429:409).json({
    schema:'ultron.signed-event-admission.v1',ok:false,error:admitted.error
   });
+  if(admitted.created)await notifyOwner(events,'github');
   return res.status(admitted.created?202:200).json({
    schema:'ultron.signed-event-admission.v1',ok:true,
    status:admitted.created?'admitted-not-executed':'duplicate-delivery',

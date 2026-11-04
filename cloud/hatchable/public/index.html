@@ -54,7 +54,8 @@ button:disabled{opacity:.4;cursor:not-allowed}
    <a href="https://hatchable.com/console/projects/ultron-mw-cloud" target="_blank" rel="noopener noreferrer">Owner sign-in</a>
   </div>
  </div>
- <p class="connection-stamp" id="connection-stamp" role="status" aria-live="polite">Connections have not been verified.</p>
+ <p class="connection-stamp" id="live-indicator" aria-live="polite">Live event transport initializing…</p>
+<p class="connection-stamp" id="connection-stamp" role="status" aria-live="polite">Connections have not been verified.</p>
  <div class="connection-grid" aria-label="Live system status">
   <article class="connection-tile" id="connection-runtime" data-state="warning"><div class="connection-label">Hatchable / PostgreSQL</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking runtime state…</div></article>
   <article class="connection-tile" id="connection-github" data-state="warning"><div class="connection-label">GitHub main</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking source revision…</div></article>
@@ -285,9 +286,12 @@ inspection.addEventListener('submit',async event=>{
  }finally{submit.disabled=false}
 });
 button.addEventListener('click',refresh);
+window.addEventListener('ultron:realtime-change',refresh);
 refresh();
 })();
 </script>
+<script src="/__hatchable/events.js" defer></script>
 <script src="./connectivity.js" defer></script>
+<script src="./owner-live.js" defer></script>
 </body>
 </html>
