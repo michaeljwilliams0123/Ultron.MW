@@ -50,3 +50,10 @@ test('C06-R04 replay source verifier performs immutable hash/lineage check only'
  assert.match(script,/admitC06Replay/);
  assert.doesNotMatch(script,/import\s*\(.*c06-model-candidate|vm\.run|execSync\(/);
 });
+
+test('C06-R05 replay pins all transitive model validation and dependency inputs',()=>{
+ for(const path of ['src/hf-repair-output.mjs','package.json','package-lock.json',
+  'scripts/verify-audited-lockfile.mjs']){
+  assert.ok(C06_REPLAY_PINNED_PATHS.includes(path),'missing replay dependency '+path);
+ }
+});
