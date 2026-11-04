@@ -65,3 +65,16 @@ test('C06-LIVE-05: posted canary is owner-only and cannot execute external GitHu
  assert.match(migration,/CREATE TABLE IF NOT EXISTS c06_live_receipts/);
  assert.doesNotMatch(route,/pr\.squash|github\.dispatch|actions\/workflows\/.*dispatches|ai\.generateText/);
 });
+
+test('C06-LIVE-06: owner button is explicit, sign-in gated and shares no GitHub token',()=>{
+ const html=read('cloud/hatchable/public/index.html');
+ const js=read('cloud/hatchable/public/c06-live.js');
+ assert.match(html,/id="c06-live-start"/);
+ assert.match(html,/id="c06-live-status"/);
+ assert.match(html,/src="\.\/c06-live\.js"/);
+ assert.match(js,/credentials:'same-origin'/);
+ assert.match(js,/textContent/);
+ assert.match(js,/addEventListener\('click'/);
+ assert.doesNotMatch(js,/setInterval|new EventSource|innerHTML\s*=/);
+ assert.doesNotMatch(js,/GITHUB_TOKEN|Authorization:|HF_TOKEN|model\.generate/);
+});
