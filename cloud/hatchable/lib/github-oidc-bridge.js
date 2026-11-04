@@ -59,9 +59,9 @@ function publicPem(key){
  ]);
  const subject=der(0x30,concat(algorithm,der(0x03,concat([0],rsa))));
  const enc=btoa(Array.from(subject,x=>String.fromCharCode(x)).join(''));
- return '-----BEGIN PUBLIC KEY-----\\n'+
-  enc.match(/.{1,64}/g).join('\\n')+
-  '\\n-----END PUBLIC KEY-----';
+ return '-----BEGIN PUBLIC KEY-----\n'+
+  enc.match(/.{1,64}/g).join('\n')+
+  '\n-----END PUBLIC KEY-----';
 }
 export async function oidcAudience(raw){
  if(typeof raw!=='string'||raw.length<2||raw.length>2048)deny();
