@@ -37,7 +37,7 @@ export async function collectConnectivity({db,fetchGithub=fetch,now=()=>new Date
   db.query('SELECT id,objective,status,attempts,updated_at FROM brain_tasks ORDER BY updated_at DESC,id DESC LIMIT 8'),
   githubJson(fetchGithub,'/git/ref/heads/main'),
   githubJson(fetchGithub,'/pulls?state=open&per_page=8&sort=updated&direction=desc'),
-  githubJson(fetchGithub,'/actions/runs?branch=main&per_page=12')
+  githubJson(fetchGithub,'/actions/runs?branch=main&event=push&per_page=12')
  ]);
  const controlRow=read(control)?.rows?.[0];
  const runtime=controlRow&&typeof controlRow.paused==='boolean'?{
