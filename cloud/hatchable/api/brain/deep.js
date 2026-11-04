@@ -10,6 +10,9 @@ export const access='admin';
 export const methods=['GET','POST'];
 
 export default async function(req,res){
+ if(req.member?.handle!=='michaeljwilliams0123')
+  return res.status(403).json({ok:false,status:'held',
+   reason:'owner-identity-required',productionAccepted:false});
  if(req.method==='GET'){
   const key=req.query?.key;
   if(typeof key!=='string'||!/^[a-z][a-z0-9_.:-]{7,119}$/.test(key))
