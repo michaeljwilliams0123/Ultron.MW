@@ -278,6 +278,7 @@ inspection.addEventListener('submit',async event=>{
   inspectionStatus.textContent='Request '+objective+' accepted; check the live ledger for the terminal observation.';
   pending=null;
   refresh();
+  window.dispatchEvent(new Event('ultron:task-queued'));
  }catch(err){
   inspectionStatus.textContent='Submission unconfirmed ('+String(err.message||'unknown')+
    '). Retry the unchanged objective to reuse the same key; do not assume an effect.';
