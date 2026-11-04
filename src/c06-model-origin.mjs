@@ -55,6 +55,15 @@ function invoke(script,input){
   {codeGeneration:{strings:false,wasm:false}});
  return script.runInContext(context,{timeout:125});
 }
+/** Independently authored; the model never receives these authority fields. */
+function guardedDecision(script,input){
+ if(!input||typeof input!=='object'||Array.isArray(input)||
+   input.authorized!==true||input.paused!==false||
+   !Number.isInteger(input.paidCents)||input.paidCents!==0)
+  return 'held';
+ return invoke(script,{providerStatus:input.providerStatus,
+  receiptVerified:input.receiptVerified});
+}
 export function evaluateC06Function(reply){
  const invalid=(reason)=>Object.freeze({passed:false,reason,
   correct:0,total:C06_CASES.length,failures:[]});
@@ -72,7 +81,7 @@ export function evaluateC06Function(reply){
  let correct=0;
  for(const c of C06_CASES){
   let result;
-  try{result=invoke(script,c.input);}catch{result='__execution_error__';}
+  try{result=guardedDecision(script,c.input);}catch{result='__execution_error__';}
   if(result===c.expected)correct++;
   else failures.push({id:c.id,expected:c.expected,actual:
    typeof result==='string'?result.slice(0,30):'<non-string>'});
@@ -103,7 +112,7 @@ function normalizeCases(reply,code){
   const signature=JSON.stringify(c.input);
   if(unique.has(signature))throw Error('c06-model-cases-rejected');
   unique.add(signature);
-  if(invoke(script,c.input)!==c.expected)throw Error('c06-model-cases-rejected');
+  if(guardedDecision(script,c.input)!==c.expected)throw Error('c06-model-cases-rejected');
   results.add(c.expected);
  }
  if(!['held','reconcile','verified'].every(x=>results.has(x)))
@@ -124,7 +133,7 @@ function normalizeDocs(reply){
 export function c06Prompt(kind,feedback=''){
  const constraints='Public synthetic owner effect canary. No external calls, no credentials, no paid service. ';
  const request=kind==='source'?
-  'Return ONLY a complete JavaScript function named fix(input). The function returns one of: held, reconcile, verified. Rule order: if input absent, authorized not exactly true, paused exactly true, or paidCents not integer zero, return held. If providerStatus is unknown or timeout, return reconcile. If providerStatus is observed and receiptVerified exactly true, return verified. Otherwise return held. Use strict equality and Number.isInteger. No code fences or explanation.':
+  'Return ONLY a complete JavaScript function named fix(input) that classifies the provider state. The independent owner and paid-spend guard is outside this function and cannot be edited. Your input has ONLY providerStatus and receiptVerified. If providerStatus is unknown or timeout, return reconcile. If providerStatus is observed AND receiptVerified is exactly true, return verified. For every other provider state or missing receipt, return held. Use strict === comparisons. No code fences, imports, API calls, explanation or extra text.':
   kind==='cases'?
   'Return ONLY a JSON array of 6-10 unique objects with keys input and expected. Inputs must use authorized,paused,paidCents,providerStatus,receiptVerified. Expected must be held, reconcile or verified. Include valid observed verified, unknown reconcile, timeout reconcile, paused held, unauthorized held and paid >0 held. No markdown.':
   'Write a 170-350 word Markdown runbook explaining owner authorization, paused stop control, paid spend zero, unknown provider outcomes requiring reconcile, verified only with observed receipt, held otherwise. State that independent checks and protected PR merge are required. No secrets or invented results.';
@@ -164,10 +173,16 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
   }
   if(failure)throw Error('c06-model-'+kind+'-rejected: '+failure);
  }
- const source='/* Ultron model-origin C06 source. Independent acceptance required. */\nexport '+
-  processed.source.code+'\n';
+ const source='/* Ultron C06: model-authored provider function with separately owned authority fence. */\n'+
+  processed.source.code+'\n'+
+  "export function classifyC06Effect(input) {\n"+
+  " if (!input || typeof input !== 'object' || Array.isArray(input) ||\n"+
+  "  input.authorized !== true || input.paused !== false ||\n"+
+  "  !Number.isInteger(input.paidCents) || input.paidCents !== 0) return 'held';\n"+
+  " return fix({providerStatus:input.providerStatus,receiptVerified:input.receiptVerified});\n"+
+  "}\n";
  const generatedCases=JSON.stringify(processed.cases,null,2);
- const testFile=`/* Ultron model-generated test vectors; deterministic Node test wrapper. */\nimport test from 'node:test';\nimport assert from 'node:assert/strict';\nimport {fix} from '../lib/c06-model-candidate.js';\nconst generated = ${generatedCases};\ntest('C06 model-generated owner-effect regression vectors',()=>{\n for(const row of generated)assert.equal(fix(row.input),row.expected);\n});\n`;
+ const testFile=`/* Ultron model-generated test vectors; deterministic Node test wrapper. */\nimport test from 'node:test';\nimport assert from 'node:assert/strict';\nimport {classifyC06Effect as fix} from '../lib/c06-model-candidate.js';\nconst generated = ${generatedCases};\ntest('C06 model-generated owner-effect regression vectors',()=>{\n for(const row of generated)assert.equal(fix(row.input),row.expected);\n});\n`;
  const docs='# C06 model-generated owner effect contract\n\n'+processed.docs;
  const files={[C06_PATHS.source]:source,[C06_PATHS.tests]:testFile,
   [C06_PATHS.docs]:docs};
@@ -178,7 +193,7 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
   sourceSha:admission.sourceSha,runId:String(runId),origin:'model-inference-not-assistant-authored',
   model:admission.model,modelRevision:admission.revision,
   license:admission.license,paidCents:0,productionAccepted:false,
-  generation:'model-authored-function+test-vectors+docs;fixed-safe-wrappers',
+  generation:'model-authored-provider-function+test-vectors+docs;fixed-independent-owner-stop-spend-fence',
   generatedRawHashes:Object.fromEntries(Object.entries(raw).map(([kind,value])=>[kind,SHA(value)])),
   outputs:output,independentCaseCount:C06_CASES.length,
   independentCorrect:processed.source.correct
@@ -207,7 +222,7 @@ export function verifyC06Files(files,{sourceSha,runId}={}){
   if(typeof files[path]!=='string'||SHA(files[path])!==item.sha256||
    Buffer.byteLength(files[path])!==item.bytes||item.bytes>12000)fail();
  }
- if(!files[C06_PATHS.source].includes('export function fix(input)')||
+ if(!files[C06_PATHS.source].includes('export function classifyC06Effect(input)')||
   !files[C06_PATHS.tests].includes('model-generated')||
   !files[C06_PATHS.docs].includes('C06 model-generated'))fail();
  return Object.freeze({valid:true,sourceSha,runId:String(runId),receiptDigest,
