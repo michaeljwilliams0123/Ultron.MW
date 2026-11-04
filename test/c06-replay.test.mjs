@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {admitC06Replay, C06_REPLAY_PINNED_PATHS} from '../src/c06-replay-admission.mjs';
+import {admitC06Replay, C06_REPLAY_PINNED_PATHS, hasNovelC06Outputs} from '../src/c06-replay-admission.mjs';
 
 const original='a'.repeat(40),latest='b'.repeat(40);
 const valid={repository:'michaeljwilliams0123/Ultron.MW',actor:'michaeljwilliams0123',
@@ -56,4 +56,23 @@ test('C06-R05 replay pins all transitive model validation and dependency inputs'
   'scripts/verify-audited-lockfile.mjs']){
   assert.ok(C06_REPLAY_PINNED_PATHS.includes(path),'missing replay dependency '+path);
  }
+});
+
+test('C06-R06 existing model files can be replaced only by genuinely changed verified output',()=>{
+ const oldFiles={'lib/c06-model-candidate.js':'source-v1',
+  'test/c06-model-generated.test.mjs':'vectors-v1',
+  'docs/c06-model-generated.md':'invalid-original'};
+ const original={...oldFiles};
+ const repaired={...original,'docs/c06-model-generated.md':'truthful-model-authored-docs'};
+ assert.equal(hasNovelC06Outputs(oldFiles,repaired),true);
+ assert.equal(hasNovelC06Outputs(oldFiles,original),false);
+ assert.equal(hasNovelC06Outputs({},original),true);
+ assert.throws(()=>hasNovelC06Outputs(oldFiles,{'docs/c06-model-generated.md':'only-one-file'}),
+  /c06-replay-admission-denied/);
+});
+
+test('C06-R07 replay must compare full generated file bytes, not reject all preexisting paths',async()=>{
+ const s=await readFile(new URL('../scripts/c06-verify-replay.mjs',import.meta.url),'utf8');
+ assert.match(s,/hasNovelC06Outputs/);
+ assert.doesNotMatch(s,/!!alreadyInMain/);
 });
