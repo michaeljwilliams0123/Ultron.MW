@@ -1,3 +1,4 @@
+import {createVerify} from 'node:crypto';
 /** Credentialless, body-bound GitHub Actions identity verification.
  * Trust only GitHub's pinned JWKS endpoint, validated RSA signature, and
  * exact main-branch workflow identity. Never accept an unverified JWT.
@@ -30,6 +31,37 @@ function b64url(value){
 function decode(value){
  try{return JSON.parse(new TextDecoder().decode(b64url(value)));}
  catch{deny();}
+}
+// Hatchable's secure isolate supports node:crypto RSA verification rather
+// than WebCrypto RSA importKey. Build an SPKI PEM from a trusted pinned JWKS key.
+function concat(...parts){
+ const chunks=parts.map(p=>p instanceof Uint8Array?p:Uint8Array.from(p));
+ const out=new Uint8Array(chunks.reduce((n,p)=>n+p.length,0));
+ let at=0;for(const p of chunks){out.set(p,at);at+=p.length;}return out;
+}
+function asnLength(n){
+ if(n<128)return Uint8Array.of(n);
+ if(n<256)return Uint8Array.of(0x81,n);
+ if(n<65536)return Uint8Array.of(0x82,n>>8,n&255);
+ deny();
+}
+function der(tag,data){return concat([tag],asnLength(data.length),data);}
+function integer(value){
+ let v=b64url(value);
+ while(v.length>1&&v[0]===0)v=v.slice(1);
+ return der(0x02,v[0]>=128?concat([0],v):v);
+}
+function publicPem(key){
+ const rsa=der(0x30,concat(integer(key.n),integer(key.e)));
+ const algorithm=Uint8Array.from([
+  0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,
+  0x01,0x01,0x01,0x05,0x00
+ ]);
+ const subject=der(0x30,concat(algorithm,der(0x03,concat([0],rsa))));
+ const enc=btoa(Array.from(subject,x=>String.fromCharCode(x)).join(''));
+ return '-----BEGIN PUBLIC KEY-----\\n'+
+  enc.match(/.{1,64}/g).join('\\n')+
+  '\\n-----END PUBLIC KEY-----';
 }
 export async function oidcAudience(raw){
  if(typeof raw!=='string'||raw.length<2||raw.length>2048)deny();
@@ -86,11 +118,10 @@ export async function verifyGitHubOidc({
  if(!key)deny();
  let valid=false;
  try{
-  const cryptoKey=await crypto.subtle.importKey('jwk',{
-   kty:'RSA',n:key.n,e:key.e,alg:'RS256',ext:true,key_ops:['verify']
-  },{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
-  valid=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',cryptoKey,
-   b64url(parts[2]),bytes(parts[0]+'.'+parts[1]));
+  const verifier=createVerify('RSA-SHA256');
+  verifier.update(parts[0]+'.'+parts[1]);
+  verifier.end();
+  valid=verifier.verify(publicPem(key),b64url(parts[2]));
  }catch{deny();}
  if(!valid)deny();
  const body=decodeRaw(rawBody);
