@@ -104,8 +104,8 @@ test('C06-EXT-06: invalid keys and unauthorized owner route cannot reach GitHub'
  assert.equal((await verifyMahoragaIssueReadback(h,'invalid')).status,'held');
  assert.equal(h.calls.length,0);
  const [api,deep]=await Promise.all([
-  readFile(new URL('../cloud/hatchable/api/brain/deep-verify.js',import.meta.url),'utf8'),
-  readFile(new URL('../cloud/hatchable/api/brain/deep.js',import.meta.url),'utf8')
+  readFile(new globalThis.URL('../cloud/hatchable/api/brain/deep-verify.js',import.meta.url),'utf8'),
+  readFile(new globalThis.URL('../cloud/hatchable/api/brain/deep.js',import.meta.url),'utf8')
  ]);
  assert.match(api,/export const access='admin'/);
  assert.match(api,/export const methods=\['GET'\]/);
