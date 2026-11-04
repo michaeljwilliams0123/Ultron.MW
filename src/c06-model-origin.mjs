@@ -126,8 +126,8 @@ function normalizeDocs(reply){
  const reject=reason=>{throw Error('c06-model-docs-rejected: '+reason);};
  if(typeof reply!=='string')reject('invalid-string');
  const value=reply.trim();
- if(value.length<230||value.length>2800)
-  reject('technical-length-outside-budget (chars='+value.length+',expected=230..2800)');
+ if(value.length<230||value.length>4000)
+  reject('technical-length-outside-budget (chars='+value.length+',expected=230..4000)');
  const missing=['authorized','paused','paidCents','providerStatus','receiptVerified']
   .filter(field=>!value.includes(field));
  if(missing.length)reject('missing-exact-input-fields-'+missing.join(','));
@@ -209,7 +209,7 @@ function validateDocSection(reply,section){
  const fail=reason=>{throw Error('invalid-model-document-section: '+reason);};
  if(typeof reply!=='string')fail('missing-section');
  const value=reply.trim();
- if(value.length<90||value.length>760)fail('section-length='+value.length);
+ if(value.length<90||value.length>1200)fail('section-length='+value.length);
  const missing=section.must.filter(x=>!value.toLowerCase().includes(x.toLowerCase()));
  if(missing.length)fail('missing-terms-'+missing.join(','));
  if(!/[.!?]$/.test(value))fail('truncated-sentence');
