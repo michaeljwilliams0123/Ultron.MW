@@ -17,6 +17,25 @@ export const C06_REPLAY_PINNED_PATHS=Object.freeze([
  'scripts/verify-audited-lockfile.mjs',
  'test/c06-model-origin.test.mjs'
 ]);
+export const C06_REPLAY_OUTPUT_PATHS=Object.freeze([
+ 'lib/c06-model-candidate.js',
+ 'test/c06-model-generated.test.mjs',
+ 'docs/c06-model-generated.md'
+]);
+/** Existing paths are not a collision. Only an exact no-op content replay is. */
+export function hasNovelC06Outputs(existing,generated){
+ const invalid=()=>{throw Error('c06-replay-admission-denied');};
+ if(!existing||typeof existing!=='object'||Array.isArray(existing)||
+  !generated||typeof generated!=='object'||Array.isArray(generated))
+  invalid();
+ const keys=Object.keys(generated).sort().join(',');
+ if(keys!==[...C06_REPLAY_OUTPUT_PATHS].sort().join(','))invalid();
+ if(Object.keys(existing).some(key=>!C06_REPLAY_OUTPUT_PATHS.includes(key))||
+  C06_REPLAY_OUTPUT_PATHS.some(path=>typeof generated[path]!=='string'||
+   (Object.hasOwn(existing,path)&&typeof existing[path]!=='string')))
+  invalid();
+ return C06_REPLAY_OUTPUT_PATHS.some(path=>existing[path]!==generated[path]);
+}
 export function admitC06Replay(input={}){
  const invalid=()=>{throw Error('c06-replay-admission-denied');};
  if(input.repository!=='michaeljwilliams0123/Ultron.MW'||
