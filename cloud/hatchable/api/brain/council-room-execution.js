@@ -219,7 +219,11 @@ async function update(res,request){
   FROM council_room_jobs j JOIN council_room_messages m ON m.id=j.message_id
   WHERE j.id=$1 LIMIT 1`,[updated.id])).rows[0];
  if(!row)return response(res,500,{ok:false,error:'execution-job-readback-failed'});
- return response(res,200,{ok:true,job:publicJob(row)});
+ return response(res,200,{ok:true,job:publicJob(row),
+  // Only the successful first compare-and-set permits a fresh external dispatch.
+  // Replays or uncertain prior reservations remain readback-only.
+  ...(phase==='reserve'?{dispatchAdmitted:
+   updated.transitioned===true&&updated.execution_state==='dispatching'}:{})});
 }
 export default async function handler(req,res){
  const raw=rawBody(req);
