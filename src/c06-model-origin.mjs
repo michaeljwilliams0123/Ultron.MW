@@ -243,17 +243,20 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
   }
   if(failure)throw Error('c06-model-'+kind+'-rejected: '+failure);
  }
- const source='/* Ultron C06: model-authored provider function with separately owned authority fence. */\n'+
+ // Normalize whitespace-only blank lines before hashing and publishing.
+ // Raw, unmodified model replies retain their distinct SHA256 provenance.
+ const canonicalBlankLines=value=>value.replace(/^[ \t]+$/gm,'');
+ const source=canonicalBlankLines('/* Ultron C06: model-authored provider function with separately owned authority fence. */\n'+
   processed.source.code+'\n'+
   "export function classifyC06Effect(input) {\n"+
   " if (!input || typeof input !== 'object' || Array.isArray(input) ||\n"+
   "  input.authorized !== true || input.paused !== false ||\n"+
   "  !Number.isInteger(input.paidCents) || input.paidCents !== 0) return 'held';\n"+
   " return fix({providerStatus:input.providerStatus,receiptVerified:input.receiptVerified});\n"+
-  "}\n";
+  "}\n");
  const generatedCases=JSON.stringify(processed.cases,null,2);
  const testFile=`/* Ultron model-generated test vectors; deterministic Node test wrapper. */\nimport test from 'node:test';\nimport assert from 'node:assert/strict';\nimport {classifyC06Effect as fix} from '../lib/c06-model-candidate.js';\nconst generated = ${generatedCases};\ntest('C06 model-generated owner-effect regression vectors',()=>{\n for(const row of generated)assert.equal(fix(row.input),row.expected);\n});\n`;
- const docs='# C06 model-generated owner effect contract\n\n'+processed.docs;
+ const docs=canonicalBlankLines('# C06 model-generated owner effect contract\n\n'+processed.docs);
  const files={[C06_PATHS.source]:source,[C06_PATHS.tests]:testFile,
   [C06_PATHS.docs]:docs};
  const output=Object.fromEntries(Object.entries(files).map(([path,value])=>[
