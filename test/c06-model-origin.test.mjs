@@ -20,7 +20,7 @@ const tests=JSON.stringify([
  {input:{authorized:false,paused:false,paidCents:0,providerStatus:'observed',receiptVerified:true},expected:'held'},
  {input:{authorized:true,paused:false,paidCents:1,providerStatus:'observed',receiptVerified:true},expected:'held'}
 ]);
-const docs='# Model-authored C06 owner effect gate\n\nThe owner must be authorized and unpaused. Paid spend must remain zero. Unknown provider outcomes reconcile before a new write. An observed effect with verified receipt may be verified, while all other states remain held. Source changes never grant deploy authority; independent provider readback remains required.';
+const docs='# C06 model-authored provider contract\n\nThe owner-only guard requires `authorized` true, `paused` false, and integer `paidCents` zero. Unknown provider outcomes reconcile: `providerStatus` unknown or timeout produces reconcile. An observed provider status with `receiptVerified` true produces verified. Every other request is held, including a paused request, an unauthorized owner, and paid spending. Independent tests and protected PR merge are mandatory. The model cannot change the fixed guard; production acceptance requires external receipt readback.';
 
 test('C06-01 owner/public/free CPU/source pin admission is mandatory',()=>{
  const value=admitC06(allowed);
@@ -256,4 +256,40 @@ test('C06-15 whitespace-only model blank lines are normalized before bytes and r
  const {classifyC06Effect}=await import('data:text/javascript,'+
   encodeURIComponent(result.files[C06_PATHS.source]));
  for(const row of C06_CASES)assert.equal(classifyC06Effect(row.input),row.expected,row.id);
+});
+
+test('C06-17 technical documentation rejects invented organizational approvals and incomplete output',async()=>{
+ const invented=docs.replace(
+  'The owner-only guard requires',
+  'An owner application must be approved by a project manager. The owner-only guard requires');
+ const invalid=[
+  invented,
+  docs.trimEnd().slice(0,-1),
+  docs.replaceAll('receiptVerified','evidence'),
+  docs.replaceAll('providerStatus','provider state'),
+  docs.replaceAll('paidCents','paid limit')
+ ];
+ for(const candidate of invalid){
+  await assert.rejects(()=>buildC06Artifacts({
+   admission:admitC06(allowed),runId:'12349',maxAttempts:1,
+   infer:async kind=>({source:functionSource,cases:tests,docs:candidate})[kind]
+  }),/c06-model-docs-rejected/);
+ }
+});
+
+test('C06-18 model may repair its own documentation using precise rejection evidence',async()=>{
+ let docsCalls=0;
+ const generated=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12349',maxAttempts:2,
+  infer:async(kind,messages)=>{
+   if(kind!=='docs')return kind==='source'?functionSource:tests;
+   docsCalls++;
+   if(docsCalls===1)return docs.replace('owner-only guard','project manager application');
+   assert.match(messages[1].content,/invented|forbidden|organizational|process/i);
+   return docs;
+  }
+ });
+ assert.equal(docsCalls,2);
+ assert.match(generated.files[C06_PATHS.docs],/receiptVerified/);
+ assert.equal(verifyC06Files(generated.files,{sourceSha:sha,runId:'12349'}).valid,true);
 });
