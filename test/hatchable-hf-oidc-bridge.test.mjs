@@ -13,7 +13,7 @@ const claims=(aud,changes={})=>{
  return {
   iss:'https://token.actions.githubusercontent.com',
   aud,
-  sub:'repo:michaeljwilliams0123/Ultron.MW:ref:refs/heads/main',
+  sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
   repository:'michaeljwilliams0123/Ultron.MW',
   repository_id:'1424939667',repository_visibility:'public',
   repository_owner:'michaeljwilliams0123',
