@@ -100,6 +100,7 @@ test('fresh fenced owner reservation dispatches exactly once instead of getting 
    get:async path=>{
      if(path===api+'/issues/285')return issue.issue;
      if(path===api+'/git/ref/heads/main')return {object:{sha:BASE}};
+     if(path===api+'/git/ref/heads/'+branch&&branchSha)return {object:{sha:branchSha}};
      if(path.startsWith(api+'/pulls?'))return pr?[pr]:[];
      if(path===api+'/pulls/88'&&pr)return pr;
      if(path.startsWith(api+'/contents/docs/proposals/issue-285.md?ref=')&&proposal)
