@@ -224,7 +224,7 @@ async function endpointUnderTest(name){
 test('cloud: hourly dispatch recovers expired leases and a full worker batch schedules at most one continuation',async()=>{
  const sql=[];const scheduled=[];let runs=0;
  globalThis.__cloudEndpoint={
-  db:{async query(statement){sql.push(statement);return {rows:[{n:1}]};}},
+  db:{async query(statement){sql.push(statement);return {rows:[{n:statement.includes('hf_github_receipts')?0:1}]};}},
   scheduler:{async now(path,payload){scheduled.push({path,payload});}},
   async runOne(){runs++;return {status:'done'};},
   async resumePendingMahoragaActions(){return {scanned:1,observed:0,pending:1,outcomes:[{state:'prepared',ok:false}]};}
