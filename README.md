@@ -4,7 +4,7 @@ Ultron is an independent, single-owner execution platform with one shared interf
 
 **Acceptance:** [current issue dispositions and evidence boundaries](docs/ACCEPTANCE-STATUS.md). Issue #65 completed its scoped supervised local-fixture milestone; broader browser or operator authority requires separate evidence.
 
-**Primary owner UI:** https://ultron-mw-cloud.hatchable.site/ (Hatchable production v35). The [Brain / Learning / Systems workspace](https://ultron-mw-cloud.hatchable.site/workspace.html) and cloud controls now share one origin. The previous [GitHub Pages console](https://michaeljwilliams0123.github.io/Ultron.MW/) remains available for rollback while the separately tracked authenticated full-lifecycle/PR reconciliation and retirement tests in [#170](https://github.com/michaeljwilliams0123/Ultron.MW/issues/170) are completed. See [v35 deployment evidence](docs/verification/HATCHABLE-SINGLE-UI-V35-2026-11-03.md).
+**Primary owner UI:** https://ultron-mw-cloud.hatchable.site/ (Hatchable production; v36 mobile-verified on 2026-11-03). The [Brain / Learning / Systems workspace](https://ultron-mw-cloud.hatchable.site/workspace.html) and cloud controls now share one origin. The previous [GitHub Pages console](https://michaeljwilliams0123.github.io/Ultron.MW/) remains available for rollback while the separately tracked authenticated full-lifecycle/PR reconciliation and retirement tests in [#170](https://github.com/michaeljwilliams0123/Ultron.MW/issues/170) are completed. See [v35 deployment evidence](docs/verification/HATCHABLE-SINGLE-UI-V35-2026-11-03.md).
 
 **Named Codex authors:** The console displays **Mike's Codex** and **Destiny's
 Codex**, stable author fingerprints and separate route status. Use
