@@ -92,7 +92,12 @@ test('fresh fenced owner reservation dispatches exactly once instead of getting 
      jobState='dispatching';
      return {dispatchAdmitted:true,job:{state:jobState}};
    }
-   if(payload.phase==='needs-owner')throw Error('freshly reserved request must not hold without first dispatch');
+   if(payload.phase==='needs-owner'){
+     assert.ok(pr,'a fresh reservation must create its GitHub PR before holding');
+     assert.equal(payload.result?.reason,'proposal-only-no-execution');
+     jobState='needs-owner';
+     return {job:{state:jobState,result:payload.result,externalUrl:pr.html_url}};
+   }
    jobState=payload.phase;
    return {job:{state:jobState,externalUrl:pr?.html_url}};
  };
@@ -143,6 +148,7 @@ test('fresh fenced owner reservation dispatches exactly once instead of getting 
    observeExactHead:async()=>({state:'completed',conclusion:'success',
      sha:HEAD,runId:700,url:'https://github.com/'+PR_REPOSITORY+'/actions/runs/700'})};
  const first=await runCouncilRoomExecution(params);
+ assert.equal(first.status,'needs-owner','proposal-only CI cannot be accepted as external execution');
  assert.equal(first.prUrl,pr.html_url);
  assert.equal(postCount,1);
  const replay=await runCouncilRoomExecution(params);
