@@ -49,6 +49,13 @@
  <div id="room-status" class="room-status" role="status" aria-live="polite">Opening the room…</div>
  <ol id="message-list" class="messages" aria-label="Council conversation"></ol>
  <button id="load-more" class="load-more" type="button" hidden>Load earlier messages</button>
+ <section id="issue-card" class="issue-card" aria-labelledby="issue-title">
+  <div class="routine-head"><p class="overline" id="issue-title">OPEN ISSUES</p><span>read-only</span></div>
+  <p>Advisory portfolio from public GitHub data. No issue or PR is changed.</p>
+  <button id="issue-refresh" class="ghost-button" type="button">Refresh open issue inventory</button>
+  <div id="issue-status" class="issue-status" role="status" aria-live="polite"></div>
+  <ol id="issue-list" class="issue-list"></ol>
+ </section>
  <section class="composer" aria-label="Message the council">
   <div class="composer-topline">
    <span>Message the council</span>

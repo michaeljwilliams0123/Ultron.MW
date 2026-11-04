@@ -26,7 +26,8 @@ test('all workflow actions are SHA-pinned and checkout never persists credential
     const allowedLocal=new Set([
       './.github/workflows/cloud-objective.yml',
       './.github/workflows/pr-brain.yml',
-      './.github/workflows/council-debate.yml'
+      './.github/workflows/council-debate.yml',
+      './.github/workflows/cloud-pr.yml'
     ]);
     for(const [,action] of source.matchAll(/\buses:\s*([^\s#]+)/g)){
       if(action.startsWith('./')){

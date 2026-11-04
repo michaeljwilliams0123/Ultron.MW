@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSign, generateKeyPairSync } from 'node:crypto';
-import { councilOidcAudience, verifyCouncilOidc } from '../cloud/hatchable/lib/council-oidc.js';
+import { councilOidcAudience, councilRoomExecutionOidcAudience,
+  verifyCouncilOidc, verifyCouncilRoomExecutionOidc } from '../cloud/hatchable/lib/council-oidc.js';
 import { validateCouncilPlan } from '../cloud/hatchable/lib/council-plan.js';
 
 const roles = ['Builder', 'Skeptic', 'Steward', 'Predictor', 'Generator', 'Sentinel', 'Companion'];
@@ -74,4 +75,45 @@ test('OIDC accepts only signed owner workflow identity and body on main', async 
     token: header + '.' + badPayload + '.' + signature, rawBody, fetchJwks, now: () => now * 1000
   }));
   await assert.rejects(verifyCouncilOidc({ token, rawBody: rawBody + ' ', fetchJwks, now: () => now * 1000 }));
+});
+
+test('execution receipt OIDC accepts only the issue-comment router and reusable workflow',async()=>{
+ const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+ const now=1_800_000_000;
+ const encode=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
+ const rawBody=JSON.stringify({schema:'ultron.council-room.execution.v1',
+  phase:'planned',issueNumber:285,commentId:12345,
+  commentBody:'@ultron implement Inspect the latest repository state'});
+ const claims={
+  iss:'https://token.actions.githubusercontent.com',
+  aud:councilRoomExecutionOidcAudience(rawBody),
+  repository:'michaeljwilliams0123/Ultron.MW',repository_id:'1424939667',
+  repository_owner:'michaeljwilliams0123',repository_owner_id:'308995719',
+  repository_visibility:'public',
+  sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
+  actor:'michaeljwilliams0123',
+  workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/owner-comment-router.yml@refs/heads/main',
+  job_workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/cloud-pr.yml@refs/heads/main',
+  ref:'refs/heads/main',event_name:'issue_comment',sha,iat:now-20,exp:now+280
+ };
+ const header=encode({alg:'RS256',typ:'JWT',kid:'execution-key'});
+ const payload=encode(claims);
+ const signer=createSign('RSA-SHA256');
+ signer.update(header+'.'+payload);
+ signer.end();
+ const signature=signer.sign(privateKey).toString('base64url');
+ const token=header+'.'+payload+'.'+signature;
+ const jwk={...publicKey.export({format:'jwk'}),kid:'execution-key',alg:'RS256'};
+ const fetchJwks=async()=>Response.json({keys:[jwk]});
+ assert.equal((await verifyCouncilRoomExecutionOidc({token,rawBody,fetchJwks,
+  now:()=>now*1000})).event,'issue_comment');
+ const wrongWorkflow={...claims,workflow_ref:
+  'michaeljwilliams0123/Ultron.MW/.github/workflows/cloud-pr.yml@refs/heads/main'};
+ const wrongPayload=encode(wrongWorkflow);
+ const wrongSigner=createSign('RSA-SHA256');
+ wrongSigner.update(header+'.'+wrongPayload);
+ wrongSigner.end();
+ const wrongToken=header+'.'+wrongPayload+'.'+wrongSigner.sign(privateKey).toString('base64url');
+ await assert.rejects(verifyCouncilRoomExecutionOidc({token:wrongToken,rawBody,
+  fetchJwks,now:()=>now*1000}));
 });

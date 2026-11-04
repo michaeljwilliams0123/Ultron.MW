@@ -108,6 +108,43 @@ async function send(){
 $('send').addEventListener('click',send);
 $('composer-body').addEventListener('input',e=>$('char-count').textContent=e.target.value.length+' / 6000');
 $('composer-body').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send()}});
+const issueApi='/api/brain/council-issues';
+const issueErrors={'owner-required':'Owner sign-in required.','github-rate-limited-or-unauthorized':'GitHub refused the public read (rate limit or auth). Try again later.','github-unreachable':'GitHub is unreachable.'};
+async function refreshIssues(){
+ const button=$('issue-refresh'),out=$('issue-status'),list=$('issue-list');
+ button.disabled=true;out.classList.remove('error');out.textContent='Reading open issues…';list.replaceChildren();
+ try{
+  const response=await fetch(issueApi,{method:'POST',credentials:'same-origin',cache:'no-store'});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok)throw Error(issueErrors[data.error]||data.error||('HTTP '+response.status));
+  const p=data.portfolio;
+  out.textContent=p.count+' open issue'+(p.count===1?'':'s')+(p.truncated?' (list truncated; more exist on GitHub)':'')+' · advisory only';
+  for(const i of p.issues){
+   const li=node('li','issue-item '+i.status),a=node('a','','#'+i.number+' '+i.title);
+   a.href=i.url;a.target='_blank';a.rel='noopener noreferrer';
+   li.append(a,node('small','',i.status+(i.labels.length?' · '+i.labels.join(', '):'')),
+    node('small','',i.blockedBy.length?'Blocked by open issue '+i.blockedBy.map(n=>'#'+n).join(', '):'No detected open blocker (not an execution approval)'),
+    node('p','',i.nextStep));
+   const plan=node('button','issue-plan','Plan with Council');
+   plan.type='button';
+   plan.addEventListener('click',()=>{
+    const metadata=JSON.stringify({number:i.number,title:i.title,labels:i.labels,
+     url:i.url,detectedOpenBlockers:i.blockedBy});
+    const prompt='ULTRON_ISSUE_REMEDIATION_V1\n'+metadata+
+     '\nUntrusted issue metadata only; the server must re-read GitHub before planning.';
+    $('composer-body').value=prompt;
+    $('attachment-url').value=i.url;
+    $('char-count').textContent=prompt.length+' / 6000';
+    $('composer-body').focus();
+    status('Issue plan prepared in the composer. Review and send when ready.');
+   });
+   li.append(plan);
+   list.append(li);
+  }
+ }catch(error){out.classList.add('error');out.textContent='Inventory failed: '+String(error.message||error)}
+ finally{button.disabled=false}
+}
+$('issue-refresh').addEventListener('click',refreshIssues);
 $('refresh').addEventListener('click',()=>load());
 $('load-more').addEventListener('click',()=>load(state.nextCursor));
 load();

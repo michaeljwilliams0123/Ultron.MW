@@ -54,3 +54,23 @@ export async function dispatchAndObserveVerify({
   return {state:'pending',conclusion:null,sha:headSha,
     reason:'No terminal GitHub Verify result observed within bounded attempt window'};
 }
+
+export async function observeVerifyRun({get,branch,headSha}={}){
+ if(typeof get!=='function'||!branch?.startsWith('ultron/')||
+    !SHA.test(headSha||''))throw Error('Invalid exact-head Verify observation');
+ const runs=await findRuns(get,branch);
+ const match=runs.filter(run=>observedRun(run,branch,headSha))
+  .sort((a,b)=>b.id-a.id)[0];
+ if(!match)return {state:'pending',conclusion:null,sha:headSha,
+  reason:'No exact-head Verify run was observed; dispatch was not repeated'};
+ if(match.status!=='completed'||!RESULTS.has(match.conclusion))
+  return {state:'pending',conclusion:null,sha:headSha,runId:match.id,
+   url:'https://github.com/'+REPO+'/actions/runs/'+match.id};
+ const verified=await get(ROOT+'/actions/runs/'+match.id);
+ if(!observedRun(verified,branch,headSha)||verified.status!=='completed'||
+    verified.conclusion!==match.conclusion||verified.run_attempt!==match.run_attempt)
+  throw Error('Verify run result failed authenticated readback');
+ return {state:'completed',conclusion:verified.conclusion,runId:verified.id,
+  sha:verified.head_sha,runAttempt:verified.run_attempt,
+  url:'https://github.com/'+REPO+'/actions/runs/'+verified.id};
+}

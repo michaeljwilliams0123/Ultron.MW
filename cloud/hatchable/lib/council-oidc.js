@@ -5,6 +5,8 @@ const JWKS_URL = ISSUER + '/.well-known/jwks';
 const REPOSITORY = 'michaeljwilliams0123/Ultron.MW';
 const REPOSITORY_ID = '1424939667';
 const WORKFLOW = REPOSITORY + '/.github/workflows/council-debate.yml@refs/heads/main';
+const ROOM_ROUTER_WORKFLOW = REPOSITORY + '/.github/workflows/owner-comment-router.yml@refs/heads/main';
+const ROOM_EXECUTION_WORKFLOW = REPOSITORY + '/.github/workflows/cloud-pr.yml@refs/heads/main';
 const SHA = /^[a-f0-9]{40}$/;
 
 function deny() {
@@ -45,7 +47,8 @@ function decode(value) {
   }
 }
 
-export async function verifyCouncilOidc({ token, rawBody, fetchJwks = fetch, now = Date.now } = {}) {
+async function verifyIdentity({token,rawBody,fetchJwks,now,audience,workflowRefs,
+  jobWorkflowRef,eventNames}={}){
   if (typeof token !== 'string' || token.length < 250 || token.length > 20000 ||
       typeof rawBody !== 'string') deny();
   const parts = token.split('.');
@@ -55,15 +58,17 @@ export async function verifyCouncilOidc({ token, rawBody, fetchJwks = fetch, now
   if (header?.alg !== 'RS256' || typeof header.kid !== 'string') deny();
 
   const epoch = Math.floor(now() / 1000);
-  if (claims?.iss !== ISSUER || claims.aud !== councilOidcAudience(rawBody) ||
+  if (claims?.iss !== ISSUER || claims.aud !== audience(rawBody) ||
       claims.repository_visibility !== 'public' ||
       claims.repository !== REPOSITORY || claims.repository_id !== REPOSITORY_ID ||
       claims.repository_owner !== 'michaeljwilliams0123' ||
       claims.repository_owner_id !== '308995719' ||
       claims.sub !== 'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main' ||
       claims.actor !== 'michaeljwilliams0123' ||
-      claims.workflow_ref !== WORKFLOW || claims.ref !== 'refs/heads/main' ||
-      !['issues', 'workflow_dispatch'].includes(claims.event_name) ||
+      !workflowRefs.includes(claims.workflow_ref) ||
+      (jobWorkflowRef && claims.job_workflow_ref !== jobWorkflowRef) ||
+      claims.ref !== 'refs/heads/main' ||
+      !eventNames.includes(claims.event_name) ||
       !SHA.test(claims.sha || '') ||
       !Number.isSafeInteger(claims.iat) || !Number.isSafeInteger(claims.exp) ||
       claims.iat > epoch + 45 || claims.iat < epoch - 360 ||
@@ -98,11 +103,37 @@ export async function verifyCouncilOidc({ token, rawBody, fetchJwks = fetch, now
   if (!valid) deny();
   return Object.freeze({
     actor: claims.actor, sha: claims.sha, event: claims.event_name,
-    audience: claims.aud
+    audience: claims.aud, workflow: claims.workflow_ref,
+    jobWorkflow: claims.job_workflow_ref || null
   });
+}
+
+export async function verifyCouncilOidc({token,rawBody,fetchJwks=fetch,now=Date.now}={}){
+ const identity=await verifyIdentity({token,rawBody,fetchJwks,now,
+  audience:councilOidcAudience,workflowRefs:[WORKFLOW],
+  eventNames:['issues','workflow_dispatch']});
+ return Object.freeze({actor:identity.actor,sha:identity.sha,event:identity.event,
+  audience:identity.audience});
+}
+
+export async function verifyCouncilRoomExecutionOidc({
+ token,rawBody,fetchJwks=fetch,now=Date.now
+}={}){
+ const identity=await verifyIdentity({token,rawBody,fetchJwks,now,
+  audience:councilRoomExecutionOidcAudience,
+  workflowRefs:[ROOM_ROUTER_WORKFLOW],jobWorkflowRef:ROOM_EXECUTION_WORKFLOW,
+  eventNames:['issue_comment']});
+ return Object.freeze({actor:identity.actor,sha:identity.sha,event:identity.event,
+  audience:identity.audience});
 }
 
 export function councilOidcAudience(rawBody) {
   if (typeof rawBody !== 'string' || rawBody.length > 100000) deny();
   return 'ultron.council.v1:sha256:' + createHash('sha256').update(rawBody).digest('hex');
+}
+
+export function councilRoomExecutionOidcAudience(rawBody){
+ if(typeof rawBody!=='string'||rawBody.length>100000)deny();
+ return 'ultron.council-room.execution.v1:sha256:'+
+  createHash('sha256').update(rawBody).digest('hex');
 }

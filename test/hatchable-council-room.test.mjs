@@ -132,7 +132,9 @@ test('Council Room runner returns seven role replies with private Mahoraga evide
   .replace("import {config} from 'hatchable';",
    'const config=globalThis.__councilRoomConfig;')
   .replace("import {observeMahoragaMain} from 'lib/mahoraga-actions.js';",
-   "import {observeMahoragaMain} from '"+mahoragaUrl+"';");
+  "import {observeMahoragaMain} from '"+mahoragaUrl+"';")
+ .replace("import {inspectOpenIssue} from 'lib/council-issues.js';",
+  'const inspectOpenIssue=globalThis.__councilIssueHelpers?.inspectOpenIssue|| (async()=>null);');
  assert.notEqual(transformed,coreSource);
  const originalFetch=globalThis.fetch;
  const privateToken='github_pat_this_is_a_test_credential_value';
@@ -168,6 +170,52 @@ test('Council Room runner returns seven role replies with private Mahoraga evide
  }finally{
   globalThis.fetch=originalFetch;
   delete globalThis.__councilRoomConfig;
+ }
+});
+
+test('issue remediation plan rereads live issue data and gives role-specific bounded actions',async()=>{
+ const coreSource=await readFile(new URL('lib/council-room-core.js',root),'utf8');
+ const mahoragaSource=await readFile(new URL('lib/mahoraga-actions.js',root),'utf8');
+ const mahoragaUrl=b64(mahoragaSource);
+ const transformed=coreSource
+  .replace("import {config} from 'hatchable';",'const config=globalThis.__councilRoomConfig;')
+  .replace("import {observeMahoragaMain} from 'lib/mahoraga-actions.js';",
+   "import {observeMahoragaMain} from '"+mahoragaUrl+"';")
+  .replace("import {inspectOpenIssue} from 'lib/council-issues.js';",
+   'const inspectOpenIssue=globalThis.__councilIssueHelpers.inspectOpenIssue;');
+ const originalFetch=globalThis.fetch;
+ globalThis.__councilRoomConfig={async get(){throw Error('private evidence not requested')}};
+ globalThis.__councilIssueHelpers={async inspectOpenIssue(number){
+  assert.equal(number,285);
+  return {number,title:'Execution acceptance',url:'https://github.com/michaeljwilliams0123/Ultron.MW/issues/285',
+   labels:['acceptance'],updatedAt:'2026-11-04T00:00:00Z',
+   dependencyReferences:[184],excerpt:'Require exact-head verification.'};
+ }};
+ globalThis.fetch=async url=>{
+  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/main'))
+   return Response.json({object:{sha:'a'.repeat(40)}});
+  throw Error('unexpected GitHub request '+url);
+ };
+ try{
+  const core=await import(b64(transformed)+'#issue-plan-'+Math.random());
+  const body='ULTRON_ISSUE_REMEDIATION_V1\n'+JSON.stringify({
+   number:285,title:'untrusted title',url:'https://github.com/michaeljwilliams0123/Ultron.MW/issues/285',
+   labels:['untrusted'],detectedOpenBlockers:[184]
+  });
+  const result=await core.buildCouncilRoomResult({message:{body,mentions:[]}});
+  assert.match(result.summary,/Issue #285 is open/);
+  assert.equal(result.issueRemediation.title,'Execution acceptance');
+  assert.match(result.members.find(x=>x.id==='builder').body,/Execution acceptance/);
+  assert.match(result.members.find(x=>x.id==='skeptic').body,/untrusted claims/);
+  assert.match(result.members.find(x=>x.id==='companion').body,/not autonomous code remediation/);
+  assert.equal(result.paidCents,0);
+  await assert.rejects(()=>core.buildCouncilRoomResult({message:{body:
+   'ULTRON_ISSUE_REMEDIATION_V1\n'+JSON.stringify({number:285,url:'https://evil.example/285'}),
+   mentions:[]}}),/issue-remediation-request-invalid/);
+ }finally{
+  globalThis.fetch=originalFetch;
+  delete globalThis.__councilRoomConfig;
+  delete globalThis.__councilIssueHelpers;
  }
 });
 
