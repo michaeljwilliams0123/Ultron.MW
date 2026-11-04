@@ -18,12 +18,16 @@ async function coreUnderTest(){
  const heldoutUrl='data:text/javascript;base64,'+Buffer.from(
   'export async function verifyPersistedHeldOutEvidence(){return {evaluation:false}};'
  ).toString('base64');
+ const councilRoomUrl='data:text/javascript;base64,'+Buffer.from(
+  "export async function buildCouncilRoomResult(){return {objective:'council.room',members:[]};}"
+ ).toString('base64');
  const coreSource=await readFile(new URL('../cloud/hatchable/lib/brain-core.js',
   import.meta.url),'utf8');
  const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource.replace(
   "from 'lib/council-evidence.js'","from '"+evidenceUrl+"'"
  ).replace("from 'lib/acceptance-evidence.js'","from '"+acceptanceUrl+"'"
  ).replace("from 'lib/heldout-evidence.js'","from '"+heldoutUrl+"'"
+ ).replace("from 'lib/council-room-core.js'","from '"+councilRoomUrl+"'"
  )).toString('base64');
  return import(coreUrl);
 }
