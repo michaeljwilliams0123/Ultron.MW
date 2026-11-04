@@ -375,3 +375,55 @@ test('C06-24 documentary section inference keeps a bounded smaller CPU budget',a
  const generator=await readFile(new URL('../scripts/c06-run-model.mjs',import.meta.url),'utf8');
  assert.match(generator,/kind==='doc-section'\?150:/);
 });
+
+
+test('C06-25 accepts complete authentic 938-character owner-gate sections without relaxing semantic checks',async()=>{
+ const ownerBase='The owner gate requires authorized true, paused false and integer paidCents zero. Otherwise the request remains held. ';
+ const owner=ownerBase+('The independently owned guard always keeps unauthorized or paused execution held. ').repeat(10);
+ assert.ok(owner.length>760&&owner.length<1200);
+ const sections={
+  'owner-gate':owner,
+  'provider-outcome':'The providerStatus unknown or timeout state must reconcile. A verified result requires providerStatus observed and receiptVerified true. Otherwise it stays held.',
+  'release-evidence':'A protected PR requires independent readback and exact source evidence. No paid compute is authorized. This model canary is not a production release.'
+ };
+ const generated=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12355',maxAttempts:3,
+  infer:async(kind,messages)=>{
+   if(kind==='source')return functionSource;
+   if(kind==='cases')return tests;
+   if(kind==='docs')return '# Invalid short document.';
+   if(kind==='doc-section')return sections[messages[1].content.match(/Section: ([a-z-]+)/)?.[1]];
+   throw Error('unexpected-generation-stage');
+  }
+ });
+ assert.ok(generated.files[C06_PATHS.docs].includes(owner.trim()));
+ assert.equal(generated.receipt.docGenerationMode,'sectioned-model-generated');
+ assert.equal(verifyC06Files(generated.files,{sourceSha:sha,runId:'12355'}).valid,true);
+});
+
+test('C06-26 allows complete three-section technical docs above 2800 chars but rejects unbounded text',async()=>{
+ const make=(base)=>base+(' Only independent evidence permits a protected outcome.').repeat(16);
+ const sections={
+  'owner-gate':make('The owner gate requires authorized true, paused false, integer paidCents zero, or remains held.'),
+  'provider-outcome':make('A providerStatus unknown or timeout must reconcile. Only observed with receiptVerified true is verified. Other states remain held.'),
+  'release-evidence':make('A protected PR needs independent external readback and no paid provider use. Do not approve production until verified.')
+ };
+ const full='# C06 model-generated technical contract\n\n'+Object.values(sections).join('\n\n');
+ assert.ok(full.length>2800&&full.length<4000);
+ const result=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12356',maxAttempts:3,
+  infer:async(kind,messages)=>{
+   if(kind==='source')return functionSource;
+   if(kind==='cases')return tests;
+   if(kind==='docs')return '# Short invalid text.';
+   if(kind==='doc-section')return sections[messages[1].content.match(/Section: ([a-z-]+)/)?.[1]];
+  }
+ });
+ assert.equal(verifyC06Files(result.files,{sourceSha:sha,runId:'12356'}).valid,true);
+ assert.match(result.files[C06_PATHS.docs],/receiptVerified/);
+ await assert.rejects(()=>buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12357',maxAttempts:1,
+  infer:async kind=>({source:functionSource,cases:tests,
+   docs:docs+'\n'+(' Excessively long untrusted narrative.').repeat(180)})[kind]
+ }),/c06-model-docs-rejected/);
+});
