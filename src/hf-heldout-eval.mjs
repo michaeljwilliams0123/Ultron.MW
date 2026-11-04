@@ -10,7 +10,7 @@ import {FREE_CPU_MODELS} from './hf-free-compute.mjs';
 
 const SHA=/^[a-f0-9]{40}$/;
 const PROPOSAL=/^function fix\(input\)\s*\{[\s\S]+\}$/;
-const UNSAFE=/\b(?:process|global|globalThis|require|fetch|import|eval|Function|constructor|prototype|__proto__|while|for|class|new|this|WebAssembly|async|await|setTimeout|setInterval|Symbol|Reflect)\b/;
+const UNSAFE=/\b(?:process|global|globalThis|require|fetch|import|eval|Function|constructor|prototype|__proto__|while|for|class|this|WebAssembly|async|await|setTimeout|setInterval|Symbol|Reflect)\b/;
 const REASONS=new Set(['verified','behavior-mismatch','unsafe-proposal',
  'invalid-function','syntax-error','execution-error']);
 export function heldoutShard(n){
@@ -33,7 +33,7 @@ export function scoreProposedRepair(testCase,raw){
  if(!HELDOUT_REPAIR_CASES.includes(testCase)||typeof raw!=='string'||
     raw.length>900)return out('invalid-function');
  const source=raw.trim();
- if(UNSAFE.test(source))return out('unsafe-proposal');
+ if(UNSAFE.test(source)||/\\bnew\\s+[A-Za-z_$]/.test(source))return out('unsafe-proposal');
  if(!PROPOSAL.test(source)||source.match(/\bfunction\b/g)?.length!==1)
   return out('invalid-function');
  try{new vm.Script('('+source+')');}
