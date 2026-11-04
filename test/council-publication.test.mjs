@@ -50,6 +50,6 @@ test('RED: council workflow suppresses identical reports and discloses identitie
   assert.match(yaml,/github\.event\.inputs\.item_number/);
   assert.match(yaml,/cancel-in-progress: false/);
   assert.match(script,/buildCouncilPublication/);
-  assert.match(script,/Individual GitHub principals/);
+  assert.match(script,/assessCouncil/);
   assert.match(script,/modelInvocations=0/);
 });

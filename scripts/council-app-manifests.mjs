@@ -7,10 +7,11 @@
 import {COUNCIL_APP_ROLES,councilAlias,buildCouncilAppManifest,
  councilCapacityReport} from '../src/council-app-identities.mjs';
 import {SME_DOMAINS,COUNCIL_LIFECYCLE} from '../src/council-shared-collaboration.mjs';
+import {councilMemberIdentity} from '../src/council-members.mjs';
 
 const args=process.argv.slice(2);
-if(args.length!==1||!['--profile=scoped','--profile=engineering-autonomy','--profile=collaborative-sme','--profile=owner-requested'].includes(args[0])){
- console.error('usage: node scripts/council-app-manifests.mjs --profile=scoped|engineering-autonomy|collaborative-sme|owner-requested');
+if(args.length!==1||!['--profile=scoped','--profile=engineering-autonomy','--profile=collaborative-sme','--profile=owner-requested','--profile=owner-equivalent'].includes(args[0])){
+ console.error('usage: node scripts/council-app-manifests.mjs --profile=scoped|engineering-autonomy|collaborative-sme|owner-requested|owner-equivalent');
  process.exitCode=2;
 }else{
  const profile=args[0].split('=')[1];
@@ -22,6 +23,7 @@ if(args.length!==1||!['--profile=scoped','--profile=engineering-autonomy','--pro
   expertise:SME_DOMAINS[role],
   gmailAlias:mailbox?councilAlias(mailbox,role):null,
   manifest:buildCouncilAppManifest(role,{repository,webhookUrl,profile}),
+  credentialSecretNames:(({appId,privateKey,installationId})=>({appId,signingKey:privateKey,installationId}))(councilMemberIdentity(role).credentialEnv),
   registrationPage:'https://github.com/settings/apps/new',
   installationStatus:'NOT_INSTALLED',
   requiresIndividualOwnerApproval:true

@@ -247,6 +247,36 @@ jobs:
               core.info('Label council-reviewed skipped: ' + e.message);
             }
 
+      - name: Council members act under their own App identities
+        if: steps.debate.outputs.skipped != 'true' && env.OWNER_MODE == '1'
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 56101029f1b97471651646504eba9fff
+          ULTRON_VAULT_KEY: ${{ secrets.ULTRON_VAULT_KEY }}
+          COUNCIL_BUILDER_APP_ID: ${{ secrets.COUNCIL_BUILDER_APP_ID }}
+          COUNCIL_BUILDER_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_BUILDER_APP_PRIVATE_KEY }}
+          COUNCIL_BUILDER_INSTALLATION_ID: ${{ secrets.COUNCIL_BUILDER_INSTALLATION_ID }}
+          COUNCIL_SKEPTIC_APP_ID: ${{ secrets.COUNCIL_SKEPTIC_APP_ID }}
+          COUNCIL_SKEPTIC_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_SKEPTIC_APP_PRIVATE_KEY }}
+          COUNCIL_SKEPTIC_INSTALLATION_ID: ${{ secrets.COUNCIL_SKEPTIC_INSTALLATION_ID }}
+          COUNCIL_STEWARD_APP_ID: ${{ secrets.COUNCIL_STEWARD_APP_ID }}
+          COUNCIL_STEWARD_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_STEWARD_APP_PRIVATE_KEY }}
+          COUNCIL_STEWARD_INSTALLATION_ID: ${{ secrets.COUNCIL_STEWARD_INSTALLATION_ID }}
+          COUNCIL_PREDICTOR_APP_ID: ${{ secrets.COUNCIL_PREDICTOR_APP_ID }}
+          COUNCIL_PREDICTOR_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_PREDICTOR_APP_PRIVATE_KEY }}
+          COUNCIL_PREDICTOR_INSTALLATION_ID: ${{ secrets.COUNCIL_PREDICTOR_INSTALLATION_ID }}
+          COUNCIL_GENERATOR_APP_ID: ${{ secrets.COUNCIL_GENERATOR_APP_ID }}
+          COUNCIL_GENERATOR_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_GENERATOR_APP_PRIVATE_KEY }}
+          COUNCIL_GENERATOR_INSTALLATION_ID: ${{ secrets.COUNCIL_GENERATOR_INSTALLATION_ID }}
+          COUNCIL_SENTINEL_APP_ID: ${{ secrets.COUNCIL_SENTINEL_APP_ID }}
+          COUNCIL_SENTINEL_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_SENTINEL_APP_PRIVATE_KEY }}
+          COUNCIL_SENTINEL_INSTALLATION_ID: ${{ secrets.COUNCIL_SENTINEL_INSTALLATION_ID }}
+          COUNCIL_COMPANION_APP_ID: ${{ secrets.COUNCIL_COMPANION_APP_ID }}
+          COUNCIL_COMPANION_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_COMPANION_APP_PRIVATE_KEY }}
+          COUNCIL_COMPANION_INSTALLATION_ID: ${{ secrets.COUNCIL_COMPANION_INSTALLATION_ID }}
+        run: node scripts/council-act.mjs
+
       - name: Upload receipt artifact
         if: always() && steps.debate.outputs.skipped != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -258,5 +288,6 @@ jobs:
             RFC_DRAFT.md
             council-receipt.json
             council-publication.json
+            council-members.json
           if-no-files-found: ignore
           retention-days: 30

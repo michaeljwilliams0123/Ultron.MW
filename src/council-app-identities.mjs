@@ -23,8 +23,23 @@ const APP_PROFILE={
    metadata:'read',administration:'write',actions:'write',
    contents:'write',workflows:'write',issues:'write',
    pull_requests:'write',checks:'write'
+ }),
+ // Owner-directed: every member holds the same rights as the owner on this
+ // repository. Expertise shapes judgement, never permission.
+ 'owner-equivalent':Object.freeze({
+   metadata:'read',administration:'write',actions:'write',
+   contents:'write',workflows:'write',issues:'write',
+   pull_requests:'write',checks:'write',statuses:'write'
  })
 };
+export const OWNER_EQUIVALENT_OPS=Object.freeze([
+ 'branch.create','branch.update','branch.delete','file.write',
+ 'pr.create','pr.comment','pr.merge','pr.close',
+ 'issue.create','issue.comment','issue.close','issue.label','issue.assign',
+ 'review.comment','review.request-changes','review.approve',
+ 'actions.dispatch','web.open','mahoraga.repo.inspect','mahoraga.task.prepare',
+ 'computer.browser','computer.desktop'
+]);
 const ENGINEERING_ROLE_GRANTS=Object.freeze({
  Builder:Object.freeze({contents:'write'}),
  Generator:Object.freeze({contents:'write'}),
@@ -55,7 +70,9 @@ function profileRights(role,profile){
 const SAFE_BRANCH=/^ultron\/council-(builder|skeptic|steward|predictor|generator|sentinel|companion)-[a-z0-9][a-z0-9-]{2,55}$/;
 const SAFE_CODE_PATH=/^(src|test|docs|scripts|cloud\/hatchable)\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/;
 const BRANCH_OPERATIONS=new Set(['branch.create','branch.update','pr.create']);
-const REVIEW_OPERATIONS=new Set(['review.comment','review.request-changes']);
+const REVIEW_OPERATIONS=new Set(['review.comment','review.request-changes','review.approve']);
+const SAFE_REF=/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,200}$/;
+const SAFE_WORKFLOW=/^[a-zA-Z0-9_.-]+\.ya?ml$/;
 function roleCheck(role){
  if(!ROLE_SET.has(role))throw Error('council-role-invalid');
 }
@@ -158,9 +175,11 @@ export function decideCouncilAction(actor,request={}){
   return Object.freeze({allowed:true,scope:repository,role:actor.role,reason:'scoped-operation'});
  // Elevation requires a separately installed engineering profile, a trusted
  // installation-token proof, exact source SHA, bounded attempt and zero cost.
- const allowedOps=actor.profile==='collaborative-sme'?
+ const ownerEquivalent=actor.profile==='owner-equivalent';
+ const allowedOps=ownerEquivalent?OWNER_EQUIVALENT_OPS:
+   actor.profile==='collaborative-sme'?
    COLLABORATIVE_OPS:ENGINEERING_OPS[actor.role];
- if(!['engineering-autonomy','owner-requested','collaborative-sme'].includes(actor.profile)||
+ if(!['engineering-autonomy','owner-requested','collaborative-sme','owner-equivalent'].includes(actor.profile)||
    !allowedOps?.includes(operation))
   return Object.freeze({allowed:false,reason:'requires-separate-owner-and-review-authorization'});
  if(request.baseSha!==actor.sourceSha||request.maxPaidCents!==0||
@@ -176,7 +195,16 @@ export function decideCouncilAction(actor,request={}){
   return Object.freeze({allowed:true,scope:repository,role:actor.role,
    reason:'bounded-external-operation'});
  }
- if(BRANCH_OPERATIONS.has(operation)){
+ if(ownerEquivalent){
+  // Owner-equivalent members may touch any ref/path/workflow; only
+  // structural validity and the no-self-review rule remain.
+  if((['branch.create','branch.update','branch.delete','file.write'].includes(operation))&&
+    (typeof request.branch!=='string'||!SAFE_REF.test(request.branch)||request.branch.includes('..')))
+   return Object.freeze({allowed:false,reason:'scope-denied'});
+  if(operation==='actions.dispatch'&&
+    (!SAFE_WORKFLOW.test(request.workflow||'')||!SAFE_REF.test(request.ref||'')))
+   return Object.freeze({allowed:false,reason:'workflow-not-approved'});
+ }else if(BRANCH_OPERATIONS.has(operation)){
   const match=typeof request.branch==='string'&&request.branch.match(SAFE_BRANCH);
   if(!match||match[1]!==actor.role.toLowerCase()||
     (operation==='branch.update'&&
@@ -186,7 +214,7 @@ export function decideCouncilAction(actor,request={}){
        request.path.startsWith('.github/'))))
    return Object.freeze({allowed:false,reason:'scope-denied'});
  }
- if(operation==='actions.dispatch'&&
+ if(!ownerEquivalent&&operation==='actions.dispatch'&&
    (request.workflow!=='verify.yml'||request.ref!=='main'))
   return Object.freeze({allowed:false,reason:'workflow-not-approved'});
  if(REVIEW_OPERATIONS.has(operation)&&
