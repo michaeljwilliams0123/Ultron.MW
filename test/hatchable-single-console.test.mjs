@@ -52,7 +52,7 @@ test('UI-CUTOVER-05: cloud objective admission is key-stable and read-only',()=>
  assert.match(root,/id="inspection-form"/);
  assert.match(root,/id="task-list"/);
  assert.match(root,/\/api\/brain\/tasks/);
- assert.match(root,/owner-ui:inspect:/);
+ assert.match(root,/owner-ui-inspect-/);
  assert.match(root,/\['repo\.inspect','repo\.prs','repo\.ci','site\.render','council\.review'\]/);
  assert.match(root,/credentials:'same-origin'/);
  assert.match(source('cloud/hatchable/api/brain/tasks.js'),/export const access='admin'/);
