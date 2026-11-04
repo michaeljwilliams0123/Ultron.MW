@@ -57,3 +57,11 @@ test('UI-CUTOVER-05: cloud objective admission is key-stable and read-only',()=>
  assert.match(root,/credentials:'same-origin'/);
  assert.match(source('cloud/hatchable/api/brain/tasks.js'),/export const access='admin'/);
 });
+
+test('UI-CUTOVER-06: mobile workspace navigation has an explicit overflow-safe wrap rule',()=>{
+ for(const path of ['docs/index.html',live+'/workspace.html']){
+  const html=source(path);
+  assert.match(html,/\.rail\{flex-wrap:wrap;\}/,
+   'mobile navigation must wrap in '+path);
+ }
+});
