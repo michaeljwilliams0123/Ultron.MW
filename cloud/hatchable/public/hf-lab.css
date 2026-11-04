@@ -1,0 +1,30 @@
+.hf-lab{margin:0 0 25px;padding:24px;border:1px solid #344c70;border-radius:19px;background:linear-gradient(145deg,#162a46,#111b30);min-width:0}
+.hf-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.hf-kicker{font-size:11px;letter-spacing:.17em;text-transform:uppercase;color:#a6caff;font-weight:800}
+.hf-head h2{font-size:clamp(22px,3vw,30px);margin:7px 0}
+.hf-head p{max-width:650px;line-height:1.5;margin:5px 0}
+.hf-meta{font-size:12px;color:#bad2e8;margin:14px 0;min-height:18px}
+.hf-meta[data-state="warning"]{color:#ffcf92}
+.hf-meta[data-state="error"]{color:#ffb2b2}
+.hf-runs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}
+.hf-run{border:1px solid #3b516b;border-radius:12px;background:#0e1e33;padding:14px;min-width:0}
+.hf-run[data-state="ok"]{border-top:3px solid #4de6aa}
+.hf-run[data-state="error"]{border-top:3px solid #ff9393}
+.hf-run[data-state="unknown"]{border-top:3px solid #d3bd82}
+.hf-run h3{font-size:14px;margin:0 0 9px}
+.hf-run strong{display:block;font-size:18px;overflow-wrap:anywhere}
+.hf-run p{font-size:12px;color:#9db6cf;margin:7px 0;line-height:1.5}
+.hf-run a{font-size:12px}
+.hf-evidence{margin-top:17px;border:1px solid #345275;border-radius:13px;background:#111f35;padding:16px}
+.hf-evidence-head{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.hf-evidence h3{font-size:16px;margin:0}
+.hf-score-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}
+.hf-score{padding:12px;border-radius:9px;background:#192b43;min-width:0}
+.hf-score strong{display:block;font-size:21px;font-variant-numeric:tabular-nums}
+.hf-score span{font-size:11px;color:#a9c6e4}
+.hf-score[data-restriction="research"]{border:1px solid #e2b975}
+.hf-restriction{font-size:12px;color:#e6c68e;line-height:1.55}
+.hf-links{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:12px}
+.hf-lab button{margin:0}
+@media(max-width:820px){.hf-runs{grid-template-columns:1fr}.hf-score-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:500px){.hf-lab{padding:15px}.hf-score-row{gap:6px}.hf-score{padding:10px}.hf-head button{width:100%}}

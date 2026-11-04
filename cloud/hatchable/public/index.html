@@ -38,6 +38,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .task-list strong{display:block;color:#dbe9fe}
 </style>
 <link rel="stylesheet" href="./connectivity.css">
+<link rel="stylesheet" href="./hf-lab.css">
 </head>
 <body>
 <nav class="unified-nav" aria-label="Primary Ultron workspace"><a href="/workspace.html">Workspace · Brain / Learning / Systems</a><a href="/" aria-current="page">Cloud controls</a></nav>
@@ -73,6 +74,34 @@ button:disabled{opacity:.4;cursor:not-allowed}
   </section>
  </div>
  <p class="connection-footnote">Snapshot uses read-only public GitHub APIs and owner-protected PostgreSQL readback. No browser tokens or paid model calls. A missing observation never counts as a successful deployment or authorization.</p>
+</section>
+
+<section class="hf-lab" id="hf-model-lab" aria-labelledby="hf-lab-heading">
+ <div class="hf-head">
+  <div>
+   <div class="hf-kicker">HUGGING FACE / GITHUB ACTIONS / HATCHABLE</div>
+   <h2 id="hf-lab-heading">Model Lab</h2>
+   <p class="small">See real model-evaluation jobs and independently sourced code-release evidence without starting paid inference or making GitHub writes.</p>
+  </div>
+  <button type="button" id="hf-lab-refresh">Check model workflows</button>
+ </div>
+ <p id="hf-lab-status" class="hf-meta" role="status" aria-live="polite">Model workflow evidence not yet read.</p>
+ <div id="hf-lab-workflows" class="hf-runs" aria-label="Observed Hugging Face workflow runs">
+  <p>Requires owner sign-in for current workflow evidence.</p>
+ </div>
+ <div class="hf-evidence">
+  <div class="hf-evidence-head">
+   <h3>Verified historical repair benchmark</h3>
+   <a href="https://github.com/michaeljwilliams0123/Ultron.MW/blob/main/docs/hf-heldout-repair-evaluation.md" target="_blank" rel="noopener noreferrer">Evidence and scoring</a>
+  </div>
+  <div id="hf-lab-scores" class="hf-score-row" aria-label="Historical 16-case model scores"></div>
+  <p class="hf-restriction" id="hf-lab-evidence">Historical evidence is not a live model promotion or autonomous release.</p>
+ </div>
+ <div class="hf-links">
+  <a href="https://github.com/michaeljwilliams0123/Ultron.MW/issues/245" target="_blank" rel="noopener noreferrer">3-file release acceptance · #245</a>
+  <a href="https://github.com/michaeljwilliams0123/Ultron.MW/issues/248" target="_blank" rel="noopener noreferrer">Free ZeroGPU eligibility · #248</a>
+ </div>
+ <p class="connection-footnote">20-minute shared cache limits anonymous GitHub API pressure. Scores are pinned historical receipts; a green workflow is not production approval. Paid spend ceiling remains $0.</p>
 </section>
 
 <div class="eyebrow">ULTRON.MW / ONE OWNER CONTROL SURFACE</div>
@@ -293,5 +322,6 @@ refresh();
 <script src="/__hatchable/events.js" defer></script>
 <script src="./connectivity.js" defer></script>
 <script src="./owner-live.js" defer></script>
+<script src="./hf-lab.js" defer></script>
 </body>
 </html>

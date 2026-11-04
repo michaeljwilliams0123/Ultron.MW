@@ -1,0 +1,135 @@
+/** Read-only Hugging Face evaluation lane, backed by GitHub Actions and durable cache.
+ * Zero new paid inference calls. Never interpret a workflow green as model promotion.
+ */
+const GH='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+const BROWSER='https://github.com/michaeljwilliams0123/Ultron.MW';
+const SHA=/^[a-f0-9]{40}$/;
+const FRESH_MS=20*60*1000;
+export const WORKFLOWS=Object.freeze([
+ Object.freeze({key:'heldout',label:'16-case held-out CPU evaluation',
+  file:'hf-heldout-cpu.yml'}),
+ Object.freeze({key:'tournament',label:'Small CPU model tournament',
+  file:'hf-free-cpu-tournament.yml'}),
+ Object.freeze({key:'c06',label:'Model-authored 3-file PR candidate',
+  file:'c06-owner-model-release.yml'})
+]);
+const frozenEvidence=Object.freeze({
+ observation:'historical-evidence',
+ runId:41764422463,
+ runUrl:BROWSER+'/actions/runs/41764422463',
+ sourceSha:'8530f25885dab764d4eb03fcf1bc76fb07c4487c',
+ corpusSha:'f544c3fc6366959d6def15bc1cb191ff583ee9bc73c284c10cbd1e4bb2817fdd',
+ cases:16,
+ models:[
+  {key:'baseline',label:'Qwen2.5 0.5B',passed:1,productionEligible:false},
+  {key:'coder-small',label:'Qwen Coder 0.5B',passed:1,productionEligible:false},
+  {key:'coder-medium',label:'Qwen Coder 1.5B',passed:2,productionEligible:false},
+  {key:'coder-large',label:'Qwen Coder 3B',passed:7,productionEligible:false,
+   license:'qwen-research',approvedUse:'noncommercial-evaluation-only'}
+ ]
+});
+const release=Object.freeze({
+ productionAccepted:false,autoPromotion:false,
+ issueUrl:BROWSER+'/issues/245',
+ admission:'owner-scoped-protected-PR-required',gpu:'unverified-free-quota',
+ paidProviderUse:'disabled',modelRole:'evaluation-only'
+});
+const date=value=>{
+ const d=new Date(value);
+ return Number.isFinite(d.getTime())?d.toISOString():null;
+};
+function emptyWorkflow(item,state='unavailable',reason=null){
+ return {key:item.key,label:item.label,workflowUrl:BROWSER+'/actions/workflows/'+item.file,
+  state,reason,runId:null,status:null,conclusion:null,headSha:null,
+  runUrl:null,startedAt:null};
+}
+function emptySnapshot(observedAt){
+ return {schema:'ultron.hf-lab.v1',observedAt,paidBudgetCents:0,
+  workflows:WORKFLOWS.map(x=>emptyWorkflow(x)),
+  benchmark:frozenEvidence,release};
+}
+async function inspectWorkflow(fetchGithub,item){
+ const url=GH+'/actions/workflows/'+item.file+'/runs?per_page=1&event=workflow_dispatch';
+ const response=await fetchGithub(url,{method:'GET',cache:'no-store',
+  headers:{Accept:'application/vnd.github+json','User-Agent':'Ultron-HF-Lab'},
+  signal:AbortSignal.timeout(6500)});
+ if(!response?.ok)throw Error('github-http-'+String(response?.status||'unknown'));
+ const body=await response.json();
+ if(!Array.isArray(body?.workflow_runs))throw Error('invalid-actions-response');
+ const run=body.workflow_runs[0];
+ if(!run)return emptyWorkflow(item,'no-run',null);
+ const valid=Number.isSafeInteger(run.id)&&run.id>0&&SHA.test(run.head_sha||'')&&
+  ['queued','in_progress','completed','requested','waiting','pending'].includes(run.status);
+ if(!valid)throw Error('invalid-workflow-receipt');
+ const conclusion=run.status==='completed'&&typeof run.conclusion==='string'?
+  run.conclusion.slice(0,32):null;
+ return {key:item.key,label:item.label,
+  workflowUrl:BROWSER+'/actions/workflows/'+item.file,
+  state:'observed',reason:null,runId:run.id,status:run.status,
+  conclusion,headSha:run.head_sha,
+  runUrl:BROWSER+'/actions/runs/'+run.id,
+  startedAt:date(run.created_at)};
+}
+export async function collectHfRuns({fetchGithub=fetch,now=()=>new Date().toISOString()}={}){
+ const observedAt=now(),settled=await Promise.allSettled(
+  WORKFLOWS.map(item=>inspectWorkflow(fetchGithub,item)));
+ const result=emptySnapshot(observedAt);
+ result.workflows=settled.map((v,i)=>v.status==='fulfilled'?v.value:
+  emptyWorkflow(WORKFLOWS[i],'unavailable',
+   String(v.reason?.message||'provider-unavailable').slice(0,65)));
+ return result;
+}
+function present(snapshot,state,at,reason=null){
+ const payload=snapshot?.schema==='ultron.hf-lab.v1'?snapshot:emptySnapshot(at);
+ return {...payload,cache:{state,readAt:at,
+  observedAt:payload.observedAt,reason}};
+}
+export async function getHfLabView({db,fetchGithub=fetch,
+ now=()=>new Date().toISOString()}={}){
+ const at=now(),instant=Date.parse(at);
+ let previous;
+ try{
+  const r=await db.query('SELECT snapshot,observed_at,lease_until FROM hf_lab_cache WHERE id=$1',['owner']);
+  previous=r.rows[0]||null;
+ }catch{
+  // No unsecured direct-fetch fallback: protects the public GitHub API quota.
+  return present(null,'unavailable',at,'cache-storage-unavailable');
+ }
+ const prior=previous?.snapshot;
+ const age=instant-Date.parse(previous?.observed_at||'1970-01-01T00:00:00Z');
+ if(prior?.schema==='ultron.hf-lab.v1'&&age>=0&&age<FRESH_MS)
+  return present(prior,'fresh',at);
+ const key=crypto.randomUUID();
+ let owned=false;
+ try{
+  const claimed=await db.query(
+   `INSERT INTO hf_lab_cache(id,snapshot,observed_at,lease_until,refresh_key)
+    VALUES('owner','{}'::jsonb,to_timestamp(0),now()+interval '45 seconds',$1)
+    ON CONFLICT(id) DO UPDATE SET
+      lease_until=now()+interval '45 seconds',refresh_key=EXCLUDED.refresh_key
+    WHERE hf_lab_cache.lease_until < now() RETURNING id`,[key]);
+  owned=claimed.rows.length===1;
+ }catch{
+  return present(prior,'stale',at,'cache-claim-unavailable');
+ }
+ if(!owned)return present(prior,'stale',at,'refresh-already-running');
+ const snapshot=await collectHfRuns({fetchGithub,now});
+ const observations=snapshot.workflows.filter(x=>x.state!=='unavailable').length;
+ if(!observations){
+  try{await db.query(
+   `UPDATE hf_lab_cache SET lease_until=now()+interval '5 minutes',
+    refresh_key=NULL WHERE id='owner' AND refresh_key=$1`,[key]);}catch{}
+  return present(prior,'stale',at,'github-observation-unavailable');
+ }
+ try{
+  const stored=await db.query(
+   `UPDATE hf_lab_cache SET snapshot=$2::jsonb,observed_at=$3::timestamptz,
+    lease_until=to_timestamp(0),refresh_key=NULL
+    WHERE id='owner' AND refresh_key=$1 RETURNING id`,
+   [key,JSON.stringify(snapshot),at]);
+  if(stored.rows.length!==1)return present(prior,'stale',at,'refresh-fence-lost');
+  return present(snapshot,'refreshed',at);
+ }catch{
+  return present(prior,'stale',at,'cache-write-unconfirmed');
+ }
+}
