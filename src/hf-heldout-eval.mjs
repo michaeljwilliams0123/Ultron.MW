@@ -7,6 +7,8 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {HELDOUT_REPAIR_CASES,heldoutCorpusDigest} from './hf-heldout-cases.mjs';
 import {FREE_CPU_MODELS} from './hf-free-compute.mjs';
+import {normalizeRepairOutput} from './hf-repair-output.mjs';
+export {normalizeRepairOutput,inspectRepairOutput} from './hf-repair-output.mjs';
 
 const SHA=/^[a-f0-9]{40}$/;
 const PROPOSAL=/^function fix\(input\)\s*\{[\s\S]+\}$/;
@@ -30,9 +32,10 @@ export function scoreProposedRepair(testCase,raw){
  const vectorCount=testCase?.vectors?.length??0;
  const out=(reason,correctVectors=0)=>Object.freeze({
   id,passed:reason==='verified',vectorCount,correctVectors,reason});
- if(!HELDOUT_REPAIR_CASES.includes(testCase)||typeof raw!=='string'||
-    raw.length>900)return out('invalid-function');
- const source=raw.trim();
+ if(!HELDOUT_REPAIR_CASES.includes(testCase))return out('invalid-function');
+ const normalized=normalizeRepairOutput(raw);
+ if(!normalized.code)return out('invalid-function');
+ const source=normalized.code;
  if(UNSAFE.test(source)||/\\bnew\\s+[A-Za-z_$]/.test(source))return out('unsafe-proposal');
  if(!PROPOSAL.test(source)||source.match(/\bfunction\b/g)?.length!==1)
   return out('invalid-function');
@@ -54,7 +57,7 @@ export function admitHeldoutCpu(input={}){
   input.parallel!==4||input.gpu!==false||input.costCents!==0||
   input.shards!==2)throw Error('heldout-cpu-admission-denied');
  return Object.freeze({schema:'ultron.hf.heldout-plan.v1',
-  maxParallel:4,totalModelJobs:6,shards:2,maxNewTokens:256,
+  maxParallel:4,totalModelJobs:8,shards:2,maxNewTokens:256,
   paidBudgetCents:0,runner:'ubuntu-24.04',device:'cpu'});
 }
 

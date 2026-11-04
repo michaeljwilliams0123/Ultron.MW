@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        profile: [baseline, coder-small, coder-medium]
+        profile: [baseline, coder-small, coder-medium, coder-large]
         shard: [0, 1]
     env:
       ULTRON_REPOSITORY_PUBLIC: 'true'

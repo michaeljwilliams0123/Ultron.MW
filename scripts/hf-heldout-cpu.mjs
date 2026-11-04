@@ -4,10 +4,12 @@
  */
 import {mkdir,writeFile} from 'node:fs/promises';
 import {performance} from 'node:perf_hooks';
+import {createHash} from 'node:crypto';
+import {heldoutCorpusDigest} from '../src/hf-heldout-cases.mjs';
 import {selectFreeModelProfile,resolveEvaluationRevision}
  from '../src/hf-free-compute.mjs';
-import {admitHeldoutCpu,heldoutShard,scoreProposedRepair,makeHeldoutReceipt}
- from '../src/hf-heldout-eval.mjs';
+import {admitHeldoutCpu,heldoutShard,scoreProposedRepair,makeHeldoutReceipt,
+ inspectRepairOutput} from '../src/hf-heldout-eval.mjs';
 
 const plan=admitHeldoutCpu({
  repository:process.env.GITHUB_REPOSITORY,
@@ -18,7 +20,7 @@ const plan=admitHeldoutCpu({
 const profile=process.env.ULTRON_HF_PROFILE;
 const shard=Number(process.env.ULTRON_HF_SHARD);
 if(!Number.isSafeInteger(shard)||!Object.hasOwn({
- baseline:1,'coder-small':1,'coder-medium':1},profile)||![0,1].includes(shard))
+ baseline:1,'coder-small':1,'coder-medium':1,'coder-large':1},profile)||![0,1].includes(shard))
  throw Error('invalid-heldout-benchmark-input');
 const model=selectFreeModelProfile({ULTRON_MODEL_PROFILE:profile},{evaluation:true});
 const revision=await resolveEvaluationRevision(model);
@@ -28,7 +30,7 @@ env.allowLocalModels=false;
 const start=performance.now();
 const generator=await pipeline('text-generation',model.id,{
  device:plan.device,dtype:model.dtype,revision});
-const cases=[];
+const cases=[],diagnostics=[];
 for(const testCase of heldoutShard(shard)){
  const prompt=[{role:'system',content:
   'Repair the JavaScript function exactly. Respond with ONLY the complete JavaScript function named fix(input), no markdown, no explanation, no extra code. Keep all behavior correct.'},
@@ -44,10 +46,12 @@ for(const testCase of heldoutShard(shard)){
   response=(Array.isArray(generated)?generated.at(-1)?.content:generated)||'';
  }catch{/* Individual model inference failures count as failed cases. */}
  const scored=scoreProposedRepair(testCase,response);
+ const shape=inspectRepairOutput(response);
  cases.push(scored);
+ diagnostics.push({id:scored.id,...shape});
  console.log(JSON.stringify({case:scored.id,passed:scored.passed,
   correctVectors:scored.correctVectors,totalVectors:scored.vectorCount,
-  reason:scored.reason}));
+  reason:scored.reason,outputShape:shape.shape,responseChars:shape.responseChars}));
 }
 const receipt=makeHeldoutReceipt({profile,revision,shard,
  sourceSha:process.env.GITHUB_SHA,durationMs:Math.round(performance.now()-start),
@@ -55,6 +59,12 @@ const receipt=makeHeldoutReceipt({profile,revision,shard,
 await mkdir('artifacts/hf-heldout',{recursive:true});
 const path='artifacts/hf-heldout/'+profile+'-shard'+shard+'.json';
 await writeFile(path,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'});
+const shapeReceipt={schema:'ultron.hf.repair-output-shapes.v1',
+ profile,model:model.id,revision,sourceSha:process.env.GITHUB_SHA,
+ corpusDigest:heldoutCorpusDigest(),shard,cases:diagnostics};
+const shapeDigest=createHash('sha256').update(JSON.stringify(shapeReceipt)).digest('hex');
+const shapesPath='artifacts/hf-heldout/'+profile+'-shard'+shard+'-shapes.json';
+await writeFile(shapesPath,JSON.stringify({...shapeReceipt,digest:shapeDigest},null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({schema:receipt.schema,profile:receipt.profile,
  revision:receipt.revision,sourceSha:receipt.sourceSha,
  corpusDigest:receipt.corpusDigest,passed:receipt.passed,
