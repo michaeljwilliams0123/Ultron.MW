@@ -69,7 +69,7 @@ test('C06-03 only model-produced 3-file artifacts pass strict provenance and sem
  assert.equal(result.receipt.productionAccepted,false);
  assert.equal(result.receipt.modelRevision,admitC06(allowed).revision);
  assert.equal(verifyC06Files(result.files,{sourceSha:sha,runId:'12345'}).valid,true);
- assert.match(result.files[C06_PATHS.source],/export function fix\(input\)/);
+ assert.match(result.files[C06_PATHS.source],/export function classifyC06Effect\(input\)/);
  assert.match(result.files[C06_PATHS.tests],/generated/);
  assert.match(result.files[C06_PATHS.docs],/Unknown provider outcomes reconcile/);
 });
@@ -170,7 +170,7 @@ test('C06-11 model cannot self-authorize owner, pause or spend outside the gener
  assert.match(content,/export function classifyC06Effect\(input\)/);
  assert.match(content,/Number\.isInteger\(input\.paidCents\)/);
  assert.match(content,/input\.authorized !== true/);
- assert.match(content,/input\.paused === true/);
+ assert.match(content,/input\.paused !== false/);
  const module=await import('data:text/javascript,'+encodeURIComponent(content));
  for(const row of C06_CASES)
   assert.equal(module.classifyC06Effect(row.input),row.expected,row.id);
