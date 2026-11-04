@@ -164,3 +164,146 @@ test('changed receipt identity on a completed step is a ledger conflict, not pro
  assert.equal(mismatch.status,'held');
  assert.equal(mismatch.reason,'verified-receipt-conflict');
 });
+
+/* Mission-grade acceptance: two independent source/PR tracks converge into a
+ * protected ordered release and a final runtime proof. Adapter fixtures below
+ * test the sequencer only; live provider effects require separate canaries. */
+const missionSteps=[
+ {id:'branch-alpha',type:'branch.create',dependsOn:[]},
+ {id:'patch-alpha',type:'source.patch',dependsOn:['branch-alpha']},
+ {id:'pr-alpha',type:'pr.create',dependsOn:['patch-alpha']},
+ {id:'ci-alpha',type:'ci.verify',dependsOn:['pr-alpha']},
+ {id:'branch-beta',type:'branch.create',dependsOn:['pr-alpha']},
+ {id:'patch-beta',type:'source.patch',dependsOn:['branch-beta']},
+ {id:'pr-beta',type:'pr.create',dependsOn:['patch-beta']},
+ {id:'ci-beta',type:'ci.verify',dependsOn:['pr-beta']},
+ {id:'merge-alpha',type:'pr.squash',dependsOn:['ci-alpha','ci-beta']},
+ {id:'merge-beta',type:'pr.squash',dependsOn:['ci-beta','merge-alpha']},
+ {id:'deploy-both',type:'deploy.reversible',dependsOn:['merge-alpha','merge-beta']},
+ {id:'runtime-prod',type:'runtime.verify',dependsOn:['deploy-both']}
+];
+const missionPlan=()=>createDeepTaskPlan({owner:OWNER,repository:REPO,
+ objectiveId:'mission-release-canary-001',sourceSha:SHA,steps:missionSteps});
+const missionWrites=missionSteps.filter(s=>['branch.create','source.patch',
+ 'pr.create','pr.squash','deploy.reversible'].includes(s.type)).map(s=>s.id);
+
+test('MISSION-01: twelve-step two-track release advances across three four-step cycles',async()=>{
+ const h=harness(),p=missionPlan();
+ const first=await runDeepTask({plan:p,...h,maxSteps:4});
+ assert.equal(first.status,'partial');assert.equal(first.completed,4);
+ assert.equal(first.remaining,8);
+ const second=await runDeepTask({plan:p,...h,maxSteps:4});
+ assert.equal(second.status,'partial');assert.equal(second.completed,8);
+ assert.equal(second.remaining,4);
+ const third=await runDeepTask({plan:p,...h,maxSteps:4});
+ assert.equal(third.status,'verified-plan');
+ assert.equal(third.completed,12);
+ assert.equal(third.productionAccepted,false,'source fixture is not live acceptance');
+ assert.deepEqual(h.performed,missionWrites);
+ assert.equal(h.state.size,12,'all twelve step receipts are durable');
+ const fourth=await runDeepTask({plan:p,...h,maxSteps:4});
+ assert.equal(fourth.status,'verified-plan');
+ assert.equal(fourth.dispatched,0);
+ assert.deepEqual(h.performed,missionWrites,'replay creates no duplicate writes');
+});
+
+test('MISSION-02: unknown second merge outcome requires readback, not redispatch',async()=>{
+ const h=harness(),p=missionPlan();
+ const baseline=h.bridge.observe;
+ h.bridge.observe=async context=>context.step.id==='merge-beta'?null:baseline(context);
+ assert.equal((await runDeepTask({plan:p,...h,maxSteps:8})).status,'partial');
+ const blocked=await runDeepTask({plan:p,...h,maxSteps:4});
+ assert.equal(blocked.status,'reconcile-required');
+ assert.equal(blocked.stepId,'merge-beta');
+ assert.equal(h.performed.filter(id=>id==='merge-beta').length,1);
+ assert.equal(h.performed.includes('deploy-both'),false);
+ h.bridge.observe=baseline;
+ const resumed=await runDeepTask({plan:p,...h,maxSteps:4});
+ assert.equal(resumed.status,'verified-plan');
+ assert.equal(h.performed.filter(id=>id==='merge-beta').length,1);
+ assert.equal(h.performed.filter(id=>id==='deploy-both').length,1);
+});
+
+test('MISSION-03: owner revocation mid-workflow stops new writes and resumes only after restored authority',async()=>{
+ const h=harness(),p=missionPlan(),baseline=h.readAuthority;
+ assert.equal((await runDeepTask({plan:p,...h,maxSteps:4})).status,'partial');
+ const performed=h.performed.length;
+ h.readAuthority=async args=>({...await baseline(args),paused:true});
+ const held=await runDeepTask({plan:p,...h,maxSteps:8});
+ assert.equal(held.status,'held');
+ assert.equal(h.performed.length,performed,'no writes after pause');
+ h.readAuthority=baseline;
+ const continued=await runDeepTask({plan:p,...h,maxSteps:8});
+ assert.equal(continued.status,'verified-plan');
+ assert.deepEqual(h.performed,missionWrites);
+});
+
+test('MISSION-04: green source work cannot merge with stale CI or missing merge eligibility',async()=>{
+ for(const denied of [{exactHeadCI:false},{githubMergeable:false}]){
+  const h=harness(),p=missionPlan(),baseline=h.readAuthority;
+  assert.equal((await runDeepTask({plan:p,...h,maxSteps:8})).status,'partial');
+  h.readAuthority=async args=>({...await baseline(args),...denied});
+  const stopped=await runDeepTask({plan:p,...h,maxSteps:8});
+  assert.equal(stopped.status,'held');
+  assert.equal(stopped.reason,'release-verification-gate-missing');
+  assert.equal(h.performed.includes('merge-alpha'),false);
+  h.readAuthority=baseline;
+  assert.equal((await runDeepTask({plan:p,...h,maxSteps:8})).status,'verified-plan');
+  assert.deepEqual(h.performed,missionWrites);
+ }
+});
+
+test('MISSION-05: independently verified historic receipt drift prevents dependent release',async()=>{
+ const h=harness(),p=missionPlan();
+ assert.equal((await runDeepTask({plan:p,...h,maxSteps:8})).status,'partial');
+ const baseline=h.bridge.observe;
+ h.bridge.observe=async context=>{
+  const observed=await baseline(context);
+  if(context.step.id==='patch-alpha')return {...observed,readbackDigest:'f'.repeat(64)};
+  return observed;
+ };
+ const result=await runDeepTask({plan:p,...h,maxSteps:4});
+ assert.equal(result.status,'held');
+ assert.equal(result.reason,'verified-receipt-conflict');
+ assert.equal(h.performed.includes('merge-alpha'),false);
+});
+
+test('MISSION-06: every write stage tolerates one committed effect with a lost ACK',async()=>{
+ for(const failedStep of missionWrites){
+  const h=harness({uncertainAt:failedStep}),p=missionPlan();
+  let status;
+  for(let turn=0;turn<4;turn++){
+   status=await runDeepTask({plan:p,...h,maxSteps:4});
+   if(status.status!=='partial')break;
+  }
+  assert.equal(status.status,'verified-plan',failedStep);
+  assert.deepEqual(h.performed,missionWrites,'exactly one write per stage: '+failedStep);
+  assert.equal(h.state.size,12);
+  assert.equal(status.productionAccepted,false);
+ }
+});
+
+test('MISSION-07: every missing postcondition blocks successors and resumes without replay',async()=>{
+ for(const missingStep of missionWrites){
+  const h=harness(),p=missionPlan(),baseline=h.bridge.observe;
+  h.bridge.observe=async input=>input.step.id===missingStep?null:baseline(input);
+  let stopped;
+  for(let turn=0;turn<4;turn++){
+   stopped=await runDeepTask({plan:p,...h,maxSteps:4});
+   if(stopped.status!=='partial')break;
+  }
+  assert.equal(stopped.status,'reconcile-required',missingStep);
+  assert.equal(stopped.stepId,missingStep);
+  assert.equal(h.performed.filter(id=>id===missingStep).length,1);
+  assert.equal(h.performed.length,missionWrites.indexOf(missingStep)+1,
+   'later writes must stay fenced: '+missingStep);
+  h.bridge.observe=baseline;
+  let done;
+  for(let turn=0;turn<4;turn++){
+   done=await runDeepTask({plan:p,...h,maxSteps:4});
+   if(done.status!=='partial')break;
+  }
+  assert.equal(done.status,'verified-plan',missingStep);
+  assert.deepEqual(h.performed,missionWrites,'resumption cannot replay: '+missingStep);
+ }
+});
