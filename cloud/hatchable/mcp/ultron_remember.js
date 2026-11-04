@@ -7,5 +7,5 @@ export default {
   kind:{type:'string',enum:['goal','observation','decision']},
   body:{type:'string',maxLength:1200}
  }},
- async handler(args,ctx){return await saveNote({db:ctx.db},args.kind,args.body);}
+ async handler(args,ctx){return await saveNote({db:ctx.db,events:ctx.events},args.kind,args.body);}
 };
