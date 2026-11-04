@@ -1,15 +1,17 @@
 import { localCpuInference } from './pr-brain-model.mjs';
+import {selectFreeModelProfile} from './hf-free-compute.mjs';
 
 const MODELS=new Set(['gpt-6-astra','gpt-6.1-sol','gpt-6-luna']);
 const API='https://api.openai.com/v1/responses';
 
 export function selectPrInference({env=process.env,fetchImpl=fetch}={}) {
   const provider=env.ULTRON_MODEL_PROVIDER||'local-cpu';
-  if(provider==='local-cpu')return Object.freeze({
-    run:localCpuInference,provider:'local-cpu',
-    model:'onnx-community/Qwen2.5-0.5B-Instruct',
-    generatedBy:'public-CPU-ONNX-inference',
-  });
+  if(provider==='local-cpu'){
+    const profile=selectFreeModelProfile(env);
+    return Object.freeze({run:localCpuInference,provider:'local-cpu',
+      model:profile.id,modelRevision:profile.revision,
+      generatedBy:'public-CPU-ONNX-inference'});
+  }
   if(provider!=='openai')throw Error('Unsupported Ultron model provider');
   const model=env.ULTRON_MODEL||'gpt-6.1-sol';
   if(!MODELS.has(model))throw Error('Unapproved OpenAI model selection');
