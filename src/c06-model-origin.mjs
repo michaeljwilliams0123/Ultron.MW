@@ -365,7 +365,7 @@ export function verifyC06Files(files,{sourceSha,runId}={}){
   receipt.independentCorrect!==C06_CASES.length)fail();
  const legacyHeldDocument=receipt.runId==='41775191071'&&
   receipt.sourceSha==='e2dda037f6d0512abf66d5a9666f98c1d62f2f92'&&
-  receipt.receiptDigest==='ddc1fb83129dde38b963e7d151d6105e50a09838ab0c5328b0d6d0b65374a7ef'&&
+  receipt.receiptDigest==='ddc1fb83129dde38b963e7d151d6105e50a09838ab0c5328b0d6b0d65374a7ef'&&
   receipt.docGenerationMode===undefined&&receipt.productionAccepted===false&&
   receipt.outputs?.[C06_PATHS.docs]?.sha256==='11b39ed8631bb414cf8077f53062fcb35febeda72e6d6b4f6b978c62465d0b46';
  if(!legacyHeldDocument&&
