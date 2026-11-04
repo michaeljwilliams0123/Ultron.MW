@@ -293,3 +293,34 @@ test('C06-18 model may repair its own documentation using precise rejection evid
  assert.match(generated.files[C06_PATHS.docs],/receiptVerified/);
  assert.equal(verifyC06Files(generated.files,{sourceSha:sha,runId:'12349'}).valid,true);
 });
+
+test('C06-19 accept substantial truthful technical documentation and preserve its model-origin digest',async()=>{
+ const extended=docs+'\n\n'+('Independently verify a real provider receipt before a protected PR merge. ').repeat(22);
+ assert.ok(extended.length>1800 && extended.length<2800);
+ const generated=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12350',maxAttempts:1,
+  infer:async kind=>({source:functionSource,cases:tests,docs:extended})[kind]
+ });
+ assert.ok(generated.files[C06_PATHS.docs].includes('receiptVerified'));
+ assert.equal(generated.receipt.productionAccepted,false);
+ assert.equal(generated.receipt.independentCorrect,15);
+ assert.equal(verifyC06Files(generated.files,{sourceSha:sha,runId:'12350'}).valid,true);
+});
+
+test('C06-20 oversized, terse and truncated technical runbooks remain held',async()=>{
+ for(const bad of [
+  docs + (' Protected provider receipt.').repeat(150),
+  '# Too short. paid held owner.',
+  docs.trimEnd().slice(0,-1)
+ ]){
+  await assert.rejects(()=>buildC06Artifacts({
+   admission:admitC06(allowed),runId:'12351',maxAttempts:1,
+   infer:async kind=>({source:functionSource,cases:tests,docs:bad})[kind]
+  }),/c06-model-docs-rejected/);
+ }
+});
+
+test('C06-21 real CPU documentation stage uses a bounded short-generation budget',async()=>{
+ const model=await readFile(new URL('../scripts/c06-run-model.mjs',import.meta.url),'utf8');
+ assert.match(model,/kind==='docs'\?320:/);
+});
