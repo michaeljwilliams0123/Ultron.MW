@@ -37,13 +37,46 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .task-list li{border:1px solid #304866;background:#101f33;padding:10px;border-radius:9px;font-size:12px;overflow-wrap:anywhere}
 .task-list strong{display:block;color:#dbe9fe}
 </style>
+<link rel="stylesheet" href="./connectivity.css">
 </head>
 <body>
 <nav class="unified-nav" aria-label="Primary Ultron workspace"><a href="/workspace.html">Workspace · Brain / Learning / Systems</a><a href="/" aria-current="page">Cloud controls</a></nav>
 <main class="shell">
+<section class="connectivity" aria-labelledby="connection-heading">
+ <div class="connectivity-titlebar">
+  <div>
+   <div class="connectivity-overline">ULTRON.MW / CONNECTIVITY</div>
+   <h2 id="connection-heading">Mission Control</h2>
+   <p class="small">One view of the hosted brain, GitHub source, CI and durable objectives. Every result identifies what was actually observed.</p>
+  </div>
+  <div class="connectivity-controls">
+   <button type="button" id="connection-refresh">Refresh connections</button>
+   <a href="https://hatchable.com/console/projects/ultron-mw-cloud" target="_blank" rel="noopener noreferrer">Owner sign-in</a>
+  </div>
+ </div>
+ <p class="connection-stamp" id="connection-stamp" role="status" aria-live="polite">Connections have not been verified.</p>
+ <div class="connection-grid" aria-label="Live system status">
+  <article class="connection-tile" id="connection-runtime" data-state="warning"><div class="connection-label">Hatchable / PostgreSQL</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking runtime state…</div></article>
+  <article class="connection-tile" id="connection-github" data-state="warning"><div class="connection-label">GitHub main</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking source revision…</div></article>
+  <article class="connection-tile" id="connection-ci" data-state="warning"><div class="connection-label">GitHub Actions</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking current-main workflow…</div></article>
+  <article class="connection-tile" id="connection-queue" data-state="warning"><div class="connection-label">Durable objectives</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking task state…</div></article>
+ </div>
+ <div class="connection-lower">
+  <section class="connection-subpanel" aria-labelledby="pr-summary-title">
+   <div class="connection-subpanel-head"><h3 id="pr-summary-title">Recent open PRs</h3><a href="https://github.com/michaeljwilliams0123/Ultron.MW/pulls" target="_blank" rel="noopener noreferrer">Open GitHub PRs</a></div>
+   <ul class="connection-rows" id="connection-prs" aria-label="Observed pull requests"><li>Waiting for owner-only readback…</li></ul>
+  </section>
+  <section class="connection-subpanel" aria-labelledby="tasks-summary-title">
+   <div class="connection-subpanel-head"><h3 id="tasks-summary-title">Latest hosted objectives</h3><a href="#ledger-panel">Task ledger</a></div>
+   <ul class="connection-rows" id="connection-recent" aria-label="Recent durable tasks"><li>Waiting for owner-only readback…</li></ul>
+  </section>
+ </div>
+ <p class="connection-footnote">Snapshot uses read-only public GitHub APIs and owner-protected PostgreSQL readback. No browser tokens or paid model calls. A missing observation never counts as a successful deployment or authorization.</p>
+</section>
+
 <div class="eyebrow">ULTRON.MW / ONE OWNER CONTROL SURFACE</div>
 <h1>Persistent cloud brain</h1>
-<p class="intro">Review and customize Ultron's autonomy preferences without granting new credentials or bypassing runtime authorization. Build is the default; Release remains subject to verified CI, GitHub and rollback gates.</p>
+<p class="intro">Review and customize Ultron's autonomy preferences without granting new credentials or bypassing runtime authorization. Profile selection never grants execution authority; Release requires separate verified CI, owner authorization, GitHub eligibility and rollback gates.</p>
 <div class="status" id="status" role="status" aria-live="polite">Checking authenticated owner controls…</div>
 <section class="grid">
 <div class="card">
@@ -254,5 +287,6 @@ button.addEventListener('click',refresh);
 refresh();
 })();
 </script>
+<script src="./connectivity.js" defer></script>
 </body>
 </html>
