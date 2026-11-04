@@ -1,0 +1,122 @@
+name: Ultron C06 reconcile exact model artifact to current main
+on:
+  workflow_dispatch:
+    inputs:
+      model_run_id:
+        description: 'Original successful generation run ID (not this replay run)'
+        type: string
+        required: true
+      model_source_sha:
+        description: 'Original exact source SHA recorded in model origin receipt'
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: ultron-c06-replay-${{ inputs.model_run_id }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      actions: read
+    env:
+      ULTRON_REPOSITORY_PUBLIC: 'true'
+      ULTRON_PAID_BUDGET_CENTS: '0'
+      ULTRON_C06_REPLAY_RUN_ID: ${{ inputs.model_run_id }}
+      ULTRON_C06_REPLAY_SOURCE_SHA: ${{ inputs.model_source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: c06-model-output-${{ inputs.model_run_id }}
+          run-id: ${{ inputs.model_run_id }}
+          github-token: ${{ github.token }}
+          path: c06-output
+      - name: Admit only ancestor and byte-identical generator before artifact proof
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$ULTRON_C06_REPLAY_SOURCE_SHA" "$GITHUB_SHA"
+          node scripts/c06-verify-replay.mjs
+  publish:
+    needs: verify
+    if: >-
+      needs.verify.result == 'success' &&
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    env:
+      ULTRON_REPOSITORY_PUBLIC: 'true'
+      ULTRON_PAID_BUDGET_CENTS: '0'
+      ULTRON_C06_REPLAY_RUN_ID: ${{ inputs.model_run_id }}
+      ULTRON_C06_REPLAY_SOURCE_SHA: ${{ inputs.model_source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: c06-model-output-${{ inputs.model_run_id }}
+          run-id: ${{ inputs.model_run_id }}
+          github-token: ${{ github.token }}
+          path: c06-output
+      - name: Repeat independent provenance, ancestry, exact-main and idempotency verification
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+          node scripts/c06-verify-replay.mjs
+      - name: Atomically publish exact prior model artifacts to one protected PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+          node scripts/c06-verify-replay.mjs
+          branch="ultron/c06-model-$ULTRON_C06_REPLAY_RUN_ID"
+          git switch -c "$branch" "$GITHUB_SHA"
+          mkdir -p lib test docs evidence
+          cp -- c06-output/lib/c06-model-candidate.js lib/c06-model-candidate.js
+          cp -- c06-output/test/c06-model-generated.test.mjs test/c06-model-generated.test.mjs
+          cp -- c06-output/docs/c06-model-generated.md docs/c06-model-generated.md
+          cp -- c06-output/evidence/c06-model-origin.json evidence/c06-model-origin.json
+          git add -- lib/c06-model-candidate.js test/c06-model-generated.test.mjs docs/c06-model-generated.md evidence/c06-model-origin.json
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "feat(c06): verified prior model-authored 3-file candidate run $ULTRON_C06_REPLAY_RUN_ID"
+          encoded="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $encoded" push origin "HEAD:refs/heads/$branch"
+          if ! gh pr create --base main --head "$branch" \
+            --title "feat(c06): true model-generated runtime, test and docs from verified prior run" \
+            --body "Refs #245. Genuine $0 CPU Hugging Face model run $ULTRON_C06_REPLAY_RUN_ID on pinned original source $ULTRON_C06_REPLAY_SOURCE_SHA; replayed without model inference after proving exact unchanged generator/evaluator files on newer main $GITHUB_SHA. Four files including immutable receipt; protected CI/squash and independently observed Hatchable live effect still required; not production accepted."; then
+            echo 'HOLD: published branch may exist but PR outcome is uncertain or denied; reconcile, never retry write'
+            exit 1
+          fi
