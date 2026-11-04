@@ -7,5 +7,5 @@ export default {
   action:{type:'string',enum:['cancel','retry']},
   id:{type:'integer',minimum:1}
  }},
- async handler(args,ctx){return await controlTask({db:ctx.db},args.action,args.id);}
+ async handler(args,ctx){return await controlTask({db:ctx.db,events:ctx.events},args.action,args.id);}
 };
