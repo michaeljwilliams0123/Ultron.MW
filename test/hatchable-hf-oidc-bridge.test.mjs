@@ -37,7 +37,7 @@ const jwks=async url=>{
 };
 const verify=async(body=initial,payload=null,opts={})=>{
  const raw=JSON.stringify(body);
- const token=sign(payload||claims(oidcAudience(raw)));
+ const token=sign(payload||claims(await oidcAudience(raw)));
  return verifyGitHubOidc({token,rawBody:raw,fetchJwks:jwks,now,...opts});
 };
 test('OIDC-01: valid RSA GitHub JWT, fixed repo/workflow/branch, bound body grants read-only receipt ingress',async()=>{
@@ -50,13 +50,13 @@ test('OIDC-01: valid RSA GitHub JWT, fixed repo/workflow/branch, bound body gran
 });
 test('OIDC-02: token audience is a SHA-256 commitment to the exact raw request body',async()=>{
  const raw=JSON.stringify(initial);
- const audience=oidcAudience(raw);
+ const audience=await oidcAudience(raw);
  assert.ok(audience.includes(createHash('sha256').update(raw).digest('hex')));
  await assert.rejects(()=>verify({...initial,runId:41775191072},claims(audience)),/untrusted-oidc/);
 });
 test('OIDC-03: fake signature, wrong key id, wrong issuer and expired token fail closed',async()=>{
  const raw=JSON.stringify(initial);
- const aud=oidcAudience(raw);
+ const aud=await oidcAudience(raw);
  const data=claims(aud);
  for(const wrong of [
   sign({...data,iss:'https://attacker.example'}),
@@ -68,7 +68,7 @@ test('OIDC-03: fake signature, wrong key id, wrong issuer and expired token fail
  ])await assert.rejects(()=>verifyGitHubOidc({token:wrong,rawBody:raw,fetchJwks:jwks,now}),/untrusted-oidc/);
 });
 test('OIDC-04: no other workflow, event, private/forked repo, actor or permission path can send',async()=>{
- const raw=JSON.stringify(initial),aud=oidcAudience(raw);
+ const raw=JSON.stringify(initial),aud=await oidcAudience(raw);
  const bad=[
   {repository:'fork/Ultron.MW'},{repository_id:'5'},
   {repository_visibility:'private'},{repository_owner:'attacker'},
