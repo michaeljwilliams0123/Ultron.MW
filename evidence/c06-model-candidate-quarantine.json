@@ -1,0 +1,13 @@
+{
+  "schema": "ultron.c06.release-quarantine.v1",
+  "issueNumber": 245,
+  "runId": "41775191071",
+  "originReceiptDigest": "ddc1fb83129dde38b963e7d151d6105e50a09838ab0c5328b0d6b0d65374a7ef",
+  "generatedDocSha256": "11b39ed8631bb414cf8077f53062fcb35febeda72e6d6b4f6b978c62465d0b46",
+  "reason": "invalid-technical-documentation",
+  "productionAccepted": false,
+  "deployAllowed": false,
+  "policy": "Hold this exact original model artifact until a new model-generated receipt replaces it with validated technical docs; preserve model source and forensic hashes.",
+  "sourcePullRequest": 272,
+  "mergeSha": "5c32380e3f434c9dad41749dcc8222c339434624"
+}
