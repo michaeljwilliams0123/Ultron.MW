@@ -19,6 +19,7 @@ export const FREE_CPU_MODELS=Object.freeze({
  'coder-large':Object.freeze({key:'coder-large',
   id:'onnx-community/Qwen2.5-Coder-3B-Instruct',
   revision:'0e076a9c5291f8c74b3ce1558f21336b18f94739',
+  license:'qwen-research',approvedUse:'noncommercial-evaluation-only',
   device:'cpu',dtype:'q4',priceCents:0}),
 });
 

@@ -110,3 +110,10 @@ test('HF-CPU-08: larger 3B code model is pinned and evaluation-only on free CPU'
  assert.equal(model.priceCents,0);
  assert.throws(()=>selectFreeModelProfile({ULTRON_MODEL_PROFILE:'coder-large'}),/not-promoted/);
 });
+
+test('HF-CPU-09: the 3B model is research-only, not eligible for commercial production',()=>{
+ const model=selectFreeModelProfile({ULTRON_MODEL_PROFILE:'coder-large'},{evaluation:true});
+ assert.equal(model.license,'qwen-research');
+ assert.equal(model.approvedUse,'noncommercial-evaluation-only');
+ assert.throws(()=>selectFreeModelProfile({ULTRON_MODEL_PROFILE:'coder-large'}),/not-promoted/);
+});
