@@ -59,3 +59,24 @@ The 1.5B model solved `owner-pause` and `lease-expiry` fully; several other prop
 - SD009WC7's authorized Windows desktop is used only for source development and deterministic regression tests. Its Intel Arc GPU is **not assumed compatible with the existing ONNX pipeline** and does not become a requirement of Hatchable/GitHub production.
 
 **Still required:** merge only after exact-head CI and review-state checks, manually run the revised workflow from protected `main`, inspect eight model-plus-shape artifacts, compare formatting and semantic failure counts against the initial 16-case result, and record owner-scoped readback in the existing Hatchable ledger. #245/#188/#173/#204 remain open until actual autonomous engineering and external evidence gates are met.
+
+## Live corrected-format benchmark: November 4, 2026 UTC (issue #252)
+
+**Executed, not simulated:** [GitHub Actions run #41764422463](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/41764422463), source commit `8530f25885dab764d4eb03fcf1bc76fb07c4487c` (protected squash PR #255). All **eight standard public CPU jobs completed successfully**, produced eight artifact packages (each including original case outcomes and shape metadata), and reported `paidCents:0` per shard. This is a self-reported job ledger, **not** an independently obtained cloud billing statement. No metered Hugging Face Jobs, GPU runners, credentials or subscriptions were activated.
+
+The same 16-case synthetic corpus was frozen at SHA-256 `f544c3fc6366959d6def15bc1cb191ff583ee9bc73c284c10cbd1e4bb2817fdd`. The scoring implementation changed to admit **one** bounded, safely parsed function from an otherwise valid Markdown fence, so compare this run with earlier results only with both source SHAs attached.
+
+| Candidate and immutable model revision | Shard 0 | Shard 1 | Complete repairs | Output-shape findings |
+| --- | ---: | ---: | ---: | --- |
+| 0.5B general `516c8d04add8a80c5228f32102b57953b8d421a9` | 0/8 | 1/8 | **1/16** | 7 fenced; 6 invalid fences; 2 duplicate functions; 1 trailing content |
+| 0.5B Coder `604bb1988ff789d5024d589c63cf9ae81c0c8ab5` | 1/8 | 0/8 | **1/16** | 16 fenced; formatting accepted, mostly behavioral failures |
+| 1.5B Coder `774cc908b6c2be23bc4e8d4e401e4f8b8fba7daf` | 1/8 | 1/8 | **2/16** | 16 exact functions; mostly behavioral failures |
+| **3B Coder** `0e076a9c5291f8c74b3ce1558f21336b18f94739` | 3/8 | 4/8 | **7/16** | 16 fenced, 16 accepted, 9 behavior/execution failures |
+
+Qwen2.5-Coder 3B's two CPU-only shards each ran within the standard-runner 20-minute limit and recorded **252,078 ms** and **279,328 ms** of model evaluation. The q4 ONNX assets were confirmed on Hugging Face, but the model's upstream [Qwen Research License](https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct/blob/main/LICENSE) restricts use to **noncommercial research/evaluation** without a separately negotiated commercial license. The registry explicitly marks the 3B profile `noncommercial-evaluation-only`; `selectFreeModelProfile` still disallows every non-baseline candidate in production mode. The 3B model is **not eligible for automatic promotion**, irrespective of these preliminary scores.
+
+**Eight inspectable artifact package IDs:** baseline `13291569285`, `13291274776`; Coder 0.5B `13291469518`, `13292240985`; Coder 1.5B `13291614364`, `13292036782`; Coder 3B `13292291509`, `13291299445`. Original behavior scores plus source/model/corpus/shard SHA evidence are retained; the new output-shape sidecars provide bounded metadata, not raw model replies.
+
+**Owner-brain evidence:** The result was persisted in the existing Hatchable cloud ledger as `brain_notes.id=10` / `brain_events.id=1009`, action key `hf:heldout:run41764422463:observation:v1`. Independent PostgreSQL readback found exactly one matching note/event; same-key replay returned HTTP 200 `reused:true`. This is a reliable **observation**, not a production write by the model.
+
+**Disposition:** Issue #252's bounded model-output diagnosis and candidate evaluation are complete. Model promotion remains blocked because the 3B model solved only 7/16 synthetic functions and has research-only licensing. Refs #245 (true autonomous three-file source→PR→protected release), #173/#204 (independent evaluator), #193 (learning), #248 (ZeroGPU). Their acceptance criteria remain outstanding.

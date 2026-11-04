@@ -75,3 +75,13 @@ test('HF-FMT-07: benchmark records shape-only diagnostics beside original receip
  assert.match(script,/-shapes\.json/);
  assert.doesNotMatch(script,/console\.log\s*\(\s*(?:response|raw|generated)\s*\)/);
 });
+
+test('HF-FMT-08: diagnostics report exact UTF-8 byte size without emitting source text',()=>{
+ const raw='π🙂';
+ const result=inspectRepairOutput(raw);
+ assert.equal(result.responseChars,3);
+ assert.equal(result.responseBytes,6);
+ assert.equal(result.shape,'missing-signature');
+ assert.ok(!JSON.stringify(result).includes(raw));
+ assert.equal(inspectRepairOutput(null).responseBytes,0);
+});
