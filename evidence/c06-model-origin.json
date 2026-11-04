@@ -1,0 +1,36 @@
+{
+  "schema": "ultron.c06.model-origin.v1",
+  "issueNumber": 245,
+  "sourceSha": "e2dda037f6d0512abf66d5a9666f98c1d62f2f92",
+  "runId": "41775191071",
+  "origin": "model-inference-not-assistant-authored",
+  "model": "onnx-community/Qwen2.5-Coder-1.5B-Instruct",
+  "modelRevision": "774cc908b6c2be23bc4e8d4e401e4f8b8fba7daf",
+  "testVectorMode": "individually-model-generated",
+  "license": "apache-2.0",
+  "paidCents": 0,
+  "productionAccepted": false,
+  "generation": "model-authored-provider-function+test-vectors+docs;fixed-independent-owner-stop-spend-fence",
+  "generatedRawHashes": {
+    "source": "570b78291a335e3a35f3aa3739ebed600bacc9297f36eaa55df5f9acc357da68",
+    "cases": "0dc44beacc7459e64558b266238b0f56376bf69a56885e799eecfa8649e5cb8a",
+    "docs": "29bb9516ff7a76fec4d3de14af2eb6d14775a6ec893c37a6dee748edb008f2bd"
+  },
+  "outputs": {
+    "lib/c06-model-candidate.js": {
+      "sha256": "2c93e816ac1de8e242b6ab970e8a048d1e3496d8628d41d52a4d8c4d69312ff6",
+      "bytes": 737
+    },
+    "test/c06-model-generated.test.mjs": {
+      "sha256": "1948fa5b68ba2d6c98cc7a8ce346603624d2872177e247d34791e10ec5636e02",
+      "bytes": 1733
+    },
+    "docs/c06-model-generated.md": {
+      "sha256": "11b39ed8631bb414cf8077f53062fcb35febeda72e6d6b4f6b978c62465d0b46",
+      "bytes": 2345
+    }
+  },
+  "independentCaseCount": 15,
+  "independentCorrect": 15,
+  "receiptDigest": "ddc1fb83129dde38b963e7d151d6105e50a09838ab0c5328b0d6b0d65374a7ef"
+}
