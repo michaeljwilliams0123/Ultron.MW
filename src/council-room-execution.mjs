@@ -68,6 +68,14 @@ async function observeArtifact({request,event,actor,repository,executorSha,
   post,put,readOnly:true,observeExactHead});
 }
 
+// A green CI run on a documentation-only proposal is transport/source evidence,
+// not proof that an implementation worker changed code or completed the objective.
+function proposalDisposition(verification){
+ if(verification?.state!=='completed')return {phase:'observing'};
+ if(verification.conclusion==='success')return {phase:'needs-owner',reason:'proposal-only-no-execution'};
+ return {phase:'blocked',reason:'exact-head-verify-'+String(verification.conclusion||'unverified')};
+}
+
 export async function runCouncilRoomExecution({
  event,actor,repository,executorSha,
  github={get:p=>githubReadWithRecovery(p),
@@ -133,11 +141,12 @@ export async function runCouncilRoomExecution({
    return {status:'needs-owner',job:held.job,requestKey:request.idempotencyKey};
   }
   if(job.state==='dispatched'&&found.verification?.state==='completed'){
-   const phase=found.verification.conclusion==='success'?'verified':'blocked';
+   await callback({...base,phase:'observing'});
+   const {phase,reason}=proposalDisposition(found.verification);
    const saved=await callback({...base,phase,
     verification:{runId:found.verification.runId,url:found.verification.url,
      sha:found.verification.sha,conclusion:found.verification.conclusion},
-    ...(phase==='blocked'?{result:{reason:'exact-head-verify-'+found.verification.conclusion}}:{})});
+    ...(reason?{result:{reason}}:{})});
    return {status:phase,job:saved.job,requestKey:request.idempotencyKey,replayed:true};
   }
   if(found.verification?.state==='pending'&&found.verification.runId){
@@ -149,13 +158,12 @@ export async function runCouncilRoomExecution({
   await callback({...base,phase:'observing'});
   const verification=await verifyExactHead({get:github.get,post:github.post,
    branch:found.branch,headSha:found.headSha});
-  const phase=verification.state==='completed'?
-   (verification.conclusion==='success'?'verified':'blocked'):'observing';
+  const {phase,reason}=proposalDisposition(verification);
   const saved=await callback({...base,phase,
    ...(verification.runId?{verification:{
     runId:verification.runId,url:verification.url,sha:verification.sha,
     conclusion:verification.conclusion}}:{}),
-   ...(phase==='blocked'?{result:{reason:'exact-head-verify-'+verification.conclusion}}:{})});
+   ...(reason?{result:{reason}}:{})});
   return {status:phase,job:saved.job,verification,
    requestKey:request.idempotencyKey,replayed:found.status==='already-created'};
  }
@@ -170,11 +178,11 @@ export async function runCouncilRoomExecution({
   const verification=found.verification;
   if(verification?.state!=='completed')return {status:'observing',job,
    verification,requestKey:request.idempotencyKey,replayed:true};
-  const phase=verification.conclusion==='success'?'verified':'blocked';
+  const {phase,reason}=proposalDisposition(verification);
   const saved=await callback({...base,phase,verification:{
    runId:verification.runId,url:verification.url,sha:verification.sha,
    conclusion:verification.conclusion},
-   ...(phase==='blocked'?{result:{reason:'exact-head-verify-'+verification.conclusion}}:{})});
+   ...(reason?{result:{reason}}:{})});
   return {status:phase,job:saved.job,verification,
    requestKey:request.idempotencyKey,replayed:true};
  }
@@ -199,13 +207,12 @@ export async function runCouncilRoomExecution({
    verification=await verifyExactHead({get:github.get,post:github.post,
     branch:result.branch,headSha:result.headSha});
   }
-  const phase=verification?.state==='completed'?
-   (verification.conclusion==='success'?'verified':'blocked'):'observing';
+  const {phase,reason}=proposalDisposition(verification);
   const saved=await callback({...base,phase,
    ...(verification?.runId?{verification:{
     runId:verification.runId,url:verification.url,sha:verification.sha,
     conclusion:verification.conclusion}}:{}),
-   ...(phase==='blocked'?{result:{reason:'exact-head-verify-'+verification.conclusion}}:{})});
+   ...(reason?{result:{reason}}:{})});
   return {status:phase,job:saved.job,prUrl:result.prUrl,
    verification,requestKey:request.idempotencyKey,created:result.created};
  }catch(error){
