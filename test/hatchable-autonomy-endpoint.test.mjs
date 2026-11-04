@@ -4,12 +4,13 @@ import {readFile} from 'node:fs/promises';
 
 const source=await readFile(new URL('../cloud/hatchable/api/brain/autonomy.js',import.meta.url),'utf8');
 const replaced=source
- .replace("import {db} from 'hatchable';","const db={};")
+ .replace("import {db,events} from 'hatchable';","const db={}; const events={publish:async()=>({id:1})};")
+ .replace("import {notifyOwner} from 'lib/owner-live-events.js';","const notifyOwner=async()=>true;")
  .replace("import {readOwnerProfile,setOwnerProfile} from 'lib/owner-autonomy-control.js';",
    "export let testWrites=0; const readOwnerProfile=async()=>({version:3,preset:'build'}); "+
    "const setOwnerProfile=async()=>{testWrites++;return {ok:true,profile:{version:4,preset:'build'}};};");
 assert.notEqual(replaced,source,'Hatchable endpoint must use mock dependencies for isolated tests');
-assert.ok(!replaced.includes("from 'hatchable'") && !replaced.includes("from 'lib/owner-autonomy-control.js'"));
+assert.ok(!replaced.includes("from 'hatchable'") && !replaced.includes("from 'lib/owner-autonomy-control.js'") && !replaced.includes("from 'lib/owner-live-events.js'"));
 const mod=await import('data:text/javascript;base64,'+Buffer.from(replaced).toString('base64'));
 function reply(){
  return {code:200,body:null,status(n){this.code=n;return this},

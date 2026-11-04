@@ -109,5 +109,6 @@ async function refresh(){
 }
 button.addEventListener('click',refresh);
 window.addEventListener('ultron:task-queued',refresh);
+window.addEventListener('ultron:realtime-change',refresh);
 refresh();
 })();

@@ -1,4 +1,5 @@
-import {db} from 'hatchable';
+import {db,events} from 'hatchable';
+import {notifyOwner} from 'lib/owner-live-events.js';
 import {readOwnerProfile,setOwnerProfile} from 'lib/owner-autonomy-control.js';
 /* The platform must authenticate the owner: no token or profile can be
    supplied by the public page to mint authority. */
@@ -34,6 +35,7 @@ export default async function(req,res){
   const r=await setOwnerProfile({db,expectedVersion:body.expectedVersion,
    preset:body.preset,allowedOperations:body.allowedOperations,
    limits:body.limits,reason:body.reason});
+  if(r.ok)await notifyOwner(events,'profile');
   return res.status(r.ok?200:409).json(r);
  }catch(error){
   const invalid=error?.message==='invalid-autonomy-profile';

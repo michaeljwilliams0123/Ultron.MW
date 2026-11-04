@@ -6,6 +6,7 @@ async function endpoint({secret='secret-with-adequate-entropy-1234567890',respon
  const source=await readFile(new URL('../cloud/hatchable/api/brain/events.js',import.meta.url),'utf8');
  const url=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64');
  const platform=url(`export const db={}; export const scheduler={};
+ export const events={publish:async()=>({id:1})};
  export const config={get:async()=>globalThis.__eventEndpoint.secret};`);
  const signed=url(`export async function verifySignedEvent({raw,secret}){
  if(raw!=='trusted')throw Error('event-signature-invalid');
@@ -14,9 +15,11 @@ async function endpoint({secret='secret-with-adequate-entropy-1234567890',respon
  export async function admitSignedEvent(){
   return globalThis.__eventEndpoint.response??{ok:true,created:true,taskId:19};
  }`);
+ const notifier=url('export async function notifyOwner(){return true;}');
  globalThis.__eventEndpoint={secret,response};
  return import(url(source.replace("from 'hatchable'","from '"+platform+"'")
-  .replace("from 'lib/signed-event-inbox.js'","from '"+signed+"'"))+'#'+Math.random());
+  .replace("from 'lib/signed-event-inbox.js'","from '"+signed+"'")
+  .replace("from 'lib/owner-live-events.js'","from '"+notifier+"'"))+'#'+Math.random());
 }
 function response(){
  return {code:200,status(n){this.code=n;return this;},

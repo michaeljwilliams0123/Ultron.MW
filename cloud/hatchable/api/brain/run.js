@@ -1,4 +1,5 @@
-import { db,browser,scheduler,config } from 'hatchable';
+import { db,browser,scheduler,config,events } from 'hatchable';
+import {notifyOwner} from 'lib/owner-live-events.js';
 import { runOne } from 'lib/brain-runner.js';
 import { readOwnerProfile } from 'lib/owner-autonomy-control.js';
 import { resumePendingMahoragaActions } from 'lib/mahoraga-actions.js';
@@ -34,6 +35,8 @@ export default async function(req,res){
    catch(_e){continuation_scheduled=false;}
   }
  }
+ if(results.some(r=>['done','failed','lost-lease'].includes(r.status)))
+  await notifyOwner(events,'task');
  return res.json({trigger:'owner-requested',count:results.filter(r=>r.status==='done').length,
   continuation_scheduled,mahoraga,results});
 }
