@@ -113,7 +113,7 @@ export async function runDeepTask({plan,ledger,readAuthority,bridge,
     typeof bridge?.observe!=='function'||typeof bridge?.perform!=='function'||
     !Number.isSafeInteger(maxSteps)||maxSteps<1||maxSteps>8)
   throw Error('deep-task-executor-not-admitted');
- let done=0,dispatched=0;
+ let done=0,dispatched=0,advanced=0;
  for(const step of plan.steps){
   const key='deep:'+plan.digest+':'+step.id;
   let state=await ledger.read(key);
@@ -136,7 +136,7 @@ export async function runDeepTask({plan,ledger,readAuthority,bridge,
     return refused('verified-receipt-conflict');
    done++;continue;
   }
-  if(done>=maxSteps)return Object.freeze({status:'partial',
+  if(advanced>=maxSteps)return Object.freeze({status:'partial',
    completed:done,dispatched,remaining:plan.steps.length-done,
    productionAccepted:false});
   for(const dep of step.dependsOn){
@@ -182,7 +182,7 @@ export async function runDeepTask({plan,ledger,readAuthority,bridge,
   if(ack?.phase!=='verified'||ack.digest!==plan.digest||
     ack.receiptId!==observed.receiptId)
    return refused('completion-readback-mismatch');
-  done++;
+  done++;advanced++;
  }
  return Object.freeze({status:'verified-plan',
   completed:done,dispatched,remaining:0,
