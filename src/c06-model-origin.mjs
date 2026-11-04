@@ -126,7 +126,8 @@ function normalizeDocs(reply){
  const reject=reason=>{throw Error('c06-model-docs-rejected: '+reason);};
  if(typeof reply!=='string')reject('invalid-string');
  const value=reply.trim();
- if(value.length<230||value.length>1800)reject('technical-length-outside-budget');
+ if(value.length<230||value.length>2800)
+  reject('technical-length-outside-budget (chars='+value.length+',expected=230..2800)');
  const missing=['authorized','paused','paidCents','providerStatus','receiptVerified']
   .filter(field=>!value.includes(field));
  if(missing.length)reject('missing-exact-input-fields-'+missing.join(','));
