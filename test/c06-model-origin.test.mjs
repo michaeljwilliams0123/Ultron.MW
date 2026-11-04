@@ -141,7 +141,7 @@ test('C06-09 retry receives real previous model code and exact failed cases',asy
     if(attempt===1)return broken;
     assert.match(messages[1].content,/Previous candidate/);
     assert.ok(messages[1].content.includes('providerStatus'));
-    assert.ok(messages[1].content.includes('no-authority'));
+    assert.ok(messages[1].content.includes('owner-paused'));
     assert.ok(messages[1].content.includes('expected held'));
     return functionSource;
    }
