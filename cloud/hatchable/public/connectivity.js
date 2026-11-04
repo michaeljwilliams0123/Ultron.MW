@@ -66,11 +66,24 @@ function show(data){
  else emptyRows('connection-recent','No verified task history available');
  meta('ok','Observed '+clock(data.observedAt)+' · live on-demand snapshot; no background polling');
 }
-function fail(text){
+async function fail(text){
  for(const id of ['connection-runtime','connection-github','connection-ci','connection-queue'])
-  cell(id,'Unverified','No live readback obtained','error');
- emptyRows('connection-prs','No verified PR data');
- emptyRows('connection-recent','No verified task data');
+  cell(id,'Unverified','No owner readback obtained','error');
+ emptyRows('connection-prs','No verified owner PR data');
+ emptyRows('connection-recent','No verified owner task data');
+ // This public health check contains no owner objectives, tokens or permissions.
+ // It provides only a clearly qualified liveness signal during sign-in.
+ try {
+  const response=await fetch('/api/brain/status-public',{method:'GET',
+   cache:'no-store',credentials:'same-origin'});
+  if(response.ok){
+   const snapshot=await response.json();
+   if(snapshot?.ok===true&&['active','paused'].includes(snapshot.status))
+    cell('connection-runtime',snapshot.status==='active'?'Online (public)':'Paused (public)',
+     'Public liveness only · owner session required for protected details',
+     snapshot.status==='active'?'warning':'error');
+  }
+ }catch{}
  meta('error',text);
 }
 async function refresh(){
@@ -86,7 +99,7 @@ async function refresh(){
   const data=await response.json();
   if(data.schema!=='ultron.connectivity.v1'||!data.observedAt)throw Error('Invalid status readback');
   show(data);
- }catch(error){fail('Connectivity unverified: '+String(error.message||error)+'. No successful connection inferred.')}
+ }catch(error){await fail('Connectivity unverified: '+String(error.message||error)+'. Protected connections are not assumed healthy.')}
  finally{button.disabled=false;refreshing=false}
 }
 button.addEventListener('click',refresh);
