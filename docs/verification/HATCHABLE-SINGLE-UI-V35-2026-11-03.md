@@ -32,3 +32,11 @@ The checks above **do not** establish the full `#170` authenticated end-to-end r
 ## Rollback
 
 If the new UI misbehaves, continue using the existing Pages workspace at `https://michaeljwilliams0123.github.io/Ultron.MW/` and the independently protected Hatchable backend. Do not delete or overwrite database/receipt rows. Investigate the v35 deploy in Hatchable History before changing runtime files. Roll back only after checking whether newer database migrations or external actions require forward repair.
+
+## v36 mobile remediation — 2026-11-03 ET
+
+- [PR #258](https://github.com/michaeljwilliams0123/Ultron.MW/pull/258) was squash merged as `68b2f4d731f5cb84577c0ce226f4f2303ec1512c`. The matching changed workspace HTML was deployed to Hatchable **v36**.
+- Real 390px Chromium before repair measured `document.documentElement.scrollWidth=405`; a one-line responsive navigation wrap resolved the overflow to 390px. The source regression `UI-CUTOVER-06` and exact-head protected CI passed.
+- Post-deploy v36 Chromium measured **390/390** document/viewport width on mobile and **1440/1440** on desktop. Two Codex author cards populated; Brain, Learning and Systems panes switched successfully at both widths.
+- The Pages fallback source contains the identical nav correction and retains its explicit primary-Hatchable link. A live 390px Pages browser test later observed `flex-wrap:wrap`, document width 390, and source SHA `68b2f4d731f5cb84577c0ce226f4f2303ec1512c`.
+- This mobile layout validation does not by itself satisfy the pending authenticated E2E owner-operation, full PR lifecycle, or rollback-exercise gates in #170/#194.
