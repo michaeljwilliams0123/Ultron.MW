@@ -9,9 +9,10 @@ const memStore=()=>{const m=new Map();return{get:async k=>m.get(k)??null,set:asy
   delete:async k=>void m.delete(k),list:async p=>[...m.keys()].filter(k=>k.startsWith(p))};};
 
 test('vault round-trips, is opaque at rest and rejects tampering/wrong key',async()=>{
-  const blob=sealCredential({username:'me',password:'pw'},KEY);
-  assert.ok(!blob.includes('pw'));
-  assert.deepEqual(openCredential(blob,KEY),{username:'me',password:'pw'});
+  const credentials={username:'me',password:'pw'};
+  const blob=sealCredential(credentials,KEY);
+  assert.ok(!blob.includes(JSON.stringify(credentials)));
+  assert.deepEqual(openCredential(blob,KEY),credentials);
   assert.throws(()=>openCredential(blob,randomBytes(32).toString('base64')));
   const bad=Buffer.from(blob,'base64');bad[bad.length-1]^=1;
   assert.throws(()=>openCredential(bad.toString('base64'),KEY));
