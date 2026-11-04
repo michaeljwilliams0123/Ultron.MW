@@ -24,6 +24,19 @@ export default async function(req,res){
  const external=await db.query(`SELECT count(*)::int AS n FROM mahoraga_actions
    WHERE state IN ('prepared','sent','uncertain')`);
  const mahoraga_pending=Number(external.rows[0]?.n||0);
+ // Reconcile only already authenticated GitHub webhook receipts. A failed or
+ // skipped immediate one-shot is recovered on the existing hourly schedule.
+ const hf=await db.query(`SELECT count(*)::int AS n FROM hf_github_receipts
+   WHERE state IN ('pending','retry') AND verification_attempts<3
+    AND next_attempt_at<=now() AND lease_until<now()`);
+ const hf_pending=Number(hf.rows[0]?.n||0);
+ let hf_reconciliation_scheduled=false;
+ if(hf_pending>0){
+  try{
+   await scheduler.now('/api/brain/hf-github-reconcile',{via:'hourly-recovery'});
+   hf_reconciliation_scheduled=true;
+  }catch{hf_reconciliation_scheduled=false;}
+ }
  let continuation_scheduled=false;
  if(pending>0||mahoraga_pending>0){
   try{await scheduler.now('/api/brain/run',{via:'hourly-backlog'});continuation_scheduled=true;}
@@ -31,5 +44,5 @@ export default async function(req,res){
  }
  if(admitted.rows.length)await notifyOwner(events,'task',Number(admitted.rows[0].id));
  return res.json({trigger:'hourly',processed:0,pending,mahoraga_pending,
-   continuation_scheduled,mode:'dispatch-only'});
+   continuation_scheduled,hf_pending,hf_reconciliation_scheduled,mode:'dispatch-only'});
 }
