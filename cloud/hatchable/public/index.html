@@ -30,9 +30,16 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .ops input{width:16px;min-width:16px;padding:0}
 .chip{display:inline-block;padding:4px 9px;border-radius:99px;border:1px solid #435e7d;font-size:11px;color:#b9d5ff}
 @media(max-width:730px){.grid,.metrics{grid-template-columns:1fr}.ops{grid-template-columns:1fr}}
+.unified-nav{max-width:940px;margin:auto;padding:16px 18px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.unified-nav a{display:inline-flex;padding:9px 14px;border-radius:9px;text-decoration:none;border:1px solid #466283;color:#dbedff;background:#11263f;font-weight:700;font-size:13px}
+.unified-nav a[aria-current="page"]{background:#274c70;border-color:#8ac3fd}
+.task-list{list-style:none;margin:13px 0 0;padding:0;display:grid;gap:9px}
+.task-list li{border:1px solid #304866;background:#101f33;padding:10px;border-radius:9px;font-size:12px;overflow-wrap:anywhere}
+.task-list strong{display:block;color:#dbe9fe}
 </style>
 </head>
 <body>
+<nav class="unified-nav" aria-label="Primary Ultron workspace"><a href="/workspace.html">Workspace · Brain / Learning / Systems</a><a href="/" aria-current="page">Cloud controls</a></nav>
 <main class="shell">
 <div class="eyebrow">ULTRON.MW / ONE OWNER CONTROL SURFACE</div>
 <h1>Persistent cloud brain</h1>
@@ -80,6 +87,25 @@ button:disabled{opacity:.4;cursor:not-allowed}
 <h3>Spend ceiling</h3><p class="small">Approved incremental paid spend: <strong>$0</strong>.</p>
 <h3>Development backend</h3><p class="small"><a href="https://github.com/michaeljwilliams0123/Ultron.MW" rel="noreferrer">GitHub source and CI</a> remain separate from this owner-facing console.</p>
 <p class="small">Owner-only functions remain protected by Hatchable access controls. If authentication is unavailable, nothing can be saved.</p>
+</div>
+<div class="card" id="ledger-panel">
+<h2>Cloud task ledger</h2>
+<p class="small">Owner-authenticated, persisted task observations. This view does not create or approve external work. Failed and uncertain statuses remain visible.</p>
+<form id="inspection-form">
+<label for="inspect-objective">Run a hosted observation</label>
+<select id="inspect-objective">
+<option value="repo.inspect">Verify GitHub main</option>
+<option value="repo.prs">Inspect open PRs</option>
+<option value="repo.ci">Inspect GitHub CI</option>
+<option value="site.render">Render production Pages</option>
+<option value="council.review">Request evidence-only Council review</option>
+</select>
+<button id="inspect-submit" type="submit">Queue cloud inspection</button>
+</form>
+<p class="small" role="status" id="inspect-status" aria-live="polite">Each request uses a durable key; uncertain submissions must reuse that key.</p>
+<button type="button" id="task-refresh">Refresh recorded tasks</button>
+<p class="small" role="status" aria-live="polite" id="task-status">Task readback not yet checked.</p>
+<ul class="task-list" id="task-list"></ul>
 </div>
 </section>
 </main>
@@ -165,6 +191,67 @@ async function load(){
  }catch(e){message('Owner controls unavailable: '+String(e.message||'authentication-or-deployment-pending')+'. Sign in through the Hatchable owner session.',true);el('pause').textContent='Not independently read';}
 }
 load();
+})();
+</script>
+<script>
+(()=>{
+'use strict';
+const button=document.getElementById('task-refresh');
+const status=document.getElementById('task-status');
+const list=document.getElementById('task-list');
+async function refresh(){
+ button.disabled=true;
+ status.textContent='Reading live cloud task ledger…';
+ try{
+  const response=await fetch('/api/brain/tasks',{method:'GET',credentials:'same-origin',cache:'no-store'});
+  if(!response.ok)throw Error(response.status===401||response.status===403?'owner-authentication-required':'ledger-http-'+response.status);
+  const body=await response.json();
+  if(!Array.isArray(body.tasks))throw Error('invalid-ledger-response');
+  list.replaceChildren();
+  for(const task of body.tasks.slice(0,12)){
+   const item=document.createElement('li');
+   const title=document.createElement('strong');
+   title.textContent=String(task.objective||'unknown')+' — '+String(task.status||'unknown');
+   const details=document.createElement('span');
+   const sha=task.last_result?.sha;
+   details.textContent='Task '+String(task.id)+' · attempts '+String(task.attempts??'?')+
+    (sha?' · source '+String(sha).slice(0,12):' · no source SHA observed');
+   item.append(title,details);list.append(item);
+  }
+  status.textContent=body.tasks.length+' persisted task records returned; displaying latest '+Math.min(body.tasks.length,12)+'.';
+ }catch(err){
+  list.replaceChildren();
+  status.textContent='Cloud task readback unavailable: '+String(err.message||'unknown-error')+'. No success assumed.';
+ }finally{button.disabled=false}
+}
+const inspection=document.getElementById('inspection-form');
+const select=document.getElementById('inspect-objective');
+const submit=document.getElementById('inspect-submit');
+const inspectionStatus=document.getElementById('inspect-status');
+let pending=null;
+inspection.addEventListener('submit',async event=>{
+ event.preventDefault();
+ const objective=select.value;
+ if(!['repo.inspect','repo.prs','repo.ci','site.render','council.review'].includes(objective))return;
+ if(!pending||pending.objective!==objective)
+  pending={action:'queue',objective,key:'owner-ui-inspect-'+crypto.randomUUID()};
+ submit.disabled=true;
+ inspectionStatus.textContent='Submitting '+objective+' with a persistent idempotency key…';
+ try{
+  const response=await fetch('/api/brain/tasks',{method:'POST',credentials:'same-origin',
+   cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(pending)});
+  const body=await response.json();
+  if(!response.ok||!body.ok)throw Error(body.error||'queue-unconfirmed-'+response.status);
+  inspectionStatus.textContent='Request '+objective+' accepted; check the live ledger for the terminal observation.';
+  pending=null;
+  refresh();
+ }catch(err){
+  inspectionStatus.textContent='Submission unconfirmed ('+String(err.message||'unknown')+
+   '). Retry the unchanged objective to reuse the same key; do not assume an effect.';
+ }finally{submit.disabled=false}
+});
+button.addEventListener('click',refresh);
+refresh();
 })();
 </script>
 </body>
