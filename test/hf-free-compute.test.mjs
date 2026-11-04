@@ -20,8 +20,8 @@ test('HF-CPU-01: production stays on the previously verified pinned CPU baseline
  assert.equal(model.priceCents,0);
 });
 
-test('HF-CPU-02: three model profiles share one registry, but only baseline is production-approved',()=>{
- assert.deepEqual(Object.keys(FREE_CPU_MODELS),['baseline','coder-small','coder-medium']);
+test('HF-CPU-02: four profiles share one registry, but only baseline is production-approved',()=>{
+ assert.deepEqual(Object.keys(FREE_CPU_MODELS),['baseline','coder-small','coder-medium','coder-large']);
  for(const key of ['coder-small','coder-medium']){
   assert.throws(()=>selectFreeModelProfile({ULTRON_MODEL_PROFILE:key}),/not-promoted/);
   const model=selectFreeModelProfile({ULTRON_MODEL_PROFILE:key},{evaluation:true});
@@ -38,7 +38,7 @@ test('HF-CPU-03: four standard public runners are admitted without paid compute 
  assert.equal(plan.parallelVcpus,16);
  assert.equal(plan.parallelRamGiB,64);
  assert.equal(plan.paidBudgetCents,0);
- assert.deepEqual(plan.models,['baseline','coder-small','coder-medium']);
+ assert.deepEqual(plan.models,['baseline','coder-small','coder-medium','coder-large']);
  assert.equal(plan.shards,2);
  assert.equal(plan.maxNewTokens,128);
  assert.equal(plan.runner,'ubuntu-24.04');
@@ -98,4 +98,15 @@ test('HF-CPU-07: workflow performs bounded parallel evaluation without scheduled
  assert.match(workflow,/contents:\s*read/);
  assert.match(workflow,/hf-free-cpu-benchmark\.mjs/);
  assert.doesNotMatch(workflow,/secrets\.|HF_TOKEN|CUDA_VISIBLE_DEVICES|gpu-[^\s]+/i);
+});
+
+
+test('HF-CPU-08: larger 3B code model is pinned and evaluation-only on free CPU',()=>{
+ const model=selectFreeModelProfile({ULTRON_MODEL_PROFILE:'coder-large'},{evaluation:true});
+ assert.equal(model.id,'onnx-community/Qwen2.5-Coder-3B-Instruct');
+ assert.equal(model.revision,'0e076a9c5291f8c74b3ce1558f21336b18f94739');
+ assert.equal(model.device,'cpu');
+ assert.equal(model.dtype,'q4');
+ assert.equal(model.priceCents,0);
+ assert.throws(()=>selectFreeModelProfile({ULTRON_MODEL_PROFILE:'coder-large'}),/not-promoted/);
 });

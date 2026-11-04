@@ -12,7 +12,7 @@ This is a **behavior-scored synthetic benchmark**, not an autonomous release or 
 
 ## CPU deployment
 
-Dispatch `.github/workflows/hf-heldout-cpu.yml` manually on **protected main** after the source PR merges. It runs three allowlisted ONNX model profiles x two disjoint shards, `max-parallel: 4`, on standard `ubuntu-24.04` runners, with 20-minute timeout per job. Peak per-runner resources are 4 vCPU / 16 GiB RAM, up to 16 vCPU / 64 GiB aggregate across four concurrent runners. Models are quantized q4 and inference runs on **CPU only**. The existing workflow's six-job tiny smoke test remains available separately.
+Dispatch `.github/workflows/hf-heldout-cpu.yml` manually on **protected main** after the source PR merges. It runs four allowlisted ONNX model profiles x two disjoint shards, `max-parallel: 4`, on standard `ubuntu-24.04` runners, with 20-minute timeout per job. Peak per-runner resources are 4 vCPU / 16 GiB RAM, up to 16 vCPU / 64 GiB aggregate across four concurrent runners. Models are quantized q4 and inference runs on **CPU only**. The four-model eight-job tiny smoke test remains available separately. The original November 4, 2026 six-job run is preserved below as historical evidence.
 
 All model results remain **advisory**. A score improvement on these 16 synthetic functions does **not** establish capability to coordinate a three-file feature, reliably fix a production bug, independently pass Reef, or authorize a model promotion. Larger pinned case sets, real candidate PRs, strict exact-head acceptance and independently observed deployment/runtime effects remain required by #245/#204/#193/#173.
 
@@ -26,7 +26,7 @@ All model results remain **advisory**. A score improvement on these 16 synthetic
 
 ## Recorded evidence
 
-After successful workflow dispatch, attach the actual run URL, six artifact IDs and case-level pass counts to #249 and the parent acceptance issues. Until then, source CI passing validates only the **benchmark implementation**, not live inference or compute concurrency.
+After successful workflow dispatch, attach the actual run URL, eight artifact IDs and case-level pass counts to #249 and the parent acceptance issues. Until then, source CI passing validates only the **benchmark implementation**, not live inference or compute concurrency.
 
 ## First real held-out evaluation: November 4, 2026 UTC
 
@@ -47,3 +47,15 @@ The 1.5B model solved `owner-pause` and `lease-expiry` fully; several other prop
 **Cross-system continuity:** A separate owner-scoped Hatchable native observation recorded the verified aggregate result as `brain_notes.id=9` and `brain_events.id=997`, independently joined from PostgreSQL. Same-key replay returned HTTP 200 `reused:true` without an additional note or event. This is an **observation**, not autonomous release execution.
 
 **Consequence:** do **not** promote either coding model based on this benchmark. Continue #245 with source-isolated response-format diagnosis, stronger open CPU candidates where actual resource budgets permit, and a true model-attributable 3+ file code/test/docs repair; keep #193, #204, #173 and the C06/C13 production gates open. The initial benchmark outcome fulfills the bounded evaluation scope of #249, not those parent issues.
+
+## C06/HF continuation: bounded output-shape diagnosis and 3B CPU challenger
+
+**Issue:** #252. This updates the evaluation implementation but does not rewrite or invalidate the November 4 historical receipts. An unchanged 16-case synthetic corpus still has the same SHA-256 digest; any new scores must be associated with the new evaluator source SHA and output-normalization policy.
+
+- `src/hf-repair-output.mjs` accepts one exact `function fix(input)`, one complete JS/JavaScript Markdown fenced function, or one recognized short explanatory prefix followed by exactly one function. It does **not** silently strip appended executable code, duplicate functions, incomplete definitions, unrecognized preambles or oversized responses. All accepted candidates still pass through the original unsafe-source policy and independent behavioral vectors. Node VM remains **not a security boundary**; execute synthetic tests on disposable read-only public runners only.
+- Each model response now generates bounded `shape`, character count, fence presence and declaration count metadata. The new `ultron.hf.repair-output-shapes.v1` sidecar has its own SHA-256 digest and the same source/model/corpus/shard lineage as the original behavior receipt. **No raw generated code, credentials or user input is emitted to diagnostics**. A missing model output is explicitly classified; a valid output that fails functional vectors remains a semantic failure, not a format failure.
+- Added evaluation-only `onnx-community/Qwen2.5-Coder-3B-Instruct` with exact Hugging Face Hub revision `0e076a9c5291f8c74b3ce1558f21336b18f94739`. Public Hub metadata on November 4 lists ONNX `model_q4.onnx` plus `model_q4.onnx_data`. This larger candidate is **never automatically promoted**. Its license terms and actual free-runner memory/runtime acceptance require review before production selection.
+- New manual public CPU comparison: **four** model profiles x **two** disjoint eight-case shards = **eight** finite jobs, `max-parallel:4`, each 4 vCPU / 16 GiB; no paid GPU runner, HF Jobs, inference billing, new secret or scheduled tasks. If a 3B shard exceeds its resource/time budget, fail visibly instead of retrying on metered compute.
+- SD009WC7's authorized Windows desktop is used only for source development and deterministic regression tests. Its Intel Arc GPU is **not assumed compatible with the existing ONNX pipeline** and does not become a requirement of Hatchable/GitHub production.
+
+**Still required:** merge only after exact-head CI and review-state checks, manually run the revised workflow from protected `main`, inspect eight model-plus-shape artifacts, compare formatting and semantic failure counts against the initial 16-case result, and record owner-scoped readback in the existing Hatchable ledger. #245/#188/#173/#204 remain open until actual autonomous engineering and external evidence gates are met.
