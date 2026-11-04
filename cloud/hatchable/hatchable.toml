@@ -21,6 +21,11 @@ required = false
 description = "Private signing key for the Mahoraga-scoped GitHub App."
 
 [[secret]]
+name = "ULTRON_HF_GITHUB_WEBHOOK_SECRET"
+required = false
+description = "Owner-configured GitHub workflow_run webhook HMAC secret, minimum 32 unpredictable bytes. Distinct from existing custom Ultron signed-event bridge secret; fail-closed until GitHub hook configured."
+
+[[secret]]
 name = "ULTRON_EVENT_BRIDGE_HMAC_KEY"
 required = false
 description = "Private HMAC key for an authenticated Ultron event bridge; no unauthenticated GitHub webhook can bypass signed admission."
