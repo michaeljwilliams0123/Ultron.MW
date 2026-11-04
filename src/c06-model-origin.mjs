@@ -123,12 +123,23 @@ function normalizeCases(reply,code){
  return cases;
 }
 function normalizeDocs(reply){
- if(typeof reply!=='string'||reply.length<150||reply.length>2500||
-  !['owner','paid','reconcile','verified','held'].every(k=>
-   reply.toLowerCase().includes(k))||
-  /(?:OPENAI_API_KEY|PRIVATE KEY|sk-proj-)/i.test(reply))
-  throw Error('c06-model-docs-rejected');
- return reply.trim()+'\n';
+ const reject=reason=>{throw Error('c06-model-docs-rejected: '+reason);};
+ if(typeof reply!=='string')reject('invalid-string');
+ const value=reply.trim();
+ if(value.length<230||value.length>1800)reject('technical-length-outside-budget');
+ const missing=['authorized','paused','paidCents','providerStatus','receiptVerified']
+  .filter(field=>!value.includes(field));
+ if(missing.length)reject('missing-exact-input-fields-'+missing.join(','));
+ if(!['owner','paid','reconcile','verified','held'].every(term=>
+    value.toLowerCase().includes(term)))reject('missing-outcome-contract');
+ if(!/\bprotected\b/i.test(value)||!/\bPR\b/i.test(value))
+  reject('missing-protected-pr-review');
+ if(!/[.!?]$/.test(value))reject('incomplete-final-sentence');
+ if(/\b(?:application|applicant|project manager|management approval|team of experts|approval process|new owners)\b/i.test(value))
+  reject('invented-organizational-approval-process');
+ if(/(?:OPENAI_API_KEY|PRIVATE KEY|sk-proj-)/i.test(value))
+  reject('unsafe-credential-reference');
+ return value+'\n';
 }
 /** Model must author each complete JSON object; these independent scenario
  * constraints are validation only, never used to synthesize fallback output. */
@@ -189,7 +200,7 @@ export function c06Prompt(kind,feedback='',scenario=null){
   'Return ONLY a complete JavaScript function named fix(input) that classifies the provider state. The independent owner and paid-spend guard is outside this function and cannot be edited. Your input has ONLY providerStatus and receiptVerified. If providerStatus is unknown or timeout, return reconcile. If providerStatus is observed AND receiptVerified is exactly true, return verified. For every other provider state or missing receipt, return held. Use strict === comparisons. No code fences, imports, API calls, explanation or extra text.':
   kind==='cases'?
   'Return ONLY a JSON array of 6-10 unique objects with keys input and expected. Inputs must use authorized,paused,paidCents,providerStatus,receiptVerified. Expected must be held, reconcile or verified. Include valid observed verified, unknown reconcile, timeout reconcile, paused held, unauthorized held and paid >0 held. No markdown.':
-  'Write a 170-350 word Markdown runbook explaining owner authorization, paused stop control, paid spend zero, unknown provider outcomes requiring reconcile, verified only with observed receipt, held otherwise. State that independent checks and protected PR merge are required. No secrets or invented results.';
+  'Write ONLY 90-150 words of Markdown describing the ACTUAL C06 technical contract, not human onboarding. State the five exact input field names: authorized, paused, paidCents, providerStatus, receiptVerified. The independently owned guard requires authorized true, paused false, paidCents integer zero, otherwise held. ProviderStatus unknown or timeout means reconcile; observed plus receiptVerified true means verified; otherwise held. Explain protected PR merge and independent external provider readback. This is an owner-only synthetic release canary, not an application process. Do NOT invent any application, project manager, organizational approval, external success, or released production outcome. Use a technical heading and 2-4 short paragraphs. End the final sentence with a period.';
  return [
   {role:'system',content:'You are the Ultron C06 local free CPU model, returning exactly the requested public synthetic artifact. '+constraints},
   {role:'user',content:request+(feedback?'\nPrior output failed validation. Previous candidate and test observations follow:\n'+feedback.slice(0,1900)+'\nRewrite the complete artifact from this feedback, not merely one line.':'')}

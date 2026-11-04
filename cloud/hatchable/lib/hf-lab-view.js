@@ -1,3 +1,4 @@
+import {mergeVerifiedWorkflow} from './hf-github-receipts.js';
 /** Read-only Hugging Face evaluation lane, backed by GitHub Actions and durable cache.
  * Zero new paid inference calls. Never interpret a workflow green as model promotion.
  */
@@ -79,10 +80,11 @@ export async function collectHfRuns({fetchGithub=fetch,now=()=>new Date().toISOS
    String(v.reason?.message||'provider-unavailable').slice(0,65)));
  return result;
 }
-function present(snapshot,state,at,reason=null){
+function present(snapshot,state,at,reason=null,verified=[]){
  const payload=snapshot?.schema==='ultron.hf-lab.v1'?snapshot:emptySnapshot(at);
- return {...payload,cache:{state,readAt:at,
-  observedAt:payload.observedAt,reason}};
+ const reconciled=mergeVerifiedWorkflow(payload,verified);
+ return {...reconciled,cache:{state,readAt:at,
+  observedAt:payload.observedAt,reason,verifiedWebhookReceipts:verified.length}};
 }
 export async function getHfLabView({db,fetchGithub=fetch,
  now=()=>new Date().toISOString()}={}){
@@ -96,9 +98,17 @@ export async function getHfLabView({db,fetchGithub=fetch,
   return present(null,'unavailable',at,'cache-storage-unavailable');
  }
  const prior=previous?.snapshot;
+ let verified=[];
+ try{
+  const receipts=await db.query(`SELECT workflow_key,run_id,run_attempt,
+    source_sha,conclusion,state,github_verified_at,
+    artifact_evidence AS artifacts FROM hf_github_receipts
+    WHERE state='verified' ORDER BY run_id DESC LIMIT 12`);
+  verified=Array.isArray(receipts.rows)?receipts.rows:[];
+ }catch{verified=[];}
  const age=instant-Date.parse(previous?.observed_at||'1970-01-01T00:00:00Z');
  if(prior?.schema==='ultron.hf-lab.v1'&&age>=0&&age<FRESH_MS)
-  return present(prior,'fresh',at);
+  return present(prior,'fresh',at,null,verified);
  const key=crypto.randomUUID();
  let owned=false;
  try{
@@ -110,16 +120,16 @@ export async function getHfLabView({db,fetchGithub=fetch,
     WHERE hf_lab_cache.lease_until < now() RETURNING id`,[key]);
   owned=claimed.rows.length===1;
  }catch{
-  return present(prior,'stale',at,'cache-claim-unavailable');
+  return present(prior,'stale',at,'cache-claim-unavailable',verified);
  }
- if(!owned)return present(prior,'stale',at,'refresh-already-running');
+ if(!owned)return present(prior,'stale',at,'refresh-already-running',verified);
  const snapshot=await collectHfRuns({fetchGithub,now});
  const observations=snapshot.workflows.filter(x=>x.state!=='unavailable').length;
  if(!observations){
   try{await db.query(
    `UPDATE hf_lab_cache SET lease_until=now()+interval '5 minutes',
     refresh_key=NULL WHERE id='owner' AND refresh_key=$1`,[key]);}catch{}
-  return present(prior,'stale',at,'github-observation-unavailable');
+  return present(prior,'stale',at,'github-observation-unavailable',verified);
  }
  try{
   const stored=await db.query(
@@ -127,9 +137,9 @@ export async function getHfLabView({db,fetchGithub=fetch,
     lease_until=to_timestamp(0),refresh_key=NULL
     WHERE id='owner' AND refresh_key=$1 RETURNING id`,
    [key,JSON.stringify(snapshot),at]);
-  if(stored.rows.length!==1)return present(prior,'stale',at,'refresh-fence-lost');
-  return present(snapshot,'refreshed',at);
+  if(stored.rows.length!==1)return present(prior,'stale',at,'refresh-fence-lost',verified);
+  return present(snapshot,'refreshed',at,null,verified);
  }catch{
-  return present(prior,'stale',at,'cache-write-unconfirmed');
+  return present(prior,'stale',at,'cache-write-unconfirmed',verified);
  }
 }
