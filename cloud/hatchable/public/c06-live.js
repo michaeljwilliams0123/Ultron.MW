@@ -37,8 +37,11 @@ async function refresh(){
  try{
   const data=await getJSON('/api/brain/c06-live-canary');
   rows.replaceChildren();
-  if(!Array.isArray(data.rows)||data.rows.length===0)
-   rows.append(document.createElement('li')).textContent='No source-verified C06 runtime receipt recorded yet.';
+  if(!Array.isArray(data.rows)||data.rows.length===0){
+   const li=document.createElement('li');
+   li.textContent='No source-verified C06 runtime receipt recorded yet.';
+   rows.append(li);
+  }
   else for(const item of data.rows)rows.append(addRow(item));
   if(!pending)say(data.rows?.length?
    'Latest verified runtime receipt shown. Full production acceptance remains open.':
