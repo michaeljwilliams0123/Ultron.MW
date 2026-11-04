@@ -14,7 +14,12 @@ function answer(res,status,ok,error,other={}){
   ...(!ok?{error}:{}),...other});
 }
 export default async function(req,res){
- const raw=req.rawBody;
+ let raw=null;
+ if(typeof req.rawBody==='string')raw=req.rawBody;
+ else if(req.rawBody instanceof Uint8Array){
+  try{raw=new TextDecoder('utf-8',{fatal:true}).decode(req.rawBody);}
+  catch{raw=null;}
+ }
  const header=req.headers?.authorization||req.headers?.Authorization;
  if(typeof raw!=='string'||raw.length>2048||
     typeof header!=='string'||!/^Bearer [A-Za-z0-9._-]{250,8000}$/.test(header))
