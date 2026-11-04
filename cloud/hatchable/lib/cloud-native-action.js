@@ -47,7 +47,7 @@ const WRITE_SQL=`WITH authority AS MATERIALIZED (
  SELECT $3,$4,$1,$2 FROM authority
  WHERE owner='michaeljwilliams0123' AND preset IN ('build','release')
   AND version=$5 AND stop_version=$6 AND NOT paused AND max_paid_cents=0
-  AND allowed_operations ? 'cloud.note.create'
+  AND jsonb_exists(allowed_operations,'cloud.note.create')
  ON CONFLICT(action_key) DO NOTHING
  RETURNING id,kind,body,action_key,fingerprint
 ), receipt AS (
