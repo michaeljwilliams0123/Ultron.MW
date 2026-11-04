@@ -1,0 +1,35 @@
+/* Ultron connection cockpit: all panels remain informational, not authorization. */
+:root{--line:#344965;--good:#55dfba;--warn:#ffcc75;--bad:#ff8e98}
+.shell{max-width:1180px}
+.connectivity{margin:0 0 26px;padding:24px;border:1px solid #324c70;border-radius:20px;background:linear-gradient(145deg,#152a46,#0d192b 70%);box-shadow:0 20px 48px #03091366}
+.connectivity-titlebar{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.connectivity-overline{font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:#8fc8eb;font-weight:800}
+.connectivity h2{font-size:clamp(23px,3vw,32px);margin:6px 0}
+.connectivity p{margin:5px 0;line-height:1.55}
+.connectivity-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.connectivity-controls button{margin:0}
+.connectivity-controls a{border:1px solid #466283;border-radius:9px;padding:10px 12px;color:#e5f4ff;text-decoration:none;font-size:13px;font-weight:700}
+.connection-stamp{margin:15px 0 18px!important;color:#b4cce0;font-size:12px}
+.connection-stamp[data-state="error"]{color:#ffc0c5}
+.connection-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.connection-tile{border:1px solid #344969;background:#0c192b;padding:16px;border-radius:13px;min-width:0}
+.connection-label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#96b2d0;font-weight:800}
+.connection-value{font-size:18px;font-weight:760;margin:10px 0 4px;overflow-wrap:anywhere}
+.connection-detail{color:#9eb4cc;font-size:12px;overflow-wrap:anywhere;line-height:1.45}
+.connection-tile[data-state="good"]{border-top:3px solid var(--good)}
+.connection-tile[data-state="warning"]{border-top:3px solid var(--warn)}
+.connection-tile[data-state="error"]{border-top:3px solid var(--bad)}
+.connection-lower{display:grid;grid-template-columns:1.15fr 1fr;gap:12px;margin-top:14px}
+.connection-subpanel{padding:18px;background:#0c192bd9;border:1px solid #334963;border-radius:13px;min-width:0}
+.connection-subpanel h3{font-size:15px;margin:0 0 8px}
+.connection-subpanel-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.connection-subpanel-head a{color:#a8dfff;font-size:12px}
+.connection-rows{list-style:none;padding:0;margin:8px 0;display:grid;gap:9px}
+.connection-rows li{padding:9px 0;border-bottom:1px solid #263a52;font-size:12px;color:#b9cee3}
+.connection-rows li:last-child{border-bottom:0}
+.connection-rows a{font-weight:700;color:#ccecff;text-decoration:none}
+.connection-rows a:hover{text-decoration:underline}
+.connection-rows small{display:block;color:#9db6cc;margin-top:4px}
+.connection-footnote{font-size:11px;color:#91abc6;margin-top:14px!important}
+@media(max-width:850px){.connection-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.connection-lower{grid-template-columns:1fr}}
+@media(max-width:520px){.connectivity{padding:16px}.connection-grid{gap:8px}.connection-tile{padding:12px}.connection-value{font-size:15px}.connectivity-controls{width:100%}.connectivity-controls button,.connectivity-controls a{flex:1;text-align:center}}
