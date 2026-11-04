@@ -27,6 +27,9 @@ function render(data){
   card.append(text('p',run.state==='observed'?
    'Run '+run.runId+' · '+clock(run.startedAt)+' · '+String(run.headSha||'').slice(0,12):
    'GitHub API did not verify a recent run; do not infer a pass.'));
+  if(run.observation==='signed-webhook+github-readback')
+   card.append(text('p','Signed delivery independently reconciled · '+
+    Number(run.artifactsObserved||0)+' verified artifact metadata records'));
   card.append(link(run.runUrl?'Open verified run':'Open workflow',
    run.runUrl||run.workflowUrl));
   workflows.append(card);
