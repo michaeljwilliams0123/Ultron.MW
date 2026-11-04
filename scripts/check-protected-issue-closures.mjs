@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const PROTECTED=new Set([65,66,67,68]);
+const PROTECTED=new Set([65,66,67,68,173,182,188,193,195,204,245,248]);
 const PREFIX=/\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\s*:?\s+(?:(?:michaeljwilliams0123\/Ultron\.MW)?#)(\d+)((?:\s*(?:,|and)\s*(?:(?:michaeljwilliams0123\/Ultron\.MW)?#)\d+)*)/gi;
 
 export function findProtectedIssueClosures(message=''){
@@ -41,7 +41,7 @@ function main(){
  if(violations.length){
   console.error('Protected acceptance issues may be closed only after separately validated acceptance.');
   for(const {issue,source} of violations)console.error('Forbidden GitHub auto-close: #'+issue+' via '+source);
-  console.error('Use "Refs #65" or a neutral reference, then explicitly close the issue after independent evidence.');
+  console.error('Use a neutral Refs or Advances link; protected acceptance issues require independent evidence before closure.');
   process.exitCode=1;
  }else console.log('Protected acceptance-issue auto-close guard: PASS');
 }
