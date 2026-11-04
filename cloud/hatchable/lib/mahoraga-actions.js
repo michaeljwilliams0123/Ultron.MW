@@ -500,7 +500,7 @@ export async function verifyMahoragaIssueReadback({db,config,transport=fetch}={}
  }catch{return pending('github-readback-unavailable');}
  if(issue?.number!==issueNumber||issue.html_url!==expectedUrl||
     issue.title!==row.request.title||
-    issue.body!==row.request.body+'\\n\\n'+MARKER(key)||
+    issue.body!==row.request.body+'\n\n'+MARKER(key)||
     issue.pull_request!==undefined)
   return held('github-postcondition-drift');
  return Object.freeze({schema:'ultron.mahoraga.provider-readback.v1',
