@@ -457,3 +457,55 @@ export async function mahoragaActionStatus({db},key) {
    FROM mahoraga_actions WHERE action_key=$1`,[key])).rows[0];
  return row?{ok:true,action:row}:{ok:false,error:'action-not-found'};
 }
+
+/**
+ * Fresh, read-only provider confirmation of an earlier durable Mahoraga issue
+ * write. This does not infer GitHub existence from the local adapter receipt.
+ * It neither publishes a token nor retries any external mutation.
+ */
+export async function verifyMahoragaIssueReadback({db,config,transport=fetch}={},key){
+ const held=reason=>Object.freeze({schema:'ultron.mahoraga.provider-readback.v1',
+  ok:false,status:'held',reason,productionAccepted:false});
+ const pending=reason=>Object.freeze({schema:'ultron.mahoraga.provider-readback.v1',
+  ok:false,status:'reconcile-required',reason,productionAccepted:false});
+ if(typeof key!=='string'||!KEY.test(key)||
+    typeof db?.query!=='function'||typeof config?.get!=='function')
+  return held('invalid-provider-readback-request');
+ let row;
+ try{
+  const read=await db.query(`SELECT action_key,operation,request,state,result
+    FROM mahoraga_actions WHERE action_key=$1`,[key]);
+  if(!Array.isArray(read?.rows)||read.rows.length>1)
+   return pending('local-action-readback-ambiguous');
+  row=read.rows[0];
+ }catch{return pending('local-action-readback-unavailable');}
+ if(!row||row.action_key!==key||row.operation!=='issue.create'||
+    row.state!=='observed')return held('provider-action-not-observed');
+ const issueNumber=row.result?.number;
+ const expectedUrl='https://github.com/'+REPO+'/issues/'+issueNumber;
+ if(row.result?.kind!=='issue'||!Number.isSafeInteger(issueNumber)||
+    issueNumber<1||row.result.url!==expectedUrl||
+    typeof row.request?.title!=='string'||!row.request.title||
+    typeof row.request?.body!=='string'||!row.request.body||
+    !SHA.test(row.request?.expectedMainSha||''))
+  return held('local-action-inconsistent');
+ let remoteRepo,issue;
+ try{
+  const get=await appClient(config,transport,
+   Date.now()+ACTION_DEADLINE_MS,REQUEST_TIMEOUT_MS);
+  remoteRepo=await get('/');
+  if(remoteRepo?.id!==REPO_ID||remoteRepo.full_name!==REPO||
+     remoteRepo.private!==true)return held('github-repository-drift');
+  issue=await get('/issues/'+issueNumber);
+ }catch{return pending('github-readback-unavailable');}
+ if(issue?.number!==issueNumber||issue.html_url!==expectedUrl||
+    issue.title!==row.request.title||
+    issue.body!==row.request.body+'\n\n'+MARKER(key)||
+    issue.pull_request!==undefined)
+  return held('github-postcondition-drift');
+ return Object.freeze({schema:'ultron.mahoraga.provider-readback.v1',
+  ok:true,status:'verified',provider:'github',actionKey:key,
+  issueNumber,url:expectedUrl,observedState:row.state,
+  verifiedAt:new Date().toISOString(),
+  productionAccepted:false});
+}
