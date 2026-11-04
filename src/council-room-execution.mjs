@@ -82,6 +82,7 @@ export async function runCouncilRoomExecution({
  const base=callbackBase(request);
  const first=await callback({...base,phase:'planned'});
  let job=first.job;
+ let freshDispatch=false;
  if(!job)throw Error('hatchable-execution-job-missing');
  if(['verified','blocked'].includes(job.state))return {status:job.state,
   job,requestKey:request.idempotencyKey,replayed:true};
@@ -92,6 +93,7 @@ export async function runCouncilRoomExecution({
   const reserved=await callback({...base,phase:'reserve'});
   job=reserved.job;
   if(!job)throw Error('hatchable-execution-reservation-missing');
+  freshDispatch=reserved.dispatchAdmitted===true&&job.state==='dispatching';
   if(job.state==='needs-owner')return {status:'needs-owner',job,
    requestKey:request.idempotencyKey,replayed:true};
  }
@@ -103,7 +105,7 @@ export async function runCouncilRoomExecution({
   return {status:'needs-owner',requestKey:request.idempotencyKey};
  }
 
- if(job.state==='dispatching'){
+ if(job.state==='dispatching'&&!freshDispatch){
   const found=await observeArtifact({...common,request});
   if(found.status==='not-found'){
    const held=await callback({...base,phase:'needs-owner',
@@ -123,7 +125,7 @@ export async function runCouncilRoomExecution({
   }
  }
 
- if(job.state==='dispatching'||job.state==='dispatched'){
+ if((job.state==='dispatching'&&!freshDispatch)||job.state==='dispatched'){
   const found=await observeArtifact({...common,request});
   if(found.status==='not-found'){
    const held=await callback({...base,phase:'needs-owner',
