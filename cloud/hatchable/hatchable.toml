@@ -44,3 +44,8 @@ description = "Optional Mahoraga-only fine-grained PAT; only the protected hoste
 name = "ULTRON_MAHORAGA_CREDENTIAL_MODE"
 required = false
 description = "Optional exact credential mode: auto (legacy PAT-first), pat (no App fallback), or app (no PAT fallback). Configure independently before claiming App identity."
+
+[[secret]]
+name = "ULTRON_VAULT_KEY"
+required = true
+description = "Base64 32-byte AES-256-GCM key sealing owner credentials and council GitHub App private keys."

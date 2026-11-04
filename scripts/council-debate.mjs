@@ -7,6 +7,7 @@ import { writeFileSync } from 'node:fs';
 import {buildCouncilPublication} from '../src/council-publication.mjs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
 import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
+import {assessCouncil} from '../src/council-members.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
 
 const ownerMode = ownerAutonomyEnabled();
@@ -85,16 +86,25 @@ const roleLabels={
   'ultron-generator':'Generator','ultron-sentinel':'Sentinel',
   'ultron-companion':'Companion'
 };
-const roleAssessments=publication.members.map(member=>{
-  const evidence=member.evidenceRefs.join(', ')||'none recorded';
-  const unknowns=member.unknowns.join(', ')||'none recorded';
-  const dissent=member.dissentTags.join(', ')||'none recorded';
-  return '- **'+roleLabels[member.roleId]+'** (`'+member.roleId+'`): '+
-    '**'+member.conclusion+'**, confidence '+member.confidence+
-    '; evidence: '+evidence+'; unknowns: '+unknowns+
-    '; dissent: '+dissent+
-    '; GitHub identity: unbound; independent model reasoning: not performed.';
-}).join('\n');
+const itemNumber=Number(item)||0;
+const memberAssessments=assessCouncil({
+  title,body,isPr,itemNumber,sourceSha,flags,ownerMode,
+  governorPositions:receipt.positions
+});
+const icon=v=>v==='proceed'?'✅':'⛔';
+const memberTable='| Member | Verdict | Why | Will do |\n|---|---|---|---|\n'+
+  memberAssessments.map(m=>'| **'+m.identity.role+'** (`'+m.identity.appSlug+'`) | '+
+    icon(m.verdict)+' '+m.verdict+' ('+m.confidence+') | '+
+    m.headline+' '+m.reasons.join(' ')+' | '+
+    (m.actions.map(a=>'`'+a.op+'`').join(', ')||'—')+' |').join('\n');
+const roleAssessments=memberAssessments.map(m=>'- **'+m.identity.role+'** — '+m.mandate+
+  '\n'+m.actions.map(a=>'  - `'+a.op+'`: '+a.why).join('\n')).join('\n');
+const evidenceDetails=publication.members.map(member=>
+  '- `'+member.roleId+'` '+member.conclusion+' '+member.confidence+
+  ' · evidence '+(member.evidenceRefs.join(', ')||'none')+
+  ' · unknowns '+(member.unknowns.join(', ')||'none')+
+  ' · dissent '+(member.dissentTags.join(', ')||'none')).join('\n');
+const proceedCount=memberAssessments.filter(m=>m.verdict==='proceed').length;
 
 const hold = receipt.decision !== 'proceed' || flags.security;
 const status = hold
@@ -167,47 +177,49 @@ const stage3 = `# Stage 3 — Architect rebuttal / refinement
 const stage4 = `# Ultron Council Report
 ${publication.marker}
 
-**Target:** #${item} — ${title}  
-**Status:** **${status}**  
-**Observed:** ${observedAt}  
-**Evidence fingerprint:** \`${publication.fingerprint}\`  
-**Run receipt (timestamp-dependent):** \`${receipt.fingerprint}\`  
-**Governor decision:** \`${receipt.decision}\`
+**Target:** #${item} — ${title}<br>
+**Status:** **${status}** · ${proceedCount}/7 members say proceed<br>
+**Observed:** ${observedAt}
 
-### Summary
-**Ultron works for the owner, not the other way around.**  
-Owner-first deterministic deliberation with inter-self dialogue and action board.
+### Council verdicts
+${memberTable}
 
-### Role-by-role evidence assessments
-**Individual GitHub principals:** unbound for all seven roles.
-**Execution:** deterministic rules only; modelInvocations=0; no independent model reasoning, no separate authenticated GitHub identities and no independent PR approval.
-These are auditable role-specific positions, not a transcript of private thoughts.
+**Identities:** each member is its own GitHub App (\`ultron-mw-<role>\`) with owner-equivalent rights. A member acts under its own identity only when its credentials are provisioned; otherwise this report is posted by github-actions and its actions stay planned. Reasoning is deterministic (modelInvocations=0).
 
+### What each member will do
 ${roleAssessments}
-
-### Legacy role summary
-${selves}
-
-${formatDialogueMarkdown(dialogue)}
 
 ### Action board (for owner)
 ${actions.map((a, i) => `${i + 1}. ${a}`).join('\n')}
 
+<details><summary>Evidence & receipts</summary>
+
+**Evidence fingerprint:** \`${publication.fingerprint}\`<br>
+**Run receipt:** \`${receipt.fingerprint}\`<br>
+**Governor decision:** \`${receipt.decision}\`
+
+${evidenceDetails}
+
+${selves}
+
+${formatDialogueMarkdown(dialogue)}
+
+</details>
+
 ### Directives
-- [x] Comment-only feedback (no main push)
-- [x] Body truncated to ${MAX_BODY} chars
 - [${ownerMode ? 'x' : ' '}] Owner autonomy (${limits.mode})
 - [${flags.security ? 'x' : ' '}] Security hold
 - [${hold ? 'x' : ' '}] Block auto-proceed
 
 ---
-*Ultron Council · multi-turn inter-self dialogue · owner-autonomy doctrine*
+*Ultron Council · seven identities, seven brains*
 `;
 
 writeFileSync('RFC_DRAFT.md', stage1);
 writeFileSync('CRITIQUE_MATRIX.md', stage2 + '\n' + stage3);
 writeFileSync('FINAL_SYNTHESIS.md', stage4);
 writeFileSync('council-publication.json', JSON.stringify(publication,null,2));
+writeFileSync('council-members.json', JSON.stringify({itemNumber,isPr,sourceSha,ownerMode,hold,memberAssessments},null,2));
 writeFileSync('council-receipt.json', JSON.stringify({
   ...receipt,
   ownerMode,

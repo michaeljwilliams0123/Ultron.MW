@@ -46,6 +46,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -247,6 +248,13 @@ jobs:
               core.info('Label council-reviewed skipped: ' + e.message);
             }
 
+      - name: Council members act under their own App identities
+        if: >-
+          steps.debate.outputs.skipped != 'true' &&
+          env.OWNER_MODE == '1' &&
+          (github.event_name == 'issues' || github.event_name == 'workflow_dispatch')
+        run: node scripts/council-act.mjs
+
       - name: Upload receipt artifact
         if: always() && steps.debate.outputs.skipped != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -258,5 +266,6 @@ jobs:
             RFC_DRAFT.md
             council-receipt.json
             council-publication.json
+            council-members.json
           if-no-files-found: ignore
           retention-days: 30
