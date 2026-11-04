@@ -72,6 +72,7 @@ export function inspectRepairOutput(raw){
  const parsed=parse(raw);
  return Object.freeze({shape:parsed.shape,
   responseChars:typeof raw==='string'?Math.min(raw.length,MAX_CHARS+1):0,
+  responseBytes:typeof raw==='string'?Buffer.byteLength(raw,'utf8'):0,
   hasFence:typeof raw==='string'&&raw.includes(FENCE),
   declarationCount:typeof raw==='string'?
    Math.min([...raw.matchAll(DECLARATIONS)].length,8):0});
