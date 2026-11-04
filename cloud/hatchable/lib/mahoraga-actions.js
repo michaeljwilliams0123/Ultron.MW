@@ -18,6 +18,20 @@ const INSTALLATION_PERMISSIONS = Object.freeze({
   actions:'write',contents:'read',issues:'write'
 });
 
+export async function observeMahoragaMain({config:sdkConfig,transport=fetch}={}) {
+ if(!sdkConfig)throw Error('mahoraga-config-required');
+ const deadlineAt=Date.now()+ACTION_DEADLINE_MS;
+ const get=await appClient(sdkConfig,transport,deadlineAt,REQUEST_TIMEOUT_MS);
+ const repo=await get('/');
+ if(repo?.id!==REPO_ID||repo?.full_name!==REPO||repo?.private!==true||
+    repo?.default_branch!=='main')throw Error('mahoraga-repository-mismatch');
+ const ref=await get('/git/ref/heads/main');
+ const sha=ref?.object?.sha;
+ if(!SHA.test(sha||''))throw Error('mahoraga-main-invalid');
+ return {repository:REPO,status:'observed',sha,
+  url:'https://github.com/'+REPO+'/commit/'+sha,visibility:'private'};
+}
+
 async function githubJson(transport,url,init,deadlineAt,requestTimeoutMs,errorCode) {
  const remaining=deadlineAt-Date.now();
  if(remaining<=0)throw Error('mahoraga-action-deadline-exceeded');

@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 
 const coreSource = `export const ALLOWED=new Set(['repo.inspect']);
 export const CAPABILITIES=[{id:'repo.inspect'}];
-export async function executeObjective(objective){return {objective,source:'fixture',sha:'fixed-test-sha'};}`;
+export async function executeObjective(objective){return {objective,source:'fixture',sha:'fixed-test-sha'};}
+export async function buildCouncilRoomResult(){return {objective:'council.room',members:[]};}`;
 const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource).toString('base64');
 const liveUrl='data:text/javascript;base64,'+Buffer.from(
  "export async function notifyOwner(){return true;}"
@@ -21,6 +22,7 @@ async function moduleUnderTest(path,core=coreUrl){
   'export async function persistHeldOutEvidence(){return {ok:true,receipts:{}}};'
  ).toString('base64')}`;
  const transformed=source.replace("from 'lib/brain-core.js'","from '"+core+"'")
+ .replace("from 'lib/council-room-core.js'","from '"+core+"'")
   .replace("from 'lib/runtime-control.js'","from '"+stopUrl+"'")
   .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'")
   .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'")
@@ -305,10 +307,14 @@ async function realGithubRunner(){
  const heldout='data:text/javascript;base64,'+Buffer.from(
   'export async function verifyPersistedHeldOutEvidence(){return {evaluation:false}};'
  ).toString('base64');
+ const room='data:text/javascript;base64,'+Buffer.from(
+  'export async function buildCouncilRoomResult(){return {objective:"council.room",members:[]}};'
+ ).toString('base64');
  const source=(await readFile(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8'))
   .replace("from 'lib/council-evidence.js'","from '"+evidence+"'")
   .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'")
-  .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'");
+  .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'")
+  .replace("from 'lib/council-room-core.js'","from '"+room+"'");
  const core='data:text/javascript;base64,'+Buffer.from(source).toString('base64');
  return moduleUnderTest('brain-runner.js',core);
 }
