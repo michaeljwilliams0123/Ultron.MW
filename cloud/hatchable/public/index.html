@@ -91,6 +91,18 @@ button:disabled{opacity:.4;cursor:not-allowed}
 <div class="card" id="ledger-panel">
 <h2>Cloud task ledger</h2>
 <p class="small">Owner-authenticated, persisted task observations. This view does not create or approve external work. Failed and uncertain statuses remain visible.</p>
+<form id="inspection-form">
+<label for="inspect-objective">Run a hosted observation</label>
+<select id="inspect-objective">
+<option value="repo.inspect">Verify GitHub main</option>
+<option value="repo.prs">Inspect open PRs</option>
+<option value="repo.ci">Inspect GitHub CI</option>
+<option value="site.render">Render production Pages</option>
+<option value="council.review">Request evidence-only Council review</option>
+</select>
+<button id="inspect-submit" type="submit">Queue cloud inspection</button>
+</form>
+<p class="small" role="status" id="inspect-status" aria-live="polite">Each request uses a durable key; uncertain submissions must reuse that key.</p>
 <button type="button" id="task-refresh">Refresh recorded tasks</button>
 <p class="small" role="status" aria-live="polite" id="task-status">Task readback not yet checked.</p>
 <ul class="task-list" id="task-list"></ul>
@@ -212,6 +224,32 @@ async function refresh(){
   status.textContent='Cloud task readback unavailable: '+String(err.message||'unknown-error')+'. No success assumed.';
  }finally{button.disabled=false}
 }
+const inspection=document.getElementById('inspection-form');
+const select=document.getElementById('inspect-objective');
+const submit=document.getElementById('inspect-submit');
+const inspectionStatus=document.getElementById('inspect-status');
+let pending=null;
+inspection.addEventListener('submit',async event=>{
+ event.preventDefault();
+ const objective=select.value;
+ if(!['repo.inspect','repo.prs','repo.ci','site.render','council.review'].includes(objective))return;
+ if(!pending||pending.objective!==objective)
+  pending={action:'queue',objective,key:'owner-ui:inspect:'+crypto.randomUUID()};
+ submit.disabled=true;
+ inspectionStatus.textContent='Submitting '+objective+' with a persistent idempotency key…';
+ try{
+  const response=await fetch('/api/brain/tasks',{method:'POST',credentials:'same-origin',
+   cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(pending)});
+  const body=await response.json();
+  if(!response.ok||!body.ok)throw Error(body.error||'queue-unconfirmed-'+response.status);
+  inspectionStatus.textContent='Request '+objective+' accepted; check the live ledger for the terminal observation.';
+  pending=null;
+  refresh();
+ }catch(err){
+  inspectionStatus.textContent='Submission unconfirmed ('+String(err.message||'unknown')+
+   '). Retry the unchanged objective to reuse the same key; do not assume an effect.';
+ }finally{submit.disabled=false}
+});
 button.addEventListener('click',refresh);
 refresh();
 })();
