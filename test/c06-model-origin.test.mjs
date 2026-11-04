@@ -186,3 +186,54 @@ test('C06-12 provider-only model must fail held-out provider checks even if owne
  assert.ok(result.failures.some(x=>x.id==='no-receipt'));
  assert.ok(result.failures.some(x=>x.id==='uncertain'));
 });
+
+test('C06-13 model generates seven independently checked test vectors when suite JSON is invalid',async()=>{
+ const rows=[
+  {input:{authorized:true,paused:false,paidCents:0,providerStatus:'observed',receiptVerified:true},expected:'verified'},
+  {input:{authorized:true,paused:false,paidCents:0,providerStatus:'unknown',receiptVerified:false},expected:'reconcile'},
+  {input:{authorized:true,paused:false,paidCents:0,providerStatus:'timeout',receiptVerified:false},expected:'reconcile'},
+  {input:{authorized:true,paused:true,paidCents:0,providerStatus:'observed',receiptVerified:true},expected:'held'},
+  {input:{authorized:false,paused:false,paidCents:0,providerStatus:'observed',receiptVerified:true},expected:'held'},
+  {input:{authorized:true,paused:false,paidCents:1,providerStatus:'observed',receiptVerified:true},expected:'held'},
+  {input:{authorized:true,paused:false,paidCents:0,providerStatus:'observed',receiptVerified:false},expected:'held'}
+ ];
+ let called=[];
+ const result=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'90210',
+  infer:async(kind,messages)=>{
+   called.push({kind,request:messages[1].content});
+   if(kind==='source')return functionSource;
+   if(kind==='cases')return 'not a JSON array';
+   if(kind==='case'){
+    const found=messages[1].content.match(/Scenario: ([a-z-]+)/);
+    assert.ok(found);
+    const ids=['observed-verified','unknown-reconcile','timeout-reconcile','paused-held',
+      'unauthorized-held','paid-held','unverified-held'];
+    return JSON.stringify(rows[ids.indexOf(found[1])]);
+   }
+   return docs;
+  }
+ });
+ assert.equal(called.filter(x=>x.kind==='case').length,7);
+ assert.equal(result.receipt.testVectorMode,'individually-model-generated');
+ assert.equal(verifyC06Files(result.files,{sourceSha:sha,runId:'90210'}).valid,true);
+ assert.match(result.files[C06_PATHS.tests],/providerStatus/);
+ assert.equal(result.receipt.independentCorrect,15);
+});
+
+test('C06-14 invalid model-generated chunk never becomes a deterministic reference vector',async()=>{
+ let attempted=0;
+ await assert.rejects(()=>buildC06Artifacts({
+  admission:admitC06(allowed),runId:'90210',maxAttempts:2,
+  infer:async(kind,messages)=>{
+   if(kind==='source')return functionSource;
+   if(kind==='cases')return 'invalid';
+   if(kind==='case'){attempted++;return JSON.stringify({
+    input:{authorized:true,paused:true,paidCents:0,providerStatus:'observed',receiptVerified:true},
+    expected:'verified'
+   });}
+   return docs;
+  }
+ }),/c06-model-cases-rejected/);
+ assert.equal(attempted,2);
+});
