@@ -80,3 +80,71 @@ test('paused owner reservation remains held without touching GitHub',async()=>{
  assert.deepEqual(phases,['planned','reserve']);
  assert.equal(result.status,'needs-owner');
 });
+
+
+test('fresh fenced owner reservation dispatches exactly once instead of getting held as unknown',async()=>{
+ const issue=event(),branch='ultron/issue-285',BASE='a'.repeat(40),HEAD='b'.repeat(40);
+ const api='/repos/'+PR_REPOSITORY;
+ let branchSha=null,proposal=null,pr=null,note=null,postCount=0,jobState='planned';
+ const callback=async payload=>{
+   if(payload.phase==='planned')return {job:{state:jobState}};
+   if(payload.phase==='reserve') {
+     jobState='dispatching';
+     return {dispatchAdmitted:true,job:{state:jobState}};
+   }
+   if(payload.phase==='needs-owner')throw Error('freshly reserved request must not hold without first dispatch');
+   jobState=payload.phase;
+   return {job:{state:jobState,externalUrl:pr?.html_url}};
+ };
+ const github={
+   get:async path=>{
+     if(path===api+'/issues/285')return issue.issue;
+     if(path===api+'/git/ref/heads/main')return {object:{sha:BASE}};
+     if(path.startsWith(api+'/pulls?'))return pr?[pr]:[];
+     if(path===api+'/pulls/88'&&pr)return pr;
+     if(path.startsWith(api+'/contents/docs/proposals/issue-285.md?ref=')&&proposal)
+       return {encoding:'base64',content:Buffer.from(proposal).toString('base64')};
+     if(path===api+'/issues/comments/101'&&note)return note;
+     throw Error('Unexpected GET '+path);
+   },
+   getOptional:async path=>{
+     if(path===api+'/git/ref/heads/'+branch&&!branchSha)return null;
+     if(path.startsWith(api+'/contents/docs/proposals/issue-285.md?ref=')&&!proposal)return null;
+     return github.get(path);
+   },
+   post:async(path,body)=>{
+     if(path===api+'/git/refs'){branchSha=BASE;return {ref:'refs/heads/'+branch};}
+     if(path===api+'/pulls'){
+       postCount++;
+       pr={number:88,html_url:'https://github.com/'+PR_REPOSITORY+'/pull/88',
+         title:body.title,body:body.body,
+         head:{ref:branch,sha:HEAD,repo:{full_name:PR_REPOSITORY}},
+         base:{ref:'main',repo:{full_name:PR_REPOSITORY}}};
+       return pr;
+     }
+     if(path===api+'/issues/285/comments'){
+       note={id:101,body:body.body,user:{login:'github-actions[bot]'}};
+       return {id:101};
+     }
+     throw Error('Unexpected POST '+path);
+   },
+   put:async(path,body)=>{
+     assert.equal(path,api+'/contents/docs/proposals/issue-285.md');
+     proposal=Buffer.from(body.content,'base64').toString('utf8');
+     branchSha=HEAD;
+     return {commit:{sha:HEAD}};
+   }
+ };
+ const params={event:issue,actor:PR_OWNER,repository:PR_REPOSITORY,
+   executorSha:BASE,callback,github,
+   verifyExactHead:async({headSha})=>({state:'completed',conclusion:'success',
+     sha:headSha,runId:700,url:'https://github.com/'+PR_REPOSITORY+'/actions/runs/700'}),
+   observeExactHead:async()=>({state:'completed',conclusion:'success',
+     sha:HEAD,runId:700,url:'https://github.com/'+PR_REPOSITORY+'/actions/runs/700'})};
+ const first=await runCouncilRoomExecution(params);
+ assert.equal(first.prUrl,pr.html_url);
+ assert.equal(postCount,1);
+ const replay=await runCouncilRoomExecution(params);
+ assert.equal(replay.replayed,true);
+ assert.equal(postCount,1);
+});
