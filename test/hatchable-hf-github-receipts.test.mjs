@@ -81,7 +81,7 @@ test('GH-HF-06: duplicate signed delivery has exactly-once durable insertion',as
  const db={async query(sql,args){
   if(sql.includes('INSERT INTO hf_github_receipts')){
    insert++;if(row)return {rows:[]};
-   row={id:51,delivery_id:args[0],run_id:args[1],run_attempt:args[2],
+   row={id:51,delivery_id:args[0],run_id:args[1],run_attempt:args[2],workflow_key:args[3],
     source_sha:args[4],conclusion:args[5],payload_sha256:args[6],state:'pending'};
    return {rows:[row]};
   }
