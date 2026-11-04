@@ -46,6 +46,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -248,33 +249,10 @@ jobs:
             }
 
       - name: Council members act under their own App identities
-        if: steps.debate.outputs.skipped != 'true' && env.OWNER_MODE == '1'
-        continue-on-error: true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: 56101029f1b97471651646504eba9fff
-          ULTRON_VAULT_KEY: ${{ secrets.ULTRON_VAULT_KEY }}
-          COUNCIL_BUILDER_APP_ID: ${{ secrets.COUNCIL_BUILDER_APP_ID }}
-          COUNCIL_BUILDER_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_BUILDER_APP_PRIVATE_KEY }}
-          COUNCIL_BUILDER_INSTALLATION_ID: ${{ secrets.COUNCIL_BUILDER_INSTALLATION_ID }}
-          COUNCIL_SKEPTIC_APP_ID: ${{ secrets.COUNCIL_SKEPTIC_APP_ID }}
-          COUNCIL_SKEPTIC_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_SKEPTIC_APP_PRIVATE_KEY }}
-          COUNCIL_SKEPTIC_INSTALLATION_ID: ${{ secrets.COUNCIL_SKEPTIC_INSTALLATION_ID }}
-          COUNCIL_STEWARD_APP_ID: ${{ secrets.COUNCIL_STEWARD_APP_ID }}
-          COUNCIL_STEWARD_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_STEWARD_APP_PRIVATE_KEY }}
-          COUNCIL_STEWARD_INSTALLATION_ID: ${{ secrets.COUNCIL_STEWARD_INSTALLATION_ID }}
-          COUNCIL_PREDICTOR_APP_ID: ${{ secrets.COUNCIL_PREDICTOR_APP_ID }}
-          COUNCIL_PREDICTOR_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_PREDICTOR_APP_PRIVATE_KEY }}
-          COUNCIL_PREDICTOR_INSTALLATION_ID: ${{ secrets.COUNCIL_PREDICTOR_INSTALLATION_ID }}
-          COUNCIL_GENERATOR_APP_ID: ${{ secrets.COUNCIL_GENERATOR_APP_ID }}
-          COUNCIL_GENERATOR_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_GENERATOR_APP_PRIVATE_KEY }}
-          COUNCIL_GENERATOR_INSTALLATION_ID: ${{ secrets.COUNCIL_GENERATOR_INSTALLATION_ID }}
-          COUNCIL_SENTINEL_APP_ID: ${{ secrets.COUNCIL_SENTINEL_APP_ID }}
-          COUNCIL_SENTINEL_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_SENTINEL_APP_PRIVATE_KEY }}
-          COUNCIL_SENTINEL_INSTALLATION_ID: ${{ secrets.COUNCIL_SENTINEL_INSTALLATION_ID }}
-          COUNCIL_COMPANION_APP_ID: ${{ secrets.COUNCIL_COMPANION_APP_ID }}
-          COUNCIL_COMPANION_APP_PRIVATE_KEY: ${{ secrets.COUNCIL_COMPANION_APP_PRIVATE_KEY }}
-          COUNCIL_COMPANION_INSTALLATION_ID: ${{ secrets.COUNCIL_COMPANION_INSTALLATION_ID }}
+        if: >-
+          steps.debate.outputs.skipped != 'true' &&
+          env.OWNER_MODE == '1' &&
+          (github.event_name == 'issues' || github.event_name == 'workflow_dispatch')
         run: node scripts/council-act.mjs
 
       - name: Upload receipt artifact

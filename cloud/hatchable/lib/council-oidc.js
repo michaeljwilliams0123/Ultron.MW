@@ -1,0 +1,83 @@
+import { createHash, createPublicKey, createVerify } from 'node:crypto';
+
+const ISSUER = 'https://token.actions.githubusercontent.com';
+const JWKS_URL = ISSUER + '/.well-known/jwks';
+const REPOSITORY = 'michaeljwilliams0123/Ultron.MW';
+const REPOSITORY_ID = '1424939667';
+const WORKFLOW = REPOSITORY + '/.github/workflows/council-debate.yml@refs/heads/main';
+const SHA = /^[a-f0-9]{40}$/;
+
+function deny() {
+  throw Error('council-oidc-untrusted');
+}
+
+function decode(value) {
+  if (typeof value !== 'string' || value.length > 12000 || !/^[A-Za-z0-9_-]+$/.test(value)) deny();
+  try {
+    return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+  } catch {
+    deny();
+  }
+}
+
+export async function verifyCouncilOidc({ token, rawBody, fetchJwks = fetch, now = Date.now } = {}) {
+  if (typeof token !== 'string' || token.length < 250 || token.length > 20000 ||
+      typeof rawBody !== 'string') deny();
+  const parts = token.split('.');
+  if (parts.length !== 3) deny();
+  const header = decode(parts[0]);
+  const claims = decode(parts[1]);
+  if (header?.alg !== 'RS256' || typeof header.kid !== 'string') deny();
+
+  const epoch = Math.floor(now() / 1000);
+  if (claims?.iss !== ISSUER || claims.aud !== councilOidcAudience(rawBody) ||
+      claims.repository_visibility !== 'public' ||
+      claims.repository !== REPOSITORY || claims.repository_id !== REPOSITORY_ID ||
+      claims.repository_owner !== 'michaeljwilliams0123' ||
+      claims.repository_owner_id !== '308995719' ||
+      claims.sub !== 'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main' ||
+      claims.actor !== 'michaeljwilliams0123' ||
+      claims.workflow_ref !== WORKFLOW || claims.ref !== 'refs/heads/main' ||
+      !['issues', 'workflow_dispatch'].includes(claims.event_name) ||
+      !SHA.test(claims.sha || '') ||
+      !Number.isSafeInteger(claims.iat) || !Number.isSafeInteger(claims.exp) ||
+      claims.iat > epoch + 45 || claims.iat < epoch - 360 ||
+      claims.exp < epoch || claims.exp > epoch + 600 ||
+      claims.exp <= claims.iat || claims.exp - claims.iat > 600) deny();
+
+  let keys;
+  try {
+    const response = await fetchJwks(JWKS_URL, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) deny();
+    keys = (await response.json()).keys;
+  } catch {
+    deny();
+  }
+
+  if (!Array.isArray(keys) || keys.length > 30) deny();
+  const jwk = keys.find(key => key?.kid === header.kid && key.kty === 'RSA' && key.alg === 'RS256');
+  if (!jwk) deny();
+  let valid = false;
+  try {
+    const verifier = createVerify('RSA-SHA256');
+    verifier.update(parts[0] + '.' + parts[1]);
+    verifier.end();
+    valid = verifier.verify(createPublicKey({ key: jwk, format: 'jwk' }), Buffer.from(parts[2], 'base64url'));
+  } catch {
+    deny();
+  }
+  if (!valid) deny();
+  return Object.freeze({
+    actor: claims.actor, sha: claims.sha, event: claims.event_name,
+    audience: claims.aud
+  });
+}
+
+export function councilOidcAudience(rawBody) {
+  if (typeof rawBody !== 'string' || rawBody.length > 100000) deny();
+  return 'ultron.council.v1:sha256:' + createHash('sha256').update(rawBody).digest('hex');
+}

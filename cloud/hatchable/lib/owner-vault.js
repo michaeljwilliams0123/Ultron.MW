@@ -1,3 +1,5 @@
+import { createSign } from 'node:crypto';
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -53,4 +55,41 @@ export function vaultFor(db, key) {
       await db.query('DELETE FROM owner_vault WHERE k = $1', [name]);
     }
   };
+}
+
+export function appJwt({ appId, privateKey, now = Math.floor(Date.now() / 1000) }) {
+  const encode = value => btoa(String.fromCharCode(...new TextEncoder().encode(value)))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const header = encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payload = encode(JSON.stringify({ iat: now - 30, exp: now + 540, iss: String(appId) }));
+  const signer = createSign('RSA-SHA256');
+  signer.update(header + '.' + payload);
+  signer.end();
+  const signature = signer.sign(privateKey).toString('base64url');
+  return header + '.' + payload + '.' + signature;
+}
+
+export async function mintCouncilInstallationToken(app, fetchImpl = fetch) {
+  if (!app?.installationId || !app?.id || !app?.pem) throw Error('council-app-not-installed');
+  const response = await fetchImpl(
+    'https://api.github.com/app/installations/' + encodeURIComponent(app.installationId) + '/access_tokens',
+    {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + appJwt({ appId: app.id, privateKey: app.pem }),
+        accept: 'application/vnd.github+json',
+        'content-type': 'application/json',
+        'user-agent': 'ultron-council'
+      },
+      body: JSON.stringify({ repositories: ['Ultron.MW'] }),
+      signal: AbortSignal.timeout(6500)
+    }
+  );
+  if (!response.ok) throw Error('council-installation-token-failed:' + response.status);
+  const token = await response.json();
+  const repos = token.repositories || [];
+  if (repos.length !== 1 || repos[0]?.full_name?.toLowerCase() !== 'michaeljwilliams0123/ultron.mw') {
+    throw Error('council-installation-not-scoped-to-ultron-mw');
+  }
+  return token.token;
 }
