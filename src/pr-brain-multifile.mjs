@@ -3,6 +3,7 @@ import { extractModelPatch, selectTargetLine, localCpuInference,
 import { assertModelSourceSafe } from './pr-brain-safety.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
 import { capacityLimits } from './capacity.mjs';
+import {selectFreeModelProfile} from './hf-free-compute.mjs';
 
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const SOURCE=/^(?:src|docs|test|scripts)\/[A-Za-z0-9_./-]+\.(?:mjs|js|md|json|html|css)$/;
@@ -142,8 +143,8 @@ export async function generateAndApplyMulti({
   return {...result,rollbackChanges:changes.map(x=>({path:x.path,before:x.after,after:x.before})),
     preflight:preflights,sourcePaths:parsed.paths,
     goalAssurance:{mode:goal?'explicit-substitution':'unscored',correctedPaths},
-    generatedBy:'public-CPU-ONNX-inference',model:'onnx-community/Qwen2.5-0.5B-Instruct',
-    verifiedCommit:true};
+    generatedBy:'public-CPU-ONNX-inference',model:selectFreeModelProfile().id,
+    modelRevision:selectFreeModelProfile().revision,verifiedCommit:true};
 }
 
 export { explicitRewriteGoal } from './pr-brain-model.mjs';
