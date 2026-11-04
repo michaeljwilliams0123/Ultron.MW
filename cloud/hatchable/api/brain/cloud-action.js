@@ -1,4 +1,5 @@
-import {db} from 'hatchable';
+import {db,events} from 'hatchable';
+import {notifyOwner} from 'lib/owner-live-events.js';
 import {executeCloudNote} from 'lib/cloud-native-action.js';
 
 export const access='admin';
@@ -12,6 +13,7 @@ export default async function(req,res){
   result.status==='reconcile-required'?503:
   result.reason==='idempotency-conflict'?409:
   result.reason==='owner-profile-or-stop-denied'?403:400;
+ if(result.status==='completed'&&!result.reused)await notifyOwner(events,'note');
  return res.status(status).json({schema:'ultron.cloud-action.v1',
   ok:result.status==='completed',...result});
 }
