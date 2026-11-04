@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import { councilOidcAudience, verifyCouncilOidc } from '../cloud/hatchable/lib/council-oidc.js';
-import { runCouncilActions, validateCouncilPlan } from '../cloud/hatchable/lib/council-runner.js';
+import { validateCouncilPlan } from '../cloud/hatchable/lib/council-plan.js';
 
 const roles = ['Builder', 'Skeptic', 'Steward', 'Predictor', 'Generator', 'Sentinel', 'Companion'];
 const sha = 'a'.repeat(40);
@@ -27,42 +27,6 @@ test('council plan permits only seven unique roles and bounded safe actions', ()
   const unsafe = ownerPlan();
   unsafe.memberAssessments[0].actions = [{ op: 'pr.merge' }];
   assert.throws(() => validateCouncilPlan(unsafe));
-});
-
-test('council runner verifies target and executes each role with its own scoped token', async () => {
-  const calls = [];
-  const fetchImpl = async (url, options = {}) => {
-    calls.push({ url, options });
-    if (url.endsWith('/issues/40')) return Response.json({ state: 'open' });
-    return Response.json({ ok: true });
-  };
-  const result = await runCouncilActions({
-    plan: ownerPlan(),
-    installations: Object.fromEntries(roles.map(role => [role, { role }])),
-    mintToken: async app => 'token-' + app.role,
-    fetchImpl
-  });
-  assert.equal(result.filter(item => item.status === 'done').length, 1);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].options.headers.authorization, 'Bearer token-Builder');
-  assert.equal(calls[1].options.body, JSON.stringify({ body: '**Builder** (`ultron-mw-builder`): Review complete.' }));
-});
-
-test('council runner refuses a changed or wrong-kind target before actions', async () => {
-  await assert.rejects(runCouncilActions({
-    plan: ownerPlan({ isPr: true, sourceSha: sha }),
-    installations: {},
-    mintToken: async () => 'unused',
-    fetchImpl: async () => Response.json({ state: 'open' })
-  }), /council-target-changed/);
-  await assert.rejects(runCouncilActions({
-    plan: ownerPlan({ isPr: true, sourceSha: sha, memberAssessments: roles.map(role => ({ identity: { role }, actions: [] })) }),
-    installations: {},
-    mintToken: async () => 'unused',
-    fetchImpl: async url => url.endsWith('/issues/40')
-      ? Response.json({ state: 'open', pull_request: {} })
-      : Response.json({ head: { sha: 'b'.repeat(40) } })
-  }), /council-pr-head-changed/);
 });
 
 test('OIDC accepts only signed owner workflow identity and body on main', async () => {

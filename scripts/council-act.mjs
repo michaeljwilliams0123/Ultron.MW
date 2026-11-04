@@ -3,6 +3,7 @@
  * the Hatchable-held, repository-scoped council App credentials. */
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {mintInstallationToken,runMemberActions,verifyCouncilActionTarget} from '../src/council-members.mjs';
 
 const plan=JSON.parse(readFileSync('council-members.json','utf8'));
 if(!plan.ownerMode||plan.hold){
@@ -25,7 +26,27 @@ if(!plan.ownerMode||plan.hold){
     body:payload
   });
   const result=await response.json();
-  if(!response.ok||result.ok!==true)throw Error('hatchable-council-action-failed:'+JSON.stringify(result));
-  console.log(JSON.stringify(result,null,2));
-  if(result.results?.some(item=>item.status==='error'))process.exitCode=1;
+  if(!response.ok||!result||result.ok!==true||result.repository!=='michaeljwilliams0123/Ultron.MW')
+    throw Error('hatchable-council-credential-exchange-failed:'+
+      (typeof result?.error==='string'?result.error:'invalid-response'));
+  const firstAssessment=plan.memberAssessments[0];
+  const firstRole=firstAssessment.identity.role,firstCredentials=result.credentials?.[firstRole];
+  if(!firstCredentials)throw Error('hatchable-council-credential-missing:'+firstRole);
+  const firstToken=await mintInstallationToken(firstCredentials);
+  await verifyCouncilActionTarget(firstToken,{number:plan.itemNumber,isPr:plan.isPr,sourceSha:plan.sourceSha});
+  const report=[];
+  for(const assessment of plan.memberAssessments){
+    const role=assessment.identity.role,credentials=result.credentials?.[role];
+    if(!credentials)throw Error('hatchable-council-credential-missing:'+role);
+    try{
+      const token=role===firstRole?firstToken:await mintInstallationToken(credentials);
+      const actions=await runMemberActions({role,sourceSha:plan.sourceSha||process.env.GITHUB_SHA,
+        token,assessment,target:{number:plan.itemNumber,isPr:plan.isPr},credentials});
+      report.push({role,actions});
+    }catch(error){
+      report.push({role,status:'error',reason:String(error.message).slice(0,160)});
+    }
+  }
+  console.log(JSON.stringify(report,null,2));
+  if(report.some(member=>member.status==='error'||member.actions?.some(action=>action.status==='error')))process.exitCode=1;
 }

@@ -4,7 +4,7 @@ import {generateKeyPairSync} from 'node:crypto';
 import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction}
   from '../src/council-app-identities.mjs';
 import {councilMemberIdentity,assessCouncil,memberCredentials,appJwt,
-  executeMemberAction} from '../src/council-members.mjs';
+  executeMemberAction,mintInstallationToken,verifyCouncilActionTarget} from '../src/council-members.mjs';
 
 const SHA='a'.repeat(40);
 const ctx=over=>({title:'Fix login',body:'Must add a test. Expected: login works. acceptance below.',
@@ -34,6 +34,39 @@ test('missing credentials are null; JWT is RS256 shaped',()=>{
   const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048,
     privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
   assert.equal(appJwt({appId:1,privateKey}).split('.').length,3);
+});
+test('installation tokens are discovered from the App and scoped to Ultron.MW',async()=>{
+  const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048,
+    privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
+  const calls=[];
+  const fetchImpl=async(url,init={})=>{
+    calls.push({url,init});
+    if(url.endsWith('/repos/'+ 'michaeljwilliams0123/Ultron.MW/installation'))
+      return{ok:true,status:200,json:async()=>({id:123,app_id:7})};
+    return{ok:true,status:201,json:async()=>({token:'installation-token',
+      repositories:[{full_name:'michaeljwilliams0123/Ultron.MW'}]})};
+  };
+  assert.equal(await mintInstallationToken({appId:7,privateKey},fetchImpl),'installation-token');
+  assert.equal(calls.length,2);
+  assert.equal(JSON.parse(calls[1].init.body).repositories[0],'Ultron.MW');
+  assert.equal(calls[1].url,'https://api.github.com/app/installations/123/access_tokens');
+  await assert.rejects(mintInstallationToken({appId:7,privateKey},async url=>
+    url.includes('/repos/')?{ok:true,json:async()=>({id:123,app_id:7})}:
+      {ok:true,json:async()=>({token:'bad',repositories:[{full_name:'other/repo'}]})}),
+  /not-scoped-to-ultron-mw/);
+});
+test('action target stays open, matches its issue/PR kind and exact PR head',async()=>{
+  const fetchImpl=async url=>{
+    if(url.endsWith('/issues/7'))return{ok:true,status:200,json:async()=>({state:'open'})};
+    return{ok:true,status:200,json:async()=>({head:{sha:SHA}})};
+  };
+  await verifyCouncilActionTarget('token',{number:7,isPr:false,sourceSha:SHA},fetchImpl);
+  await assert.rejects(verifyCouncilActionTarget('token',{number:7,isPr:false,sourceSha:SHA},
+    async()=>({ok:true,status:200,json:async()=>({state:'closed'})})),/council-target-changed/);
+  await assert.rejects(verifyCouncilActionTarget('token',{number:7,isPr:true,sourceSha:SHA},
+    async url=>url.endsWith('/issues/7')
+      ?{ok:true,status:200,json:async()=>({state:'open',pull_request:{}})}
+      :{ok:true,status:200,json:async()=>({head:{sha:'b'.repeat(40)}})}),/council-pr-head-changed/);
 });
 test('owner-equivalent members get every owner action; others stay bounded',async()=>{
   const probe=role=>async()=>({source:'github-installations-api',app_id:1,id:2,

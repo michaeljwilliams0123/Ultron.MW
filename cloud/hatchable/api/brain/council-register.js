@@ -1,5 +1,5 @@
 import { db, config } from 'hatchable';
-import { appJwt, mintCouncilInstallationToken, vaultKey, vaultFor } from 'lib/owner-vault.js';
+import { vaultKey, vaultFor } from 'lib/owner-vault.js';
 
 export const access = 'admin';
 export const methods = ['GET'];
@@ -26,8 +26,6 @@ const PERMISSIONS = {
   vulnerability_alerts: 'write',
   workflows: 'write'
 };
-const API = 'https://api.github.com';
-const REPO = 'michaeljwilliams0123/Ultron.MW';
 
 function randomState() {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -37,54 +35,21 @@ function escapeAttribute(value) {
   return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-async function findInstallation(app, preferredId) {
-  const path = preferredId
-    ? '/app/installations/' + encodeURIComponent(preferredId)
-    : '/app/installations?per_page=100';
-  const response = await fetch(API + path, {
-    headers: {
-      authorization: 'Bearer ' + appJwt({ appId: app.id, privateKey: app.pem }),
-      accept: 'application/vnd.github+json',
-      'user-agent': 'ultron-council'
-    },
-    signal: AbortSignal.timeout(6500)
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) throw Error('github-installation-check-failed:' + response.status);
-  const installations = await response.json();
-  const candidates = Array.isArray(installations) ? installations : [installations];
-  for (const installation of candidates) {
-    if (String(installation.app_id) !== String(app.id)) continue;
-    const verified = { ...app, installationId: String(installation.id) };
-    try {
-      await mintCouncilInstallationToken(verified);
-      return verified;
-    } catch (error) {
-      if (preferredId) throw error;
-    }
-  }
-  return null;
-}
-
 export default async function handler(req, res) {
   const vault = vaultFor(db, await vaultKey(config));
   const origin = 'https://ultron-mw-cloud.hatchable.site';
   const query = req.query || {};
 
-  if (query.installed && query.installation_id) {
+  if (query.installed && query.installation_id && ['install', 'update'].includes(String(query.setup_action))) {
     const role = String(query.installed);
     if (!ROLES.includes(role) || !/^\d{1,20}$/.test(String(query.installation_id))) {
       return res.status(400).send('invalid installation');
     }
     const app = await vault.get('app:' + role);
     if (!app) return res.status(409).send('App registration missing for ' + role);
-    const verified = await findInstallation(app, String(query.installation_id));
-    if (!verified || verified.installationId !== String(query.installation_id)) {
-      return res.status(403).send('installation does not match the registered ' + role + ' App');
-    }
-    await vault.set('app:' + role, verified);
+    await vault.set('app:' + role, { ...app, installationId: String(query.installation_id) });
     return res.send('<!doctype html><meta charset="utf-8"><body style="font:16px system-ui;max-width:720px;margin:3em auto">' +
-      '<h1>' + role + ' installed and verified</h1><p>Its installation token is restricted to Ultron.MW.</p>' +
+      '<h1>' + role + ' installation recorded</h1><p>Each council run verifies the App identity and mints a token restricted to Ultron.MW.</p>' +
       '<p><a href="' + origin + '/api/brain/council-register">Return to the council checklist</a></p></body>');
   }
 
@@ -126,16 +91,14 @@ export default async function handler(req, res) {
       setup_url: origin + '/api/brain/council-register?installed=' + encodeURIComponent(role),
       setup_on_update: true
     };
-    let app = registered.has(role) ? await vault.get('app:' + role) : null;
-    if (app && !app.installationId) {
-      app = await findInstallation(app);
-      if (app) await vault.set('app:' + role, app);
-    }
-    const done = Boolean(app);
+    const app = registered.has(role) ? await vault.get('app:' + role) : null;
+    const done = Boolean(app?.installationId);
     forms.push('<form method="post" action="https://github.com/settings/apps/new?state=' + state + '" style="margin:.8em 0">' +
       '<input type="hidden" name="manifest" value="' + escapeAttribute(JSON.stringify(manifest)) + '">' +
       '<button style="padding:.6em 1em"' + (registered.has(role) ? ' disabled' : '') + '>' +
-      (done ? 'Installed: ' : registered.has(role) ? 'Created, install: ' : 'Create: ') + role + '</button></form>');
+      (done ? 'Installed: ' : registered.has(role) ? 'Created: ' : 'Create: ') + role + '</button></form>' +
+      (app && !done ? '<a href="https://github.com/apps/' + encodeURIComponent(app.slug) +
+        '/installations/new">Install/configure ' + role + ' on Ultron.MW</a>' : ''));
   }
 
   return res.send('<!doctype html><meta charset="utf-8"><body style="font:16px system-ui;max-width:720px;margin:3em auto">' +

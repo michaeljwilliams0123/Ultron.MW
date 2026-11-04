@@ -1,7 +1,7 @@
 import { db, config } from 'hatchable';
-import { vaultFor, vaultKey, mintCouncilInstallationToken } from 'lib/owner-vault.js';
+import { vaultFor, vaultKey } from 'lib/owner-vault.js';
 import { verifyCouncilOidc } from 'lib/council-oidc.js';
-import { runCouncilActions, validateCouncilPlan } from 'lib/council-runner.js';
+import { validateCouncilPlan } from 'lib/council-plan.js';
 
 export const access = 'public';
 export const methods = ['POST'];
@@ -44,26 +44,27 @@ export default async function handler(req, res) {
     return response(res, 503, { ok: false, error: 'vault-unavailable' });
   }
 
-  const installations = {};
+  const credentials = {};
   try {
     for (const member of plan.memberAssessments) {
       const role = member.identity.role;
       const app = await vault.get('app:' + role);
-      if (!app?.installationId) {
-        return response(res, 409, { ok: false, error: 'council-app-not-installed', role });
+      if (!app?.id || !app?.pem) {
+        return response(res, 409, { ok: false, error: 'council-app-not-registered', role });
       }
-      installations[role] = app;
+      credentials[role] = {
+        appId: String(app.id),
+        privateKey: app.pem,
+        installationId: app.installationId || null
+      };
     }
-    const tokens = {};
-    for (const role of Object.keys(installations)) {
-      tokens[role] = await mintCouncilInstallationToken(installations[role]);
-    }
-    const results = await runCouncilActions({
-      plan,
-      installations: tokens,
-      mintToken: token => token,
+    res.setHeader?.('cache-control', 'no-store');
+    return response(res, 200, {
+      ok: true,
+      actor: identity.actor,
+      repository: 'michaeljwilliams0123/Ultron.MW',
+      credentials
     });
-    return response(res, 200, { ok: true, actor: identity.actor, results });
   } catch (error) {
     return response(res, 503, { ok: false, error: String(error.message).slice(0, 160) });
   }

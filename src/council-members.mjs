@@ -148,10 +148,25 @@ export function memberCredentials(role,env=process.env){
 }
 
 export async function mintInstallationToken(creds,fetchImpl=fetch){
-  const r=await fetchImpl('https://api.github.com/app/installations/'+creds.installationId+'/access_tokens',{
-    method:'POST',headers:{authorization:'Bearer '+appJwt(creds),accept:'application/vnd.github+json','user-agent':'ultron-council'}});
+  const jwt=appJwt(creds);
+  let installationId=creds.installationId;
+  if(!installationId){
+    const installed=await fetchImpl('https://api.github.com/repos/'+REPO+'/installation',{
+      headers:{authorization:'Bearer '+jwt,accept:'application/vnd.github+json','user-agent':'ultron-council'}});
+    if(!installed.ok)throw Error('council-app-not-installed:'+installed.status);
+    const data=await installed.json();
+    if(String(data.app_id)!==String(creds.appId))throw Error('council-installation-app-mismatch');
+    installationId=String(data.id);
+  }
+  const r=await fetchImpl('https://api.github.com/app/installations/'+installationId+'/access_tokens',{
+    method:'POST',
+    headers:{authorization:'Bearer '+jwt,accept:'application/vnd.github+json','content-type':'application/json','user-agent':'ultron-council'},
+    body:JSON.stringify({repositories:['Ultron.MW']})});
   if(!r.ok)throw Error('council-token-mint-failed:'+r.status);
-  return (await r.json()).token;
+  const data=await r.json(),repos=data.repositories||[];
+  if(repos.length!==1||repos[0]?.full_name?.toLowerCase()!==REPO.toLowerCase())
+    throw Error('council-installation-not-scoped-to-ultron-mw');
+  return data.token;
 }
 
 const api=(token,fetchImpl)=>async(method,path,body)=>{
@@ -161,6 +176,17 @@ const api=(token,fetchImpl)=>async(method,path,body)=>{
   if(!r.ok)throw Error('github-'+r.status+' '+method+' '+path);
   return r.status===204?null:r.json();
 };
+
+export async function verifyCouncilActionTarget(token,{number,isPr,sourceSha},fetchImpl=fetch){
+  if(!Number.isSafeInteger(number)||number<1||typeof isPr!=='boolean')throw Error('council-target-invalid');
+  const call=api(token,fetchImpl);
+  const issue=await call('GET','/issues/'+number);
+  if(issue.state!=='open'||Boolean(issue.pull_request)!==isPr)throw Error('council-target-changed');
+  if(isPr){
+    const pull=await call('GET','/pulls/'+number);
+    if(!sourceSha||pull.head?.sha!==sourceSha)throw Error('council-pr-head-changed');
+  }
+}
 
 /** Execute one action as the member's own App identity, gated by policy. */
 export async function executeMemberAction(actor,token,action,target,{fetchImpl=fetch,deps={}}={}){
@@ -212,13 +238,16 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
 }
 
 /** Authenticate one member from its own token, then run its actions. */
-export async function runMemberActions({role,sourceSha,token,assessment,target,fetchImpl=fetch,profile='owner-equivalent',deps={}}){
+export async function runMemberActions({role,sourceSha,token,assessment,target,credentials=memberCredentials(role),fetchImpl=fetch,profile='owner-equivalent',deps={}}){
+  if(!credentials)throw Error('council-app-credentials-missing');
   const actor=await authenticateCouncilAppActor({role,sourceSha,installationToken:token,profile,
     githubProbe:async()=>{
       const r=await fetchImpl('https://api.github.com/installation/repositories',{headers:{authorization:'Bearer '+token,accept:'application/vnd.github+json','user-agent':'ultron-council'}});
       if(!r.ok)throw Error('council-probe-failed');
       const j=await r.json();
-      const i=await (await fetchImpl('https://api.github.com/repos/'+REPO+'/installation',{headers:{authorization:'Bearer '+appJwtFromEnv(role),accept:'application/vnd.github+json','user-agent':'ultron-council'}})).json();
+      const installationResponse=await fetchImpl('https://api.github.com/repos/'+REPO+'/installation',{headers:{authorization:'Bearer '+appJwt(credentials),accept:'application/vnd.github+json','user-agent':'ultron-council'}});
+      if(!installationResponse.ok)throw Error('council-installation-probe-failed');
+      const i=await installationResponse.json();
       return{source:'github-installations-api',app_id:i.app_id,id:i.id,app_slug:i.app_slug,
         suspended_at:i.suspended_at,permissions:i.permissions,
         repositories:j.repositories.map(x=>x.full_name)};
@@ -230,4 +259,3 @@ export async function runMemberActions({role,sourceSha,token,assessment,target,f
   }
   return results;
 }
-function appJwtFromEnv(role){return appJwt(memberCredentials(role));}
