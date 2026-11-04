@@ -102,3 +102,33 @@ test('CONNECT-05: unsigned owners see sign-in guidance, not a fake connection su
  assert.match(script,/Public liveness only/);
  assert.match(css,/data-state="session"/);
 });
+
+test('CONNECT-06: issue-comment workflow flood cannot hide successful current-main push CI',async()=>{
+ const latestMain='a'.repeat(40);
+ const fetchWithFlood=async url=>{
+  if(url===ROOT+'/git/ref/heads/main')return response({object:{sha:latestMain}});
+  if(url.includes('/pulls?'))return response([]);
+  if(url.includes('/actions/runs?')){
+   // GitHub lists newest 12 runs before a client-side filter is applied.
+   // Unfiltered requests yield only issue-comment events and conceal the
+   // older, still-current push check from the owner cockpit.
+   if(!url.includes('event=push'))return response({workflow_runs:
+    Array.from({length:12},(_,i)=>({id:1500-i,name:'owner comment router',
+      event:'issue_comment',head_sha:latestMain,status:'completed',
+      conclusion:'skipped',created_at:'2026-11-04T18:00:00Z'}))
+   });
+   return response({workflow_runs:[{
+    id:41879685232,name:'Ultron core verification',event:'push',
+    head_sha:latestMain,status:'completed',conclusion:'success',
+    created_at:'2026-11-04T17:00:00Z',
+    html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/41879685232'
+   }]});
+  }
+  throw Error('unexpected-url');
+ };
+ const value=await collectConnectivity({db:mockDB,fetchGithub:fetchWithFlood});
+ assert.equal(value.ci.state,'observed');
+ assert.equal(value.ci.conclusion,'success');
+ assert.equal(value.ci.runId,41879685232);
+ assert.equal(value.ci.sourceSha,latestMain);
+});
