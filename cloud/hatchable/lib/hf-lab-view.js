@@ -1,4 +1,4 @@
-import {mergeVerifiedWorkflow} from 'lib/hf-github-receipts.js';
+import {mergeVerifiedWorkflow} from './hf-github-receipts.js';
 /** Read-only Hugging Face evaluation lane, backed by GitHub Actions and durable cache.
  * Zero new paid inference calls. Never interpret a workflow green as model promotion.
  */
