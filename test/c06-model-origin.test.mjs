@@ -8,8 +8,6 @@ const sha='a'.repeat(40);
 const allowed={repository:'michaeljwilliams0123/Ultron.MW',actor:'michaeljwilliams0123',
  publicRepository:true,paidBudgetCents:0,sourceSha:sha,issueNumber:245,runner:'ubuntu-24.04'};
 const functionSource=`function fix(input) {
- if (input?.authorized !== true || input?.paused === true) return 'held';
- if (!Number.isInteger(input?.paidCents) || input.paidCents !== 0) return 'held';
  if (input?.providerStatus === 'unknown' || input?.providerStatus === 'timeout') return 'reconcile';
  if (input?.providerStatus === 'observed' && input?.receiptVerified === true) return 'verified';
  return 'held';
@@ -71,7 +69,7 @@ test('C06-03 only model-produced 3-file artifacts pass strict provenance and sem
  assert.equal(result.receipt.productionAccepted,false);
  assert.equal(result.receipt.modelRevision,admitC06(allowed).revision);
  assert.equal(verifyC06Files(result.files,{sourceSha:sha,runId:'12345'}).valid,true);
- assert.match(result.files[C06_PATHS.source],/export function fix\(input\)/);
+ assert.match(result.files[C06_PATHS.source],/export function classifyC06Effect\(input\)/);
  assert.match(result.files[C06_PATHS.tests],/generated/);
  assert.match(result.files[C06_PATHS.docs],/Unknown provider outcomes reconcile/);
 });
@@ -128,7 +126,7 @@ test('C06-08 published verifier must not execute untrusted source under write to
 
 test('C06-09 retry receives real previous model code and exact failed cases',async()=>{
  const broken=`function fix(input) {
- if (input?.authorized === true) return 'verified';
+ if (input?.providerStatus === 'observed') return 'verified';
  if (input?.providerStatus === 'unknown') return 'reconcile';
  return 'held';
 }`;
@@ -141,7 +139,7 @@ test('C06-09 retry receives real previous model code and exact failed cases',asy
     if(attempt===1)return broken;
     assert.match(messages[1].content,/Previous candidate/);
     assert.ok(messages[1].content.includes('providerStatus'));
-    assert.ok(messages[1].content.includes('owner-paused'));
+    assert.ok(messages[1].content.includes('no-receipt'));
     assert.ok(messages[1].content.includes('expected held'));
     return functionSource;
    }
@@ -160,4 +158,31 @@ test('C06-10 failed correction never invents a fixed model source',async()=>{
    'function fix(input) { return "verified"; }':kind==='cases'?tests:docs;}
  }),/c06-model-source-rejected/);
  assert.equal(requested,2);
+});
+
+test('C06-11 model cannot self-authorize owner, pause or spend outside the generated provider function',async()=>{
+ const result=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12345',
+  infer:async kind=>({source:functionSource,cases:tests,docs})[kind]
+ });
+ const content=result.files[C06_PATHS.source];
+ assert.match(content,/function fix\(input\)/);
+ assert.match(content,/export function classifyC06Effect\(input\)/);
+ assert.match(content,/Number\.isInteger\(input\.paidCents\)/);
+ assert.match(content,/input\.authorized !== true/);
+ assert.match(content,/input\.paused !== false/);
+ const module=await import('data:text/javascript,'+encodeURIComponent(content));
+ for(const row of C06_CASES)
+  assert.equal(module.classifyC06Effect(row.input),row.expected,row.id);
+});
+
+test('C06-12 provider-only model must fail held-out provider checks even if owner fence is deterministic',()=>{
+ const falseModel=`function fix(input) {
+ if (input?.providerStatus === 'observed') return 'verified';
+ return 'held';
+}`;
+ const result=evaluateC06Function(falseModel);
+ assert.equal(result.passed,false);
+ assert.ok(result.failures.some(x=>x.id==='no-receipt'));
+ assert.ok(result.failures.some(x=>x.id==='uncertain'));
 });
