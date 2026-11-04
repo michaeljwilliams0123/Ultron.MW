@@ -130,7 +130,7 @@ export function c06Prompt(kind,feedback=''){
   'Write a 170-350 word Markdown runbook explaining owner authorization, paused stop control, paid spend zero, unknown provider outcomes requiring reconcile, verified only with observed receipt, held otherwise. State that independent checks and protected PR merge are required. No secrets or invented results.';
  return [
   {role:'system',content:'You are the Ultron C06 local free CPU model, returning exactly the requested public synthetic artifact. '+constraints},
-  {role:'user',content:request+(feedback?'\nPrior output failed validation: '+feedback.slice(0,350)+'. Correct it completely.':'')}
+  {role:'user',content:request+(feedback?'\nPrior output failed validation. Previous candidate and test observations follow:\n'+feedback.slice(0,1900)+'\nRewrite the complete artifact from this feedback, not merely one line.':'')}
  ];
 }
 export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}){
@@ -147,13 +147,20 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
     if(typeof reply!=='string'||reply.length>4500)throw Error('invalid-output');
     const normalized=kind==='source'?evaluateC06Function(reply):
       kind==='cases'?normalizeCases(reply,processed.source.code):normalizeDocs(reply);
-    if(kind==='source'&&!normalized.passed)throw Error(normalized.reason+
-      ' '+normalized.failures.slice(0,4).map(f=>f.id+' expected '+f.expected).join(','));
+    if(kind==='source'&&!normalized.passed){
+      const observations=normalized.failures.slice(0,6).map(f=>{
+       const scenario=C06_CASES.find(c=>c.id===f.id);
+       return f.id+' input '+JSON.stringify(scenario?.input)+
+        ' expected '+f.expected+' but received '+f.actual;
+      }).join('; ');
+      throw Error('Previous candidate:\n'+reply.slice(0,1150)+
+       '\nIndependent test failures: '+observations+'\nReason: '+normalized.reason);
+    }
     raw[kind]=reply;
     processed[kind]=normalized;
     failure='';
     break;
-   }catch(e){failure=String(e.message).slice(0,200);}
+   }catch(e){failure=String(e.message).slice(0,1900);}
   }
   if(failure)throw Error('c06-model-'+kind+'-rejected: '+failure);
  }
