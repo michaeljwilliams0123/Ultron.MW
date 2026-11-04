@@ -125,3 +125,39 @@ test('C06-08 published verifier must not execute untrusted source under write to
  assert.match(file,/verifyC06Files/);
  assert.doesNotMatch(file,/import\s*\(.*c06-model-candidate|vm\.run|execSync\(/);
 });
+
+test('C06-09 retry receives real previous model code and exact failed cases',async()=>{
+ const broken=`function fix(input) {
+ if (input?.authorized === true) return 'verified';
+ if (input?.providerStatus === 'unknown') return 'reconcile';
+ return 'held';
+}`;
+ let count=0;
+ const artifacts=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12345',maxAttempts:2,
+  infer:async(kind,messages,attempt)=>{
+   if(kind==='source'){
+    count++;
+    if(attempt===1)return broken;
+    assert.match(messages[1].content,/Previous candidate/);
+    assert.ok(messages[1].content.includes('providerStatus'));
+    assert.ok(messages[1].content.includes('owner-paused'));
+    assert.ok(messages[1].content.includes('expected held'));
+    return functionSource;
+   }
+   return kind==='cases'?tests:docs;
+  }
+ });
+ assert.equal(count,2);
+ assert.equal(artifacts.receipt.independentCorrect,C06_CASES.length);
+});
+
+test('C06-10 failed correction never invents a fixed model source',async()=>{
+ let requested=0;
+ await assert.rejects(()=>buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12345',maxAttempts:2,
+  infer:async(kind)=>{requested++;return kind==='source'?
+   'function fix(input) { return "verified"; }':kind==='cases'?tests:docs;}
+ }),/c06-model-source-rejected/);
+ assert.equal(requested,2);
+});
