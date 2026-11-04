@@ -16,7 +16,7 @@ async function token(raw,other={}){
  const payload=b64({
   iss:'https://token.actions.githubusercontent.com',
   aud:await oidcAudience(raw),
-  sub:'repo:'+REPO+':ref:refs/heads/main',
+  sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
   repository:REPO,repository_id:'1424939667',
   repository_owner:'michaeljwilliams0123',repository_visibility:'public',
   actor:'michaeljwilliams0123',

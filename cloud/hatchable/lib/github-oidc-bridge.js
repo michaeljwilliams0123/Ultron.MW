@@ -8,7 +8,9 @@ const JWKS=ISS+'/.well-known/jwks';
 const REPO='michaeljwilliams0123/Ultron.MW';
 const REF='refs/heads/main';
 const WORKFLOW=REPO+'/.github/workflows/hf-oidc-bridge.yml@'+REF;
-const SUBJECT='repo:'+REPO+':ref:'+REF;
+// GitHub repositories created after 2026-07-15 use immutable ID-bound subjects.
+// Ultron.MW was created 2026-10-19; reject the old name-only subject.
+const SUBJECT='repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:'+REF;
 const AUD_PREFIX='ultron.hf-oidc.v1:sha256:';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA=/^[a-f0-9]{40}$/;

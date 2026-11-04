@@ -13,7 +13,7 @@ const claims=(aud,changes={})=>{
  return {
   iss:'https://token.actions.githubusercontent.com',
   aud,
-  sub:'repo:michaeljwilliams0123/Ultron.MW:ref:refs/heads/main',
+  sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
   repository:'michaeljwilliams0123/Ultron.MW',
   repository_id:'1424939667',repository_visibility:'public',
   repository_owner:'michaeljwilliams0123',
@@ -74,7 +74,8 @@ test('OIDC-04: no other workflow, event, private/forked repo, actor or permissio
   {repository_visibility:'private'},{repository_owner:'attacker'},
   {actor:'github-actions[bot]'},{ref:'refs/pull/4/head'},
   {event_name:'pull_request'},{workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/verify.yml@refs/heads/main'},
-  {sub:'repo:michaeljwilliams0123/Ultron.MW:pull_request'}
+  {sub:'repo:michaeljwilliams0123/Ultron.MW:pull_request'},
+  {sub:'repo:michaeljwilliams0123/Ultron.MW:ref:refs/heads/main'}
  ];
  for(const d of bad)await assert.rejects(()=>verify(initial,claims(aud,d)),/untrusted-oidc/);
 });
