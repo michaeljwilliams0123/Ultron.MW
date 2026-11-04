@@ -97,8 +97,16 @@ export function mergeVerifiedWorkflow(snapshot,rows){
   if(r.state!=='verified'||!SHA.test(r.source_sha||'')||
      !Number.isSafeInteger(Number(r.run_id))||Number(r.run_id)<=0)continue;
   const i=result.workflows.findIndex(w=>w.key===r.workflow_key);
-  if(i<0||Number(result.workflows[i].runId||0)>=Number(r.run_id))continue;
+  if(i<0)continue;
   const prior=result.workflows[i];
+  const priorId=Number(prior.runId||0),verifiedId=Number(r.run_id);
+  if(priorId>verifiedId)continue;
+  // GitHub's cached API result may already contain the same run ID before
+  // signed delivery finishes independent reconciliation. Enrich ONLY if the
+  // cached exact source and outcome agree; never mask a conflicting readback.
+  if(priorId===verifiedId&&
+     (prior.headSha!==r.source_sha||prior.conclusion!==r.conclusion||
+      prior.status!=='completed'))continue;
   result.workflows[i]={...prior,state:'observed',runId:Number(r.run_id),
    status:'completed',conclusion:r.conclusion,headSha:r.source_sha,
    startedAt:r.github_verified_at,
