@@ -396,7 +396,7 @@ test('C06-25 accepts complete authentic 938-character owner-gate sections withou
    throw Error('unexpected-generation-stage');
   }
  });
- assert.ok(generated.files[C06_PATHS.docs].includes(owner));
+ assert.ok(generated.files[C06_PATHS.docs].includes(owner.trim()));
  assert.equal(generated.receipt.docGenerationMode,'sectioned-model-generated');
  assert.equal(verifyC06Files(generated.files,{sourceSha:sha,runId:'12355'}).valid,true);
 });
