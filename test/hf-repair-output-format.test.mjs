@@ -65,3 +65,13 @@ test('HF-FMT-06: format diagnostics are bounded metadata, never contain raw mode
  assert.equal(normalizeRepairOutput(null).code,null);
  assert.equal(normalizeRepairOutput('x'.repeat(4000)).code,null);
 });
+
+
+test('HF-FMT-07: benchmark records shape-only diagnostics beside original receipts',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const script=await readFile(new URL('../scripts/hf-heldout-cpu.mjs',import.meta.url),'utf8');
+ assert.match(script,/inspectRepairOutput/);
+ assert.match(script,/hf\.repair-output-shapes\.v1/);
+ assert.match(script,/-shapes\.json/);
+ assert.doesNotMatch(script,/console\.log\s*\(\s*(?:response|raw|generated)\s*\)/);
+});

@@ -52,7 +52,7 @@ test('HF-HO-05: refuse paid/GPU/private/unbounded runners',()=>{
  const good={repository:'michaeljwilliams0123/Ultron.MW',isPublic:true,
   runner:'ubuntu-24.04',parallel:4,gpu:false,costCents:0,shards:2};
  const plan=admitHeldoutCpu(good);
- assert.equal(plan.totalModelJobs,6);assert.equal(plan.maxParallel,4);
+ assert.equal(plan.totalModelJobs,8);assert.equal(plan.maxParallel,4);
  assert.equal(plan.paidBudgetCents,0);
  for(const part of [{isPublic:false},{gpu:true},{costCents:1},
   {runner:'ubuntu-24.04-gpu'},{parallel:8},{repository:'other/repo'},
@@ -82,4 +82,14 @@ test('HF-HO-07: manual matrix no secrets or paid GPU',async()=>{
  assert.match(yml,/node scripts\/hf-heldout-cpu\.mjs/);
  assert.match(yml,/contents:\s*read/);
  assert.doesNotMatch(yml,/secrets\.|gpu-[^\s]+|HUGGING_FACE_TOKEN|HF_TOKEN/i);
+});
+
+
+test('HF-HO-08: larger candidate expands bounded matrix to eight jobs on four public runners',async()=>{
+ const plan=admitHeldoutCpu({repository:'michaeljwilliams0123/Ultron.MW',isPublic:true,
+  runner:'ubuntu-24.04',parallel:4,gpu:false,costCents:0,shards:2});
+ assert.equal(plan.totalModelJobs,8);
+ const yml=await readFile(new URL('../.github/workflows/hf-heldout-cpu.yml',import.meta.url),'utf8');
+ assert.ok(yml.includes('profile: [baseline, coder-small, coder-medium, coder-large]'));
+ assert.ok(yml.includes('max-parallel: 4'));
 });
