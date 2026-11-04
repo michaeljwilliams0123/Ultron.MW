@@ -45,3 +45,11 @@ A successful model-generated PR is still not a completed #245 runtime deployment
 - The next fix preserves these validation gates while allowing complete technical documentation up to 2,800 characters and restricting model output to 320 tokens per document attempt. Bad model responses remain held, not repaired through assistant-authored substitution.
 
 **Issue #245 remains OPEN.** Required evidence: a truthful model-origin candidate PR, exact-head checks, protected squash, byte-exact deployment to the single existing Hatchable project and independent non-note live runtime postcondition.
+
+## Fifth held output and bounded model-authored document sections
+
+Owner-authorized [run #41848081022](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/41848081022) executed source SHA b8ae786eef5a3e4c8c5ab099198c4065fb134e89 with the shorter 320-token documentation stage and improved length range. Its model remained unable to supply every required outcome term: final failure `c06-model-docs-rejected: missing-outcome-contract`. The generated candidate was held and publishing skipped; the run produced a failure-only artifact (13334610089).
+
+A safe fallback is not substitute text. Instead, when the first complete model-authored document fails and the production admission permits three attempts, the **same pinned free CPU model** must generate three smaller technical paragraphs independently: owner/stop/spend; provider/receipt/outcome; protected PR/external independent verification. Every paragraph has exact mandatory token checks, completeness and anti-hallucination gates, with up to two corrective model attempts per section. The complete model-authored text is then revalidated by the full documentation contract. Its receipt records distinct full versus sectioned model-generation modes and SHA-256 digests of the raw model responses. Failed sections hold publication rather than prompting an assistant to fill gaps.
+
+These changes do not grant a model approval, GitHub write privileges, model promotion or live deployment; issue #245's external postcondition still must be separately proven.

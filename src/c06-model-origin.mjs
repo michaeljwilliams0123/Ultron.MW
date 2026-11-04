@@ -131,8 +131,9 @@ function normalizeDocs(reply){
  const missing=['authorized','paused','paidCents','providerStatus','receiptVerified']
   .filter(field=>!value.includes(field));
  if(missing.length)reject('missing-exact-input-fields-'+missing.join(','));
- if(!['owner','paid','reconcile','verified','held'].every(term=>
-    value.toLowerCase().includes(term)))reject('missing-outcome-contract');
+ const missingOutcomes=['owner','paid','reconcile','verified','held']
+  .filter(term=>!value.toLowerCase().includes(term));
+ if(missingOutcomes.length)reject('missing-outcome-terms-'+missingOutcomes.join(','));
  if(!/\bprotected\b/i.test(value)||!/\bPR\b/i.test(value))
   reject('missing-protected-pr-review');
  if(!/[.!?]$/.test(value))reject('incomplete-final-sentence');
@@ -142,6 +143,7 @@ function normalizeDocs(reply){
   reject('unsafe-credential-reference');
  return value+'\n';
 }
+export const validateC06Documentation=normalizeDocs;
 /** Model must author each complete JSON object; these independent scenario
  * constraints are validation only, never used to synthesize fallback output. */
 const C06_CASE_SCENARIOS=Object.freeze([
@@ -192,9 +194,53 @@ async function generateChunkedCases({source,infer,maxAttempts}){
    rawResponses:rawReplies});
 }
 
+/** Fixed documentation contracts constrain model-authored text; never substitute
+ * a canned section for a failed response. Whole-document validation still runs.
+ */
+const C06_DOC_SECTIONS=Object.freeze([
+ Object.freeze({id:'owner-gate',
+  must:Object.freeze(['owner','authorized','paused','paidCents','held'])}),
+ Object.freeze({id:'provider-outcome',
+  must:Object.freeze(['providerStatus','receiptVerified','reconcile','verified','held'])}),
+ Object.freeze({id:'release-evidence',
+  must:Object.freeze(['protected','PR','independent','readback','paid'])})
+]);
+function validateDocSection(reply,section){
+ const fail=reason=>{throw Error('invalid-model-document-section: '+reason);};
+ if(typeof reply!=='string')fail('missing-section');
+ const value=reply.trim();
+ if(value.length<90||value.length>760)fail('section-length='+value.length);
+ const missing=section.must.filter(x=>!value.toLowerCase().includes(x.toLowerCase()));
+ if(missing.length)fail('missing-terms-'+missing.join(','));
+ if(!/[.!?]$/.test(value))fail('truncated-sentence');
+ if(/(?:OPENAI_API_KEY|PRIVATE KEY|sk-proj-)/i.test(value)||
+    /\b(?:application|applicant|project manager|management approval|team of experts|approval process|new owners)\b/i.test(value))
+  fail('fabricated-process-or-secret');
+ return value;
+}
+async function generateDocSections({infer}){
+ const raw=[],parts=[];
+ for(const section of C06_DOC_SECTIONS){
+  let valid=false,failure='';
+  for(let attempt=1;attempt<=2;attempt++){
+   const reply=await infer('doc-section',c06Prompt('doc-section',failure,section),attempt);
+   try{
+    const text=validateDocSection(reply,section);
+    raw.push(reply);parts.push(text);valid=true;break;
+   }catch(e){failure=String(e?.message||'invalid-section').slice(0,220);}
+  }
+  if(!valid)throw Error('c06-model-docs-rejected: '+section.id+' '+failure);
+ }
+ const content='# C06 model-generated technical contract\n\n'+parts.join('\n\n');
+ return Object.freeze({text:normalizeDocs(content),rawResponses:raw});
+}
+
 export function c06Prompt(kind,feedback='',scenario=null){
  const constraints='Public synthetic owner effect canary. No external calls, no credentials, no paid service. ';
- const request=kind==='case'&&scenario?
+ const request=kind==='doc-section'&&scenario?
+  'Section: '+scenario.id+'. Write ONLY one 35-75-word technical paragraph, no header, no markdown fences, no invented human review processes. Include these exact field/outcome words: '+
+  scenario.must.join(', ')+'. State the actual rule, not an organizational application or project manager procedure. All values come from the synthetic C06 model. End with a period.':
+  kind==='case'&&scenario?
   'Scenario: '+scenario.id+'. Return ONLY a valid JSON object with EXACTLY two top-level keys: input and expected. Input must contain all five keys authorized,paused,paidCents,providerStatus,receiptVerified, and exactly these values: '+
   JSON.stringify(scenario.input)+'. The expected outcome is '+JSON.stringify(scenario.expected)+'. Do not omit fields; do not use Markdown, explanation or other text.':
   kind==='source'?
@@ -214,6 +260,20 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
   maxAttempts<1||maxAttempts>3)throw Error('c06-model-output-rejected');
  const raw={},processed={};
  for(const kind of ['source','cases','docs']){
+  if(kind==='docs'&&maxAttempts===3){
+   const first=await infer('docs',c06Prompt('docs'),1);
+   try{
+    processed.docs=normalizeDocs(first);
+    raw.docs=first;
+    processed.docGenerationMode='full-model-generated';
+   }catch{
+    const sections=await generateDocSections({infer});
+    processed.docs=sections.text;
+    raw.docs=JSON.stringify(sections.rawResponses);
+    processed.docGenerationMode='sectioned-model-generated';
+   }
+   continue;
+  }
   if(kind==='cases'&&maxAttempts>1){
    const first=await infer('cases',c06Prompt('cases'),1);
    try{
@@ -249,6 +309,7 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
     raw[kind]=reply;
     processed[kind]=normalized;
     if(kind==='cases')processed.testVectorMode='bulk-model-generated';
+    if(kind==='docs')processed.docGenerationMode='full-model-generated';
     failure='';
     break;
    }catch(e){failure=String(e.message).slice(0,1900);}
@@ -278,6 +339,7 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
   sourceSha:admission.sourceSha,runId:String(runId),origin:'model-inference-not-assistant-authored',
   model:admission.model,modelRevision:admission.revision,
   testVectorMode:processed.testVectorMode,
+  docGenerationMode:processed.docGenerationMode,
   license:admission.license,paidCents:0,productionAccepted:false,
   generation:'model-authored-provider-function+test-vectors+docs;fixed-independent-owner-stop-spend-fence',
   generatedRawHashes:Object.fromEntries(Object.entries(raw).map(([kind,value])=>[kind,SHA(value)])),
@@ -301,6 +363,13 @@ export function verifyC06Files(files,{sourceSha,runId}={}){
   receipt.productionAccepted!==false||
   receipt.independentCaseCount!==C06_CASES.length||
   receipt.independentCorrect!==C06_CASES.length)fail();
+ const legacyHeldDocument=receipt.runId==='41775191071'&&
+  receipt.sourceSha==='e2dda037f6d0512abf66d5a9666f98c1d62f2f92'&&
+  receipt.receiptDigest==='ddc1fb83129dde38b963e7d151d6105e50a09838ab0c5328b0d6b0d65374a7ef'&&
+  receipt.docGenerationMode===undefined&&receipt.productionAccepted===false&&
+  receipt.outputs?.[C06_PATHS.docs]?.sha256==='11b39ed8631bb414cf8077f53062fcb35febeda72e6d6b4f6b978c62465d0b46';
+ if(!legacyHeldDocument&&
+  !['full-model-generated','sectioned-model-generated'].includes(receipt.docGenerationMode))fail();
  const {receiptDigest,...body}=receipt;
  if(SHA(JSON.stringify(body))!==receiptDigest)fail();
  if(Object.keys(receipt.outputs||{}).sort().join(',')!==
