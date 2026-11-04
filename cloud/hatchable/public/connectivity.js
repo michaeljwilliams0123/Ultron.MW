@@ -3,6 +3,7 @@
 const $=id=>document.getElementById(id);
 const button=$('connection-refresh'),stamp=$('connection-stamp');
 const base='https://github.com/michaeljwilliams0123/Ultron.MW';
+let refreshing=false;
 const meta=(status,detail)=>{stamp.dataset.state=status;stamp.textContent=detail};
 function cell(id,value,detail,state){
  const el=$(id);
@@ -73,7 +74,8 @@ function fail(text){
  meta('error',text);
 }
 async function refresh(){
- button.disabled=true;meta('loading','Rechecking Hatchable, PostgreSQL and GitHub…');
+ if(refreshing)return;
+ refreshing=true;button.disabled=true;meta('loading','Rechecking Hatchable, PostgreSQL and GitHub…');
  try{
   const response=await fetch('/api/brain/connectivity',{
    method:'GET',credentials:'same-origin',cache:'no-store',
@@ -85,8 +87,9 @@ async function refresh(){
   if(data.schema!=='ultron.connectivity.v1'||!data.observedAt)throw Error('Invalid status readback');
   show(data);
  }catch(error){fail('Connectivity unverified: '+String(error.message||error)+'. No successful connection inferred.')}
- finally{button.disabled=false}
+ finally{button.disabled=false;refreshing=false}
 }
 button.addEventListener('click',refresh);
+window.addEventListener('ultron:task-queued',refresh);
 refresh();
 })();
