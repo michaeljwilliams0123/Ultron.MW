@@ -267,3 +267,43 @@ test('MISSION-05: independently verified historic receipt drift prevents depende
  assert.equal(result.reason,'verified-receipt-conflict');
  assert.equal(h.performed.includes('merge-alpha'),false);
 });
+
+test('MISSION-06: every write stage tolerates one committed effect with a lost ACK',async()=>{
+ for(const failedStep of missionWrites){
+  const h=harness({uncertainAt:failedStep}),p=missionPlan();
+  let status;
+  for(let turn=0;turn<4;turn++){
+   status=await runDeepTask({plan:p,...h,maxSteps:4});
+   if(status.status!=='partial')break;
+  }
+  assert.equal(status.status,'verified-plan',failedStep);
+  assert.deepEqual(h.performed,missionWrites,'exactly one write per stage: '+failedStep);
+  assert.equal(h.state.size,12);
+  assert.equal(status.productionAccepted,false);
+ }
+});
+
+test('MISSION-07: every missing postcondition blocks successors and resumes without replay',async()=>{
+ for(const missingStep of missionWrites){
+  const h=harness(),p=missionPlan(),baseline=h.bridge.observe;
+  h.bridge.observe=async input=>input.step.id===missingStep?null:baseline(input);
+  let stopped;
+  for(let turn=0;turn<4;turn++){
+   stopped=await runDeepTask({plan:p,...h,maxSteps:4});
+   if(stopped.status!=='partial')break;
+  }
+  assert.equal(stopped.status,'reconcile-required',missingStep);
+  assert.equal(stopped.stepId,missingStep);
+  assert.equal(h.performed.filter(id=>id===missingStep).length,1);
+  assert.equal(h.performed.length,missionWrites.indexOf(missingStep)+1,
+   'later writes must stay fenced: '+missingStep);
+  h.bridge.observe=baseline;
+  let done;
+  for(let turn=0;turn<4;turn++){
+   done=await runDeepTask({plan:p,...h,maxSteps:4});
+   if(done.status!=='partial')break;
+  }
+  assert.equal(done.status,'verified-plan',missingStep);
+  assert.deepEqual(h.performed,missionWrites,'resumption cannot replay: '+missingStep);
+ }
+});
