@@ -21,7 +21,8 @@ function harness({paused=false,allowed=true,lostAck=false,loseEvent=false}={}){
    assert.match(sql,/JOIN brain_runtime_control/);
    assert.match(sql,/FOR SHARE/);
    assert.match(sql,/max_paid_cents=0/);
-   assert.match(sql,/allowed_operations \? 'cloud.note.create'/);
+   assert.match(sql,/jsonb_exists\(allowed_operations,\s*'cloud.note.create'\)/);
+   assert.doesNotMatch(sql,/allowed_operations\s+\?/);
    assert.match(sql,/ON CONFLICT\(action_key\) DO NOTHING/);
    assert.match(sql,/INSERT INTO brain_events/);
    const [key,fingerprint,kind,body,profileVersion,stopVersion]=params;
