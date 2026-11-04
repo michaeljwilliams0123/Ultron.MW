@@ -324,3 +324,54 @@ test('C06-21 real CPU documentation stage uses a bounded short-generation budget
  const model=await readFile(new URL('../scripts/c06-run-model.mjs',import.meta.url),'utf8');
  assert.match(model,/kind==='docs'\?320:/);
 });
+
+test('C06-22 independently validate three genuinely model-authored document sections',async()=>{
+ const sections={
+  'owner-gate':'The owner gate requires authorized true, paused false and integer paidCents zero. Otherwise the request remains held. The independent wrapper, not model text, controls authority.',
+  'provider-outcome':'For providerStatus unknown or timeout, the outcome is reconcile. ProviderStatus observed with receiptVerified true is verified. Missing or unverified receipt results stay held.',
+  'release-evidence':'A protected PR requires independent tests and external provider readback before promotion. Even a passing model canary is not a production release. Owner approval and zero paid inference remain mandatory.'
+ };
+ const calls=[];
+ const result=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12352',maxAttempts:3,
+  infer:async(kind,messages)=>{
+   calls.push(kind);
+   if(kind==='source')return functionSource;
+   if(kind==='cases')return tests;
+   if(kind==='docs')return '# Owner paid held.';
+   if(kind==='doc-section'){
+    const id=messages[1].content.match(/Section: ([a-z-]+)/)?.[1];
+    assert.ok(id&&sections[id],'missing section identity');
+    return sections[id];
+   }
+   throw Error('unexpected inference stage');
+  }
+ });
+ assert.equal(calls.filter(x=>x==='docs').length,1);
+ assert.equal(calls.filter(x=>x==='doc-section').length,3);
+ assert.equal(result.receipt.docGenerationMode,'sectioned-model-generated');
+ assert.match(result.receipt.generatedRawHashes.docs,/^[a-f0-9]{64}$/);
+ for(const fragment of Object.values(sections))
+  assert.ok(result.files[C06_PATHS.docs].includes(fragment));
+ assert.equal(verifyC06Files(result.files,{sourceSha:sha,runId:'12352'}).valid,true);
+});
+
+test('C06-23 invalid model-authored sections do not receive assistant-authored replacements',async()=>{
+ let calls=0;
+ await assert.rejects(()=>buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12353',maxAttempts:3,
+  infer:async kind=>{
+   if(kind==='source')return functionSource;
+   if(kind==='cases')return tests;
+   if(kind==='docs')return '# Owner paid held.';
+   if(kind==='doc-section'){calls++;return 'Everything is approved';}
+   throw Error('invalid inference kind');
+  }
+ }),/c06-model-docs-rejected/);
+ assert.equal(calls,2);
+});
+
+test('C06-24 documentary section inference keeps a bounded smaller CPU budget',async()=>{
+ const generator=await readFile(new URL('../scripts/c06-run-model.mjs',import.meta.url),'utf8');
+ assert.match(generator,/kind==='doc-section'\?150:/);
+});
