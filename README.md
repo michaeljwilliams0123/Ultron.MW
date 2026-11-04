@@ -4,7 +4,7 @@ Ultron is an independent, single-owner execution platform with one shared interf
 
 **Acceptance:** [current issue dispositions and evidence boundaries](docs/ACCEPTANCE-STATUS.md). Issue #65 completed its scoped supervised local-fixture milestone; broader browser or operator authority requires separate evidence.
 
-**Primary owner UI:** https://ultron-mw-cloud.hatchable.site/ (Hatchable production; v36 mobile-verified on 2026-11-03). The [Brain / Learning / Systems workspace](https://ultron-mw-cloud.hatchable.site/workspace.html) and cloud controls now share one origin. The previous [GitHub Pages console](https://michaeljwilliams0123.github.io/Ultron.MW/) remains available for rollback while the separately tracked authenticated full-lifecycle/PR reconciliation and retirement tests in [#170](https://github.com/michaeljwilliams0123/Ultron.MW/issues/170) are completed. See [v35 deployment evidence](docs/verification/HATCHABLE-SINGLE-UI-V35-2026-11-03.md).
+**Primary owner UI:** https://ultron-mw-cloud.hatchable.site/ (Hatchable production, with live owner-only Mission Control). The [Brain / Learning / Systems workspace](https://ultron-mw-cloud.hatchable.site/workspace.html) and cloud controls now share one origin. The previous [GitHub Pages console](https://michaeljwilliams0123.github.io/Ultron.MW/) remains available for rollback while the separately tracked authenticated full-lifecycle/PR reconciliation and retirement tests in [#170](https://github.com/michaeljwilliams0123/Ultron.MW/issues/170) are completed. See [v35 deployment evidence](docs/verification/HATCHABLE-SINGLE-UI-V35-2026-11-03.md).
 
 **Named Codex authors:** The console displays **Mike's Codex** and **Destiny's
 Codex**, stable author fingerprints and separate route status. Use
@@ -13,6 +13,8 @@ an owner-confirmed Issue and task PR. Mike's route remains explicitly unbound
 until enrolled from his account. Registration is not account attestation or
 live execution proof; inspect each task's receipt. See [callable Codex authors](docs/CODEX-AUTHORS.md).
 For independent GitHub and Work execution evidence, see [Codex lane evidence](docs/CODEX-LANE-EVIDENCE.md). Run `node scripts/codex-lane-status.mjs <PR number>` for a current task PR; closed historical canaries do not prove a separate Work account.
+
+**Live connectivity:** The Hatchable root now includes a protected, on-demand Mission Control view of PostgreSQL task counts, observed GitHub `main` SHA, current-main CI result, and a bounded sample of open PRs. The refresh is manual to limit GitHub API traffic. When an owner session is absent, the page shows only clearly qualified public runtime liveness and offers a Hatchable sign-in link; private task/PR detail cannot be retrieved anonymously. See [PR #260](https://github.com/michaeljwilliams0123/Ultron.MW/pull/260). This UI does not grant new operator, merge or release authority.
 
 ## Current capabilities
 

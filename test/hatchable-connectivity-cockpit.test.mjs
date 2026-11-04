@@ -93,3 +93,12 @@ test('CONNECT-04: owner-only route and safe static UI are required',()=>{
  assert.doesNotMatch(script,/innerHTML\s*=/);
  assert.doesNotMatch(script,/localStorage|sessionStorage|Authorization|Bearer\s/);
 });
+
+test('CONNECT-05: unsigned owners see sign-in guidance, not a fake connection success',()=>{
+ const script=readFileSync('cloud/hatchable/public/connectivity.js','utf8');
+ const css=readFileSync('cloud/hatchable/public/connectivity.css','utf8');
+ assert.match(script,/owner-authentication-required/);
+ assert.match(script,/meta\('session'/);
+ assert.match(script,/Public liveness only/);
+ assert.match(css,/data-state="session"/);
+});
