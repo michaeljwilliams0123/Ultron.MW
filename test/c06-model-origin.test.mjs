@@ -237,3 +237,23 @@ test('C06-14 invalid model-generated chunk never becomes a deterministic referen
  }),/c06-model-cases-rejected/);
  assert.equal(attempted,2);
 });
+
+test('C06-15 whitespace-only model blank lines are normalized before bytes and receipt are frozen',async()=>{
+ const noisyFunction=functionSource.replace(
+  " return 'held';", "   \n \t \n return 'held';");
+ const noisyDocs=docs.replace('The owner','  \nThe owner');
+ assert.match(noisyFunction,/^[ \t]+$/m);
+ assert.match(noisyDocs,/^[ \t]+$/m);
+ const result=await buildC06Artifacts({
+  admission:admitC06(allowed),runId:'12347',
+  infer:async kind=>({source:noisyFunction,cases:tests,docs:noisyDocs})[kind]
+ });
+ for(const [path,value] of Object.entries(result.files))
+  assert.doesNotMatch(value,/^[ \t]+$/m,path);
+ assert.equal(result.receipt.origin,'model-inference-not-assistant-authored');
+ assert.match(result.receipt.generatedRawHashes.source,/^[a-f0-9]{64}$/);
+ assert.equal(verifyC06Files(result.files,{sourceSha:sha,runId:'12347'}).valid,true);
+ const {classifyC06Effect}=await import('data:text/javascript,'+
+  encodeURIComponent(result.files[C06_PATHS.source]));
+ for(const row of C06_CASES)assert.equal(classifyC06Effect(row.input),row.expected,row.id);
+});
