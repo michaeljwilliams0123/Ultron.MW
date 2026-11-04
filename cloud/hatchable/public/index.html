@@ -234,7 +234,7 @@ inspection.addEventListener('submit',async event=>{
  const objective=select.value;
  if(!['repo.inspect','repo.prs','repo.ci','site.render','council.review'].includes(objective))return;
  if(!pending||pending.objective!==objective)
-  pending={action:'queue',objective,key:'owner-ui:inspect:'+crypto.randomUUID()};
+  pending={action:'queue',objective,key:'owner-ui-inspect-'+crypto.randomUUID()};
  submit.disabled=true;
  inspectionStatus.textContent='Submitting '+objective+' with a persistent idempotency key…';
  try{
