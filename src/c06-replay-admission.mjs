@@ -11,6 +11,10 @@ export const C06_REPLAY_PINNED_PATHS=Object.freeze([
  'scripts/c06-verify-output.mjs',
  'src/c06-model-origin.mjs',
  'src/hf-free-compute.mjs',
+ 'src/hf-repair-output.mjs',
+ 'package.json',
+ 'package-lock.json',
+ 'scripts/verify-audited-lockfile.mjs',
  'test/c06-model-origin.test.mjs'
 ]);
 export function admitC06Replay(input={}){
