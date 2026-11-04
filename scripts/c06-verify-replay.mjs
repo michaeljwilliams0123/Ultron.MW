@@ -6,7 +6,7 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {C06_PATHS,verifyC06Files} from '../src/c06-model-origin.mjs';
-import {admitC06Replay,C06_REPLAY_PINNED_PATHS} from '../src/c06-replay-admission.mjs';
+import {admitC06Replay,C06_REPLAY_PINNED_PATHS,C06_REPLAY_OUTPUT_PATHS,hasNovelC06Outputs} from '../src/c06-replay-admission.mjs';
 const SHA=/^[a-f0-9]{40}$/;
 const RUN=/^[1-9][0-9]{0,19}$/;
 const sourceSha=process.env.ULTRON_C06_REPLAY_SOURCE_SHA;
@@ -31,8 +31,19 @@ const changed=git(['diff','--name-only',sourceSha,main,'--',
  ...C06_REPLAY_PINNED_PATHS]).stdout.trim();
 const branch='ultron/c06-model-'+runId;
 const existing=git(['ls-remote','--heads','origin','refs/heads/'+branch]).stdout.trim();
-const alreadyInMain=git(['ls-tree','-r','--name-only',main,'--',
- ...Object.values(C06_PATHS)]).stdout.trim();
+const files={};
+for(const path of Object.values(C06_PATHS))
+ files[path]=await readFile(join('c06-output',path),'utf8');
+const receipt=verifyC06Files(files,{sourceSha,runId});
+// Existing model files are expected after earlier protected releases.
+// Compare byte-for-byte against the independently verified artifact instead
+// of blocking every future corrected model output solely due to path existence.
+const existingFiles={};
+for(const path of C06_REPLAY_OUTPUT_PATHS){
+ try{existingFiles[path]=await readFile(path,'utf8');}
+ catch(error){if(error?.code!=='ENOENT')throw Error('c06-replay-existing-file-unavailable');}
+}
+const isNovel=hasNovelC06Outputs(existingFiles,files);
 const admission=admitC06Replay({
  repository:process.env.GITHUB_REPOSITORY,actor:process.env.GITHUB_ACTOR,
  publicRepository:process.env.ULTRON_REPOSITORY_PUBLIC==='true',
@@ -40,12 +51,8 @@ const admission=admitC06Replay({
  sourceSha,mainSha:main,runId,
  isOriginalAncestor:ancestry.status===0,
  changedModelToolchainPaths:changed?changed.split('\n'):[],
- alreadyPublished:!!existing||!!alreadyInMain
+ alreadyPublished:!!existing||!isNovel
 });
-const files={};
-for(const path of Object.values(C06_PATHS))
- files[path]=await readFile(join('c06-output',path),'utf8');
-const receipt=verifyC06Files(files,{sourceSha,runId});
 console.log(JSON.stringify({schema:'ultron.c06.model-replay-verified.v1',
  originSha:admission.originSha,mainSha:admission.mainSha,runId,
  branch:admission.branch,receiptDigest:receipt.receiptDigest,
