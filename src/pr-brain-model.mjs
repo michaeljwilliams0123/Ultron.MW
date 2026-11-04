@@ -1,9 +1,9 @@
 import {applyPrPatch} from './pr-brain-patch.mjs';
 import {assertModelSourceSafe} from './pr-brain-safety.mjs';
+import {selectFreeModelProfile} from './hf-free-compute.mjs';
 
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
-const MODEL='onnx-community/Qwen2.5-0.5B-Instruct';
-const REVISION='516c8d04add8a80c5228f32102b57953b8d421a9';
+const {id:MODEL,revision:REVISION}=selectFreeModelProfile();
 const SOURCE=/^(?:src|docs|test|scripts)\/[A-Za-z0-9_./-]+\.(?:mjs|js|md|json|html|css)$/;
 const SHA=/^[a-f0-9]{40}$/;
 const MAX_SOURCE=6500;
