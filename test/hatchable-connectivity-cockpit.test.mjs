@@ -37,7 +37,7 @@ test('CONNECT-01: owner connectivity reports independent GitHub/CI plus persiste
  const value=await collectConnectivity({db:mockDB,fetchGithub:healthyFetch,
   now:()=>new Date('2026-11-03T21:00:00Z').toISOString()});
  assert.equal(value.schema,'ultron.connectivity.v1');
- assert.equal(value.observedAt,'2026-11-03T21:00:00Z');
+ assert.equal(value.observedAt,'2026-11-03T21:00:00.000Z');
  assert.equal(value.github.state,'observed');
  assert.equal(value.github.mainSha,SHA);
  assert.equal(value.ci.conclusion,'success');
