@@ -25,3 +25,14 @@ If a model-generated PR is created, it still requires ordinary exact-head CI, in
 Issue #245 can only close after the verified source is deployed to **the existing** Hatchable project, the deployed bytes match the merged GitHub source, a gated live **non-note** runtime action executes, and both an independent external postcondition and durable database receipt confirm the effect. Negative tests must establish owner stop, stale versions, invalid input, conflict and replay behavior.
 
 A green synthetic model generation is necessary but **not sufficient** evidence of production capability. Missing PR authorization, failed model outcomes, CI errors, unresolved reviewer states, or unreconciled deployment are explicit hold states. Parents #188/#193/#204/#195 remain separately scoped.
+
+
+## First real model-generation attempts and corrective model-case strategy
+
+- [Run #41769819025](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/41769819025) (source `048d9552209fef741e0008536ef357108fde8f75`) failed independently checked owner/spend/provider function synthesis; `publish` correctly skipped. Held artifact `13294720700`.
+- [Run #41770666005](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/41770666005) (source `f7426a2d32458199f5a5cc50aec0fd3226874a58`) used the previous model's bounded raw code plus failed independent vectors for corrective feedback; still failed the source gate and skipped publication. Held artifact `13294931480`.
+- [Run #41771806146](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/41771806146) (source `a1b20027a4bb458edde7b00407f829eb5e9cca5b`) **passed the genuine model-authored provider source gate** with a separately authored owner/pause/zero-spend wrapper, but the generated bulk JSON regression case suite failed. The `publish` step remained skipped. Held artifact `13295132191`.
+
+**Follow-up:** Retain the valid model-generated provider source and try the full 6–10-case suite once. If the bulk JSON is rejected, request **seven distinct single-case JSON objects from the model**, each targeting a separate independently validated scenario: verified observed receipt; unknown reconciliation; timeout reconciliation; paused held; unauthorized held; paid-spend held; observed but unverified held. No scenario is filled, rewritten or fabricated by deterministic fallback. Each response is a real pinned Hugging Face CPU inference, tested against the independent provider function and the fixed owner guard, with a raw-output hash in the source receipt. Any invalid or duplicated case holds generation; the write-capable publisher remains blocked.
+
+A successful model-generated PR is still not a completed #245 runtime deployment or independent live provider postcondition. Preserve required CI, protected merge and the existing single Hatchable owner console.

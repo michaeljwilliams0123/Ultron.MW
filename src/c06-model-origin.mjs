@@ -130,9 +130,62 @@ function normalizeDocs(reply){
   throw Error('c06-model-docs-rejected');
  return reply.trim()+'\n';
 }
-export function c06Prompt(kind,feedback=''){
+/** Model must author each complete JSON object; these independent scenario
+ * constraints are validation only, never used to synthesize fallback output. */
+const C06_CASE_SCENARIOS=Object.freeze([
+ Object.freeze({id:'observed-verified',input:{authorized:true,paused:false,paidCents:0,providerStatus:'observed',receiptVerified:true},expected:'verified'}),
+ Object.freeze({id:'unknown-reconcile',input:{authorized:true,paused:false,paidCents:0,providerStatus:'unknown',receiptVerified:false},expected:'reconcile'}),
+ Object.freeze({id:'timeout-reconcile',input:{authorized:true,paused:false,paidCents:0,providerStatus:'timeout',receiptVerified:false},expected:'reconcile'}),
+ Object.freeze({id:'paused-held',input:{authorized:true,paused:true,paidCents:0,providerStatus:'observed',receiptVerified:true},expected:'held'}),
+ Object.freeze({id:'unauthorized-held',input:{authorized:false,paused:false,paidCents:0,providerStatus:'observed',receiptVerified:true},expected:'held'}),
+ Object.freeze({id:'paid-held',input:{authorized:true,paused:false,paidCents:1,providerStatus:'observed',receiptVerified:true},expected:'held'}),
+ Object.freeze({id:'unverified-held',input:{authorized:true,paused:false,paidCents:0,providerStatus:'observed',receiptVerified:false},expected:'held'})
+]);
+function validateChunk(reply,scenario,source){
+ if(typeof reply!=='string'||reply.length>900)throw Error('invalid-small-model-output');
+ let value=reply.trim();
+ if(value.startsWith('\`\`\`json\n')&&value.endsWith('\n\`\`\`'))value=value.slice(8,-4).trim();
+ let proposed;
+ try{proposed=JSON.parse(value);}catch{throw Error('invalid-single-case-json');}
+ if(!proposed||typeof proposed!=='object'||Array.isArray(proposed)||
+    Object.keys(proposed).sort().join(',')!=='expected,input'||
+    !proposed.input||typeof proposed.input!=='object'||Array.isArray(proposed.input)||
+    Object.keys(proposed.input).sort().join(',')!==
+     'authorized,paidCents,paused,providerStatus,receiptVerified'||
+    proposed.expected!==scenario.expected)
+  throw Error('invalid-single-case-fields');
+ for(const [key,expected] of Object.entries(scenario.input))
+  if(proposed.input[key]!==expected)throw Error('scenario-constraint-failed-'+key);
+ const script=candidateScript(source);
+ if(guardedDecision(script,proposed.input)!==proposed.expected)
+  throw Error('generated-case-behavior-mismatch');
+ return proposed;
+}
+async function generateChunkedCases({source,infer,maxAttempts}){
+ const all=[],rawReplies=[];
+ for(const scenario of C06_CASE_SCENARIOS){
+  let failure='',valid=false;
+  for(let attempt=1;attempt<=maxAttempts;attempt++){
+   const reply=await infer('case',c06Prompt('case',failure,scenario),attempt);
+   try{
+    const testCase=validateChunk(reply,scenario,source);
+    all.push(testCase);rawReplies.push(reply);valid=true;break;
+   }catch(e){
+    failure=String(e.message||'invalid-generated-case').slice(0,200);
+   }
+  }
+  if(!valid)throw Error('c06-model-cases-rejected: '+scenario.id+' '+failure);
+ }
+ return Object.freeze({cases:normalizeCases(JSON.stringify(all),source),
+   rawResponses:rawReplies});
+}
+
+export function c06Prompt(kind,feedback='',scenario=null){
  const constraints='Public synthetic owner effect canary. No external calls, no credentials, no paid service. ';
- const request=kind==='source'?
+ const request=kind==='case'&&scenario?
+  'Scenario: '+scenario.id+'. Return ONLY a valid JSON object with EXACTLY two top-level keys: input and expected. Input must contain all five keys authorized,paused,paidCents,providerStatus,receiptVerified, and exactly these values: '+
+  JSON.stringify(scenario.input)+'. The expected outcome is '+JSON.stringify(scenario.expected)+'. Do not omit fields; do not use Markdown, explanation or other text.':
+  kind==='source'?
   'Return ONLY a complete JavaScript function named fix(input) that classifies the provider state. The independent owner and paid-spend guard is outside this function and cannot be edited. Your input has ONLY providerStatus and receiptVerified. If providerStatus is unknown or timeout, return reconcile. If providerStatus is observed AND receiptVerified is exactly true, return verified. For every other provider state or missing receipt, return held. Use strict === comparisons. No code fences, imports, API calls, explanation or extra text.':
   kind==='cases'?
   'Return ONLY a JSON array of 6-10 unique objects with keys input and expected. Inputs must use authorized,paused,paidCents,providerStatus,receiptVerified. Expected must be held, reconcile or verified. Include valid observed verified, unknown reconcile, timeout reconcile, paused held, unauthorized held and paid >0 held. No markdown.':
@@ -149,6 +202,22 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
   maxAttempts<1||maxAttempts>3)throw Error('c06-model-output-rejected');
  const raw={},processed={};
  for(const kind of ['source','cases','docs']){
+  if(kind==='cases'&&maxAttempts>1){
+   const first=await infer('cases',c06Prompt('cases'),1);
+   try{
+    if(typeof first!=='string'||first.length>4500)throw Error('invalid-output');
+    processed.cases=normalizeCases(first,processed.source.code);
+    raw.cases=first;
+    processed.testVectorMode='bulk-model-generated';
+   }catch{
+    const chunks=await generateChunkedCases({source:processed.source.code,
+     infer,maxAttempts});
+    processed.cases=chunks.cases;
+    raw.cases=JSON.stringify(chunks.rawResponses);
+    processed.testVectorMode='individually-model-generated';
+   }
+   continue;
+  }
   let failure='';
   for(let i=1;i<=maxAttempts;i++){
    const reply=await infer(kind,c06Prompt(kind,failure),i);
@@ -167,6 +236,7 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
     }
     raw[kind]=reply;
     processed[kind]=normalized;
+    if(kind==='cases')processed.testVectorMode='bulk-model-generated';
     failure='';
     break;
    }catch(e){failure=String(e.message).slice(0,1900);}
@@ -192,6 +262,7 @@ export async function buildC06Artifacts({admission,runId,infer,maxAttempts=3}={}
   schema:'ultron.c06.model-origin.v1',issueNumber:245,
   sourceSha:admission.sourceSha,runId:String(runId),origin:'model-inference-not-assistant-authored',
   model:admission.model,modelRevision:admission.revision,
+  testVectorMode:processed.testVectorMode,
   license:admission.license,paidCents:0,productionAccepted:false,
   generation:'model-authored-provider-function+test-vectors+docs;fixed-independent-owner-stop-spend-fence',
   generatedRawHashes:Object.fromEntries(Object.entries(raw).map(([kind,value])=>[kind,SHA(value)])),
@@ -211,6 +282,7 @@ export function verifyC06Files(files,{sourceSha,runId}={}){
   receipt.runId!==String(runId)||receipt.origin!=='model-inference-not-assistant-authored'||
   receipt.model!==MODEL||receipt.modelRevision!==REVISION||
   receipt.license!==LICENSE||receipt.paidCents!==0||
+  !['bulk-model-generated','individually-model-generated'].includes(receipt.testVectorMode)||
   receipt.productionAccepted!==false||
   receipt.independentCaseCount!==C06_CASES.length||
   receipt.independentCorrect!==C06_CASES.length)fail();
