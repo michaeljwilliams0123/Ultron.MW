@@ -27,7 +27,8 @@ try{
   {device:'cpu',dtype:'q4',revision:admission.revision});
  const infer=async(kind,messages,attempt)=>{
   currentStage=kind+'-attempt-'+attempt;
-  const output=await generator(messages,{max_new_tokens:kind==='docs'?480:550,
+  const output=await generator(messages,{max_new_tokens:
+    kind==='case'?180:kind==='docs'?480:550,
    do_sample:false,return_full_text:false});
   const raw=output?.[0]?.generated_text;
   const response=Array.isArray(raw)?raw.at(-1)?.content:raw;
