@@ -66,9 +66,9 @@ function show(data){
  else emptyRows('connection-recent','No verified task history available');
  meta('ok','Observed '+clock(data.observedAt)+' · live on-demand snapshot; no background polling');
 }
-async function fail(text){
+async function fail(text,needsSession=false){
  for(const id of ['connection-runtime','connection-github','connection-ci','connection-queue'])
-  cell(id,'Unverified','No owner readback obtained','error');
+  cell(id,needsSession?'Sign in':'Unverified',needsSession?'Sign in to view protected connection status':'No owner readback obtained',needsSession?'warning':'error');
  emptyRows('connection-prs','No verified owner PR data');
  emptyRows('connection-recent','No verified owner task data');
  // This public health check contains no owner objectives, tokens or permissions.
@@ -84,7 +84,8 @@ async function fail(text){
      snapshot.status==='active'?'warning':'error');
   }
  }catch{}
- meta('error',text);
+ if(needsSession)meta('session',text);
+ else meta('error',text);
 }
 async function refresh(){
  if(refreshing)return;
@@ -95,11 +96,15 @@ async function refresh(){
    headers:{Accept:'application/json'},signal:AbortSignal.timeout(15000)
   });
   if(!response.ok)throw Error(response.status===401||response.status===403?
-   'Owner session required. Sign in through Hatchable and reload.':'Connectivity HTTP '+response.status);
+   'owner-authentication-required':'Connectivity HTTP '+response.status);
   const data=await response.json();
   if(data.schema!=='ultron.connectivity.v1'||!data.observedAt)throw Error('Invalid status readback');
   show(data);
- }catch(error){await fail('Connectivity unverified: '+String(error.message||error)+'. Protected connections are not assumed healthy.')}
+ }catch(error){
+  const needsSession=error?.message==='owner-authentication-required';
+  await fail(needsSession?'Owner sign-in required to view protected connections. Public runtime health is shown when available.':
+   'Connectivity unverified: '+String(error.message||error)+'. Protected connections are not assumed healthy.',needsSession);
+ }
  finally{button.disabled=false;refreshing=false}
 }
 button.addEventListener('click',refresh);
