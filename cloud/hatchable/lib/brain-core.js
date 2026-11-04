@@ -3,6 +3,7 @@ import {
 } from 'lib/council-evidence.js';
 import { verifyPersistedAcceptanceEvidence } from 'lib/acceptance-evidence.js';
 import { verifyPersistedHeldOutEvidence } from 'lib/heldout-evidence.js';
+import { buildCouncilRoomResult } from 'lib/council-room-core.js';
 
 const REPO = 'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const SITE = 'https://michaeljwilliams0123.github.io/Ultron.MW/';
@@ -15,7 +16,8 @@ export const CAPABILITIES = [
  {id:'repo.prs',kind:'github-native',effect:'read',description:'Observe up to twelve open pull requests'},
  {id:'repo.ci',kind:'github-native',effect:'read',description:'Observe up to twelve recent Actions runs'},
  {id:'site.render',kind:'browser-native',effect:'read',description:'Render public GitHub Pages with managed Chromium'},
- {id:'council.review',kind:'brain-native',effect:'advisory',description:'Review recent verified receipts and propose next inspection'}
+ {id:'council.review',kind:'brain-native',effect:'advisory',description:'Review recent verified receipts and propose next inspection'},
+ {id:'council.room',kind:'brain-native',effect:'advisory',description:'Answer an owner message through the persistent seven-member council room'}
 ];
 export const ALLOWED = new Set(CAPABILITIES.map(x=>x.id));
 async function github(path){
@@ -90,6 +92,13 @@ export async function executeObjective(objective, {db,browser,task={}}){
     has_app_shell:rendered.includes('<body'),has_ultron:rendered.includes('ultron'),
     runtime_source_sha:marker};
   });
+ }
+ if(objective==='council.room'){
+  const row=(await db.query(`SELECT m.id,m.body,m.mentions,m.context,m.created_at
+    FROM council_room_jobs j JOIN council_room_messages m ON m.id=j.message_id
+    WHERE j.task_id=$1`,[task.id])).rows[0];
+  if(!row)throw Error('council-room-message-missing');
+  return buildCouncilRoomResult({message:row});
  }
  if(objective==='council.review'){
   const objectiveId=typeof task.taskKey==='string'&&task.taskKey?

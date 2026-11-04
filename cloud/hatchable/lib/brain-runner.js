@@ -47,6 +47,7 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
        WHEN 'repo.ci' THEN jsonb_exists(autonomy.allowed_operations,'evidence.read')
        WHEN 'site.render' THEN jsonb_exists(autonomy.allowed_operations,'research.public')
        WHEN 'council.review' THEN jsonb_exists(autonomy.allowed_operations,'plan.create')
+       WHEN 'council.room' THEN jsonb_exists(autonomy.allowed_operations,'plan.create')
        ELSE FALSE
      END
      AND (lease_until IS NULL OR lease_until <= now())

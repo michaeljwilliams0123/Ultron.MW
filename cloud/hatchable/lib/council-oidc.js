@@ -1,4 +1,4 @@
-import { createHash, createPublicKey, createVerify } from 'node:crypto';
+import { createHash, createVerify } from 'node:crypto';
 
 const ISSUER = 'https://token.actions.githubusercontent.com';
 const JWKS_URL = ISSUER + '/.well-known/jwks';
@@ -9,6 +9,31 @@ const SHA = /^[a-f0-9]{40}$/;
 
 function deny() {
   throw Error('council-oidc-untrusted');
+}
+
+function derLength(n) {
+  if (n < 128) return Buffer.from([n]);
+  const bytes = [];
+  while (n > 0) { bytes.unshift(n & 255); n >>>= 8; }
+  return Buffer.from([128 | bytes.length, ...bytes]);
+}
+function der(tag, payload) {
+  return Buffer.concat([Buffer.from([tag]), derLength(payload.length), payload]);
+}
+function derInteger(value) {
+  let bytes = Buffer.from(value, 'base64url');
+  while (bytes.length > 1 && bytes[0] === 0 && (bytes[1] & 128) === 0) bytes = bytes.subarray(1);
+  if ((bytes[0] & 128) !== 0) bytes = Buffer.concat([Buffer.from([0]), bytes]);
+  return der(2, bytes);
+}
+function rsaJwkToPem(jwk) {
+  if (!jwk || typeof jwk.n !== 'string' || typeof jwk.e !== 'string') deny();
+  const rsa = der(48, Buffer.concat([derInteger(jwk.n), derInteger(jwk.e)]));
+  const algorithm = Buffer.from('300d06092a864886f70d0101010500', 'hex');
+  const spki = der(48, Buffer.concat([algorithm, der(3, Buffer.concat([Buffer.from([0]), rsa]))]));
+  const b64 = spki.toString('base64').match(/.{1,64}/g)?.join('\n');
+  if (!b64) deny();
+  return '-----BEGIN PUBLIC KEY-----\n' + b64 + '\n-----END PUBLIC KEY-----\n';
 }
 
 function decode(value) {
@@ -66,7 +91,7 @@ export async function verifyCouncilOidc({ token, rawBody, fetchJwks = fetch, now
     const verifier = createVerify('RSA-SHA256');
     verifier.update(parts[0] + '.' + parts[1]);
     verifier.end();
-    valid = verifier.verify(createPublicKey({ key: jwk, format: 'jwk' }), Buffer.from(parts[2], 'base64url'));
+    valid = verifier.verify(rsaJwkToPem(jwk), Buffer.from(parts[2], 'base64url'));
   } catch {
     deny();
   }
