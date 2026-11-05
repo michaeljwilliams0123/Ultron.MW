@@ -48,6 +48,9 @@ function parseRequest(body){
  return {body,objective,requestDigest,idempotencyKey,messageKey:idempotencyKey};
 }
 function externalArtifact(body,phase){
+ // This handler only publishes documentation proposals; CI is not execution proof.
+ // A separate independently authenticated implementation receipt is required.
+ if(phase==='verified')throw Error('proposal-only-not-execution');
  if(phase==='dispatched'){
   const artifact=body.artifact;
   const match=typeof artifact?.url==='string'?artifact.url.match(PR_URL):null;
