@@ -50,7 +50,8 @@ jobs:
           ROLE_UPPER: ${{ inputs.role }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: |
-          export COUNCIL_ROLE="$(node -e "const r=process.env.ROLE_UPPER;console.log(r[0]+r.slice(1).toLowerCase())")"
+          role_lower="${ROLE_UPPER,,}"
+          export COUNCIL_ROLE="${role_lower^}"
           node scripts/council-identity-proof.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
