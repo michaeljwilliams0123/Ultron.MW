@@ -27,6 +27,38 @@ export function councilMemberIdentity(role){
   });
 }
 
+/** Declared capability surface per member. `internal` runs inside Ultron
+ * (GitHub App / Hatchable / receipts); `external` leaves GitHub and is
+ * plan-only until the owner provisions the adapter, so it never counts as executed.
+ */
+export const COUNCIL_ABILITIES=Object.freeze({
+  Builder:Object.freeze({internal:['branch.create','pr.create','file.write'],external:['mahoraga.task.prepare']}),
+  Skeptic:Object.freeze({internal:['review.request-changes','review.comment'],external:['web.open']}),
+  Steward:Object.freeze({internal:['issue.label','review.comment'],external:[]}),
+  Predictor:Object.freeze({internal:['issue.comment','pr.comment'],external:['mahoraga.repo.inspect']}),
+  Generator:Object.freeze({internal:['issue.create','branch.create'],external:['web.open']}),
+  Sentinel:Object.freeze({internal:['actions.dispatch','issue.comment'],external:['mahoraga.repo.inspect']}),
+  Companion:Object.freeze({internal:['issue.comment'],external:[]})
+});
+const EXTERNAL_OPS=new Set(Object.values(COUNCIL_ABILITIES).flatMap(a=>a.external));
+
+/** A member is independent only when its own App credentials are provisioned. */
+export function memberIdentityState(role,env=process.env){
+  const identity=councilMemberIdentity(role);
+  const own=Boolean(memberCredentials(role,env));
+  return Object.freeze({role,mode:own?'own-app':'shared-workflow',independent:own,
+    postedAs:own?identity.botLogin:'github-actions[bot]'});
+}
+
+/** Classify what a change touches so rationales fit the case. */
+export function changeProfile(text){
+  const t=String(text).toLowerCase();
+  const workflow=/\.github\/workflows|workflow_call|github actions/.test(t);
+  const code=/\b(src|scripts|cloud|lib)\/|\.(mjs|js|ts|py)\b/.test(t);
+  const docs=/\bdocs?\/|\.md\b|documentation|docs only|docs-only/.test(t);
+  return Object.freeze({workflow,code,docs,docsOnly:docs&&!workflow&&!code});
+}
+
 const has=(text,words)=>words.some(w=>text.includes(w));
 const act=(op,why,extra={})=>({op,why,...extra});
 
@@ -49,8 +81,8 @@ const BRAINS={
   Skeptic:{
     mandate:'Break it: find the assumption that makes this wrong.',
     assess(c){
-      const tests=has(c.text,['test','verify','regression','acceptance']);
-      const reasons=[tests?'Verification is mentioned, so claims can be falsified.':'No test or verification criterion; success cannot be disproven.'];
+      const tests=c.profile.docsOnly||has(c.text,['test','verify','regression','acceptance']);
+      const reasons=[tests?(c.profile.docsOnly?'Docs-only change: falsifiable by checking each claim against its linked source.':'Verification is mentioned, so claims can be falsified.'):'No test or verification criterion; success cannot be disproven.'];
       if(c.flags.multiFile)reasons.push('Multi-file scope multiplies unverified interactions.');
       if(c.flags.security)reasons.push('Security language raises the bar for counter-evidence.');
       const bad=!tests||c.flags.security;
@@ -68,7 +100,7 @@ const BRAINS={
       if(c.flags.security)reasons.push('Security signal: owner sign-off is required.');
       const hold=c.flags.security;
       return{verdict:hold?'hold':'proceed',headline:hold?'Owner sign-off required.':'Within authority.',reasons,
-        actions:[act('issue.label',protectedArea?'Label as governance-sensitive.':'Label as council-reviewed.',{labels:[protectedArea?'governance':'council-reviewed']})]};
+        actions:[act('issue.label',protectedArea?'Label as governance-sensitive.':'Label as council-screened (deterministic screen, not independent review).',{labels:[protectedArea?'governance':'council-screened']})]};
     }
   },
   Predictor:{
@@ -79,13 +111,13 @@ const BRAINS={
       if(c.governor.unknowns.length)reasons.push('Open unknowns: '+c.governor.unknowns.join(', ')+'.');
       return{verdict:size&&c.flags.security?'hold':'proceed',
         headline:size?'Moderate risk; watch CI.':'Low risk.',reasons,
-        actions:[act('issue.comment','Publish forecast and the signals that would flip it.')]};
+        actions:[act('issue.comment','Publish forecast and the signals that would flip it.')].concat(size&&!c.profile.docsOnly?[act('mahoraga.repo.inspect','Plan-only: compare against Mahoraga history for similar regressions.')]:[])};
     }
   },
   Generator:{
     mandate:'Offer a better or cheaper alternative.',
     assess(c){
-      const reasons=['Alternative to evaluate: smallest change that satisfies the request, behind a flag.'];
+      const reasons=[c.profile.docsOnly?'Docs-only: no behavioural alternative; check for a duplicate or stale doc instead.':'Alternative to evaluate: smallest change that satisfies the request, behind a flag.'];
       if(c.flags.multiFile)reasons.push('Alternative: split into one PR per file group.');
       return{verdict:c.governor.conclusion,headline:'Alternative proposed.',reasons,
         actions:c.flags.multiFile?[act('issue.create','Open a follow-up issue for the split plan.',{title:'Split plan: '+c.title.slice(0,100)})]:[act('issue.comment','Post the alternative.')]};
@@ -94,10 +126,11 @@ const BRAINS={
   Sentinel:{
     mandate:'Watch reliability, drift and live operations.',
     assess(c){
-      const reasons=[c.flags.infra?'Touches CI/deploy; run Verify before anything merges.':'No infrastructure impact detected.'];
-      const hold=c.flags.security||(c.flags.infra&&c.isPr&&!c.sourceSha);
+      const infra=(c.flags.infra||c.profile.workflow)&&!c.profile.docsOnly;
+      const reasons=[infra?'Touches CI/deploy; run Verify before anything merges.':c.profile.docsOnly?'Docs-only: no runtime or CI impact; exact-head checks still gate merge.':'No infrastructure impact detected.'];
+      const hold=c.flags.security||(infra&&c.isPr&&!c.sourceSha);
       return{verdict:hold?'hold':'proceed',headline:hold?'Alert: verify first.':'Operationally quiet.',reasons,
-        actions:c.flags.infra||c.isPr?[act('actions.dispatch','Run Verify on main.',{workflow:'verify.yml',ref:'main'})]:[]};
+        actions:infra||(c.isPr&&!c.profile.docsOnly)?[act('actions.dispatch','Run Verify on main.',{workflow:'verify.yml',ref:'main'}),act('mahoraga.repo.inspect','Plan-only: read the Mahoraga mirror for drift against this change.')]:[]};
     }
   },
   Companion:{
@@ -115,11 +148,11 @@ export function assessAsMember(role,{title='',body='',isPr=false,itemNumber=0,so
   if(!Object.hasOwn(BRAINS,role))throw Error('council-role-invalid');
   const brain=BRAINS[role];
   const ctx={title,body,isPr,itemNumber,sourceSha,flags,ownerMode,
-    text:(title+'\n'+body).toLowerCase(),
+    text:(title+'\n'+body).toLowerCase(),profile:changeProfile(title+'\n'+body),
     governor:{conclusion:governorPosition?.conclusion==='proceed'?'proceed':'hold',
       confidence:governorPosition?.confidence??0,unknowns:governorPosition?.unknowns??[]}};
   const r=brain.assess(ctx);
-  return Object.freeze({identity:councilMemberIdentity(role),mandate:brain.mandate,
+  return Object.freeze({identity:councilMemberIdentity(role),identityState:memberIdentityState(role),abilities:COUNCIL_ABILITIES[role],mandate:brain.mandate,
     verdict:r.verdict,confidence:Number(ctx.governor.confidence.toFixed(2)),
     headline:r.headline,reasons:Object.freeze(r.reasons),
     actions:Object.freeze(r.actions.map(a=>Object.freeze(a)))});
@@ -232,6 +265,8 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
       const out=[];
       for(const s of action.steps||[])out.push(await deps.desktop[s.verb](...(s.args||[])));
       return{op:action.op,status:'done',result:out};}
+    case 'web.open':case 'mahoraga.repo.inspect':case 'mahoraga.task.prepare':
+      return{op:action.op,status:'planned',reason:'external-adapter-not-executed'};
     default:return{op:action.op,status:'unsupported'};
   }
   return{op:action.op,status:'done'};

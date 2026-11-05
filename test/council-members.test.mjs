@@ -4,7 +4,7 @@ import {generateKeyPairSync} from 'node:crypto';
 import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction}
   from '../src/council-app-identities.mjs';
 import {councilMemberIdentity,assessCouncil,memberCredentials,appJwt,
-  executeMemberAction,mintInstallationToken,verifyCouncilActionTarget} from '../src/council-members.mjs';
+  executeMemberAction,mintInstallationToken,verifyCouncilActionTarget,memberIdentityState,COUNCIL_ABILITIES} from '../src/council-members.mjs';
 
 const SHA='a'.repeat(40);
 const ctx=over=>({title:'Fix login',body:'Must add a test. Expected: login works. acceptance below.',
@@ -119,4 +119,24 @@ test('executeMemberAction calls GitHub as the member and denies without policy',
   assert.equal(calls[0][2],'Bearer tok');
   const bad=await executeMemberAction(actor,'tok',{op:'pr.nuke'},{number:3},{fetchImpl});
   assert.equal(bad.status,'denied');
+});
+
+test('docs-only change gets fitting rationales and no CI/deploy alarm',()=>{
+  const out=assessCouncil(ctx({title:'docs: review',body:'Adds docs/REVIEW.md. Expected: doc merges. Mentions CI results.',isPr:true,flags:{infra:false}}));
+  const sentinel=out.find(m=>m.identity.role==='Sentinel');
+  assert.ok(!sentinel.reasons.join(' ').includes('Touches CI/deploy'));
+  assert.ok(!sentinel.actions.some(a=>a.op==='actions.dispatch'));
+  assert.ok(out.find(m=>m.identity.role==='Steward').actions[0].labels.includes('council-screened'));
+});
+test('identity state is honest: independent only with own credentials',()=>{
+  assert.equal(memberIdentityState('Builder',{}).independent,false);
+  assert.equal(memberIdentityState('Builder',{}).postedAs,'github-actions[bot]');
+  const env={COUNCIL_BUILDER_APP_ID:'1',COUNCIL_BUILDER_INSTALLATION_ID:'2',COUNCIL_BUILDER_APP_PRIVATE_KEY:'k'};
+  assert.equal(memberIdentityState('Builder',env).postedAs,'ultron-mw-builder[bot]');
+});
+test('abilities declared per member and external ops are plan-only',async()=>{
+  for(const r of COUNCIL_APP_ROLES)assert.ok(COUNCIL_ABILITIES[r].internal.length);
+  const actor={role:'Sentinel',sourceSha:SHA};
+  const out=await executeMemberAction(actor,'t',{op:'mahoraga.repo.inspect',why:'x'},{number:1},{fetchImpl:async()=>{throw Error('no network')}});
+  assert.ok(['planned','denied'].includes(out.status));
 });
