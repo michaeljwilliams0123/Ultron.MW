@@ -105,6 +105,7 @@ const evidenceDetails=publication.members.map(member=>
   ' · unknowns '+(member.unknowns.join(', ')||'none')+
   ' · dissent '+(member.dissentTags.join(', ')||'none')).join('\n');
 const independentCount=memberAssessments.filter(m=>m.identityState.independent).length;
+const configuredCount=memberAssessments.filter(m=>m.identityState.configured).length;
 const proceedCount=memberAssessments.filter(m=>m.verdict==='proceed').length;
 
 const hold = receipt.decision !== 'proceed' || flags.security;
@@ -185,7 +186,7 @@ ${publication.marker}
 ### Council verdicts
 ${memberTable}
 
-**Identities:** \`${independentCount}/7\` members are acting under their own provisioned GitHub App; the rest are posted by github-actions and their actions stay planned. Votes are a deterministic screen (modelInvocations=0), not independent review.
+**Identities:** \`${configuredCount}/7\` have credential fields configured (not authentication); \`${independentCount}/7\` have independently authenticated authorship proven by this report. This report is posted by github-actions, not seven App accounts. App authentication must be established at execution time. Council votes are a deterministic screen (modelInvocations=0), not independent review.
 
 ### What each member will do
 ${roleAssessments}

@@ -2,7 +2,7 @@
  * Identity: its own GitHub App (slug, bot login, credential env names, memory
  * namespace). Brain: its own mandate and rule set that turns the same case
  * into a distinct verdict, plain-language reasons and concrete actions.
- * Rights: owner-equivalent (see council-app-identities.mjs).
+ * Admission: GitHub App identity/profile AND a role-specific executable action surface.
  */
 import {createSign} from 'node:crypto';
 import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction}
@@ -31,23 +31,39 @@ export function councilMemberIdentity(role){
  * (GitHub App / Hatchable / receipts); `external` leaves GitHub and is
  * plan-only until the owner provisions the adapter, so it never counts as executed.
  */
-export const COUNCIL_ABILITIES=Object.freeze({
-  Builder:Object.freeze({internal:['branch.create','pr.create','file.write'],external:['mahoraga.task.prepare']}),
-  Skeptic:Object.freeze({internal:['review.request-changes','review.comment'],external:['web.open']}),
-  Steward:Object.freeze({internal:['issue.label','review.comment'],external:[]}),
-  Predictor:Object.freeze({internal:['issue.comment','pr.comment'],external:['mahoraga.repo.inspect']}),
-  Generator:Object.freeze({internal:['issue.create','branch.create'],external:['web.open']}),
-  Sentinel:Object.freeze({internal:['actions.dispatch','issue.comment'],external:['mahoraga.repo.inspect']}),
-  Companion:Object.freeze({internal:['issue.comment'],external:[]})
+// Freeze lists and containers: runtime consumers cannot widen authority.
+const abilities=(internal,external=[])=>Object.freeze({
+  internal:Object.freeze(internal),external:Object.freeze(external)
 });
-const EXTERNAL_OPS=new Set(Object.values(COUNCIL_ABILITIES).flatMap(a=>a.external));
+export const COUNCIL_ABILITIES=Object.freeze({
+  Builder:abilities(['branch.create','pr.comment','computer.browser','computer.desktop'],['mahoraga.task.prepare']),
+  Skeptic:abilities(['review.request-changes','review.comment','issue.comment'],['web.open']),
+  Steward:abilities(['issue.label','review.comment']),
+  Predictor:abilities(['issue.comment','pr.comment'],['mahoraga.repo.inspect']),
+  Generator:abilities(['issue.create','branch.create','issue.comment'],['web.open']),
+  Sentinel:abilities(['actions.dispatch','issue.comment'],['mahoraga.repo.inspect']),
+  Companion:abilities(['issue.comment'])
+});
+export function memberAbilityAdmission(role,operation){
+  if(!Object.hasOwn(COUNCIL_ABILITIES,role)||typeof operation!=='string')
+    return Object.freeze({allowed:false,reason:'role-operation-not-declared'});
+  const ability=COUNCIL_ABILITIES[role];
+  if(ability.internal.includes(operation))
+    return Object.freeze({allowed:true,mode:'internal'});
+  if(ability.external.includes(operation))
+    return Object.freeze({allowed:true,mode:'planned-external'});
+  return Object.freeze({allowed:false,reason:'role-operation-not-declared'});
+}
 
-/** A member is independent only when its own App credentials are provisioned. */
+/** Credential fields do not prove live App identity or GitHub authorship.
+ * Execution must independently authenticate the installation.
+ */
 export function memberIdentityState(role,env=process.env){
-  const identity=councilMemberIdentity(role);
-  const own=Boolean(memberCredentials(role,env));
-  return Object.freeze({role,mode:own?'own-app':'shared-workflow',independent:own,
-    postedAs:own?identity.botLogin:'github-actions[bot]'});
+  councilMemberIdentity(role);
+  const configured=Boolean(memberCredentials(role,env));
+  return Object.freeze({role,
+    mode:configured?'credentials-configured-unverified':'shared-workflow',
+    configured,independent:false,postedAs:'github-actions[bot]'});
 }
 
 /** Classify what a change touches so rationales fit the case. */
@@ -223,6 +239,10 @@ export async function verifyCouncilActionTarget(token,{number,isPr,sourceSha},fe
 
 /** Execute one action as the member's own App identity, gated by policy. */
 export async function executeMemberAction(actor,token,action,target,{fetchImpl=fetch,deps={}}={}){
+  // Broad installation scopes do not widen autonomous member actions.
+  const admission=memberAbilityAdmission(actor?.role,action?.op);
+  if(!admission.allowed)
+    return{op:action?.op,status:'denied',reason:admission.reason};
   const decision=decideCouncilAction(actor,{operation:action.op,baseSha:actor.sourceSha,
     maxPaidCents:0,attempt:1,branch:action.branch,workflow:action.workflow,ref:action.ref,
     prAuthor:target.prAuthor||'unknown',
