@@ -64,5 +64,6 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+      id-token: write
     uses: ./.github/workflows/council-debate.yml
     secrets: inherit
