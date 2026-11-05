@@ -32,12 +32,14 @@ const transportFor=(db,hooks={})=>async body=>{
  return{status:record?200:404,body:{ok:Boolean(record),record}};
 };
 const actor=role=>authenticateCouncilAppActor({role,sourceSha,installationToken:'x'.repeat(20),
+ expectedAppId:10,
  githubProbe:async()=>({source:'github-installations-api',app_id:10,id:20,app_slug:'ultron-mw-'+role.toLowerCase(),
   repositories:[repo],permissions:{metadata:'read',contents:'read',issues:'write',pull_requests:'write',checks:'read',actions:'read'}})});
 const receiptFor=async(role='Builder',operation='issue.comment')=>issueCouncilExecutionReceipt(await actor(role),{
  operation,caseSha,observedAt:'2026-11-05T18:00:00Z',
  githubResponse:{source:'github-api-response',url:'https://api.github.com/repos/'+repo+'/issues/comments/5',
-  id:5,author_login:'ultron-mw-'+role.toLowerCase()+'[bot]',author_type:'Bot'}});
+  id:5,author_login:'ultron-mw-'+role.toLowerCase()+'[bot]',author_type:'Bot',
+  app_id:10,app_slug:'ultron-mw-'+role.toLowerCase()}});
 const intent=(over={})=>({role:'Builder',operation:'issue.comment',caseDigest:caseSha,sourceSha,ordinal:0,
  authContext:{profile:'owner-equivalent',actor:'github-actions'},expectedEffect:'comment',...over});
 

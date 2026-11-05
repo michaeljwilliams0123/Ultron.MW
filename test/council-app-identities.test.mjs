@@ -63,14 +63,14 @@ test('C04: live API observation checks distinct app, repository and permissions;
    app_id:88101,id:99201,account:{login:'michaeljwilliams0123'},
    repository_selection:'selected',repositories:[repo],suspended_at:null,
    permissions:{metadata:'read',contents:'read',issues:'write',pull_requests:'write',actions:'read',checks:'read'}};
- const result=validateInstallationObservation({role:'Builder',repository:repo},observed);
+ const result=validateInstallationObservation({role:'Builder',repository:repo,expectedAppId:88101},observed);
  assert.equal(result.state,'installed-observed');
  assert.equal(result.authenticated,false);
  assert.equal(result.canReview,false);
  assert.equal(result.appId,88101);
- assert.throws(()=>validateInstallationObservation({role:'Builder',repository:repo},
+ assert.throws(()=>validateInstallationObservation({role:'Builder',repository:repo,expectedAppId:88101},
   {...observed,repositories:['other/repo']}),/repository-not-installed/);
- assert.throws(()=>validateInstallationObservation({role:'Builder',repository:repo},
+ assert.throws(()=>validateInstallationObservation({role:'Builder',repository:repo,expectedAppId:88101},
   {...observed,permissions:{...observed.permissions,pull_requests:'read'}}),/permission-missing/);
 });
 test('C04: unverified or self-approved owner-like operations are denied regardless of configured App permissions',async()=>{
@@ -80,6 +80,7 @@ test('C04: unverified or self-approved owner-like operations are denied regardle
    permissions:{metadata:'read',contents:'read',issues:'write',pull_requests:'write',actions:'read',checks:'read'}};
  const actor=await authenticateCouncilAppActor({
    role:'Builder',installationToken:'ephemeral-test-token',sourceSha:'a'.repeat(40),
+    expectedAppId:88101,
    githubProbe:async()=>observed
  });
  assert.deepEqual(decideCouncilAction(actor,{operation:'comment',repository:repo}),{
@@ -156,6 +157,7 @@ test('C04 engineering-autonomy: actual scoped operation needs fresh, authenticat
    permissions:permissionByRole[role]};
   return authenticateCouncilAppActor({
     role,sourceSha:'a'.repeat(40),installationToken:'bounded-ephemeral-token',
+    expectedAppId:99201,
     profile:'engineering-autonomy',githubProbe:async()=>observation
   });
  }
@@ -191,6 +193,7 @@ test('C04 engineering-autonomy: current scoped token cannot claim expanded permi
   }};
  await assert.rejects(authenticateCouncilAppActor({role:'Builder',profile:'engineering-autonomy',
   sourceSha:'a'.repeat(40),installationToken:'ephemeral-test-token',
+   expectedAppId:4,
   githubProbe:async()=>observed}),/permission-missing/);
 });
 test('C04: manifest CLI exposes engineering-autonomy role matrix without issuing installation',()=>{

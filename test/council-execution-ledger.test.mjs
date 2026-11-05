@@ -9,12 +9,14 @@ import {
 const repo='michaeljwilliams0123/Ultron.MW';
 const sourceSha='a'.repeat(40),caseSha='b'.repeat(64);
 const actor=role=>authenticateCouncilAppActor({role,sourceSha,installationToken:'x'.repeat(20),
+ expectedAppId:1,
  githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,app_slug:'ultron-mw-'+role.toLowerCase(),
   repositories:[repo],permissions:{metadata:'read',contents:'read',issues:'write',pull_requests:'write',checks:'read',actions:'read'}})});
 const receiptFor=async(role,operation='issue.comment')=>issueCouncilExecutionReceipt(await actor(role),{
  operation,caseSha,observedAt:'2026-11-05T18:00:00Z',githubResponse:{source:'github-api-response',
   url:'https://api.github.com/repos/'+repo+'/issues/comments/1',id:1,
-  author_login:'ultron-mw-'+role.toLowerCase()+'[bot]',author_type:'Bot'}});
+   author_login:'ultron-mw-'+role.toLowerCase()+'[bot]',author_type:'Bot',
+   app_id:1,app_slug:'ultron-mw-'+role.toLowerCase()}});
 const intent=(role='Builder',operation='issue.comment')=>recordIntent({role,operation,caseSha,sourceSha});
 
 test('execution key is deterministic and rejects malformed input',()=>{
@@ -73,11 +75,12 @@ test('effects by github-actions are recorded truthfully, not as independent',()=
  assert.equal(summarizeLedger([r]).independentlyVerified,0);
 });
 
-test('ledger summary counts only role-App-authored verified records as independent',async()=>{
+test('ledger summary separates App-authenticated effects from independent review',async()=>{
  const ok=advance(advance(advance(intent(),'reserved'),'dispatched'),'verified',{receipt:await receiptFor('Builder')});
  const s=summarizeLedger([ok,intent('Sentinel','web.open'),recordUnattributedEffect(intent('Skeptic'),{executor:'github-actions[bot]'})]);
  assert.equal(s.total,3);
- assert.equal(s.independentlyVerified,1);
+ assert.equal(s.appAuthenticatedVerified,1);
+ assert.equal(s.independentlyVerified,0);
  assert.equal(s.byState.planned,1);
  assert.equal(s.openReconciliations,1);
 });

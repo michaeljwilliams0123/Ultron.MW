@@ -4,11 +4,16 @@ import {readFileSync} from 'node:fs';
 import {judgeIdentityProof,proveIdentity,expectedIdentity} from '../scripts/council-identity-proof.mjs';
 
 const marker='council-identity-proof:builder:abc';
-const good={id:7,body:'x <!-- '+marker+' -->',user:{login:'ultron-mw-builder[bot]',type:'Bot',id:9},
- performed_via_github_app:{slug:'ultron-mw-builder',id:3},html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/issues/1#issuecomment-7',created_at:'t'};
+const good={id:7,body:'x <!-- '+marker+' -->',user:{login:'ultron-mw-builder-v2[bot]',type:'Bot',id:9},
+ performed_via_github_app:{slug:'ultron-mw-builder-v2',id:5633654},html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/issues/1#issuecomment-7',created_at:'t'};
 
-test('expected identity derives from role',()=>{
- assert.equal(expectedIdentity('Builder').botLogin,'ultron-mw-builder[bot]');
+test('expected identity is bound to the observed App ID and transition slug',()=>{
+ assert.equal(expectedIdentity('Builder',{appId:5633654,appSlug:'ultron-mw-builder-v2'}).botLogin,
+  'ultron-mw-builder-v2[bot]');
+ assert.equal(expectedIdentity('Builder',{appId:5633654,appSlug:'ultron-coordinator'}).botLogin,
+  'ultron-coordinator[bot]');
+ assert.throws(()=>expectedIdentity('Builder',{appId:1,appSlug:'ultron-mw-builder-v2'}),/identity-mismatch/);
+ assert.throws(()=>expectedIdentity('Builder',{appId:5633654,appSlug:'attacker-chosen'}),/identity-mismatch/);
  assert.throws(()=>expectedIdentity('Nope'),/role-invalid/);
 });
 test('bot-authored readback via expected App is authenticated',()=>{
@@ -24,6 +29,8 @@ test('github-actions authorship is never authenticated',()=>{
 });
 test('wrong app slug or missing marker fails',()=>{
  assert.equal(judgeIdentityProof({role:'Builder',posted:{id:7},readback:{...good,performed_via_github_app:{slug:'other',id:1}},marker}).authenticated,false);
+ assert.equal(judgeIdentityProof({role:'Builder',posted:{id:7},readback:{...good,performed_via_github_app:{slug:'ultron-mw-builder-v2',id:1}},marker}).authenticated,false);
+ assert.equal(judgeIdentityProof({role:'Builder',posted:{id:7},readback:{...good,user:{...good.user,login:'ultron-mw-builder[bot]'}},marker}).authenticated,false);
  assert.equal(judgeIdentityProof({role:'Builder',posted:{id:7},readback:{...good,body:'nope'},marker}).authenticated,false);
 });
 test('proveIdentity posts then reads back; http failure throws',async()=>{
@@ -41,6 +48,7 @@ test('workflow is owner-gated, SHA-pinned, uses create-github-app-token v3 with 
  assert.match(y,/create-github-app-token@[0-9a-f]{40}/);
  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(y,/ULTRON_\{0\}_PRIVATE_KEY/);
+ assert.doesNotMatch(y,/COUNCIL_APP_SLUG/);
  assert.doesNotMatch(y,/echo .*token/i);
  for(const m of y.matchAll(/uses: (\S+)@(\S+)/g))assert.match(m[2],/^[0-9a-f]{40}$/);
 });

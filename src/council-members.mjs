@@ -9,6 +9,7 @@ import {executionKey} from './council-execution-ledger.mjs';
 import {runLedgeredAction} from './council-ledger-client.mjs';
 import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction,issueCouncilExecutionReceipt}
   from './council-app-identities.mjs';
+import {councilAppBindingBlueprints} from './council-app-bindings.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const slugify=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'item';
@@ -16,10 +17,15 @@ const slugify=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+
 export function councilMemberIdentity(role){
   if(!COUNCIL_APP_ROLES.includes(role))throw Error('council-role-invalid');
   const upper=role.toUpperCase();
+  const primary=councilAppBindingBlueprints(role)[0];
   return Object.freeze({
     role,roleId:'ultron-'+role.toLowerCase(),
-    appSlug:'ultron-mw-'+role.toLowerCase(),
-    botLogin:'ultron-mw-'+role.toLowerCase()+'[bot]',
+    appSlug:primary.appSlug,
+    botLogin:primary.appSlug+'[bot]',
+    executorBindings:Object.freeze(councilAppBindingBlueprints(role).map(binding=>Object.freeze({
+      bindingKey:binding.bindingKey,kind:binding.kind,appId:binding.appId,
+      appSlugs:binding.appSlugs,independentReview:binding.independentReview
+    }))),
     credentialEnv:Object.freeze({
       appId:'COUNCIL_'+upper+'_APP_ID',
       privateKey:'COUNCIL_'+upper+'_APP_PRIVATE_KEY',
@@ -253,7 +259,7 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
   const call=api(token,fetchImpl),n=target.number,text=action.text||action.why;
   let effect=null;
   const marker=/^[a-f0-9]{64}$/.test(target.executionKey||'')?'\n\n<!-- council-exec:'+target.executionKey+' -->':'';
-  const signed='**'+actor.role+'** (`ultron-mw-'+actor.role.toLowerCase()+'`): ';
+  const signed='**'+actor.role+'** (executed by `'+actor.appSlug+'`): ';
   switch(action.op){
     case 'issue.comment':case 'pr.comment':case 'review.comment':
       effect={path:'/issues/'+n+'/comments',data:await call('POST','/issues/'+n+'/comments',{body:signed+text+marker})};break;
@@ -299,7 +305,9 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
     try{
       out.receipt=issueCouncilExecutionReceipt(actor,{operation:action.op,caseSha:target.caseSha,
         githubResponse:{source:'github-api-response',url:'https://api.github.com/repos/'+REPO+effect.path+'/'+effect.data?.id,
-          id:effect.data?.id,author_login:effect.data?.user?.login,author_type:effect.data?.user?.type},
+          id:effect.data?.id,author_login:effect.data?.user?.login,author_type:effect.data?.user?.type,
+          app_id:effect.data?.performed_via_github_app?.id,
+          app_slug:effect.data?.performed_via_github_app?.slug},
         observedAt:new Date().toISOString()});
     }catch(e){out.receiptError=String(e.message).slice(0,80);}
   }
@@ -309,7 +317,9 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
 /** Authenticate one member from its own token, then run its actions. */
 export async function runMemberActions({role,sourceSha,token,assessment,target,credentials=memberCredentials(role),fetchImpl=fetch,profile='owner-equivalent',deps={},ledger=null}){
   if(!credentials)throw Error('council-app-credentials-missing');
-  const actor=await authenticateCouncilAppActor({role,sourceSha,installationToken:token,profile,
+  const expectedAppId=Number(credentials.appId);
+  if(!Number.isSafeInteger(expectedAppId)||expectedAppId<1)throw Error('council-app-id-invalid');
+  const actor=await authenticateCouncilAppActor({role,sourceSha,installationToken:token,profile,expectedAppId,
     githubProbe:async()=>{
       const r=await fetchImpl('https://api.github.com/installation/repositories',{headers:{authorization:'Bearer '+token,accept:'application/vnd.github+json','user-agent':'ultron-council'}});
       if(!r.ok)throw Error('council-probe-failed');
@@ -328,7 +338,8 @@ export async function runMemberActions({role,sourceSha,token,assessment,target,c
       const scoped={...target,executionKey:key};
       results.push(await runLedgeredAction({ledger,
         intent:{role,operation:action.op,caseDigest:target.caseSha,sourceSha,ordinal,
-         authContext:{profile,executor:'github-actions',actorRole:actor.role,installationId:actor.installationId},
+         authContext:{profile,executor:'github-actions',actorRole:actor.role,installationId:actor.installationId,
+          appId:actor.appId,appSlug:actor.appSlug,bindingKey:actor.bindingKey},
          expectedEffect:String(action.why||action.text||'').slice(0,300),
          targetUrl:'https://api.github.com/repos/'+REPO+'/issues/'+target.number},
         execute:()=>executeMemberAction(actor,token,action,scoped,{fetchImpl,deps}),
@@ -355,7 +366,8 @@ export async function probeCouncilEffect(actor,token,{op,number,executionKey:key
    const url='https://api.github.com/repos/'+REPO+base+'/'+hit.id;
    try{
     return{url,receipt:issueCouncilExecutionReceipt(actor,{operation:op,caseSha,
-     githubResponse:{source:'github-api-response',url,id:hit.id,author_login:hit.user?.login,author_type:hit.user?.type},
+      githubResponse:{source:'github-api-response',url,id:hit.id,author_login:hit.user?.login,author_type:hit.user?.type,
+       app_id:hit.performed_via_github_app?.id,app_slug:hit.performed_via_github_app?.slug},
      observedAt:new Date().toISOString()})};
    }catch{return{url,executor:String(hit.user?.login||'unattributed')};}
   }

@@ -53,6 +53,7 @@ export function advance(record,next,detail={}){
     receipt.sourceSha!==record.sourceSha)
    throw Error('council-execution-receipt-mismatch');
   out.receiptDigest=receipt.digest;
+  out.receipt=receipt;
   out.executor=receipt.effect.author;
  }
  if(next==='failed'||next==='reconcile-required')
@@ -82,6 +83,9 @@ export function summarizeLedger(records){
  for(const r of list)if(r&&by[r.state]!==undefined)by[r.state]++;
  return Object.freeze({total:list.length,byState:Object.freeze(by),
   openReconciliations:by['reconcile-required'],
+  appAuthenticatedVerified:list.filter(r=>r.state==='verified'&&
+   verifyCouncilExecutionReceipt(r.receipt)).length,
+  // App-authenticated execution is provenance, not an independent review.
   independentlyVerified:list.filter(r=>r.state==='verified'&&
-   r.executor==='ultron-mw-'+String(r.role).toLowerCase()+'[bot]').length});
+   verifyCouncilExecutionReceipt(r.receipt)&&r.receipt.claims.independentReview===true).length});
 }

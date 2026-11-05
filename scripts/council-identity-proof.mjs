@@ -6,24 +6,31 @@
  * Configured credentials alone never produce a verified result. */
 import {writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {resolveCouncilAppIdentity} from '../src/council-app-bindings.mjs';
 
 export const REPO='michaeljwilliams0123/Ultron.MW';
 const ROLES=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
 
-export function expectedIdentity(role,slug){
+export function expectedIdentity(role,{appId,appSlug}={}){
  if(!ROLES.includes(role))throw Error('identity-proof-role-invalid');
- const appSlug=slug||'ultron-mw-'+role.toLowerCase();
- return{appSlug,botLogin:appSlug+'[bot]'};
+ try{return resolveCouncilAppIdentity({role,appId,appSlug});}
+ catch(e){
+  if(e.message==='council-role-invalid')throw Error('identity-proof-role-invalid');
+  throw Error('identity-proof-identity-mismatch');
+ }
 }
 
 /** Pure judgement over GitHub's readback of the comment. */
-export function judgeIdentityProof({role,slug,posted,readback,marker}){
- const want=expectedIdentity(role,slug);
+export function judgeIdentityProof({role,posted,readback,marker}){
+ let want=null;
+ try{want=expectedIdentity(role,{appId:readback?.performed_via_github_app?.id,
+  appSlug:readback?.performed_via_github_app?.slug});}catch{}
  const checks={
   bodyHasMarker:typeof readback?.body==='string'&&readback.body.includes(marker),
   sameComment:Boolean(posted?.id)&&readback?.id===posted.id,
-  authorIsExpectedBot:readback?.user?.login===want.botLogin&&readback?.user?.type==='Bot',
-  viaExpectedApp:readback?.performed_via_github_app?.slug===want.appSlug,
+  authorIsExpectedBot:Boolean(want)&&readback?.user?.login===want.botLogin&&readback?.user?.type==='Bot',
+  viaExpectedApp:Boolean(want)&&readback?.performed_via_github_app?.slug===want.appSlug&&
+   readback?.performed_via_github_app?.id===want.appId,
   onThisRepository:typeof readback?.html_url==='string'&&readback.html_url.includes('/'+REPO+'/')
  };
  const authenticated=Object.values(checks).every(Boolean);
@@ -34,7 +41,7 @@ export function judgeIdentityProof({role,slug,posted,readback,marker}){
    appSlug:readback.performed_via_github_app.slug,createdAt:readback.created_at}:null});
 }
 
-export async function proveIdentity({role,slug,token,issueNumber,runUrl,sha,fetchImpl=fetch}){
+export async function proveIdentity({role,token,issueNumber,runUrl,sha,fetchImpl=fetch}){
  if(!token||!Number.isSafeInteger(issueNumber)||issueNumber<1)throw Error('identity-proof-input-invalid');
  const marker='council-identity-proof:'+role.toLowerCase()+':'+createHash('sha256').update(String(runUrl)+sha).digest('hex').slice(0,16);
  const call=async(method,path,body)=>{
@@ -48,12 +55,12 @@ export async function proveIdentity({role,slug,token,issueNumber,runUrl,sha,fetc
   '**'+role+'** identity proof (`'+marker+'`). This comment demonstrates which GitHub identity authored it; it is not a review.\n\n'+
   'Run: '+runUrl+'\nSource: `'+sha+'`\n\n<!-- '+marker+' -->'});
  const readback=await call('GET','/issues/comments/'+posted.id);
- return judgeIdentityProof({role,slug,posted,readback,marker});
+ return judgeIdentityProof({role,posted,readback,marker});
 }
 
 if(import.meta.url===new URL(process.argv[1],'file:').href||process.argv[1]?.endsWith('council-identity-proof.mjs')){
  const role=process.env.COUNCIL_ROLE;
- const result=await proveIdentity({role,slug:process.env.COUNCIL_APP_SLUG||undefined,token:process.env.APP_TOKEN,
+ const result=await proveIdentity({role,token:process.env.APP_TOKEN,
   issueNumber:Number(process.env.ISSUE_NUMBER),sha:process.env.GITHUB_SHA,
   runUrl:process.env.GITHUB_SERVER_URL+'/'+REPO+'/actions/runs/'+process.env.GITHUB_RUN_ID});
  writeFileSync('council-identity-proof.json',JSON.stringify(result,null,2));
