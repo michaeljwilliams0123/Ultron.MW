@@ -5,12 +5,14 @@ export const methods=['POST'];
 export default async function(req,res){
  const hour=new Date().toISOString().slice(0,13).replace(/[^0-9]/g,'');
  const admitted=await db.query(`WITH admitted AS (
-   INSERT INTO brain_tasks(task_key,objective) VALUES($1,'repo.inspect')
-   ON CONFLICT(task_key) DO NOTHING RETURNING id
+   INSERT INTO brain_tasks(task_key,objective)
+   VALUES($1,'repo.inspect'),($2,'council.review')
+   ON CONFLICT(task_key) DO NOTHING RETURNING id,objective
  ), receipt AS (
-   INSERT INTO brain_events(task_id,event_type)
-   SELECT id,'scheduled-hourly' FROM admitted RETURNING task_id
- ) SELECT id FROM admitted`,['hourly-'+hour]);
+   INSERT INTO brain_events(task_id,event_type,details)
+   SELECT id,'scheduled-hourly',jsonb_build_object('objective',objective)
+   FROM admitted RETURNING task_id
+ ) SELECT id,objective FROM admitted`,['hourly-'+hour,'council-hourly-'+hour]);
  // A scheduled tick has a short fire budget. Queue only: browser renders and
  // bounded multi-task processing belong to /api/brain/run, never this tick.
  // Continue once through the existing scheduler endpoint, without recursion.
@@ -43,6 +45,6 @@ export default async function(req,res){
   catch(_e){continuation_scheduled=false;}
  }
  if(admitted.rows.length)await notifyOwner(events,'task',Number(admitted.rows[0].id));
- return res.json({trigger:'hourly',processed:0,pending,mahoraga_pending,
+ return res.json({trigger:'hourly',processed:0,scheduled_count:admitted.rows.length,pending,mahoraga_pending,
    continuation_scheduled,hf_pending,hf_reconciliation_scheduled,mode:'dispatch-only'});
 }
