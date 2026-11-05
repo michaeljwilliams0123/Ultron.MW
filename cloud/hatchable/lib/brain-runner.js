@@ -145,7 +145,7 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
       'c04-advisory-v1:' || ($1::jsonb - 'at')::text,'UTF8')),'hex'),
       moved.id,moved.objective,'c04-advisory-v1',$1::jsonb - 'at'
     FROM moved WHERE moved.objective='council.room'
-    ON CONFLICT (case_digest) DO NOTHING RETURNING id
+    ON CONFLICT (case_digest) DO NOTHING RETURNING id,case_digest
   ), council_members AS (
     INSERT INTO brain_council_assessments
       (case_id,role_id,kind,status,body,identity_state,independence_verified)
@@ -157,6 +157,15 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
       'builder','skeptic','steward','predictor','generator','sentinel','companion'
     )
     ON CONFLICT (case_id,role_id) DO NOTHING RETURNING case_id
+  ), council_review_tasks AS (
+    INSERT INTO brain_tasks(task_key,objective)
+    SELECT 'council-case:' || case_digest,'council.review' FROM council_cases
+    ON CONFLICT(task_key) DO NOTHING RETURNING id
+  ), council_review_events AS (
+    INSERT INTO brain_events(task_id,event_type,details)
+    SELECT id,'council-case-admitted',
+      jsonb_build_object('origin','council.room')
+    FROM council_review_tasks RETURNING task_id
   ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown',
    JSON.stringify(Array.isArray(result.assessment_receipts)?result.assessment_receipts:[]),
    task.fencing_generation]);
