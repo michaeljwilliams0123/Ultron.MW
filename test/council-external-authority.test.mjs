@@ -19,6 +19,7 @@ const githubPermissions={metadata:'read',contents:'write',issues:'write',
 async function actor(role){
  return authenticateCouncilAppActor({
   role,profile:'collaborative-sme',sourceSha:sha,installationToken:'test-ephemeral-'+role,
+  expectedAppId:900+COUNCIL_APP_ROLES.indexOf(role),
   githubProbe:async()=>({
    source:'github-installations-api',app_slug:'ultron-mw-'+role.toLowerCase(),
    app_id:900+COUNCIL_APP_ROLES.indexOf(role),id:700+COUNCIL_APP_ROLES.indexOf(role),

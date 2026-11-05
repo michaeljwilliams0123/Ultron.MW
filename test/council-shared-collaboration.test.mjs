@@ -32,6 +32,7 @@ test('RED C04: all seven authenticated roles have equal bounded operations on th
   const role=COUNCIL_APP_ROLES[i],slug=role.toLowerCase();
   const actor=await authenticateCouncilAppActor({
    role,sourceSha:sha,installationToken:'synthetic-test-token-'+slug,
+   expectedAppId:100+i,
    profile,githubProbe:async()=>({
     source:'github-installations-api',app_slug:'ultron-mw-'+slug,
     app_id:100+i,id:900+i,repositories:[repo],suspended_at:null,

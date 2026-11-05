@@ -77,7 +77,8 @@ test('owner-equivalent members get every owner action; others stay bounded',asyn
       workflows:'write',issues:'write',pull_requests:'write',checks:'write',statuses:'write'}});
   for(const role of COUNCIL_APP_ROLES){
     const actor=await authenticateCouncilAppActor({role,sourceSha:SHA,
-      installationToken:'x'.repeat(20),githubProbe:probe(role),profile:'owner-equivalent'});
+      installationToken:'x'.repeat(20),expectedAppId:1,
+      githubProbe:probe(role),profile:'owner-equivalent'});
     const base={baseSha:SHA,maxPaidCents:0,attempt:1,prAuthor:'someone'};
     for(const operation of ['pr.merge','issue.close','review.approve','file.write'])
       assert.equal(decideCouncilAction(actor,{...base,operation,branch:'feature/x'}).allowed,true,role+operation);
@@ -87,7 +88,7 @@ test('owner-equivalent members get every owner action; others stay bounded',asyn
 });
 test('computer.* actions drive the injected cloud browser/desktop and report when unconfigured',async()=>{
   const actor=await authenticateCouncilAppActor({role:'Builder',sourceSha:SHA,
-    installationToken:'x'.repeat(20),profile:'owner-equivalent',
+    installationToken:'x'.repeat(20),profile:'owner-equivalent',expectedAppId:1,
     githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,app_slug:'ultron-mw-builder',
       repositories:['michaeljwilliams0123/Ultron.MW'],
       permissions:{metadata:'read',administration:'write',actions:'write',contents:'write',
@@ -109,7 +110,7 @@ test('executeMemberAction calls GitHub as the member and denies without policy',
   const fetchImpl=async(url,init)=>{calls.push([init.method,url,init.headers.authorization]);
     return{ok:true,status:200,json:async()=>({})};};
   const actor=await authenticateCouncilAppActor({role:'Skeptic',sourceSha:SHA,
-    installationToken:'x'.repeat(20),profile:'owner-equivalent',
+    installationToken:'x'.repeat(20),profile:'owner-equivalent',expectedAppId:1,
     githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,app_slug:'ultron-mw-skeptic',
       repositories:['michaeljwilliams0123/Ultron.MW'],
       permissions:{metadata:'read',administration:'write',actions:'write',contents:'write',
@@ -174,13 +175,14 @@ test('every proposed Council action is role-admitted and abilities stay immutabl
 
 test('executeMemberAction mints a receipt only from a bot-authored GitHub response',async()=>{
   const actor=await authenticateCouncilAppActor({role:'Skeptic',sourceSha:SHA,
-    installationToken:'x'.repeat(20),profile:'owner-equivalent',
+    installationToken:'x'.repeat(20),profile:'owner-equivalent',expectedAppId:1,
     githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,app_slug:'ultron-mw-skeptic',
       repositories:['michaeljwilliams0123/Ultron.MW'],
       permissions:{metadata:'read',administration:'write',actions:'write',contents:'write',
         workflows:'write',issues:'write',pull_requests:'write',checks:'write',statuses:'write'}})});
   const caseSha='d'.repeat(64);
-  const mk=login=>async()=>({ok:true,status:200,json:async()=>({id:9,user:{login,type:'Bot'}})});
+  const mk=login=>async()=>({ok:true,status:200,json:async()=>({id:9,user:{login,type:'Bot'},
+    performed_via_github_app:{id:1,slug:'ultron-mw-skeptic'}})});
   const good=await executeMemberAction(actor,'tok',{op:'issue.comment',why:'hi'},{number:3,caseSha},{fetchImpl:mk('ultron-mw-skeptic[bot]')});
   assert.equal(good.status,'done');
   assert.equal(verifyCouncilExecutionReceipt(good.receipt),true);
@@ -192,7 +194,7 @@ test('executeMemberAction mints a receipt only from a bot-authored GitHub respon
 
 test('comment writes carry an execution marker that readback finds, minting a receipt',async()=>{
   const actor=await authenticateCouncilAppActor({role:'Builder',sourceSha:SHA,
-    installationToken:'x'.repeat(20),profile:'owner-equivalent',
+    installationToken:'x'.repeat(20),profile:'owner-equivalent',expectedAppId:1,
     githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,app_slug:'ultron-mw-builder',
       repositories:['michaeljwilliams0123/Ultron.MW'],
       permissions:{metadata:'read',administration:'write',actions:'write',contents:'write',
@@ -201,7 +203,8 @@ test('comment writes carry an execution marker that readback finds, minting a re
   const store=[];
   const fetchImpl=async(url,init={})=>{
     if(init.method==='POST'){
-      const c={id:40+store.length,body:JSON.parse(init.body).body,user:{login:'ultron-mw-builder[bot]',type:'Bot'}};
+      const c={id:40+store.length,body:JSON.parse(init.body).body,user:{login:'ultron-mw-builder[bot]',type:'Bot'},
+        performed_via_github_app:{id:1,slug:'ultron-mw-builder'}};
       store.push(c);return{ok:true,status:201,json:async()=>c};
     }
     return{ok:true,status:200,json:async()=>store};

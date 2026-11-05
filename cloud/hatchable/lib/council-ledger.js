@@ -7,7 +7,9 @@ const ROLES = ['Builder', 'Skeptic', 'Steward', 'Predictor', 'Generator', 'Senti
 const SHA40 = /^[a-f0-9]{40}$/;
 const SHA64 = /^[a-f0-9]{64}$/;
 const PLAN_ONLY = ['web.open', 'mahoraga.repo.inspect', 'mahoraga.task.prepare'];
-const RECEIPT_VERSION = 'council-execution-receipt/1';
+const RECEIPT_VERSION = 'council-execution-receipt/2';
+const COORDINATOR_APP_ID = 5633654;
+const COORDINATOR_SLUGS = ['ultron-mw-builder-v2', 'ultron-coordinator'];
 const TRANSITIONS = {
   reserved: ['dispatched', 'failed'],
   dispatched: ['verified', 'executed', 'failed', 'reconcile-required'],
@@ -35,9 +37,17 @@ export function receiptValid(receipt) {
   try {
     if (!receipt || receipt.version !== RECEIPT_VERSION || !ROLES.includes(receipt.role) ||
       !SHA64.test(receipt.digest || '') || !SHA64.test(receipt.caseSha || '') ||
-      receipt.effect?.author !== 'ultron-mw-' + receipt.role.toLowerCase() + '[bot]' ||
       !Number.isSafeInteger(receipt.installationId) || receipt.installationId < 1 ||
+      !Number.isSafeInteger(receipt.app?.id) || receipt.app.id < 1 ||
       receipt.claims?.independentReview !== false || receipt.claims?.modelInvoked !== false) return false;
+    const coordinator = receipt.role === 'Builder' && receipt.app.id === COORDINATOR_APP_ID &&
+      COORDINATOR_SLUGS.includes(receipt.app.slug);
+    const member = receipt.app.id !== COORDINATOR_APP_ID &&
+      receipt.app.slug === 'ultron-mw-' + receipt.role.toLowerCase();
+    const bindingKey = coordinator ? 'coordinator-v2' : 'council-member';
+    const kind = coordinator ? 'coordinator' : 'council-member';
+    if ((!coordinator && !member) || receipt.app.bindingKey !== bindingKey ||
+      receipt.app.kind !== kind || receipt.effect?.author !== receipt.app.slug + '[bot]') return false;
     const { digest, ...body } = receipt;
     return createHash('sha256').update(canonicalJson(body)).digest('hex') === digest;
   } catch {

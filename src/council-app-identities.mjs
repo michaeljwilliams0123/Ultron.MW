@@ -1,12 +1,14 @@
 import {createHash} from 'node:crypto';
+import {
+ COUNCIL_APP_ROLES,councilAppBindingBlueprints,resolveCouncilAppIdentity,
+ resolveReceiptAppIdentity
+} from './council-app-bindings.mjs';
 /** C04: declarative, unprivileged GitHub App identity blueprints.
  * These values cannot register Apps, create users, authenticate a bot,
  * or establish independent review. Only live GitHub API responses can
  * substantiate installation; credentials require separately approved setup.
  */
-export const COUNCIL_APP_ROLES=Object.freeze([
- 'Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'
-]);
+export {COUNCIL_APP_ROLES};
 const ROLE_SET=new Set(COUNCIL_APP_ROLES);
 const REPO='michaeljwilliams0123/Ultron.MW';
 const GITHUB_REPO=/^[a-z\d_.-]+\/[a-z\d_.-]+$/i;
@@ -104,8 +106,9 @@ export function buildCouncilAppManifest(role,{
  repoCheck(repository);
  const grants=profileRights(role,profile);
  const hookUrl=urlCheck(webhookUrl);
+ const identity=councilAppBindingBlueprints(role)[0];
  return Object.freeze({
-  name:'ultron-mw-'+role.toLowerCase(),
+  name:identity.appSlug,
   url:'https://github.com/'+repository,
   description:'Ultron Continuum '+role+' · separately authenticated advisory agent; no implicit owner-equivalent rights',
   public:false,
@@ -114,7 +117,7 @@ export function buildCouncilAppManifest(role,{
   default_permissions:Object.freeze({...grants})
  });
 }
-export function validateInstallationObservation({role,repository=REPO,profile='scoped'}={},observation){
+export function validateInstallationObservation({role,repository=REPO,profile='scoped',expectedAppId}={},observation){
  roleCheck(role);
  repoCheck(repository);
  if(observation===null||observation===undefined)return Object.freeze({
@@ -122,9 +125,12 @@ export function validateInstallationObservation({role,repository=REPO,profile='s
  });
  if(!observation||observation.source!=='github-installations-api'||
    !Number.isSafeInteger(observation.app_id)||observation.app_id<1||
-   !Number.isSafeInteger(observation.id)||observation.id<1||
-   observation.app_slug!=='ultron-mw-'+role.toLowerCase())
+   !Number.isSafeInteger(observation.id)||observation.id<1)
    throw Error('council-identity-mismatch');
+ let identity;
+ try{identity=resolveCouncilAppIdentity({role,appId:observation.app_id,
+  appSlug:observation.app_slug,expectedAppId});}
+ catch{throw Error('council-identity-mismatch');}
  if(observation.suspended_at)throw Error('council-installation-suspended');
  if(!Array.isArray(observation.repositories)||!observation.repositories.includes(repository))
    throw Error('council-repository-not-installed');
@@ -137,7 +143,9 @@ export function validateInstallationObservation({role,repository=REPO,profile='s
  // Even correct app IDs and scopes are not proof a worker actually signed in.
  return Object.freeze({
   role,state:'installed-observed',authenticated:false,canReview:false,
-  appId:observation.app_id,installationId:observation.id,repository
+  appId:identity.appId,appSlug:identity.appSlug,botLogin:identity.botLogin,
+  bindingKey:identity.bindingKey,identityKind:identity.kind,
+  installationId:observation.id,repository
  });
 }
 // A caller-supplied string like "verifiedBy:github-installation-token" is
@@ -145,7 +153,7 @@ export function validateInstallationObservation({role,repository=REPO,profile='s
 // a branded actor; a serialized or cloned object loses its authority.
 const AUTHENTICATED_ACTORS=new WeakSet();
 export async function authenticateCouncilAppActor({
- role,repository=REPO,sourceSha,installationToken,githubProbe,profile='scoped'
+ role,repository=REPO,sourceSha,installationToken,githubProbe,profile='scoped',expectedAppId
 }={}){
  roleCheck(role);
  repoCheck(repository);
@@ -157,8 +165,10 @@ export async function authenticateCouncilAppActor({
  // githubProbe MUST be a trusted server-side GitHub API client. Never let an
  // incoming request/body supply this function, token or installation proof.
  const observed=await githubProbe({installationToken,repository});
- const binding=validateInstallationObservation({role,repository,profile},observed);
+ const binding=validateInstallationObservation({role,repository,profile,expectedAppId},observed);
  const actor=Object.freeze({role,installationId:binding.installationId,
+   appId:binding.appId,appSlug:binding.appSlug,botLogin:binding.botLogin,
+   bindingKey:binding.bindingKey,identityKind:binding.identityKind,
    verifiedBy:'github-installation-token',scope:repository,sourceSha,profile});
  AUTHENTICATED_ACTORS.add(actor);
  return actor;
@@ -168,6 +178,7 @@ export function decideCouncilAction(actor,request={}){
  if(!actor||!AUTHENTICATED_ACTORS.has(actor)||!ROLE_SET.has(actor.role)||
    actor.verifiedBy!=='github-installation-token'||
    !Number.isSafeInteger(actor.installationId)||actor.installationId<1||
+   !Number.isSafeInteger(actor.appId)||actor.appId<1||
    typeof actor.sourceSha!=='string'||!/^[a-f0-9]{40}$/.test(actor.sourceSha)||
    actor.scope!==REPO||repository!==REPO)
   return Object.freeze({allowed:false,reason:'identity-or-scope-unverified'});
@@ -220,8 +231,7 @@ export function decideCouncilAction(actor,request={}){
   return Object.freeze({allowed:false,reason:'workflow-not-approved'});
  if(REVIEW_OPERATIONS.has(operation)&&
    (typeof request.prAuthor!=='string'||!request.prAuthor.trim()||
-    request.prAuthor.toLowerCase()===
-     ('ultron-mw-'+actor.role.toLowerCase()+'[bot]')))
+    request.prAuthor.toLowerCase()===actor.botLogin.toLowerCase()))
   return Object.freeze({allowed:false,reason:'self-review-denied'});
  return Object.freeze({allowed:true,scope:repository,role:actor.role,reason:'bounded-engineering-operation'});
 }
@@ -245,7 +255,7 @@ export function councilCapacityReport({installedAppCount=0,rateLimits=[]}={}){
 // Execution receipts: independently checkable evidence that a GitHub effect
 // was authored by the role's own App bot, not by planner text or the shared
 // github-actions identity. Receipts are content-addressed and advisory-only.
-const RECEIPT_VERSION='council-execution-receipt/1';
+const RECEIPT_VERSION='council-execution-receipt/2';
 const SHA256=/^[a-f0-9]{64}$/;
 function canonicalJson(v){
  if(Array.isArray(v))return '['+v.map(canonicalJson).join(',')+']';
@@ -264,16 +274,17 @@ export function issueCouncilExecutionReceipt(actor,{
  if(typeof operation!=='string'||!operation||!SHA256.test(caseSha||''))
   throw Error('council-receipt-input-invalid');
  const r=githubResponse;
- const botLogin='ultron-mw-'+actor.role.toLowerCase()+'[bot]';
  if(!r||r.source!=='github-api-response'||typeof r.url!=='string'||
    !r.url.startsWith('https://api.github.com/repos/'+REPO+'/')||
    !Number.isSafeInteger(r.id)||r.id<1||
-   r.author_login!==botLogin||r.author_type!=='Bot')
+   r.author_login!==actor.botLogin||r.author_type!=='Bot'||
+   r.app_id!==actor.appId||r.app_slug!==actor.appSlug)
   throw Error('council-receipt-authorship-unproven');
  const ts=Date.parse(observedAt);
  if(!Number.isFinite(ts))throw Error('council-receipt-input-invalid');
  const body={
   version:RECEIPT_VERSION,role:actor.role,installationId:actor.installationId,
+   app:{id:actor.appId,slug:actor.appSlug,bindingKey:actor.bindingKey,kind:actor.identityKind},
   sourceSha:actor.sourceSha,operation,caseSha,
   effect:{url:r.url,id:r.id,author:r.author_login},
   observedAt:new Date(ts).toISOString(),
@@ -283,12 +294,16 @@ export function issueCouncilExecutionReceipt(actor,{
 }
 export function verifyCouncilExecutionReceipt(receipt){
  try{
-  if(!receipt||receipt.version!==RECEIPT_VERSION||!ROLE_SET.has(receipt.role)||
+   if(!receipt||receipt.version!==RECEIPT_VERSION||!ROLE_SET.has(receipt.role)||
     !SHA256.test(receipt.digest||'')||!SHA256.test(receipt.caseSha||'')||
-    receipt.effect?.author!=='ultron-mw-'+receipt.role.toLowerCase()+'[bot]'||
     !Number.isSafeInteger(receipt.installationId)||receipt.installationId<1||
     receipt.claims?.independentReview!==false||receipt.claims?.modelInvoked!==false)
    return false;
+   const identity=resolveReceiptAppIdentity({role:receipt.role,
+    appId:receipt.app?.id,appSlug:receipt.app?.slug});
+   if(receipt.effect?.author!==identity.botLogin||
+     receipt.app?.bindingKey!==identity.bindingKey||receipt.app?.kind!==identity.kind)
+    return false;
   const {digest,...body}=receipt;
   return receiptDigest(body)===digest;
  }catch{return false;}
