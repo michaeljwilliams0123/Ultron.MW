@@ -174,6 +174,8 @@ jobs:
           IS_PR: ${{ env.IS_PR }}
           OWNER_MODE: ${{ env.OWNER_MODE }}
           ORIGINAL_SECURITY_SIGNAL: ${{ env.ORIGINAL_SECURITY_SIGNAL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           set -euo pipefail
           if [ ! -f scripts/council-debate.mjs ]; then
@@ -253,6 +255,8 @@ jobs:
           steps.debate.outputs.skipped != 'true' &&
           env.OWNER_MODE == '1' &&
           (github.event_name == 'issues' || github.event_name == 'workflow_dispatch')
+        env:
+          COUNCIL_LEDGER_REQUIRED: ${{ vars.COUNCIL_LEDGER_REQUIRED }}
         run: node scripts/council-act.mjs
 
       - name: Upload receipt artifact
