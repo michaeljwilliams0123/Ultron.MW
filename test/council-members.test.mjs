@@ -4,7 +4,7 @@ import {generateKeyPairSync} from 'node:crypto';
 import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction}
   from '../src/council-app-identities.mjs';
 import {councilMemberIdentity,assessCouncil,memberCredentials,appJwt,
-  executeMemberAction,mintInstallationToken,verifyCouncilActionTarget} from '../src/council-members.mjs';
+  executeMemberAction,mintInstallationToken,verifyCouncilActionTarget,memberIdentityState,COUNCIL_ABILITIES,memberAbilityAdmission} from '../src/council-members.mjs';
 
 const SHA='a'.repeat(40);
 const ctx=over=>({title:'Fix login',body:'Must add a test. Expected: login works. acceptance below.',
@@ -119,4 +119,54 @@ test('executeMemberAction calls GitHub as the member and denies without policy',
   assert.equal(calls[0][2],'Bearer tok');
   const bad=await executeMemberAction(actor,'tok',{op:'pr.nuke'},{number:3},{fetchImpl});
   assert.equal(bad.status,'denied');
+  const before=calls.length;
+  for(const op of ['pr.merge','actions.dispatch','issue.label']){
+    const denied=await executeMemberAction(actor,'tok',{op,why:'overreach'},
+      {number:3,prAuthor:'someone'},{fetchImpl});
+    assert.equal(denied.status,'denied');
+    assert.equal(denied.reason,'role-operation-not-declared');
+  }
+  assert.equal(calls.length,before,'denied actions must not reach GitHub');
+});
+
+test('docs-only change gets fitting rationales and no CI/deploy alarm',()=>{
+  const out=assessCouncil(ctx({title:'docs: review',body:'Adds docs/REVIEW.md. Expected: doc merges. Mentions CI results.',isPr:true,flags:{infra:false}}));
+  const sentinel=out.find(m=>m.identity.role==='Sentinel');
+  assert.ok(!sentinel.reasons.join(' ').includes('Touches CI/deploy'));
+  assert.ok(!sentinel.actions.some(a=>a.op==='actions.dispatch'));
+  assert.ok(out.find(m=>m.identity.role==='Steward').actions[0].labels.includes('council-screened'));
+});
+test('identity state is honest: independent only with own credentials',()=>{
+  assert.equal(memberIdentityState('Builder',{}).independent,false);
+  assert.equal(memberIdentityState('Builder',{}).postedAs,'github-actions[bot]');
+  const env={COUNCIL_BUILDER_APP_ID:'1',COUNCIL_BUILDER_INSTALLATION_ID:'2',COUNCIL_BUILDER_APP_PRIVATE_KEY:'k'};
+  const state=memberIdentityState('Builder',env);
+  assert.equal(state.configured,true);
+  assert.equal(state.independent,false);
+  assert.equal(state.mode,'credentials-configured-unverified');
+  assert.equal(state.postedAs,'github-actions[bot]');
+});
+test('abilities declared per member and external ops are plan-only',async()=>{
+  for(const r of COUNCIL_APP_ROLES)assert.ok(COUNCIL_ABILITIES[r].internal.length);
+  const actor={role:'Sentinel',sourceSha:SHA};
+  const out=await executeMemberAction(actor,'t',{op:'mahoraga.repo.inspect',why:'x'},{number:1},{fetchImpl:async()=>{throw Error('no network')}});
+  assert.ok(['planned','denied'].includes(out.status));
+});
+
+test('every proposed Council action is role-admitted and abilities stay immutable',()=>{
+  for(const member of assessCouncil(ctx({isPr:true,flags:{infra:true,multiFile:true}}))){
+    for(const action of member.actions)
+      assert.equal(memberAbilityAdmission(member.identity.role,action.op).allowed,true,
+        member.identity.role+':'+action.op);
+  }
+  for(const role of COUNCIL_APP_ROLES){
+    const ability=COUNCIL_ABILITIES[role];
+    assert.ok(Object.isFrozen(ability.internal));
+    assert.ok(Object.isFrozen(ability.external));
+    assert.equal(memberAbilityAdmission(role,'pr.merge').allowed,false);
+  }
+  assert.equal(memberAbilityAdmission('Unknown','issue.comment').allowed,false);
+  assert.equal(memberAbilityAdmission('Sentinel','mahoraga.repo.inspect').mode,'planned-external');
+  assert.equal(memberAbilityAdmission('Builder','file.write').allowed,false,
+    'do not advertise an executor that is not implemented');
 });
