@@ -53,8 +53,6 @@ jobs:
       actions: write
       id-token: write
     uses: ./.github/workflows/cloud-pr.yml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   council-command:
     if: >-
