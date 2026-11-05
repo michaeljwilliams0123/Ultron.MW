@@ -16,7 +16,7 @@ test('C04 Hatchable V8 readiness exposes all missing live Council prerequisites'
  assert.equal(r.readyForProduction,false);
  assert.equal(r.paidExternalSpendCeilingUSD,0);
  assert.equal(r.releaseApproved,false);
- assert.equal(COUNCIL_TABLES.length,10);
+ assert.equal(COUNCIL_TABLES.length,12);
 });
 test('C04 Hatchable readiness never converts seven installations into release approval',()=>{
  const installs=COUNCIL_ROLES.map((role,i)=>({

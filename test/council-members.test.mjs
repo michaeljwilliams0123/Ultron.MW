@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync} from 'node:crypto';
+import {verifyCouncilExecutionReceipt} from '../src/council-app-identities.mjs';
 import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction}
   from '../src/council-app-identities.mjs';
 import {councilMemberIdentity,assessCouncil,memberCredentials,appJwt,
-  executeMemberAction,mintInstallationToken,verifyCouncilActionTarget,memberIdentityState,COUNCIL_ABILITIES,memberAbilityAdmission} from '../src/council-members.mjs';
+  executeMemberAction,probeCouncilEffect,mintInstallationToken,verifyCouncilActionTarget,memberIdentityState,COUNCIL_ABILITIES,memberAbilityAdmission} from '../src/council-members.mjs';
 
 const SHA='a'.repeat(40);
 const ctx=over=>({title:'Fix login',body:'Must add a test. Expected: login works. acceptance below.',
@@ -169,4 +170,52 @@ test('every proposed Council action is role-admitted and abilities stay immutabl
   assert.equal(memberAbilityAdmission('Sentinel','mahoraga.repo.inspect').mode,'planned-external');
   assert.equal(memberAbilityAdmission('Builder','file.write').allowed,false,
     'do not advertise an executor that is not implemented');
+});
+
+test('executeMemberAction mints a receipt only from a bot-authored GitHub response',async()=>{
+  const actor=await authenticateCouncilAppActor({role:'Skeptic',sourceSha:SHA,
+    installationToken:'x'.repeat(20),profile:'owner-equivalent',
+    githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,app_slug:'ultron-mw-skeptic',
+      repositories:['michaeljwilliams0123/Ultron.MW'],
+      permissions:{metadata:'read',administration:'write',actions:'write',contents:'write',
+        workflows:'write',issues:'write',pull_requests:'write',checks:'write',statuses:'write'}})});
+  const caseSha='d'.repeat(64);
+  const mk=login=>async()=>({ok:true,status:200,json:async()=>({id:9,user:{login,type:'Bot'}})});
+  const good=await executeMemberAction(actor,'tok',{op:'issue.comment',why:'hi'},{number:3,caseSha},{fetchImpl:mk('ultron-mw-skeptic[bot]')});
+  assert.equal(good.status,'done');
+  assert.equal(verifyCouncilExecutionReceipt(good.receipt),true);
+  const forged=await executeMemberAction(actor,'tok',{op:'issue.comment',why:'hi'},{number:3,caseSha},{fetchImpl:mk('github-actions[bot]')});
+  assert.equal(forged.status,'done');
+  assert.equal(forged.receipt,undefined);
+  assert.match(forged.receiptError,/authorship-unproven/);
+});
+
+test('comment writes carry an execution marker that readback finds, minting a receipt',async()=>{
+  const actor=await authenticateCouncilAppActor({role:'Builder',sourceSha:SHA,
+    installationToken:'x'.repeat(20),profile:'owner-equivalent',
+    githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,app_slug:'ultron-mw-builder',
+      repositories:['michaeljwilliams0123/Ultron.MW'],
+      permissions:{metadata:'read',administration:'write',actions:'write',contents:'write',
+        workflows:'write',issues:'write',pull_requests:'write',checks:'write',statuses:'write'}})});
+  const caseSha='d'.repeat(64),executionKey='e'.repeat(64);
+  const store=[];
+  const fetchImpl=async(url,init={})=>{
+    if(init.method==='POST'){
+      const c={id:40+store.length,body:JSON.parse(init.body).body,user:{login:'ultron-mw-builder[bot]',type:'Bot'}};
+      store.push(c);return{ok:true,status:201,json:async()=>c};
+    }
+    return{ok:true,status:200,json:async()=>store};
+  };
+  const target={number:3,caseSha,executionKey};
+  assert.equal(await probeCouncilEffect(actor,'tok',{op:'pr.comment',number:3,executionKey,caseSha},fetchImpl),null);
+  await executeMemberAction(actor,'tok',{op:'pr.comment',why:'hi'},target,{fetchImpl});
+  assert.match(store[0].body,/<!-- council-exec:e{64} -->/);
+  const found=await probeCouncilEffect(actor,'tok',{op:'pr.comment',number:3,executionKey,caseSha},fetchImpl);
+  assert.equal(verifyCouncilExecutionReceipt(found.receipt),true);
+  assert.equal(found.receipt.effect.author,'ultron-mw-builder[bot]');
+  store[0].user.login='github-actions[bot]';
+  const unattributed=await probeCouncilEffect(actor,'tok',{op:'pr.comment',number:3,executionKey,caseSha},fetchImpl);
+  assert.equal(unattributed.receipt,undefined);
+  assert.equal(unattributed.executor,'github-actions[bot]');
+  assert.equal(await probeCouncilEffect(actor,'tok',{op:'issue.label',number:3,executionKey,caseSha},fetchImpl),null);
 });

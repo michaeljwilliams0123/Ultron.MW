@@ -3,11 +3,12 @@
  * Ultron Council — owner-first deterministic debate + action plan.
  * Includes multi-turn inter-self dialogue transcripts.
  */
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import {buildCouncilPublication} from '../src/council-publication.mjs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
 import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
 import {assessCouncil} from '../src/council-members.mjs';
+import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
 
 const ownerMode = ownerAutonomyEnabled();
@@ -105,6 +106,14 @@ const evidenceDetails=publication.members.map(member=>
   ' · unknowns '+(member.unknowns.join(', ')||'none')+
   ' · dissent '+(member.dissentTags.join(', ')||'none')).join('\n');
 const independentCount=memberAssessments.filter(m=>m.identityState.independent).length;
+// Receipts are verified, never trusted: only valid bot-authored receipts for this case count.
+let receiptProven=0;
+try{
+ const f=process.env.COUNCIL_EXECUTION_RECEIPTS_FILE;
+ if(f)receiptProven=summarizeCouncilIdentityEvidence(JSON.parse(readFileSync(f,'utf8')),{
+  caseSha:process.env.COUNCIL_CASE_SHA,sourceSha:process.env.COUNCIL_SOURCE_SHA
+ }).rolesProven;
+}catch{receiptProven=0;}
 const configuredCount=memberAssessments.filter(m=>m.identityState.configured).length;
 const proceedCount=memberAssessments.filter(m=>m.verdict==='proceed').length;
 
@@ -186,7 +195,7 @@ ${publication.marker}
 ### Council verdicts
 ${memberTable}
 
-**Identities:** \`${configuredCount}/7\` have credential fields configured (not authentication); \`${independentCount}/7\` have independently authenticated authorship proven by this report. This report is posted by github-actions, not seven App accounts. App authentication must be established at execution time. Council votes are a deterministic screen (modelInvocations=0), not independent review.
+**Identities:** \`${configuredCount}/7\` have credential fields configured (not authentication); \`${independentCount}/7\` have independently authenticated authorship proven by this report; \`${receiptProven}/7\` have verified App execution receipts. This report is posted by github-actions, not seven App accounts. App authentication must be established at execution time. Council votes are a deterministic screen (modelInvocations=0), not independent review.
 
 ### What each member will do
 ${roleAssessments}

@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
 const script=resolve(import.meta.dirname,'../scripts/mirror-gitlab.sh');
+// Hosts may set safe.bareRepository=explicit; these tests only use their own temp bare repos.
+Object.assign(process.env,{GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'safe.bareRepository',GIT_CONFIG_VALUE_0:'all'});
 const bash=process.platform==='win32' ? [
   process.env.BASH,
   process.env.LOCALAPPDATA&&join(process.env.LOCALAPPDATA,'Programs/Git/bin/bash.exe'),

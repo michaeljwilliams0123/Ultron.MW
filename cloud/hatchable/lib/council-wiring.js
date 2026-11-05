@@ -6,7 +6,8 @@ const roles=Object.freeze([
 const required=Object.freeze([
  'brain_tasks','brain_events','brain_runtime_control','brain_signed_inbox',
  'capability_attempts','mahoraga_actions','brain_continuum_outbox',
- 'brain_continuum_receipts','brain_council_cases','brain_council_assessments'
+ 'brain_continuum_receipts','brain_council_cases','brain_council_assessments',
+ 'brain_council_executions','brain_council_execution_events'
 ]);
 export const COUNCIL_ROLES=roles;
 export const COUNCIL_TABLES=required;

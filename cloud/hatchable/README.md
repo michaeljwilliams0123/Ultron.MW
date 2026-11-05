@@ -109,6 +109,16 @@ Evidence: GitHub core Verify on historical commit `fcef009b6bbd3d8ff653aa3ebad51
 
 For the model-powered next stage, see [OPENAI-AGENTS-INTEGRATION.md](./OPENAI-AGENTS-INTEGRATION.md). OpenAI inference and hosted sandboxes remain **off**; no billable requests were initiated.
 
+## Council execution ledger (C04, source-only until deployed)
+
+`migrations/0028_council_execution_ledger.sql` + `api/brain/council-ledger.js` + `lib/council-ledger.js`
+persist every Council action (reserve -> dispatched -> verified | executed | failed | reconcile-required)
+with compare-and-set transitions, append-only events and immutable terminal rows. `scripts/council-act.mjs`
+reserves before any external write, marks `dispatched` before the call, and recovers duplicates or
+interrupted acknowledgments by provider readback (hidden `council-exec:<key>` marker); it never re-sends a
+write whose outcome is unknown. Tested against real PostgreSQL via `@electric-sql/pglite`
+(`test/council-ledger-persistence.test.mjs`). Not deployed: apply the migration and deploy the endpoint in the
+Hatchable console, then set repository variable `COUNCIL_LEDGER_REQUIRED=true` to fail closed.
 ## Read-only source/deployment parity check (not a deployment)
 
 To compare the source checked out at an exact PR head with a known live Hatchable deployment:
