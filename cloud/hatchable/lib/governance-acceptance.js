@@ -142,15 +142,19 @@ export async function recordGovernanceAcceptance({db,request,observeMain,observe
    'release-mutation-not-authorized':'exact-head-ci-unverified';
  }
 
- try{await db.query(INSERT,[input.key,fingerprint,input.scenario,input.sourceSha,
-  input.operation,input.requestedCostCents,input.expectedProfileVersion,
-  input.expectedStopVersion,input.taskId,input.fencingGeneration,input.prNumber,
-  input.prHeadSha,reason,JSON.stringify(observed)]);}catch{/* Read back; never retry the write. */}
+ let created=false;
+ try{
+  const inserted=await db.query(INSERT,[input.key,fingerprint,input.scenario,input.sourceSha,
+   input.operation,input.requestedCostCents,input.expectedProfileVersion,
+   input.expectedStopVersion,input.taskId,input.fencingGeneration,input.prNumber,
+   input.prHeadSha,reason,JSON.stringify(observed)]);
+  created=Array.isArray(inserted?.rows)&&inserted.rows.length===1;
+ }catch{/* Read back; never retry the write. */}
  let stored;
  try{stored=await read();}catch{return uncertain('receipt-read-unavailable');}
  if(!stored)return uncertain('receipt-write-outcome-unknown');
  if(stored.fingerprint!==fingerprint)return invalid('idempotency-conflict');
- return held(stored.reason,{reused:false,receipt:stored});
+ return held(stored.reason,{reused:!created,receipt:stored});
 }
 
 export const GOVERNANCE_ACCEPTANCE_SCENARIOS=Object.freeze([...SCENARIOS]);

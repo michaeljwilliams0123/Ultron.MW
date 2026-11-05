@@ -11,7 +11,7 @@ function request(extra={}){
   expectedStopVersion:5,taskId:null,fencingGeneration:null,prNumber:null,
   prHeadSha:null,...extra};
 }
-function database(){
+function database({loseInsertResponse=false}={}){
  const receipts=new Map();
  const calls=[];
  return {calls,receipts,async query(sql,params=[]){
@@ -33,6 +33,7 @@ function database(){
     reason:params[12],providerWrites:0,observed:JSON.parse(params[13]),
     createdAt:'2026-11-05T14:00:00Z'
    });
+   if(loseInsertResponse)throw Error('connection lost after commit');
    return {rows:[{receipt_key:params[0]}]};
   }
   throw Error('Unexpected SQL: '+sql);
@@ -95,6 +96,16 @@ test('same key reuses one immutable receipt and changed payload conflicts',async
  assert.equal(changed.status,'invalid');
  assert.equal(changed.reason,'idempotency-conflict');
  assert.equal([...db.receipts].length,1);
+});
+
+test('lost insert response reconciles the committed receipt without replay',async()=>{
+ const db=database({loseInsertResponse:true});
+ const result=await recordGovernanceAcceptance({db,request:request(),...observers});
+ assert.equal(result.status,'held');
+ assert.equal(result.reason,'positive-cost-denied');
+ assert.equal(result.reused,true);
+ assert.equal(db.calls.filter(x=>x.sql.startsWith('INSERT INTO')).length,1);
+ assert.equal(db.receipts.size,1);
 });
 
 test('current-main and authority drift remain held before scenario evaluation',async()=>{
