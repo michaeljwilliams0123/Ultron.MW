@@ -9,6 +9,7 @@ import { deliberatePlan } from '../src/grokbot-governor.mjs';
 import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
 import {assessCouncil} from '../src/council-members.mjs';
 import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mjs';
+import {runReasoningRound} from '../src/council-reasoning.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
 
 const ownerMode = ownerAutonomyEnabled();
@@ -150,6 +151,13 @@ if (ownerMode) {
 }
 actions.push('Promote durable outcomes into docs/council_precedents.md via a reviewed PR (workflow does not push main).');
 
+const reasoning = await runReasoningRound({ input: `${title}\n\n${body}` });
+const reasoningSection = reasoning.modelInvocations > 0
+  ? `\n### Model reasoning (advisory, free tier, public input only)\n${Object.entries(reasoning.results).map(([r, v]) => `- **${r}** — ${v.source === 'model' ? `${v.provider}/${v.modelId}` : `deterministic fallback (${v.fallbackReason})`}: ${v.verdict} (${v.confidence}) ${String(v.rationale).replace(/\s+/g, ' ').slice(0, 300)}`).join('\n')}\n${reasoning.disagreement ? '\n**Disagreement recorded between roles.**\n' : ''}`
+  : '';
+const modelNote = reasoning.modelInvocations > 0
+  ? `${reasoning.modelInvocations} of 3 reasoning roles invoked a real free-tier model (Builder, Skeptic, Sentinel); the seven member votes remain a deterministic screen`
+  : 'Council votes are a deterministic screen (modelInvocations=0)';
 const stage1 = `# Stage 1 — Architect framing
 **Target:** #${item} — ${title}
 **Kind:** ${isPr ? 'pull_request' : 'issue'} · **Owner mode:** ${ownerMode ? 'yes' : 'no'} · **Policy:** ${limits.mode}
@@ -195,8 +203,9 @@ ${publication.marker}
 ### Council verdicts
 ${memberTable}
 
-**Identities:** \`${configuredCount}/7\` have credential fields configured (not authentication); \`${independentCount}/7\` have independently authenticated authorship proven by this report; \`${receiptProven}/7\` have verified App execution receipts. This report is posted by github-actions, not seven App accounts. App authentication must be established at execution time. Council votes are a deterministic screen (modelInvocations=0), not independent review.
+**Identities:** \`${configuredCount}/7\` have credential fields configured (not authentication); \`${independentCount}/7\` have independently authenticated authorship proven by this report; \`${receiptProven}/7\` have verified App execution receipts. This report is posted by github-actions, not seven App accounts. App authentication must be established at execution time. ${modelNote}, not independent review.
 
+${reasoningSection}
 ### What each member will do
 ${roleAssessments}
 
