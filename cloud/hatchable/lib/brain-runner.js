@@ -138,6 +138,25 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
     SELECT moved.id,'council-assessment',item.value
     FROM moved CROSS JOIN LATERAL jsonb_array_elements($5::jsonb) AS item
     WHERE moved.objective='council.review' RETURNING task_id
+  ), council_cases AS (
+    INSERT INTO brain_council_cases
+      (case_digest,first_task_id,objective,policy_version,evidence)
+    SELECT encode(sha256(convert_to(
+      'c04-advisory-v1:' || ($1::jsonb - 'at')::text,'UTF8')),'hex'),
+      moved.id,moved.objective,'c04-advisory-v1',$1::jsonb - 'at'
+    FROM moved WHERE moved.objective='council.room'
+    ON CONFLICT (case_digest) DO NOTHING RETURNING id
+  ), council_members AS (
+    INSERT INTO brain_council_assessments
+      (case_id,role_id,kind,status,body,identity_state,independence_verified)
+    SELECT cases.id,member.value->>'id',member.value->>'kind',
+      member.value->>'status',member.value->>'body','unverified',false
+    FROM council_cases cases
+    CROSS JOIN LATERAL jsonb_array_elements($1::jsonb->'members') AS member
+    WHERE member.value->>'id' IN (
+      'builder','skeptic','steward','predictor','generator','sentinel','companion'
+    )
+    ON CONFLICT (case_id,role_id) DO NOTHING RETURNING case_id
   ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown',
    JSON.stringify(Array.isArray(result.assessment_receipts)?result.assessment_receipts:[]),
    task.fencing_generation]);
