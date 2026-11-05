@@ -1,5 +1,9 @@
 name: Ultron Create PR to main
 on:
+  workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: true
   issues:
     types: [opened]
 permissions:
@@ -12,13 +16,20 @@ jobs:
     if: >-
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
-      github.event_name == 'issues' &&
-      github.event.action == 'opened' &&
-      github.event.issue.user.login == 'michaeljwilliams0123' &&
-      ((github.event.issue.title == '[Ultron PR] Create proposal' &&
-        startsWith(github.event.issue.body, 'ULTRON_PR_V1')) ||
-       (github.event.issue.title == '[Ultron PR] Implement code' &&
-        startsWith(github.event.issue.body, 'ULTRON_CODE_PR_V1')))
+      ((github.event_name == 'issues' &&
+        github.event.action == 'opened' &&
+        github.event.issue.user.login == 'michaeljwilliams0123' &&
+        ((github.event.issue.title == '[Ultron PR] Create proposal' &&
+          startsWith(github.event.issue.body, 'ULTRON_PR_V1')) ||
+         (github.event.issue.title == '[Ultron PR] Implement code' &&
+          startsWith(github.event.issue.body, 'ULTRON_CODE_PR_V1')))) ||
+       (github.event_name == 'issue_comment' &&
+        github.event.action == 'created' &&
+        github.event.comment.user.login == 'michaeljwilliams0123' &&
+        github.event.issue.user.login == 'michaeljwilliams0123' &&
+        github.event.issue.state == 'open' &&
+        github.event.issue.pull_request == null &&
+        startsWith(github.event.comment.body, '@ultron implement ')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -26,6 +37,7 @@ jobs:
       pull-requests: write
       issues: write
       actions: write
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,7 +49,14 @@ jobs:
         run: |
           node --check src/cloud-pr.mjs
           node --check src/code-pr.mjs
+          node --check src/council-room-execution.mjs
+      - name: Create and verify owner issue handoff
+        if: github.event_name == 'issue_comment'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node src/council-room-execution.mjs
       - name: Create and verify PR targeting main
+        if: github.event_name == 'issues'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node src/cloud-pr.mjs

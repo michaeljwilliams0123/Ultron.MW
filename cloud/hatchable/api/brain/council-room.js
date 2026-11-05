@@ -22,7 +22,10 @@ function publicTask(row){
  return {
   id:row.job_id,messageId:row.id,state:jobState,taskId:row.task_id,
   taskKey:row.task_key,updatedAt:row.task_updated_at,
-  externalUrl:row.external_url||null,
+  externalUrl:row.external_url||null,externalId:row.external_id||null,
+  externalKind:row.external_kind||null,
+  executionState:row.execution_state||'not_requested',
+  executionResult:row.execution_result||{},
   result:row.last_result||null
  };
 }
@@ -53,7 +56,9 @@ function flatten(rows){
     authorType:'system',authorId:'council',
     kind:'result',body:String(result.summary||'Council result recorded.').slice(0,1200),
     mentions:[],context:{taskId:row.task_id,paidCents:result.paidCents||0,
-     githubAdapter:result.githubAdapter,cloudflareRole:result.cloudflareRole},
+     githubAdapter:result.githubAdapter,cloudflareRole:result.cloudflareRole,
+     executionState:row.execution_state||'not_requested',
+     externalUrl:row.external_url||null},
     createdAt:result.at||row.task_updated_at,job:null
    });
   }
@@ -68,6 +73,7 @@ async function snapshot(res,req){
  const rows=(await db.query(`SELECT m.id,m.message_key,m.author_type,m.author_id,m.kind,
    m.body,m.mentions,m.context,m.created_at,
    j.id AS job_id,j.external_url,t.id AS task_id,t.task_key,t.status AS task_status,
+   j.external_id,j.external_kind,j.execution_state,j.execution_result,
    t.last_result,t.updated_at AS task_updated_at
    FROM council_room_messages m
    LEFT JOIN council_room_jobs j ON j.message_id=m.id

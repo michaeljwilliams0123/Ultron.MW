@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 const root=new URL('../.github/workflows/',import.meta.url);
 const read=name=>readFileSync(new URL(name,root),'utf8');
 const router=()=>read('owner-comment-router.yml');
-const sources=['cloud-objective.yml','pr-brain.yml','council-debate.yml'];
+const sources=['cloud-objective.yml','pr-brain.yml','council-debate.yml','cloud-pr.yml'];
 
 test('one native Actions workflow receives issue comments, replacing three skipped runs',()=>{
  const files=[...sources,'owner-comment-router.yml'];
@@ -24,6 +24,10 @@ test('owner commands retain exactly the original three independently scoped capa
  assert.match(yml,/github\.event\.issue\.pull_request != null/);
  assert.match(yml,/!startsWith\(github\.event\.comment\.body, '@coderabbitai'\)/);
  assert.match(yml,/startsWith\(github\.event\.comment\.body, '\/council'\)/);
+ assert.match(yml,/issue-implementation:/);
+ assert.match(yml,/github\.event\.issue\.pull_request == null/);
+ assert.match(yml,/startsWith\(github\.event\.comment\.body, '@ultron implement '\)/);
+ assert.ok(yml.includes('uses: ./.github/workflows/cloud-pr.yml'));
  assert.match(yml,/secrets: inherit/g);
 });
 
@@ -44,4 +48,18 @@ test('router retains scope-limited permissions for each job, no new timers',()=>
  assert.match(yml,/\bpull-requests: write/);
  assert.match(yml,/\bactions: write/);
  assert.doesNotMatch(yml,/OPENAI_API_KEY|PRIVATE_KEY|MAHORAGA_PAT/);
+});
+
+test('owner issue implementation callback has narrowly scoped OIDC permissions and receipt runner',()=>{
+ const caller=router();
+ const reusable=read('cloud-pr.yml');
+ const issueJob=caller.split('  issue-implementation:')[1].split('\n  council-command:')[0];
+ assert.match(issueJob,/id-token: write/);
+ assert.doesNotMatch(issueJob,/secrets:\s*inherit/);
+ assert.match(issueJob,/GITHUB_TOKEN:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/);
+ assert.match(reusable,/workflow_call:\s*\n\s+secrets:\s*\n\s+GITHUB_TOKEN:\s*\n\s+required: true/);
+ assert.match(reusable,/id-token: write/);
+ assert.match(reusable,/if: github\.event_name == 'issue_comment'/);
+ assert.match(reusable,/run: node src\/council-room-execution\.mjs/);
+ assert.match(reusable,/if: github\.event_name == 'issues'/);
 });

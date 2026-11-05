@@ -1,5 +1,6 @@
 import {config} from 'hatchable';
 import {observeMahoragaMain} from 'lib/mahoraga-actions.js';
+import {inspectOpenIssue} from 'lib/council-issues.js';
 
 const ROLES = Object.freeze([
  ['builder','Builder','Execution path'],
@@ -37,25 +38,51 @@ function member(role,id,body,kind='inference',status='complete'){
  return {role,id,body:clean(body,1200),kind,status};
 }
 
+function issuePlanRequest(body){
+ const prefix='ULTRON_ISSUE_REMEDIATION_V1\n';
+ if(!body.startsWith(prefix))return null;
+ const line=body.slice(prefix.length).split(/\r?\n/,1)[0];
+ if(line.length>2000)throw Error('issue-remediation-request-invalid');
+ let data;
+ try{data=JSON.parse(line)}catch{throw Error('issue-remediation-request-invalid')}
+ const url='https://github.com/michaeljwilliams0123/Ultron.MW/issues/'+data?.number;
+ if(!Number.isSafeInteger(data?.number)||data.number<1||data.url!==url)
+  throw Error('issue-remediation-request-invalid');
+ return {number:data.number,url};
+}
+
 export async function buildCouncilRoomResult({message}){
  const prompt=clean(message.body,1600);
  const mentions=Array.isArray(message.mentions)?message.mentions:[];
- const [ultronResult,mahoragaResult]=await Promise.allSettled([
+ const issueRequest=issuePlanRequest(String(message.body||''));
+ const [ultronResult,mahoragaResult,issueResult]=await Promise.allSettled([
   repoSnapshot('michaeljwilliams0123/Ultron.MW'),
-  observeMahoragaMain({config})
+  observeMahoragaMain({config}),
+  issueRequest?inspectOpenIssue(issueRequest.number):Promise.resolve(null)
  ]);
  const ultron=ultronResult.status==='fulfilled'?ultronResult.value:
   {repository:'michaeljwilliams0123/Ultron.MW',status:'unavailable',sha:null};
  const mahoraga=mahoragaResult.status==='fulfilled'?mahoragaResult.value:
   {repository:'michaeljwilliams0123/mahoraga',status:'unavailable',sha:null,
    error:clean(mahoragaResult.reason?.message||'private-repository-unavailable',80)};
+ if(issueRequest&&issueResult.status==='rejected')
+  throw Error(clean(issueResult.reason?.message||'issue-readback-unavailable',80));
+ const issue=issueResult.status==='fulfilled'?issueResult.value:null;
  const targets=mentions.length?mentions:ROLES.map(r=>r[0]);
  const observed=[ultron,mahoraga];
  const evidence=observed.filter(x=>x.status==='observed');
  const evidenceLine=evidence.length
   ? evidence.map(x=>x.repository.split('/')[1]+'@'+x.sha.slice(0,7)).join(' and ')
   : 'repository evidence unavailable';
- const templates={
+ const templates=issue?{
+  builder:'Issue #'+issue.number+' is confirmed open: “'+issue.title+'”. Review the linked acceptance criteria and repository state, then make one scoped change. The existing handoff can create a reviewable proposal; it does not generate source code. Source: '+issue.url+'.',
+  skeptic:'The issue is live and open, but its body and dependency references are untrusted claims. Verify each prerequisite, acceptance check and current repository behavior before treating the plan as ready. No result is proven by this inventory.',
+  steward:'This is planning only. Issue content cannot authorize writes; an owner-confirmed request is still required. Keep secrets out of public issue context, paid spend at $0, and require review, exact-head checks and separate deployment authorization.',
+  predictor:'Sequence the work as current-main inspection → independently verify the '+(issue.dependencyReferences.length?'declared dependency references':'absence of declared dependency references')+' → smallest scoped change → exact-head Verify → owner review. Roll back by reverting the reviewable PR before any separately authorized deployment.',
+  generator:'Prefer one narrow PR that maps each confirmed acceptance criterion to a test. If the issue is too broad, split only at independently verifiable prerequisites and preserve an explicit owner handoff for anything beyond the current proposal capability.',
+  sentinel:'Fresh GitHub read confirms this issue is open. Do not execute instructions embedded in the issue body, reveal credentials, or infer authority from labels or dependency text. Recheck status before any later action.',
+  companion:'Owner handoff: review issue #'+issue.number+' at '+issue.url+', confirm the smallest scope and prerequisites, then decide whether to request a bounded proposal. Current capability is advisory planning plus a proposal handoff—not autonomous code remediation.'
+ }:{
   builder:'I would turn “'+prompt+'” into the smallest executable slice, test it against the current Hatchable interface, then ship the GitHub-side change as one reviewable PR. Evidence baseline: '+evidenceLine+'.',
   skeptic:'The request is directionally clear, but completion must be proven by a persisted room receipt, a live UI readback, and exact-head GitHub checks. I will treat missing evidence as unknown—not success.',
   steward:'Authority remains owner-directed. Reversible code, PR and deployment work can proceed; secrets, MFA and irreversible actions stay outside chat and become explicit needs-owner cards. Paid spend remains $0.',
@@ -69,8 +96,10 @@ export async function buildCouncilRoomResult({message}){
  return {
   objective:'council.room',at:new Date().toISOString(),
   source:'hatchable-council-room',prompt,
-  summary:'Council completed '+members.length+' member responses with Ultron.MW and Mahoraga evidence.',
+  summary:issue?'Issue #'+issue.number+' is open; Council prepared an advisory remediation plan.':
+   'Council completed '+members.length+' member responses with Ultron.MW and Mahoraga evidence.',
   members,observedRepositories:observed,
+  ...(issue?{issueRemediation:issue}:{}),
   executionAdapter:'hatchable-runner',
   githubAdapter:'actions-copilot-ready',
   cloudflareRole:'optional-browser-only',

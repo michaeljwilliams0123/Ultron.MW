@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePrRequest, proposalContent, launchCloudPr,
+import { parsePrRequest, parseIssueCommentPrRequest, proposalContent, launchCloudPr,
+  launchIssueCommentPr,
   PR_OWNER, PR_REPOSITORY, PR_ISSUE_TITLE, PR_MARKER } from '../src/cloud-pr.mjs';
 import { createCloudPrUrl } from '../docs/core/cloud-pr-submit.mjs';
 import { readFile } from 'node:fs/promises';
@@ -12,6 +13,14 @@ function event(number=51, objective='Add better cloud routing') {
     action:'opened',
     issue:{number, title:PR_ISSUE_TITLE, state:'open',
       body:PR_MARKER + '\n' + objective, user:{login:PR_OWNER}},
+  };
+}
+function commentEvent(number=51, objective='Inspect the latest repository state') {
+  return {
+    action:'created',
+    issue:{number,title:'[Continuum acceptance]',state:'open',
+      body:'Owner-authored acceptance request.',user:{login:PR_OWNER}},
+    comment:{id:12345,user:{login:PR_OWNER},body:'@ultron implement '+objective},
   };
 }
 function mockGitHub(evt=event(), main=BASE) {
@@ -83,7 +92,15 @@ function mockGitHub(evt=event(), main=BASE) {
 }
 function params(mock,executorSha=BASE){
   return {event:mock.event, actor:PR_OWNER,repository:PR_REPOSITORY,
-    executorSha,get:mock.get,getOptional:mock.getOptional,post:mock.post,put:mock.put};
+    executorSha,get:mock.get,getOptional:mock.getOptional,post:mock.post,put:mock.put,
+    verifyExactHead:async({post,branch,headSha})=>{
+      await post(ROOT+'/actions/workflows/verify.yml/dispatches',{ref:branch});
+      return {state:'completed',conclusion:'success',sha:headSha,runId:700,
+        url:'https://github.com/'+PR_REPOSITORY+'/actions/runs/700'};
+    },
+    observeExactHead:async({branch,headSha})=>({state:'completed',conclusion:'success',
+      sha:headSha,runId:700,url:'https://github.com/'+PR_REPOSITORY+'/actions/runs/700'}),
+  };
 }
 test('Pages PR action requires GitHub owner confirmation and no token',()=>{
   const url=new URL(createCloudPrUrl('Implement cloud PR creation'));
@@ -127,6 +144,58 @@ test('repeated owner issue is idempotent and never writes a second proposal',asy
   assert.equal(result.prNumber,88);
   assert.equal(result.contentVerified,true);
   assert.ok(mock.calls.slice(before).every(x=>x.startsWith('GET ')));
+});
+
+test('owner issue comment routes to one proposal PR and repeated dispatch is read-only',async()=>{
+  const mock=mockGitHub(commentEvent());
+  const result=await launchIssueCommentPr(params(mock));
+  assert.equal(result.status,'created');
+  assert.equal(result.handoffOnly,true);
+  assert.equal(result.requestCommentId,12345);
+  assert.equal(result.requestObjective,'Inspect the latest repository state');
+  assert.equal(result.prUrl,'https://github.com/'+PR_REPOSITORY+'/pull/88');
+  assert.equal(result.verification.conclusion,'success');
+  assert.equal(result.verification.sha,NEW);
+  const before=mock.calls.length;
+  const replay=await launchIssueCommentPr(params(mock));
+  assert.equal(replay.status,'already-created');
+  assert.equal(replay.prNumber,88);
+  assert.ok(mock.calls.slice(before).every(call=>call.startsWith('GET ')));
+  assert.equal(mock.calls.filter(call=>call==='POST '+ROOT+'/pulls').length,1);
+  assert.equal(mock.calls.filter(call=>call.includes('/dispatches')).length,1);
+});
+
+test('owner issue comment recovers a lost PR-create response by readback, not a second PR',async()=>{
+  const mock=mockGitHub(commentEvent());
+  const post=mock.post;
+  let loseResponse=true;
+  const wrapped={...params(mock),post:async(path,body)=>{
+    const value=await post(path,body);
+    if(path===ROOT+'/pulls'&&loseResponse){
+      loseResponse=false;
+      throw Error('connection lost after GitHub committed PR');
+    }
+    return value;
+  }};
+  await assert.rejects(()=>launchIssueCommentPr(wrapped),/connection lost/);
+  const result=await launchIssueCommentPr(wrapped);
+  assert.equal(result.status,'already-created');
+  assert.equal(result.prNumber,88);
+  assert.equal(mock.calls.filter(call=>call==='POST '+ROOT+'/pulls').length,1);
+  assert.equal(mock.calls.filter(call=>call==='PUT '+ROOT+'/contents/docs/proposals/issue-51.md').length,1);
+});
+
+test('issue-comment execution rejects non-owner, closed, PR and secret-bearing requests before writes',()=>{
+  for(const evt of [
+    {...commentEvent(),comment:{...commentEvent().comment,user:{login:'outsider'}}},
+    {...commentEvent(),issue:{...commentEvent().issue,state:'closed'}},
+    {...commentEvent(),issue:{...commentEvent().issue,pull_request:{url:'spoof'}}},
+    commentEvent(51,'Set api_key=example-value'),
+  ]){
+    assert.throws(()=>parseIssueCommentPrRequest(evt,PR_OWNER,PR_REPOSITORY));
+  }
+  assert.throws(()=>parseIssueCommentPrRequest(commentEvent(), 'outsider', PR_REPOSITORY));
+  assert.throws(()=>parseIssueCommentPrRequest(commentEvent(), PR_OWNER, 'other/repo'));
 });
 
 test('named call publishes the same identity-bound envelope in proposal and task PR', async () => {

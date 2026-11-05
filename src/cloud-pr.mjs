@@ -1,6 +1,7 @@
 import { launchCodePr, CODE_PR_TITLE, CODE_PR_MARKER } from './code-pr.mjs';
 import { parseCodexObjective } from '../docs/core/codex-authors.mjs';
 import { buildCodexCall, formatCodexCall, parseCodexCall } from './codex-call.mjs';
+import { dispatchAndObserveVerify, observeVerifyRun } from './pr-brain-verify.mjs';
 import { createHash } from 'node:crypto';
 import { readFile, appendFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -12,6 +13,7 @@ export const PR_MARKER = 'ULTRON_PR_V1';
 const SHA = /^[0-9a-f]{40}$/;
 const PR_BODY_LIMIT = 1000;
 const REPO_API = '/repos/' + PR_REPOSITORY;
+const SECRET_LIKE = /(?:password|passcode|otp|api[_ -]?key|private[_ -]?key)\s*[:=]|\bgh[pousr]_[A-Za-z0-9_]{20,}\b/i;
 
 export function parsePrRequest(event, actor, repository) {
   const issue = event?.issue;
@@ -36,6 +38,24 @@ export function parsePrRequest(event, actor, repository) {
       'ultron: ' + objective.slice(0, 76),
     requestedDigest: createHash('sha256').update(objective).digest('hex'),
   };
+}
+
+export function parseIssueCommentPrRequest(event, actor, repository) {
+  const issue = event?.issue;
+  const comment = event?.comment;
+  if (repository !== PR_REPOSITORY || actor !== PR_OWNER ||
+      event?.action !== 'created' || issue?.user?.login !== PR_OWNER ||
+      issue?.state !== 'open' || issue?.pull_request ||
+      !Number.isSafeInteger(issue?.number) || issue.number <= 0 ||
+      !Number.isSafeInteger(comment?.id) || comment.id <= 0 ||
+      comment?.user?.login !== PR_OWNER || typeof comment.body !== 'string')
+    throw Error('Issue implementation request is not owner-confirmed');
+  const match = comment.body.match(/^\s*@ultron implement ([^\r\n]+)\s*$/i);
+  const objective = match?.[1]?.trim();
+  if (!objective || objective.length < 5 || objective.length > PR_BODY_LIMIT ||
+      /[\u0000-\u001f]/.test(objective) || SECRET_LIKE.test(objective))
+    throw Error('Issue implementation request must be one bounded, secret-free line');
+  return Object.freeze({ issue, comment, objective });
 }
 
 export function proposalContent(request, mainSha) {
@@ -67,6 +87,7 @@ function apiPath(path) { return REPO_API + path; }
 function validPr(pr, request) {
   return Number.isSafeInteger(pr?.number) && pr.number > 0 &&
     pr.head?.ref === request.branch && pr.base?.ref === 'main' &&
+    SHA.test(pr.head?.sha || '') &&
     pr.head?.repo?.full_name === PR_REPOSITORY &&
     pr.base?.repo?.full_name === PR_REPOSITORY &&
     pr.body?.includes('Ultron issue #' + request.issueNumber);
@@ -77,7 +98,8 @@ function validPr(pr, request) {
  * proposal PR targeting main. No workstation, model or shell execution.
  */
 export async function launchCloudPr({ event, actor, repository, executorSha,
-  get, getOptional, post, put } = {}) {
+  get, getOptional, post, put, verifyExactHead, observeExactHead,
+  onArtifact, onBeforeVerify, readOnly = false } = {}) {
   const request = parsePrRequest(event, actor, repository);
   if (!SHA.test(executorSha || '') || typeof get !== 'function' ||
       typeof getOptional !== 'function' || typeof post !== 'function' ||
@@ -99,6 +121,8 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
   const existing = await get(apiPath('/pulls' + query));
   if (!Array.isArray(existing)) throw Error('PR duplicate check was not available');
   const found = existing.find(pr => validPr(pr, request));
+  if (!found && readOnly) return {status:'not-found',created:false,
+    issueNumber:request.issueNumber,branch:request.branch};
   if (found) {
     const verified = await get(apiPath('/pulls/' + found.number));
     if (!validPr(verified, request)) throw Error('Existing PR read-back failed');
@@ -111,9 +135,15 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
     if (codexCall && (parseCodexCall(verified.body).digest !== codexCall.digest ||
         parseCodexCall(contents).digest !== codexCall.digest || verified.title !== request.title))
       throw Error('Existing Codex request envelope changed');
+    if(!readOnly&&onArtifact)await onArtifact(verified);
+    const verification = observeExactHead ? await observeExactHead({
+      get, branch: request.branch, headSha: verified.head.sha,
+    }) : null;
     return { status: 'already-created', issueNumber: request.issueNumber,
       prNumber: verified.number, prUrl: verified.html_url, branch: request.branch,
-      base: 'main', executorSha, contentVerified: true, created: false,
+      base: 'main', executorSha, headSha: verified.head.sha,
+      contentVerified: true, created: false,
+      verification,
       ...(codexCall ? { codexAuthor: codexCall.authorId, codexTaskId: codexCall.taskId } : {}) };
   }
 
@@ -186,12 +216,17 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
   if (codexCall && (verifiedPr.title !== request.title ||
       parseCodexCall(verifiedPr.body).digest !== codexCall.digest))
     throw Error('Created Codex PR envelope failed read-back');
+  if(onArtifact)await onArtifact(verifiedPr);
 
   // The workflow token is allowed to dispatch the existing exact-head
   // verification job even though a GITHUB_TOKEN-created PR may not emit
   // a normal pull_request workflow event.
-  await post(apiPath('/actions/workflows/verify.yml/dispatches'),
-    {ref: request.branch});
+  if(onBeforeVerify)await onBeforeVerify(verifiedPr);
+  const verification = verifyExactHead ? await verifyExactHead({
+    get, post, branch: request.branch, headSha: verifiedPr.head.sha,
+  }) : (await post(apiPath('/actions/workflows/verify.yml/dispatches'),
+    {ref: request.branch}), {state:'pending',conclusion:null,sha:verifiedPr.head.sha,
+      reason:'Verify dispatch requested; terminal result not observed'});
 
   const note = [
     '<!-- ULTRON_PR_RECEIPT_V1 -->',
@@ -202,7 +237,8 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
     'Target: main',
     'Verified source main: ' + executorSha,
     'Verified proposal file: ' + request.filePath,
-    'Exact-head verification: requested through GitHub Actions',
+    'Exact-head verification: '+(verification.state==='completed'?
+      verification.conclusion+' ('+verification.url+')':'pending; '+verification.reason),
     '',
     codexCall ? 'Named executor requested: ' + request.codex.author.name +
       '. Enrollment is not execution proof. Inspect the Work receipt on the PR branch.' :
@@ -220,10 +256,71 @@ export async function launchCloudPr({ event, actor, repository, executorSha,
     throw Error('PR receipt read-back verification failed');
   return { status: 'created', issueNumber: request.issueNumber,
     prNumber: verifiedPr.number, prUrl: verifiedPr.html_url,
-    branch: request.branch, base: 'main', executorSha,
+    branch: request.branch, base: 'main', executorSha, headSha: verifiedPr.head.sha,
     contentVerified: true, verificationDispatched: true,
-    receiptCommentId: issued.id, created,
+    receiptCommentId: issued.id, created, verification,
     ...(codexCall ? { codexAuthor: codexCall.authorId, codexTaskId: codexCall.taskId } : {}) };
+}
+
+export async function launchIssueCommentPr({ event, actor, repository, executorSha,
+  get, getOptional, post, put, verifyExactHead, observeExactHead,
+  onArtifact, onBeforeVerify, readOnly = false } = {}) {
+  const request = parseIssueCommentPrRequest(event, actor, repository);
+  if (typeof get !== 'function') throw Error('Issue implementation GitHub reader unavailable');
+  const issuePath = apiPath('/issues/' + request.issue.number);
+  const issueSnapshot = await get(issuePath);
+  if (issueSnapshot?.number !== request.issue.number ||
+      issueSnapshot.state !== 'open' || issueSnapshot.user?.login !== PR_OWNER ||
+      issueSnapshot.pull_request ||
+      issueSnapshot.title !== request.issue.title ||
+      issueSnapshot.body !== request.issue.body)
+    throw Error('Owner issue changed since implementation request');
+
+  const syntheticBody = PR_MARKER + '\n' + request.objective;
+  const proposalEvent = {
+    action: 'opened',
+    issue: {
+      number: request.issue.number,
+      title: PR_ISSUE_TITLE,
+      state: 'open',
+      body: syntheticBody,
+      user: { login: PR_OWNER },
+    },
+  };
+  const guardedGet = async path => {
+    if (path === issuePath) {
+      const current = await get(path);
+      if (current?.number !== request.issue.number ||
+          current.state !== 'open' || current.user?.login !== PR_OWNER ||
+          current.pull_request ||
+          current.title !== request.issue.title ||
+          current.body !== request.issue.body)
+        throw Error('Owner issue changed before GitHub handoff');
+      return proposalEvent.issue;
+    }
+    return get(path);
+  };
+  const result = await launchCloudPr({
+    event: proposalEvent,
+    actor,
+    repository,
+    executorSha,
+    get: guardedGet,
+    getOptional,
+    post,
+    put,
+    verifyExactHead,
+    observeExactHead,
+    onArtifact,
+    onBeforeVerify,
+    readOnly,
+  });
+  return Object.freeze({
+    ...result,
+    requestCommentId: request.comment.id,
+    requestObjective: request.objective,
+    handoffOnly: true,
+  });
 }
 
 export async function githubRequest(path, { method = 'GET', body, optional = false } = {}) {
@@ -244,11 +341,26 @@ export async function githubRequest(path, { method = 'GET', body, optional = fal
   return result.json();
 }
 
+export async function githubReadWithRecovery(path,{
+  request=githubRequest,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),
+  optional=false
+}={}){
+ if(typeof path!=='string'||typeof request!=='function'||typeof sleep!=='function')
+  throw Error('Invalid bounded GitHub read');
+ for(let attempt=0;attempt<2;attempt++){
+  try{return await request(path,{optional});}
+  catch(error){
+   if(attempt!==0||!/^GitHub API GET failed with HTTP 403$/.test(error?.message||''))throw error;
+   await sleep(500);
+  }
+ }
+ throw Error('GitHub read recovery exhausted');
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH,'utf8'));
-    const result = await (event?.issue?.title === CODE_PR_TITLE &&
-      event?.issue?.body?.startsWith(CODE_PR_MARKER + '\n') ? launchCodePr : launchCloudPr)({
+    const request = {
       event, actor: process.env.GITHUB_ACTOR,
       repository: process.env.GITHUB_REPOSITORY,
       executorSha: process.env.GITHUB_SHA,
@@ -256,12 +368,22 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       getOptional: p => githubRequest(p, { optional: true }),
       post: (p,body) => githubRequest(p, {method:'POST',body}),
       put: (p,body) => githubRequest(p, {method:'PUT',body}),
-    });
+    };
+    const result = event?.issue?.title === CODE_PR_TITLE &&
+      event?.issue?.body?.startsWith(CODE_PR_MARKER + '\n') ? await launchCodePr(request) :
+      process.env.GITHUB_EVENT_NAME === 'issue_comment' ? await launchIssueCommentPr({
+        ...request,
+        verifyExactHead: dispatchAndObserveVerify,
+        observeExactHead: observeVerifyRun,
+      }) : await launchCloudPr(request);
     if (process.env.GITHUB_STEP_SUMMARY)
       await appendFile(process.env.GITHUB_STEP_SUMMARY,
         '## Ultron Create PR to main\n\nResult: ' + result.status +
         '\nPR: ' + (result.prUrl || result.url) +
         '\nVerified main SHA: ' + (result.executorSha || result.commitSha) +
+        '\nExact-head Verify: ' + (result.verification?.conclusion ||
+          result.verification?.state || 'not observed') +
+        (result.verification?.url ? '\nVerify run: ' + result.verification.url : '') +
         '\nPC required: No\n\n' +
         'Code manifest issues commit real source changes; plain objectives remain documentation proposals.\n');
     console.log(JSON.stringify(result));
