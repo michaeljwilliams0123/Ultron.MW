@@ -110,6 +110,12 @@ export async function launchCodePr({event,actor,repository,executorSha,
   if (await getOptional(ROOT+'/git/ref/heads/'+request.branch))
     throw Error('Existing unverified branch cannot be overwritten');
 
+  // GitHub may commit a write even when its HTTP acknowledgement is lost.
+  // Recovery below is readback-only and accepts only the exact branch/commit
+  // or PR intended by this immutable request. It never replays the same
+  // externally visible mutation after an uncertain response.
+  const recoveredWrites=[];
+
   const head = await get(ROOT+'/git/commits/'+executorSha);
   if (!SHA.test(head?.tree?.sha||'')) throw Error('Main tree unavailable');
   const changes = [];
@@ -140,8 +146,18 @@ export async function launchCodePr({event,actor,repository,executorSha,
   if (!SHA.test(commit?.sha||'')) throw Error('Source commit not acknowledged');
   if ((await get(ROOT+'/git/ref/heads/main'))?.object?.sha !== executorSha)
     throw Error('Main moved before publication; no branch or PR created');
-  const createdRef=await post(ROOT+'/git/refs',{
-    ref:'refs/heads/'+request.branch,sha:commit.sha});
+  let createdRef;
+  try {
+    createdRef=await post(ROOT+'/git/refs',{
+      ref:'refs/heads/'+request.branch,sha:commit.sha});
+  } catch(error) {
+    let observed=null;
+    try { observed=await getOptional(ROOT+'/git/ref/heads/'+request.branch); }
+    catch { /* Preserve the original uncertain write error. */ }
+    if(observed?.object?.sha!==commit.sha)throw error;
+    createdRef=observed;
+    recoveredWrites.push('branch-ref');
+  }
   if (createdRef?.object?.sha !== commit.sha ||
       (await get(ROOT+'/git/ref/heads/'+request.branch))?.object?.sha !== commit.sha)
     throw Error('Published branch not independently verified');
@@ -151,9 +167,21 @@ export async function launchCodePr({event,actor,repository,executorSha,
     'Based on exact main SHA: '+executorSha,
     'Changed source files: '+changes.map(x=>x.path).join(', '),'',
     'GitHub Actions verifies syntax and tests on the proposed head. No automatic merge or deployment.'].join('\n');
-  const pr=await post(ROOT+'/pulls',{
-    title:'ultron: '+request.objective.slice(0,72),head:request.branch,
-    base:'main',draft:false,body,maintainer_can_modify:true});
+  let pr;
+  try {
+    pr=await post(ROOT+'/pulls',{
+      title:'ultron: '+request.objective.slice(0,72),head:request.branch,
+      base:'main',draft:false,body,maintainer_can_modify:true});
+  } catch(error) {
+    let observed=null;
+    try {
+      const readback=await get(ROOT+'/pulls'+query);
+      observed=Array.isArray(readback)?readback.find(item=>matches(item,request)):null;
+    } catch { /* Preserve the original uncertain write error. */ }
+    if(!observed)throw error;
+    pr=observed;
+    recoveredWrites.push('pull-request');
+  }
   if (!matches(pr,request)) throw Error('GitHub PR creation response did not match request');
   const checked=await get(ROOT+'/pulls/'+pr.number);
   if (!matches(checked,request) || checked.head?.sha !== commit.sha ||
@@ -177,5 +205,5 @@ export async function launchCodePr({event,actor,repository,executorSha,
     throw Error('Receipt read-back failed');
   return {status:'created',url:checked.html_url,number:checked.number,
     branch:request.branch,base:'main',commitSha:commit.sha,files:changes.map(x=>x.path),
-    verificationDispatched:true,created:true};
+    verificationDispatched:true,created:true,recoveredWrites};
 }
