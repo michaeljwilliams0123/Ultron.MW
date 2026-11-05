@@ -64,3 +64,11 @@ test('owner issue implementation callback has narrowly scoped OIDC permissions a
  assert.match(reusable,/run: node src\/council-room-execution\.mjs/);
  assert.match(reusable,/if: github\.event_name == 'issues'/);
 });
+
+test('council command grants the OIDC permission required by its reusable workflow',()=>{
+ const caller=router();
+ const reusable=read('council-debate.yml');
+ const councilJob=caller.split('  council-command:')[1];
+ assert.match(reusable,/id-token: write/);
+ assert.match(councilJob,/id-token: write/);
+});
