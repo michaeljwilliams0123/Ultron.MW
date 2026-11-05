@@ -61,7 +61,7 @@ function externalArtifact(body,phase){
   return {id:String(artifact.id),url:artifact.url,kind:artifact.kind,
     headSha:artifact.headSha};
  }
- if(phase==='observing'||phase==='verified'||phase==='blocked'){
+ if(phase==='observing'||phase==='verified'||phase==='blocked'||phase==='needs-owner'){
   const verification=body.verification;
   if(verification!==undefined){
    const match=typeof verification.url==='string'?verification.url.match(RUN_URL):null;
@@ -72,18 +72,14 @@ function externalArtifact(body,phase){
   }
   if(phase==='verified'&&verification?.conclusion!=='success')
    throw Error('execution-success-receipt-invalid');
-  if(phase==='blocked'&&(!cleanString(body.result?.reason,240)||
+  const requiresReason=phase==='blocked'||phase==='needs-owner';
+  if(requiresReason&&(!cleanString(body.result?.reason,240)||
     !body.result.reason.trim()))throw Error('execution-result-invalid');
   return verification?{
    runId:String(verification.runId),url:verification.url,
    sha:verification.sha,conclusion:verification.conclusion,
-   ...(phase==='blocked'?{reason:body.result.reason.trim()}:{})
-  }:phase==='blocked'?{reason:body.result.reason.trim()}:null;
- }
- if(phase==='blocked'||phase==='needs-owner'){
-  const reason=body.result?.reason;
-  if(!cleanString(reason,240)||!reason.trim())throw Error('execution-result-invalid');
-  return {reason:reason.trim()};
+   ...(requiresReason?{reason:body.result.reason.trim()}:{})
+  }:requiresReason?{reason:body.result.reason.trim()}:null;
  }
  return null;
 }

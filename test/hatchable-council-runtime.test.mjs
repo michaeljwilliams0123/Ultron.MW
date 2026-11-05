@@ -154,6 +154,58 @@ test('proposal-only execution endpoint cannot accept an authenticated verified r
  }
 });
 
+test('needs-owner receipt persists exact completed verification beside the proposal hold',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const source=await readFile(new URL('../cloud/hatchable/api/brain/council-room-execution.js',import.meta.url),'utf8');
+ const sha='a'.repeat(40);
+ const verification={runId:'42',
+  url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42',
+  sha,conclusion:'success'};
+ const reason='proposal-only-no-execution';
+ const expected={...verification,reason};
+ let writes=0;
+ const row={id:41,message_id:7,execution_state:'needs-owner',
+  idempotency_key:'room:issue:285:'+'b'.repeat(40),request_digest:'b'.repeat(64),
+  external_id:'291',external_kind:'pull_request',
+  external_url:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/291',
+  execution_result:{headSha:sha,...expected}};
+ const platform={db:{async query(sql,params){
+  assert.match(sql,/UPDATE council_room_jobs SET execution_state=\$3/);
+  assert.equal(params[2],'needs-owner');
+  assert.deepEqual(JSON.parse(params[3]),expected);
+  assert.equal(params[4],sha);
+  writes++;
+  return {rows:[row]};
+ }},scheduler:{},events:{}};
+ globalThis.__executionRoutePlatform=platform;
+ globalThis.__executionRouteOidc=async()=>({actor:'michaeljwilliams0123',event:'issue_comment'});
+ const converted=source
+  .replace("import {db,scheduler,events} from 'hatchable';",
+   'const {db,scheduler,events}=globalThis.__executionRoutePlatform;')
+  .replace("import {verifyCouncilRoomExecutionOidc} from 'lib/council-oidc.js';",
+   'const verifyCouncilRoomExecutionOidc=globalThis.__executionRouteOidc;');
+ assert.notEqual(converted,source);
+ const route=await import('data:text/javascript;base64,'+
+  Buffer.from(converted).toString('base64')+'#needs-owner-verification');
+ const body={schema:'ultron.council-room.execution.v1',phase:'needs-owner',
+  issueNumber:285,commentId:12345,
+  commentBody:'@ultron implement Inspect the latest repository state',
+  verification,result:{reason}};
+ const res={code:200,setHeader(){},status(n){this.code=n;return this;},
+  json(value){return {status:this.code,body:value};}};
+ try{
+  const result=await route.default({rawBody:JSON.stringify(body),
+   headers:{authorization:'Bearer '+'x'.repeat(300)}},res);
+  assert.equal(result.status,200);
+  assert.equal(result.body.job.state,'needs-owner');
+  assert.deepEqual(result.body.job.result,{headSha:sha,...expected});
+  assert.equal(writes,1);
+ }finally{
+  delete globalThis.__executionRoutePlatform;
+  delete globalThis.__executionRouteOidc;
+ }
+});
+
 test('planned and reserve receipts return authoritative mutation rows',async()=>{
  const {readFile}=await import('node:fs/promises');
  const {createHash}=await import('node:crypto');
