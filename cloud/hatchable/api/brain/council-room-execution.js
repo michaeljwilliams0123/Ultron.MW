@@ -88,7 +88,7 @@ function externalArtifact(body,phase){
  return null;
 }
 function publicJob(row){
- return {id:row.job_id,messageId:String(row.message_id),
+ return {id:row.job_id??row.id,messageId:String(row.message_id),
   state:row.execution_state,idempotencyKey:row.idempotency_key,
   externalId:row.external_id||null,externalKind:row.external_kind||null,
   externalUrl:row.external_url||null,result:row.execution_result||{}};
@@ -102,34 +102,29 @@ async function planned(res,request){
  const context={repositories:[REPO],includeMahoraga:true,
   source:'github-owner-comment',issueNumber:body.issueNumber,
   commentId:body.commentId,requestDigest};
- const rows=(await db.query(`WITH inserted AS (
+ const rows=(await db.query(`WITH message AS (
    INSERT INTO council_room_messages(message_key,author_type,author_id,kind,body,context)
    VALUES($1,'owner','michaeljwilliams0123','action',$2,$3::jsonb)
-   ON CONFLICT(message_key) DO NOTHING RETURNING id
- ), chosen AS (
-   SELECT id FROM inserted UNION ALL
-   SELECT id FROM council_room_messages WHERE message_key=$1 LIMIT 1
- ), task_insert AS (
+   ON CONFLICT(message_key) DO UPDATE SET message_key=EXCLUDED.message_key
+   RETURNING id,body,(xmax=0) AS created
+ ), task AS (
    INSERT INTO brain_tasks(task_key,objective)
-   SELECT 'room:'||id::text,'council.room' FROM chosen
-   ON CONFLICT(task_key) DO NOTHING RETURNING id,task_key
- ), task_chosen AS (
-   SELECT id,task_key FROM task_insert UNION ALL
-   SELECT t.id,t.task_key FROM brain_tasks t JOIN chosen c
-    ON t.task_key='room:'||c.id::text LIMIT 1
- ), job_insert AS (
+   SELECT 'room:'||id::text,'council.room' FROM message
+   ON CONFLICT(task_key) DO UPDATE SET task_key=EXCLUDED.task_key
+   RETURNING id,task_key
+ ), job AS (
    INSERT INTO council_room_jobs(message_id,task_id,execution_state,
     idempotency_key,request_digest)
-   SELECT c.id,t.id,'planned',$4,$5 FROM chosen c CROSS JOIN task_chosen t
-   ON CONFLICT(message_id) DO NOTHING RETURNING id
+   SELECT m.id,t.id,'planned',$4,$5 FROM message m
+   JOIN task t ON t.task_key='room:'||m.id::text
+   ON CONFLICT(message_id) DO UPDATE SET message_id=EXCLUDED.message_id
+   RETURNING id AS job_id,message_id,execution_state,idempotency_key,
+    request_digest,external_id,external_kind,external_url,execution_result
  )
- SELECT m.id AS message_id,m.body,j.id AS job_id,j.execution_state,
+ SELECT m.id AS message_id,m.body,j.job_id,j.execution_state,
    j.idempotency_key,j.request_digest,j.external_id,j.external_kind,
-   j.external_url,j.execution_result,
-   EXISTS(SELECT 1 FROM inserted) AS created
- FROM chosen c JOIN council_room_messages m ON m.id=c.id
- JOIN task_chosen t ON TRUE
- JOIN council_room_jobs j ON j.message_id=m.id`,
+   j.external_url,j.execution_result,m.created
+ FROM message m CROSS JOIN job j`,
  [messageKey,'@ultron implement '+objective,JSON.stringify(context),
   idempotencyKey,requestDigest])).rows;
  const row=rows[0];
@@ -155,7 +150,7 @@ async function update(res,request){
  }
  let updated;
  if(phase==='reserve'){
-  updated=(await db.query(`WITH control AS MATERIALIZED (
+  const transitioned=(await db.query(`WITH control AS MATERIALIZED (
    SELECT paused FROM brain_runtime_control WHERE id=1 FOR SHARE
   ), changed AS (
    UPDATE council_room_jobs j SET
@@ -167,13 +162,17 @@ async function update(res,request){
     AND (j.execution_state='planned' OR
      (j.execution_state='needs-owner' AND
       j.execution_result->>'reason'='owner-paused' AND j.external_id IS NULL))
-   RETURNING j.id
+   RETURNING j.*
   )
-  SELECT j.*,m.id AS message_id,
-   EXISTS(SELECT 1 FROM changed c WHERE c.id=j.id) AS transitioned
-  FROM council_room_jobs j JOIN council_room_messages m ON m.id=j.message_id
-  WHERE j.idempotency_key=$1 AND j.request_digest=$2 LIMIT 1`,
+  SELECT * FROM changed`,
   [idempotencyKey,requestDigest])).rows[0];
+  if(transitioned)updated={...transitioned,transitioned:true};
+  else{
+   updated=(await db.query(`SELECT j.* FROM council_room_jobs j
+    WHERE j.idempotency_key=$1 AND j.request_digest=$2 LIMIT 1`,
+    [idempotencyKey,requestDigest])).rows[0];
+   if(updated)updated={...updated,transitioned:false};
+  }
  }else if(phase==='dispatched'){
   updated=(await db.query(`UPDATE council_room_jobs SET execution_state='dispatched',
     external_id=$3,external_kind='pull_request',external_url=$4,

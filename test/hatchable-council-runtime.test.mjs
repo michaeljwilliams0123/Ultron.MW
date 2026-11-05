@@ -4,6 +4,7 @@ import { createSign, generateKeyPairSync } from 'node:crypto';
 import { councilOidcAudience, councilRoomExecutionOidcAudience,
   verifyCouncilOidc, verifyCouncilRoomExecutionOidc } from '../cloud/hatchable/lib/council-oidc.js';
 import { validateCouncilPlan } from '../cloud/hatchable/lib/council-plan.js';
+import { parseIssueCommentPrRequest, PR_OWNER, PR_REPOSITORY } from '../src/cloud-pr.mjs';
 
 const roles = ['Builder', 'Skeptic', 'Steward', 'Predictor', 'Generator', 'Sentinel', 'Companion'];
 const sha = 'a'.repeat(40);
@@ -147,6 +148,98 @@ test('proposal-only execution endpoint cannot accept an authenticated verified r
    headers:{authorization:'Bearer '+'x'.repeat(300)}},res);
   assert.equal(result.status,422);
   assert.equal(result.body.error,'proposal-only-not-execution');
+ }finally{
+  delete globalThis.__executionRoutePlatform;
+  delete globalThis.__executionRouteOidc;
+ }
+});
+
+test('planned and reserve receipts return authoritative mutation rows',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const {createHash}=await import('node:crypto');
+ const source=await readFile(new URL('../cloud/hatchable/api/brain/council-room-execution.js',import.meta.url),'utf8');
+ let current,updates=0,schedules=0,publishes=0;
+ const queries=[];
+ const platform={
+  db:{async query(sql){
+   queries.push(sql);
+   if(sql.includes('INSERT INTO council_room_messages')){
+    assert.match(sql,/ON CONFLICT\(message_key\) DO UPDATE/);
+    assert.match(sql,/RETURNING id,body,\(xmax=0\) AS created/);
+    assert.match(sql,/FROM message m CROSS JOIN job j/);
+    assert.doesNotMatch(sql,/FROM council_room_messages WHERE message_key/);
+    return {rows:[current]};
+   }
+   if(sql.includes('UPDATE council_room_jobs j SET')){
+    assert.match(sql,/RETURNING j\.\*/);
+    updates++;
+    return updates===1?{rows:[current]}:{rows:[]};
+   }
+   if(sql.includes('SELECT j.* FROM council_room_jobs j')){
+    return {rows:[current]};
+   }
+   throw Error('unexpected database query');
+  }},
+  scheduler:{async now(){schedules++;}},
+  events:{async publish(){publishes++;}}
+ };
+ globalThis.__executionRoutePlatform=platform;
+ globalThis.__executionRouteOidc=async()=>({actor:'michaeljwilliams0123',event:'issue_comment'});
+ const converted=source
+  .replace("import {db,scheduler,events} from 'hatchable';",
+   'const {db,scheduler,events}=globalThis.__executionRoutePlatform;')
+  .replace("import {verifyCouncilRoomExecutionOidc} from 'lib/council-oidc.js';",
+   'const verifyCouncilRoomExecutionOidc=globalThis.__executionRouteOidc;');
+ assert.notEqual(converted,source);
+ const route=await import('data:text/javascript;base64,'+
+  Buffer.from(converted).toString('base64')+'#mutation-row-contract');
+ const objective='Inspect the latest repository state';
+ const requestDigest=createHash('sha256').update(
+  JSON.stringify({issueNumber:285,objective})).digest('hex');
+ current={job_id:41,id:41,message_id:7,body:'@ultron implement '+objective,
+  execution_state:'planned',idempotency_key:'room:issue:285:'+requestDigest.slice(0,40),
+  request_digest:requestDigest,external_id:null,external_kind:null,external_url:null,
+  execution_result:{},created:true};
+ const send=async(phase,commentBody='@ultron implement '+objective)=>{
+  const body={schema:'ultron.council-room.execution.v1',phase,
+   issueNumber:285,commentId:12345,commentBody};
+  const res={code:200,setHeader(){},status(n){this.code=n;return this;},
+   json(value){return {status:this.code,body:value};}};
+  return route.default({rawBody:JSON.stringify(body),
+   headers:{authorization:'Bearer '+'x'.repeat(300)}},res);
+ };
+ try{
+  for(const unsafe of ['password: value','api_key=value','ghp_'+'a'.repeat(30)]){
+   const commentBody='@ultron implement '+unsafe;
+   const event={action:'created',
+    issue:{number:285,state:'open',user:{login:PR_OWNER}},
+    comment:{id:12345,body:commentBody,user:{login:PR_OWNER}}};
+   assert.throws(()=>parseIssueCommentPrRequest(event,PR_OWNER,PR_REPOSITORY));
+   const rejected=await send('planned',commentBody);
+   assert.equal(rejected.status,403);
+   assert.equal(rejected.body.error,'oidc-invalid');
+  }
+  assert.equal(queries.length,0,'both parsers reject unsafe objectives before database access');
+
+  const planned=await send('planned');
+  assert.equal(planned.status,200);
+  assert.equal(planned.body.created,true);
+  assert.equal(planned.body.job.id,41);
+  assert.equal(schedules,1);
+  assert.equal(publishes,1);
+
+  current={...current,execution_state:'dispatching',created:undefined};
+  const reserve=await send('reserve');
+  assert.equal(reserve.body.job.state,'dispatching');
+  assert.equal(reserve.body.job.id,41);
+  assert.equal(reserve.body.dispatchAdmitted,true);
+
+  const replay=await send('reserve');
+  assert.equal(replay.body.job.state,'dispatching');
+  assert.equal(replay.body.dispatchAdmitted,false);
+  assert.equal(schedules,1);
+  assert.equal(publishes,1);
+  assert.equal(queries.length,4);
  }finally{
   delete globalThis.__executionRoutePlatform;
   delete globalThis.__executionRouteOidc;

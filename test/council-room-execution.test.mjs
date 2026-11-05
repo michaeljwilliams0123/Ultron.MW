@@ -19,9 +19,9 @@ test('owner implementation comments are bounded, owner-only, and secret-rejectin
  assert.equal(request.objective,'Inspect the latest repository state');
  assert.match(request.idempotencyKey,/^room:issue:285:[a-f0-9]{40}$/);
  assert.throws(()=>parseOwnerImplementationComment(event('@ultron implement password=secret'),PR_OWNER,PR_REPOSITORY),
-  /objective-invalid/);
+  /secret-free/);
  assert.throws(()=>parseOwnerImplementationComment(event(),'other-user',PR_REPOSITORY),
-  /comment-invalid/);
+  /not owner-confirmed/);
 });
 
 test('receipt callback binds the exact body into the GitHub OIDC audience',async()=>{
@@ -81,6 +81,29 @@ test('paused owner reservation remains held without touching GitHub',async()=>{
  assert.equal(result.status,'needs-owner');
 });
 
+test('a failed needs-owner receipt does not replace the original execution error',async()=>{
+ const originalError=Error('original GitHub failure');
+ const holdError=Error('hold receipt failure');
+ await assert.rejects(runCouncilRoomExecution({
+  event:event(),actor:PR_OWNER,repository:PR_REPOSITORY,executorSha:SHA,
+  callback:async payload=>{
+   if(payload.phase==='planned')return {job:{state:'planned'}};
+   if(payload.phase==='reserve')return {
+    dispatchAdmitted:true,job:{state:'dispatching'}};
+   if(payload.phase==='needs-owner')throw holdError;
+   throw Error('unexpected callback phase');
+  },
+  github:{get:async()=>{throw originalError;},
+   getOptional:async()=>null,post:async()=>{throw Error('unexpected GitHub write');},
+   put:async()=>{throw Error('unexpected GitHub write');}}
+ }),error=>{
+  assert.ok(error instanceof AggregateError);
+  assert.deepEqual(error.errors,[originalError,holdError]);
+  assert.match(error.message,/original GitHub failure/);
+  assert.match(error.message,/owner hold receipt failed/);
+  return true;
+ });
+});
 
 test('fresh fenced owner reservation dispatches exactly once instead of getting held as unknown',async()=>{
  const issue=event(),branch='ultron/issue-285',BASE='a'.repeat(40),HEAD='b'.repeat(40);

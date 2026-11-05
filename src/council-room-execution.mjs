@@ -2,25 +2,14 @@ import {createHash} from 'node:crypto';
 import {appendFile,readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {githubReadWithRecovery,githubRequest,launchIssueCommentPr,
-  PR_OWNER,PR_REPOSITORY} from './cloud-pr.mjs';
+  parseIssueCommentPrRequest,PR_OWNER,PR_REPOSITORY} from './cloud-pr.mjs';
 import {dispatchAndObserveVerify,observeVerifyRun} from './pr-brain-verify.mjs';
 
 const API='https://ultron-mw-cloud.hatchable.site/api/brain/council-room-execution';
 const SHA=/^[a-f0-9]{40}$/;
-const SECRET_LIKE=/(?:password|passcode|otp|api[_ -]?key|private[_ -]?key)\s*[:=]|\bgh[pousr]_[A-Za-z0-9_]{20,}\b/i;
 
 export function parseOwnerImplementationComment(event,actor,repository){
- const issue=event?.issue,comment=event?.comment;
- if(repository!==PR_REPOSITORY||actor!==PR_OWNER||event?.action!=='created'||
-   issue?.user?.login!==PR_OWNER||issue?.state!=='open'||issue?.pull_request||
-   !Number.isSafeInteger(issue?.number)||issue.number<1||
-   comment?.user?.login!==PR_OWNER||!Number.isSafeInteger(comment?.id)||comment.id<1||
-   typeof comment.body!=='string')throw Error('owner-implementation-comment-invalid');
- const match=comment.body.match(/^\s*@ultron implement ([^\r\n]+)\s*$/i);
- const objective=match?.[1]?.trim();
- if(!objective||objective.length<5||objective.length>1000||
-   /[\u0000-\u001f]/.test(objective)||SECRET_LIKE.test(objective))
-  throw Error('owner-implementation-objective-invalid');
+ const {issue,comment,objective}=parseIssueCommentPrRequest(event,actor,repository);
  const digest=createHash('sha256').update(
   JSON.stringify({issueNumber:issue.number,objective})).digest('hex');
  return Object.freeze({issueNumber:issue.number,commentId:comment.id,
@@ -216,8 +205,14 @@ export async function runCouncilRoomExecution({
   return {status:phase,job:saved.job,prUrl:result.prUrl,
    verification,requestKey:request.idempotencyKey,created:result.created};
  }catch(error){
-  await callback({...base,phase:'needs-owner',
-   result:{reason:'execution-outcome-requires-readback'}});
+  try{
+   await callback({...base,phase:'needs-owner',
+    result:{reason:'execution-outcome-requires-readback'}});
+  }catch(holdError){
+   throw new AggregateError([error,holdError],
+    (error instanceof Error?error.message:String(error))+
+    '; owner hold receipt failed');
+  }
   throw error;
  }
 }

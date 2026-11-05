@@ -46,6 +46,17 @@ test('page cap truncates and failures are sanitized',async()=>{
  assert.equal(buildIssuePortfolio([]).count,0);
 });
 
+test('blockers beyond the displayed issue limit still block dependent issues',()=>{
+ const issues=[issue(1,{body:'depends on #151'}),
+  ...Array.from({length:149},(_,i)=>issue(i+2)),issue(151)];
+ const portfolio=buildIssuePortfolio(issues);
+ const dependent=portfolio.issues.find(item=>item.number===1);
+ assert.equal(portfolio.count,150);
+ assert.equal(portfolio.truncated,true);
+ assert.equal(dependent.status,'blocked');
+ assert.deepEqual(dependent.blockedBy,[151]);
+});
+
 test('issue detail is re-read from the fixed repository and only open issues are accepted',async()=>{
  const calls=[];
  const result=await inspectOpenIssue(4,{fetchGithub:async(url,init)=>{

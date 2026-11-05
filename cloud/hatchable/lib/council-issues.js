@@ -25,7 +25,7 @@ function summarize(issue){
 
 export function buildIssuePortfolio(issues,{truncated=false}={}){
  const items=issues.slice(0,MAX_ISSUES).map(summarize);
- const open=new Set(items.map(i=>i.number));
+ const open=new Set(issues.map(i=>i.number));
  for(const item of items){
   item.blockedBy=item.dependsOn.filter(n=>open.has(n));
   item.status=item.blockedBy.length?'blocked':'unblocked';
