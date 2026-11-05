@@ -11,7 +11,7 @@ const required=Object.freeze([
 export const COUNCIL_ROLES=roles;
 export const COUNCIL_TABLES=required;
 const RUNTIME_IDS=Object.freeze([
- 'repo.inspect','repo.prs','repo.ci','site.render','council.review'
+ 'repo.inspect','repo.prs','repo.ci','site.render','council.review','council.room'
 ]);
 const CANDIDATE_IDS=Object.freeze([
  'web.open','mahoraga.repo.inspect','mahoraga.task.prepare'

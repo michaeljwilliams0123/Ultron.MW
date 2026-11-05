@@ -73,6 +73,22 @@ test('C04 cloud brain distinguishes deployed capability registry from source-onl
  assert.throws(()=>assessCouncilWiring({tables:COUNCIL_TABLES,
   runtimeCapabilities:[deployed[0],deployed[0]]}),/observation-invalid/);
 });
+test('C04 production readiness accepts all six deployed Council capabilities',()=>{
+ const deployed=[
+  {id:'repo.inspect',effect:'read'},
+  {id:'repo.prs',effect:'read'},
+  {id:'repo.ci',effect:'read'},
+  {id:'site.render',effect:'read'},
+  {id:'council.review',effect:'advisory'},
+  {id:'council.room',effect:'advisory'}
+ ];
+ const result=assessCouncilWiring({tables:COUNCIL_TABLES,runtimeCapabilities:deployed});
+ assert.equal(result.capabilities.filter(c=>c.status==='runtime-registered').length,6);
+ assert.ok(result.capabilities.some(c=>c.id==='council.room'&&c.effect==='advisory'));
+ assert.equal(result.readyForProduction,false);
+ assert.equal(result.releaseApproved,false);
+});
+
 test('C04 cloud readiness imports the current deployed Brain capability inventory',()=>{
  const src=readFileSync(new URL('../cloud/hatchable/api/brain/council-readiness.js',import.meta.url),'utf8');
  assert.match(src,/CAPABILITIES/);
