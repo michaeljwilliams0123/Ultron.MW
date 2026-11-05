@@ -5,7 +5,9 @@
  * Admission: GitHub App identity/profile AND a role-specific executable action surface.
  */
 import {createSign} from 'node:crypto';
-import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction}
+import {executionKey} from './council-execution-ledger.mjs';
+import {runLedgeredAction} from './council-ledger-client.mjs';
+import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction,issueCouncilExecutionReceipt}
   from './council-app-identities.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -249,14 +251,16 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
     externalIntentFingerprint:undefined,caseSha:undefined});
   if(!decision.allowed)return{op:action.op,status:'denied',reason:decision.reason};
   const call=api(token,fetchImpl),n=target.number,text=action.text||action.why;
+  let effect=null;
+  const marker=/^[a-f0-9]{64}$/.test(target.executionKey||'')?'\n\n<!-- council-exec:'+target.executionKey+' -->':'';
   const signed='**'+actor.role+'** (`ultron-mw-'+actor.role.toLowerCase()+'`): ';
   switch(action.op){
     case 'issue.comment':case 'pr.comment':case 'review.comment':
-      await call('POST','/issues/'+n+'/comments',{body:signed+text});break;
+      effect={path:'/issues/'+n+'/comments',data:await call('POST','/issues/'+n+'/comments',{body:signed+text+marker})};break;
     case 'review.request-changes':
-      await call('POST','/pulls/'+n+'/reviews',{event:'REQUEST_CHANGES',body:signed+text});break;
+      effect={path:'/pulls/'+n+'/reviews',data:await call('POST','/pulls/'+n+'/reviews',{event:'REQUEST_CHANGES',body:signed+text+marker})};break;
     case 'review.approve':
-      await call('POST','/pulls/'+n+'/reviews',{event:'APPROVE',body:signed+text});break;
+      effect={path:'/pulls/'+n+'/reviews',data:await call('POST','/pulls/'+n+'/reviews',{event:'APPROVE',body:signed+text+marker})};break;
     case 'issue.label':
       await call('POST','/issues/'+n+'/labels',{labels:action.labels||[]});break;
     case 'issue.assign':
@@ -289,11 +293,21 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
       return{op:action.op,status:'planned',reason:'external-adapter-not-executed'};
     default:return{op:action.op,status:'unsupported'};
   }
-  return{op:action.op,status:'done'};
+  const out={op:action.op,status:'done'};
+  if(effect&&/^[a-f0-9]{64}$/.test(target.caseSha||'')){
+    // Receipt is minted only from GitHub's own response; failure never hides the done action.
+    try{
+      out.receipt=issueCouncilExecutionReceipt(actor,{operation:action.op,caseSha:target.caseSha,
+        githubResponse:{source:'github-api-response',url:'https://api.github.com/repos/'+REPO+effect.path+'/'+effect.data?.id,
+          id:effect.data?.id,author_login:effect.data?.user?.login,author_type:effect.data?.user?.type},
+        observedAt:new Date().toISOString()});
+    }catch(e){out.receiptError=String(e.message).slice(0,80);}
+  }
+  return out;
 }
 
 /** Authenticate one member from its own token, then run its actions. */
-export async function runMemberActions({role,sourceSha,token,assessment,target,credentials=memberCredentials(role),fetchImpl=fetch,profile='owner-equivalent',deps={}}){
+export async function runMemberActions({role,sourceSha,token,assessment,target,credentials=memberCredentials(role),fetchImpl=fetch,profile='owner-equivalent',deps={},ledger=null}){
   if(!credentials)throw Error('council-app-credentials-missing');
   const actor=await authenticateCouncilAppActor({role,sourceSha,installationToken:token,profile,
     githubProbe:async()=>{
@@ -308,9 +322,44 @@ export async function runMemberActions({role,sourceSha,token,assessment,target,c
         repositories:j.repositories.map(x=>x.full_name)};
     }});
   const results=[];
-  for(const action of assessment.actions){
+  for(const [ordinal,action] of assessment.actions.entries()){
+    if(ledger&&/^[a-f0-9]{64}$/.test(target.caseSha||'')&&/^[a-f0-9]{40}$/.test(sourceSha||'')){
+      const key=executionKey({role,operation:action.op,caseSha:target.caseSha,sourceSha,ordinal});
+      const scoped={...target,executionKey:key};
+      results.push(await runLedgeredAction({ledger,
+        intent:{role,operation:action.op,caseDigest:target.caseSha,sourceSha,ordinal,
+         authContext:{profile,executor:'github-actions',actorRole:actor.role,installationId:actor.installationId},
+         expectedEffect:String(action.why||action.text||'').slice(0,300),
+         targetUrl:'https://api.github.com/repos/'+REPO+'/issues/'+target.number},
+        execute:()=>executeMemberAction(actor,token,action,scoped,{fetchImpl,deps}),
+        probe:()=>probeCouncilEffect(actor,token,{op:action.op,number:target.number,executionKey:key,caseSha:target.caseSha},fetchImpl)}));
+      continue;
+    }
     try{results.push(await executeMemberAction(actor,token,action,target,{fetchImpl,deps}));}
     catch(e){results.push({op:action.op,status:'error',reason:String(e.message).slice(0,200)});}
   }
   return results;
+}
+
+const MARKED_OPS={'issue.comment':'c','pr.comment':'c','review.comment':'c','review.request-changes':'r','review.approve':'r'};
+/** Readback: find an already-landed write by its hidden execution marker. */
+export async function probeCouncilEffect(actor,token,{op,number,executionKey:key,caseSha},fetchImpl=fetch){
+ const kind=MARKED_OPS[op];
+ if(!kind||!/^[a-f0-9]{64}$/.test(key||''))return null;
+ const call=api(token,fetchImpl),marker='<!-- council-exec:'+key+' -->';
+ const base=kind==='c'?'/issues/'+number+'/comments':'/pulls/'+number+'/reviews';
+ for(let page=1;page<=10;page++){
+  const items=await call('GET',base+'?per_page=100&page='+page);
+  const hit=items.find(i=>typeof i.body==='string'&&i.body.includes(marker));
+  if(hit){
+   const url='https://api.github.com/repos/'+REPO+base+'/'+hit.id;
+   try{
+    return{url,receipt:issueCouncilExecutionReceipt(actor,{operation:op,caseSha,
+     githubResponse:{source:'github-api-response',url,id:hit.id,author_login:hit.user?.login,author_type:hit.user?.type},
+     observedAt:new Date().toISOString()})};
+   }catch{return{url,executor:String(hit.user?.login||'unattributed')};}
+  }
+  if(items.length<100)break;
+ }
+ return null;
 }

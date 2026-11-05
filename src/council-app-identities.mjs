@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 /** C04: declarative, unprivileged GitHub App identity blueprints.
  * These values cannot register Apps, create users, authenticate a bot,
  * or establish independent review. Only live GitHub API responses can
@@ -239,4 +240,75 @@ export function councilCapacityReport({installedAppCount=0,rateLimits=[]}={}){
   paidInferenceCeilingUSD:0,
   independentReasoningWithoutExecutor:false
  });
+}
+
+// Execution receipts: independently checkable evidence that a GitHub effect
+// was authored by the role's own App bot, not by planner text or the shared
+// github-actions identity. Receipts are content-addressed and advisory-only.
+const RECEIPT_VERSION='council-execution-receipt/1';
+const SHA256=/^[a-f0-9]{64}$/;
+function canonicalJson(v){
+ if(Array.isArray(v))return '['+v.map(canonicalJson).join(',')+']';
+ if(v&&typeof v==='object')return '{'+Object.keys(v).sort()
+  .map(k=>JSON.stringify(k)+':'+canonicalJson(v[k])).join(',')+'}';
+ return JSON.stringify(v===undefined?null:v);
+}
+function receiptDigest(body){
+ return createHash('sha256').update(canonicalJson(body)).digest('hex');
+}
+export function issueCouncilExecutionReceipt(actor,{
+ operation,caseSha,githubResponse,observedAt
+}={}){
+ if(!actor||!AUTHENTICATED_ACTORS.has(actor))
+  throw Error('council-receipt-actor-unverified');
+ if(typeof operation!=='string'||!operation||!SHA256.test(caseSha||''))
+  throw Error('council-receipt-input-invalid');
+ const r=githubResponse;
+ const botLogin='ultron-mw-'+actor.role.toLowerCase()+'[bot]';
+ if(!r||r.source!=='github-api-response'||typeof r.url!=='string'||
+   !r.url.startsWith('https://api.github.com/repos/'+REPO+'/')||
+   !Number.isSafeInteger(r.id)||r.id<1||
+   r.author_login!==botLogin||r.author_type!=='Bot')
+  throw Error('council-receipt-authorship-unproven');
+ const ts=Date.parse(observedAt);
+ if(!Number.isFinite(ts))throw Error('council-receipt-input-invalid');
+ const body={
+  version:RECEIPT_VERSION,role:actor.role,installationId:actor.installationId,
+  sourceSha:actor.sourceSha,operation,caseSha,
+  effect:{url:r.url,id:r.id,author:r.author_login},
+  observedAt:new Date(ts).toISOString(),
+  claims:{authorshipFromGithubResponse:true,modelInvoked:false,independentReview:false}
+ };
+ return Object.freeze({...body,digest:receiptDigest(body)});
+}
+export function verifyCouncilExecutionReceipt(receipt){
+ try{
+  if(!receipt||receipt.version!==RECEIPT_VERSION||!ROLE_SET.has(receipt.role)||
+    !SHA256.test(receipt.digest||'')||!SHA256.test(receipt.caseSha||'')||
+    receipt.effect?.author!=='ultron-mw-'+receipt.role.toLowerCase()+'[bot]'||
+    !Number.isSafeInteger(receipt.installationId)||receipt.installationId<1||
+    receipt.claims?.independentReview!==false||receipt.claims?.modelInvoked!==false)
+   return false;
+  const {digest,...body}=receipt;
+  return receiptDigest(body)===digest;
+ }catch{return false;}
+}
+// Counts roles with at least one valid receipt for this exact case/source.
+export function summarizeCouncilIdentityEvidence(receipts,{caseSha,sourceSha}={}){
+ const proven=new Set();
+ for(const x of Array.isArray(receipts)?receipts:[]){
+  if(verifyCouncilExecutionReceipt(x)&&x.caseSha===caseSha&&x.sourceSha===sourceSha)
+   proven.add(x.role);
+ }
+ return Object.freeze({
+  rolesTotal:COUNCIL_APP_ROLES.length,rolesProven:proven.size,
+  proven:Object.freeze(COUNCIL_APP_ROLES.filter(r=>proven.has(r))),
+  missing:Object.freeze(COUNCIL_APP_ROLES.filter(r=>!proven.has(r))),
+  acceptanceMet:proven.size===COUNCIL_APP_ROLES.length
+ });
+}
+export function councilCaseSha({itemNumber,isPr,sourceSha}={}){
+ if(!Number.isSafeInteger(itemNumber)||itemNumber<1||typeof isPr!=='boolean'||!/^[a-f0-9]{40}$/.test(sourceSha||''))
+  throw Error('council-case-invalid');
+ return createHash('sha256').update(canonicalJson({itemNumber,isPr,sourceSha,v:1})).digest('hex');
 }

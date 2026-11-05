@@ -40,6 +40,8 @@ jobs:
           node scripts/verify-audited-lockfile.mjs
           npm audit --omit=dev --audit-level=high
           node --input-type=module -e "await import('@huggingface/transformers')"
+      - name: Install test-only PostgreSQL engine (not saved, not shipped)
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.15
       - name: Lint all workflows
         run: bash scripts/lint-workflows.sh
       - name: Syntax and regression checks

@@ -267,5 +267,7 @@ jobs:
             council-receipt.json
             council-publication.json
             council-members.json
+            council-execution-ledger.json
+            council-execution-receipts.json
           if-no-files-found: ignore
           retention-days: 30

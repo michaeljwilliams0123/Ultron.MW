@@ -1,1 +1,6 @@
 hubs/** text eol=lf
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
