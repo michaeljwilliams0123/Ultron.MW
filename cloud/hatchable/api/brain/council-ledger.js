@@ -1,5 +1,5 @@
 import { db } from 'hatchable';
-import { verifyCouncilOidc } from 'lib/council-oidc.js';
+import { verifyCouncilOidc, verifyCouncilWorkerOidc } from 'lib/council-oidc.js';
 import { reserveExecution, transitionExecution, readExecution, listOpenExecutions } from 'lib/council-ledger.js';
 
 export const access = 'public';
@@ -27,7 +27,11 @@ export default async function handler(req, res) {
   try {
     identity = await verifyCouncilOidc({ token: header.slice(7), rawBody: raw });
   } catch {
-    return response(res, 403, { ok: false, error: 'oidc-invalid' });
+    try {
+      identity = await verifyCouncilWorkerOidc({ token: header.slice(7), rawBody: raw });
+    } catch {
+      return response(res, 403, { ok: false, error: 'oidc-invalid' });
+    }
   }
 
   let body;
