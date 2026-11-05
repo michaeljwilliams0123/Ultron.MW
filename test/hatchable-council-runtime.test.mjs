@@ -117,3 +117,38 @@ test('execution receipt OIDC accepts only the issue-comment router and reusable 
  await assert.rejects(verifyCouncilRoomExecutionOidc({token:wrongToken,rawBody,
   fetchJwks,now:()=>now*1000}));
 });
+
+
+test('proposal-only execution endpoint cannot accept an authenticated verified receipt',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const source=await readFile(new URL('../cloud/hatchable/api/brain/council-room-execution.js',import.meta.url),'utf8');
+ const platform={db:{async query(){throw Error('proposal-only verification must not write database');}},
+  scheduler:{},events:{}};
+ globalThis.__executionRoutePlatform=platform;
+ globalThis.__executionRouteOidc=async()=>({actor:'michaeljwilliams0123',event:'issue_comment'});
+ const converted=source
+  .replace("import {db,scheduler,events} from 'hatchable';",
+   'const {db,scheduler,events}=globalThis.__executionRoutePlatform;')
+  .replace("import {verifyCouncilRoomExecutionOidc} from 'lib/council-oidc.js';",
+   'const verifyCouncilRoomExecutionOidc=globalThis.__executionRouteOidc;');
+ assert.notEqual(converted,source,'the runtime module must use local testing dependencies');
+ const module=await import('data:text/javascript;base64,'+Buffer.from(converted).toString('base64'));
+ const body={
+  schema:'ultron.council-room.execution.v1',phase:'verified',
+  issueNumber:285,commentId:12345,
+  commentBody:'@ultron implement Inspect the latest repository state',
+  verification:{runId:'42',url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42',
+   sha:'a'.repeat(40),conclusion:'success'}
+ };
+ const res={code:200,setHeader(){},status(n){this.code=n;return this;},
+  json(v){return {status:this.code,body:v};}};
+ try{
+  const result=await module.default({rawBody:JSON.stringify(body),
+   headers:{authorization:'Bearer '+'x'.repeat(300)}},res);
+  assert.equal(result.status,422);
+  assert.equal(result.body.error,'proposal-only-not-execution');
+ }finally{
+  delete globalThis.__executionRoutePlatform;
+  delete globalThis.__executionRouteOidc;
+ }
+});
