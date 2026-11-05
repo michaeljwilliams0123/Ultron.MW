@@ -56,8 +56,9 @@ test('owner issue implementation callback has narrowly scoped OIDC permissions a
  const issueJob=caller.split('  issue-implementation:')[1].split('\n  council-command:')[0];
  assert.match(issueJob,/id-token: write/);
  assert.doesNotMatch(issueJob,/secrets:\s*inherit/);
- assert.match(issueJob,/GITHUB_TOKEN:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/);
- assert.match(reusable,/workflow_call:\s*\n\s+secrets:\s*\n\s+GITHUB_TOKEN:\s*\n\s+required: true/);
+ // GITHUB_TOKEN is reserved: declaring or passing it makes the workflow file invalid.
+ assert.doesNotMatch(issueJob,/secrets:/);
+ assert.doesNotMatch(reusable,/workflow_call:\s*\n\s+secrets:/);
  assert.match(reusable,/id-token: write/);
  assert.match(reusable,/if: github\.event_name == 'issue_comment'/);
  assert.match(reusable,/run: node src\/council-room-execution\.mjs/);

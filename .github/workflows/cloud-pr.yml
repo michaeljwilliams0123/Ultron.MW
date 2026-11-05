@@ -1,9 +1,6 @@
 name: Ultron Create PR to main
 on:
   workflow_call:
-    secrets:
-      GITHUB_TOKEN:
-        required: true
   issues:
     types: [opened]
 permissions:
