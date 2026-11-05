@@ -118,6 +118,42 @@ test('same request cannot commit or publish twice',async()=>{
   assert.equal(repeat.status,'already-created');
   assert.equal(db.state.calls.slice(n).filter(x=>x.startsWith('POST ')).length,0);
 });
+test('lost branch and pull-request acknowledgements reconcile without replay',async()=>{
+  const evt=issue(902),db=backend(evt);
+  let loseRef=true,losePr=true;
+  const post=async(path,body)=>{
+    const result=await db.post(path,body);
+    if(path===ROOT+'/git/refs'&&loseRef){loseRef=false;throw Error('branch response lost');}
+    if(path===ROOT+'/pulls'&&losePr){losePr=false;throw Error('PR response lost');}
+    return result;
+  };
+  const result=await launchCodePr({...args(evt,db),post});
+  assert.equal(result.status,'created');
+  assert.deepEqual(result.recoveredWrites,['branch-ref','pull-request']);
+  assert.equal(db.state.calls.filter(x=>x==='POST '+ROOT+'/git/refs').length,1);
+  assert.equal(db.state.calls.filter(x=>x==='POST '+ROOT+'/pulls').length,1);
+  assert.equal(db.state.branch,COMMIT);
+  assert.equal(db.state.pr.number,result.number);
+  const repeat=await launchCodePr(args(evt,db));
+  assert.equal(repeat.status,'already-created');
+  assert.equal(db.state.calls.filter(x=>x==='POST '+ROOT+'/git/refs').length,1);
+  assert.equal(db.state.calls.filter(x=>x==='POST '+ROOT+'/pulls').length,1);
+});
+test('uncertain branch write is not accepted when readback differs',async()=>{
+  const evt=issue(903),db=backend(evt);
+  let loseRef=true;
+  const post=async(path,body)=>{
+    const result=await db.post(path,body);
+    if(path===ROOT+'/git/refs'&&loseRef){
+      loseRef=false;
+      db.state.branch='9'.repeat(40);
+      throw Error('branch response lost');
+    }
+    return result;
+  };
+  await assert.rejects(()=>launchCodePr({...args(evt,db),post}),/branch response lost/);
+  assert.equal(db.state.calls.filter(x=>x==='POST '+ROOT+'/pulls').length,0);
+});
 test('wrong identity, invalid source paths and ambiguous patches are rejected',async()=>{
   for(const changes of [
     [{path:'.github/workflows/verify.yml',create:'unsafe'}],
