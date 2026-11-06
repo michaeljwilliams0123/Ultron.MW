@@ -1,5 +1,75 @@
 # Ultron.MW — Hatchable cloud brain (v2 design, deployment v3)
 
+## Actions signer and executor prototype
+
+The Actions signer and executor in this checkout are **not production-ready**.
+Both require the repository variable `ULTRON_ZERO_COST_ACTIONS_APPROVED=true`
+before their jobs can run. This opt-in is not a billing limit: the owner must
+first confirm that Actions minutes, artifacts and any other usage cannot exceed
+the proposed $0 additional-service ceiling. No hosted execution has been
+validated. Do not configure production signing secrets or route production
+operations through these workflows yet.
+
+On November 6, 2026, GitHub reported this repository as public. GitHub's
+[Actions billing documentation](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+states that standard hosted runners in public repositories are free, while
+artifact storage has separate shared limits. The legacy personal Actions
+billing endpoint returned HTTP 410, so no current artifact allowance or
+enforced spending limit was verified. Recheck repository visibility, runner
+type and storage budget before enabling the opt-in or creating a PR that
+triggers verification.
+
+The prototype signer uses P-256 and encrypts its artifact to the configured
+RSA public key. It accepts only queue and task-control requests, independently
+validates their bounded parameters, reconstructs the exact Hatchable request
+fingerprint, and refuses a mismatch. Note, GitHub and Graph writes are not
+supported. A signer-side policy check is not independent human approval:
+reviewers must see and assess the exact workflow inputs. The local recipient
+helper decrypts the artifact and verifies the signer, policy, expiry and exact
+request, but no authenticated automated delivery to Hatchable exists. These
+checks do **not** establish independent adjudication. Before production, verify
+approval binding, recipient key custody and delivery, and the complete
+authorization and receipt flow.
+
+The `ultron-independent-signer` environment must be separately administered,
+limited to the `main` branch, and require a reviewer independent of the
+dispatcher with self-approval disabled and administrator bypass prevented.
+Protect `main`, the signer workflow and its policy with enforced review and
+CODEOWNERS. The preflight rejects absent or incompatible environment and branch
+protections before the signing step; it cannot establish that reviewers are
+independent, that all bypasses are disabled, or that repository administrators
+cannot change those protections. The current repository had no such signer
+environment and `main` required zero approving reviews when last inspected.
+The owner's separate environment secret must never be exposed to the executor.
+
+The executor uses an ephemeral GitHub-hosted VM and a restricted Docker
+container without network, a workspace mount, or explicitly provided
+credentials. Docker shares the host kernel: these flags are defense in depth,
+not proof that hostile code cannot escape. Its artifact is a host observation,
+not a durable Hatchable receipt or authorization to promote code. There is no
+executor admission ledger, authenticated receipt persistence, replay fencing,
+crash recovery, or automated promotion. Generated tests are not a security
+boundary. Keep this workflow disconnected from production and perform
+independent isolation and recovery testing before any use.
+
+Production migration reconciliation is also incomplete. The live Hatchable
+ledger was observed through `0028`; `0029` and `0030` tables were absent, while
+`0031`'s provider table was applied directly without a corresponding ledger
+entry. Do not fabricate ledger entries or blindly deploy all three migrations:
+`0029` changes the operations constraint and `0031` already has partial
+effects. Reconcile the schema and ledger through a reviewed, tested migration
+procedure first. Existing production handlers remain unchanged. Rollback of a
+future deployment must restore the prior runtime version without dropping or
+rewriting ledger data, and must be tested before deployment.
+On November 6, 2026, a read-only query observed 15 allowed operations and no
+provider write rows; those values can change. A local PGlite regression runs
+the actual migration files against a representative partial `0031` schema:
+it verifies that the full `0029`–`0031` sequence accepts an existing
+18-operation profile, preserves the pre-existing provider write, creates the
+two missing ledgers and retains the mutation ledger's immutability guard. This
+is not a production rehearsal, a current preflight, or evidence that Hatchable
+executes multiple migrations in a single transaction.
+
 **Cloud action extension (November 3, 2026):** `cloud.note.create` is a bounded Hatchable native write outside GitHub. The admin route also checks the authenticated owner handle, versioned Build/Release operation membership, current stop version, pause state and $0 paid ceiling. One PostgreSQL statement creates a keyed note and event receipt; replay reads the original without another write. An uncertain response is reconciled by the same key. This is not a generic HTTP executor or proof of a Destiny/Codex handoff.
 
 Source snapshot of the **deployed private owner-only** `ultron-mw-cloud` Hatchable backend. This is a source-review PR, not a GitHub Pages/UI replacement.
@@ -137,6 +207,18 @@ grant revocation cannot recall a network request already in flight.
 
 This source, migration and the new MCP tools have not been deployed or tested
 against Hatchable's live database, Microsoft account or GitHub credentials.
+
+### Tool construction proposals
+
+`src/autonomy/tool-synthesizer.mjs` accepts a trusted, explicitly supplied
+generator and returns a bounded, content-addressed proposal. Generated handler
+and test text are data: the synthesizer does not write or run files, perform
+security adjudication, execute migrations, register tools, or promote code.
+Hashes identify proposal contents; they are not signatures or evidence of
+security. A production tool factory requires an independently verified
+isolation boundary, trusted security tests, scoped runtime capabilities,
+signed admission and durable promotion controls before any generated code
+could be executed or exposed.
 
 ### Signed MCP note source contract
 
