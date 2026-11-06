@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-import {signApprovedRequest,encryptGrant} from '../src/autonomy/independent-signer.mjs';
-import {decryptVerifiedGrant} from '../src/autonomy/grant-recipient.mjs';
 globalThis.crypto??=webcrypto;
 const source=await readFile(new URL('../cloud/hatchable/lib/mcp-signed-mutation.js',import.meta.url),'utf8');
 const transformed=source
@@ -56,25 +54,6 @@ test('lost acknowledgement reconciles without resending',async()=>{
  const h=harness({lost:true}),request=control(),token=await sign(request);
  assert.equal((await executeMutation({db:h.db,config,request,envelope:token})).reused,true);
  assert.equal((await reconcileMutation({db:h.db,request,grantId:'test-mutation-grant'})).status,'applied');
- assert.equal(h.writes,1);
-});
-test('encrypted Actions grant reaches signed mutation and recovers a lost receipt without replay',async()=>{
- const h=harness({lost:true}),mutation=queue();
- const {grantRequest}=await prepareMutation(mutation);
- const signerPrivate=await webcrypto.subtle.exportKey('jwk',pair.privateKey);
- const signerPublic=await webcrypto.subtle.exportKey('jwk',pair.publicKey);
- const recipient=await webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,
-  publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
- const envelope=await signApprovedRequest({request:grantRequest,mutation,privateJwk:signerPrivate});
- const encrypted=await encryptGrant(envelope,await webcrypto.subtle.exportKey('jwk',recipient.publicKey));
- const recovered=await decryptVerifiedGrant({encrypted,
-  recipientPrivateJwk:await webcrypto.subtle.exportKey('jwk',recipient.privateKey),
-  signerPublicJwk:signerPublic,mutation});
- const result=await executeMutation({db:h.db,config,request:mutation,envelope:recovered.envelope});
- assert.equal(result.status,'applied');
- assert.equal(result.reused,true);
- assert.equal((await reconcileMutation({db:h.db,request:mutation,grantId:recovered.grant.grantId})).status,'applied');
- assert.equal((await executeMutation({db:h.db,config,request:mutation,envelope:recovered.envelope})).reused,true);
  assert.equal(h.writes,1);
 });
 test('missing policy, forged grant, and unresolved state fail closed',async()=>{

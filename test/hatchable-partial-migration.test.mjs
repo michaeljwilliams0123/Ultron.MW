@@ -38,7 +38,24 @@ test('partial 0031 state with 18 operations reconciles without data loss', { ski
         SET allowed_operations = (SELECT jsonb_agg('op' || n)
           FROM generate_series(1,18) AS n) WHERE id=1;
     `);
-    await db.exec(`BEGIN;\n${m29}\n${m30}\n${m31}\nCOMMIT;`);
+    await db.exec(`BEGIN;\n${m29}\nCOMMIT;`);
+    await db.exec(`UPDATE brain_owner_autonomy_profile
+      SET allowed_operations = (SELECT jsonb_agg('op' || n)
+        FROM generate_series(1,21) AS n) WHERE id=1;`);
+    await assert.rejects(db.exec(`UPDATE brain_owner_autonomy_profile
+      SET allowed_operations = (SELECT jsonb_agg('op' || n)
+        FROM generate_series(1,22) AS n) WHERE id=1;`), /check constraint/);
+    await db.exec(`UPDATE brain_owner_autonomy_profile
+      SET allowed_operations = (SELECT jsonb_agg('op' || n)
+        FROM generate_series(1,18) AS n) WHERE id=1;`);
+    await db.exec(`INSERT INTO brain_authority_grants VALUES ('resume-grant');
+      INSERT INTO brain_mcp_mutations VALUES
+        ('resume-key',repeat('c',64),'mcp.queue.submit','resume-grant',now());`);
+    await db.exec(`BEGIN;\n${m29}\nCOMMIT;`);
+    const afterResume = await db.query(`SELECT count(*)::int AS mutations
+      FROM brain_mcp_mutations WHERE action_key='resume-key'`);
+    assert.deepEqual(afterResume.rows[0], { mutations: 1 });
+    await db.exec(`BEGIN;\n${m30}\n${m31}\nCOMMIT;`);
     const afterReconciliation = await db.query(`SELECT
       (SELECT count(*)::int FROM brain_mcp_provider_writes) AS writes,
       jsonb_array_length(allowed_operations) AS operations
