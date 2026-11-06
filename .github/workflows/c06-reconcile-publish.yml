@@ -33,6 +33,8 @@ jobs:
       ULTRON_C06_REPLAY_RUN_ID: ${{ inputs.model_run_id }}
       ULTRON_C06_REPLAY_SOURCE_SHA: ${{ inputs.model_source_sha }}
     steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
@@ -73,6 +75,8 @@ jobs:
       ULTRON_C06_REPLAY_RUN_ID: ${{ inputs.model_run_id }}
       ULTRON_C06_REPLAY_SOURCE_SHA: ${{ inputs.model_source_sha }}
     steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
