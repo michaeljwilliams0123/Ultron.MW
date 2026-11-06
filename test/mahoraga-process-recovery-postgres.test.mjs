@@ -180,6 +180,31 @@ test('signed prepared action checks grant expiry and profile version on recovery
  assert.equal((await h.providerState()).posts,1);
 });
 
+test('signed provider claim is atomic, one-shot and stop-fenced in PostgreSQL',options,async t=>{
+ const h=await harness(t);
+ await h.sql(await readFile(new URL('../cloud/hatchable/migrations/0031_mcp_provider_writes.sql',import.meta.url),'utf8'));
+ await h.sql(`UPDATE brain_owner_autonomy_profile SET
+  allowed_operations=allowed_operations || '["github.issue.write"]'::jsonb WHERE id=1`);
+ const source=await readFile(new URL('../cloud/hatchable/lib/mcp-provider-write.js',import.meta.url),'utf8');
+ const claim=source.match(/const CLAIM=`([\s\S]*?)`;/)?.[1];
+ const check=source.match(/const CHECK=`([\s\S]*?)`;/)?.[1];
+ const observe=source.match(/const OBSERVE=`([\s\S]*?)`;/)?.[1];
+ assert.ok(claim&&check&&observe,'exercise production provider SQL');
+ const fingerprint='b'.repeat(64),resource='c'.repeat(64);
+ const values=['provider-test-1','github.issue.write',fingerprint,'provider-grant-1',
+  'sha256:'+fingerprint,'a'.repeat(64),'2099-01-01T00:00:00Z',1,1,resource];
+ const interpolate=(sql,params)=>sql.replace(/\$(10|[1-9])/g,(_,n)=>literal(params[Number(n)-1]));
+ const claims=await Promise.all([h.sql(interpolate(claim,values)),h.sql(interpolate(claim,values))]);
+ assert.equal(claims.filter(text=>csvRows(text).length===1).length,1);
+ assert.equal(csvRows(await h.sql(interpolate(check,[values[0],fingerprint,values[3]])))[0].admitted,true);
+ await h.sql('UPDATE brain_runtime_control SET paused=TRUE WHERE id=1');
+ assert.equal(csvRows(await h.sql(interpolate(check,[values[0],fingerprint,values[3]])))[0].admitted,false);
+ const evidence=JSON.stringify({providerAcknowledged:true,readbackMatches:true,issueNumber:42,state:'closed'});
+ await h.sql(interpolate(observe,[values[0],fingerprint,values[3],evidence]));
+ assert.equal(csvRows(await h.sql("SELECT status FROM brain_mcp_provider_writes WHERE action_key='provider-test-1'"))[0].status,'observed');
+ assert.equal(csvRows(await h.sql("SELECT count(*) AS count FROM brain_events WHERE event_type='mcp-provider-write-observed'"))[0].count,'1');
+});
+
 test('lost HTTP response is reconciled by a new process with one provider write',options,async t=>{
  const h=await harness(t,{providerMode:'lose-response'});
  assert.equal((await h.worker().result()).state,'uncertain');

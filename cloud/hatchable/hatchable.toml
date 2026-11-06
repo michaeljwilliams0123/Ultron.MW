@@ -46,6 +46,11 @@ required = false
 description = "Short-lived delegated Microsoft Graph token for the configured workbook account. Requires independent consent and rotation."
 
 [[secret]]
+name = "ULTRON_GITHUB_ISSUE_TOKEN"
+required = false
+description = "Least-privilege token with issue access only to michaeljwilliams0123/Ultron.MW. Never store the token in source or event receipts."
+
+[[secret]]
 name = "ULTRON_MAHORAGA_CONNECTION1026"
 required = false
 description = "Optional Mahoraga-only fine-grained PAT; only the protected hosted runtime may read this value. Never put it in source or event payloads."

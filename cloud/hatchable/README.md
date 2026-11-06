@@ -78,8 +78,8 @@ establish deployment or live authorization.
 
 The source `ultron_github_issue` tool reads an issue number only from the
 fixed public Ultron.MW GitHub repository. It rejects redirects, bounds response
-size and time, and returns a small metadata projection. It does not write
-issues or accept arbitrary URLs, and it does not establish a provider grant.
+size and time, and returns a small metadata projection. It does not itself
+write issues or accept arbitrary URLs.
 
 The source `ultron_graph_workbook` MCP tool exposes the single-cell Graph
 reader with admin access. Server-side configuration
@@ -93,21 +93,50 @@ reads, and application permissions are not supported. The account check also
 requires access to `/me`. No credential, consent, refresh flow or runtime
 configuration is provisioned here. The source has not been deployed or verified
 against Hatchable's runtime configuration or a live Microsoft account.
-Workbook writes remain unavailable: they need signed exact-action admission,
-a durable pre-dispatch checkpoint, safe concurrency handling and readback
-before they can be exposed.
 
-`lib/graph-workbook-write.js` provides an unconnected single-cell adapter
-seam for that work. A trusted host must supply a durable atomic one-shot claim,
-fresh authority check and durable observation receipt. The adapter checks the
-configured account and cell, compares an expected value, performs at most one
-PATCH per claimed invocation, and reads the cell back after a successful
-response. An uncertain claim, write, readback or receipt is not retried.
-Microsoft's range update API does not document conditional compare-and-set:
-the pre-read is not atomic with the PATCH, and other writers can overwrite or
-be overwritten. A matching readback alone does not establish who caused it.
-This seam is not an MCP mutation tool, is not wired to the signed-grant ledger,
-and must not be used where concurrent workbook edits cannot be tolerated.
+### Signed provider writes
+
+The source `ultron_graph_workbook_write` and `ultron_github_issue_write` tools
+support `prepare`, `submit`, and read-only `reconcile`. The owner must first
+apply migration `0031_mcp_provider_writes.sql`, configure the independent
+adjudicator public JWK, and explicitly select `graph.workbook.cell.write`
+and/or `github.issue.write` in the versioned autonomy profile. Neither is
+enabled by default. `prepare` returns the exact claims to be signed; `submit`
+requires an `envelope` with the signed payload and signature. Requests also
+require an idempotency key and the expected profile and stop versions.
+`reconcile` takes the same request and grant ID.
+
+Graph requests specify the cell, expected current value and new value, while
+account, workbook, worksheet and cell allowlist come only from the protected
+`ULTRON_GRAPH_WORKBOOK_BINDING` configuration. The runtime requires a
+separately provisioned `ULTRON_GRAPH_DELEGATED_TOKEN`. Microsoft documents
+`Files.ReadWrite` delegated permission for the range API; application
+permissions are not supported. The GitHub tool updates only the body and
+optional open/closed state of an issue in `michaeljwilliams0123/Ultron.MW`,
+using the separately provisioned `ULTRON_GITHUB_ISSUE_TOKEN`. Pull requests
+are rejected. Tokens are never accepted as tool arguments or logged.
+
+The claim atomically consumes the grant and writes a durable
+`reconcile-required` checkpoint and event before the provider call. A unique
+partial index blocks another unresolved write to the same target. Successful
+provider acknowledgement and independent readback are required before an
+observed receipt is committed. A lost claim acknowledgement, timeout, non-200
+response, failed readback or uncertain receipt is never automatically retried.
+Read-only reconciliation reports the stored result, including after grant
+expiry; an unresolved action requires an owner investigation before any
+separately authorized correction. It does not infer causation from a matching
+value alone.
+
+Microsoft's range-update API does not document conditional compare-and-set:
+Graph's pre-read is not atomic with its PATCH. Other writers can overwrite or
+be overwritten, and a matching readback does not establish exclusive control.
+GitHub issue changes can likewise race external editors. The ledger only
+serializes unresolved requests through this gateway, not other clients.
+Do not use these tools when concurrent changes cannot be tolerated. Stop or
+grant revocation cannot recall a network request already in flight.
+
+This source, migration and the new MCP tools have not been deployed or tested
+against Hatchable's live database, Microsoft account or GitHub credentials.
 
 ### Signed MCP note source contract
 
