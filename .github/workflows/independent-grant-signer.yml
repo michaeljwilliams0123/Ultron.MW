@@ -1,0 +1,49 @@
+name: Independent grant signer
+on:
+  workflow_dispatch:
+    inputs:
+      grant_request:
+        description: Exact prepared grant request JSON for owner approval
+        required: true
+        type: string
+      mutation:
+        description: Exact queue or control request JSON for independent review
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main' && github.actor == 'michaeljwilliams0123' && vars.ULTRON_ZERO_COST_ACTIONS_APPROVED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ultron-independent-signer
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Verify independent protections before loading signing key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-signer-protection.mjs
+      - name: Sign owner-approved bounded request
+        env:
+          ULTRON_GRANT_REQUEST: ${{ inputs.grant_request }}
+          ULTRON_MUTATION: ${{ inputs.mutation }}
+          ULTRON_SIGNER_PRIVATE_JWK: ${{ secrets.ULTRON_SIGNER_PRIVATE_JWK }}
+          ULTRON_GRANT_RECIPIENT_PUBLIC_JWK: ${{ vars.ULTRON_GRANT_RECIPIENT_PUBLIC_JWK }}
+        run: node scripts/actions-sign-grant.mjs
+      - name: Preserve encrypted grant for owner retrieval
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: encrypted-grant-${{ github.run_id }}-${{ github.run_attempt }}
+          path: encrypted-grant.json
+          retention-days: 1
+          if-no-files-found: error
