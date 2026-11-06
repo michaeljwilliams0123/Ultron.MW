@@ -8,5 +8,8 @@
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.15"
   }
 }
