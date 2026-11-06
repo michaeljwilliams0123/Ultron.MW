@@ -8,12 +8,15 @@ import { launchIsolatedBrowser } from './playwright-driver.mjs';
  */
 export function createProviderFirstExecutor({
   binding, store, authorize, canContinue, provider, launch = launchIsolatedBrowser,
+  browserDeadlineMs = 120000,
 } = {}) {
   const manifest = validateComputerBinding(binding);
   if (!manifest.enabled || typeof store?.read !== 'function' ||
       typeof store?.write !== 'function' || typeof store?.withLock !== 'function' ||
       typeof authorize !== 'function' || typeof canContinue !== 'function' ||
-      typeof provider !== 'function' || typeof launch !== 'function')
+      typeof provider !== 'function' || typeof launch !== 'function' ||
+      !Number.isSafeInteger(browserDeadlineMs) || browserDeadlineMs < 1 ||
+      browserDeadlineMs > 120000)
     throw Error('Provider fallback requires an enabled binding, durable lock, and explicit authority');
   const pinnedBinding = Object.freeze({
     id: manifest.id, kind: manifest.kind, runtime: manifest.runtime,
@@ -49,13 +52,44 @@ export function createProviderFirstExecutor({
         if (typeof browser?.close === 'function') await browser.close();
         throw Error('Isolated browser launcher returned an invalid session');
       }
-      let output, executionError, cleanupError;
+      const deadline = performance.now() + browserDeadlineMs;
+      let expired = false;
+      const isLive = () => !expired && performance.now() < deadline;
+      const guardedDriver = new Proxy(browser.driver, {
+        get(target, property) {
+          const value = Reflect.get(target, property, target);
+          if (typeof value !== 'function' || property === 'endRun')
+            return typeof value === 'function' ? value.bind(target) : value;
+          return (...args) => {
+            if (!isLive()) throw Error('Browser execution deadline exceeded');
+            return Reflect.apply(value, target, args);
+          };
+        },
+      });
+      let output, executionError, cleanupError, timer;
       try {
         const executor = createBoundComputerExecutor({
-          binding: pinnedBinding, store, driver: browser.driver, authorize, canContinue,
+          binding: pinnedBinding, store, driver: guardedDriver,
+          authorize: async context => isLive() && await authorize(context) === true && isLive(),
+          canContinue: async context => isLive() && await canContinue(context) === true && isLive(),
         });
-        output = { route: 'browser', result: await executor.run(admittedPlan) };
+        const timeout = new Promise(resolve => {
+          timer = setTimeout(() => {
+            expired = true;
+            resolve({ timedOut: true });
+          }, browserDeadlineMs);
+        });
+        const outcome = await Promise.race([
+          executor.run(admittedPlan).then(result => ({ result })),
+          timeout,
+        ]);
+        if (outcome.timedOut || !isLive()) {
+          expired = true;
+          output = { route: 'browser', result: { status: 'reconcile-required',
+            id: admittedPlan.id, reason: 'Browser deadline exceeded; inspect before retrying' } };
+        } else output = { route: 'browser', result: outcome.result };
       } catch (error) { executionError = error; }
+      finally { clearTimeout(timer); }
       try { await browser.close(); } catch (error) { cleanupError = error; }
       if (executionError && cleanupError)
         throw new AggregateError([executionError, cleanupError], 'Browser execution and cleanup failed');

@@ -98,3 +98,59 @@ test('binding changes after construction cannot expand network policy',async()=>
   ]}}),/origin not admitted/);
   assert.equal(launches,0);
 });
+test('deadline closes the browser and a late owner approval cannot dispatch',async()=>{
+  const store=createMemoryComputerStore();
+  let release,entered,clicks=0,closes=0;
+  const approvalEntered=new Promise(resolve=>{entered=resolve;});
+  const approval=new Promise(resolve=>{release=resolve;});
+  const driver={observe:async()=>({url:'https://example.com/',text:'ready'}),
+    perform:async()=>{clicks++;}};
+  const executor=createProviderFirstExecutor({
+    binding:{...binding,operations:['click']},store,browserDeadlineMs:30,
+    provider:async()=>({status:'unsupported',dispatched:false}),
+    canContinue:async()=>true,authorize:async()=>{entered();return approval;},
+    launch:async()=>({driver,close:async()=>{closes++;}}),
+  });
+  const activePlan={id:'deadline-approval',steps:[
+    {action:'click',selector:'button',expect:{textIncludes:'done'}},
+  ]};
+  const running=executor.run({plan:activePlan});
+  await approvalEntered;
+  const result=await running;
+  assert.equal(result.result.status,'reconcile-required');
+  assert.equal(closes,1);
+  assert.equal(clicks,0);
+  await assert.rejects(executor.run({plan:activePlan}),/already running/);
+  release(true);
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(clicks,0);
+});
+test('deadline after dispatch reports uncertainty and never repeats the action',async()=>{
+  const store=createMemoryComputerStore();
+  let release,entered,clicks=0;
+  const dispatched=new Promise(resolve=>{entered=resolve;});
+  const performing=new Promise(resolve=>{release=resolve;});
+  const driver={observe:async()=>({url:'https://example.com/',text:'ready'}),
+    perform:async()=>{clicks++;entered();await performing;}};
+  const executor=createProviderFirstExecutor({
+    binding:{...binding,operations:['click']},store,browserDeadlineMs:30,
+    provider:async()=>({status:'unsupported',dispatched:false}),
+    canContinue:async()=>true,authorize:async()=>true,
+    launch:async()=>({driver,close:async()=>{release();}}),
+  });
+  const running=executor.run({plan:{id:'deadline-dispatch',steps:[
+    {action:'click',selector:'button',expect:{textIncludes:'done'}},
+  ]}});
+  await dispatched;
+  assert.equal((await running).result.status,'reconcile-required');
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(clicks,1);
+  assert.equal((await store.read('deadline-dispatch')).pending,'step-1');
+});
+test('invalid browser execution deadlines are rejected',()=>{
+  for(const browserDeadlineMs of [0,120001,1.5]){
+    assert.throws(()=>createProviderFirstExecutor({binding,store:createMemoryComputerStore(),
+      provider:async()=>({status:'unsupported',dispatched:false}),authorize:async()=>true,
+      canContinue:async()=>true,browserDeadlineMs}),/requires an enabled binding/);
+  }
+});

@@ -21,8 +21,15 @@ Playwright and browser binaries must already be installed in the selected
 runtime; this module does not install them or connect an account. The caller
 must provision and protect the actual durable store and owner authority.
 
-The isolated launcher's navigation, interception and action timeouts apply;
-there is no new end-to-end hard deadline or automatic cancellation. Browser
-close failures are surfaced. This is not a universal MCP gateway or a
+The browser execution deadline defaults to 120 seconds and can be reduced via
+`browserDeadlineMs` (1–120000 milliseconds). On expiry, the executor stops
+admitting new driver operations, closes the browser, and returns
+`reconcile-required`: an already dispatched operation may have taken effect.
+A pending owner callback or store operation can continue after that return;
+the per-plan lock remains held until the executor actually exits. The deadline
+does not cover the provider, browser launch, or browser close, and depends on
+the JavaScript event loop being responsive. Browser close failures are surfaced.
+The isolated launcher's individual navigation, interception and action timeouts
+also apply. This is not a universal MCP gateway or a
 Microsoft Graph integration, and does not establish a provider connection or
 prove that a hosted runtime has network enforcement.
