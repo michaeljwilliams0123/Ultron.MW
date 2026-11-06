@@ -36,7 +36,7 @@ function csvRows(text){
  return rows.map(values=>Object.fromEntries(headers.map((key,i)=>{
   let value=values[i];
   if(['id','task_id'].includes(key))value=Number(value);
-  if(key==='paused')value=value==='t';
+  if(key==='paused'||key==='admitted')value=value==='t';
   if(['request','result'].includes(key))value=value?JSON.parse(value):null;
   return [key,value];
  })));
@@ -68,7 +68,8 @@ async function harness(t,{providerMode='normal'}={}){
   await sql('DROP SCHEMA '+schema+' CASCADE');
  });
  for(const name of ['0001_tasks.sql','0002_events.sql','0003_native_commands.sql',
-  '0004_mahoraga_actions.sql','0010_runtime_stop.sql']){
+  '0004_mahoraga_actions.sql','0008_admin_grants.sql','0010_runtime_stop.sql',
+  '0016_owner_autonomy_profile.sql','0030_mahoraga_mcp_authority.sql']){
   await sql(await readFile(new URL('../cloud/hatchable/migrations/'+name,import.meta.url),'utf8'));
  }
  server=createServer(async(req,res)=>{
@@ -149,9 +150,60 @@ async function harness(t,{providerMode='normal'}={}){
   };
   workers.push(state);return state;
  }
- return {worker,snapshot,providerState,
+ return {worker,snapshot,providerState,sql,
   waitForWrite:()=>until(()=>posts>0,'provider did not commit fixture write')};
 }
+
+test('signed prepared action checks grant expiry and profile version on recovery',options,async t=>{
+ const h=await harness(t);
+ await h.sql(`UPDATE brain_owner_autonomy_profile SET
+  allowed_operations=allowed_operations || '["repo.issue.create"]'::jsonb WHERE id=1`);
+ const source=await readFile(new URL('../cloud/hatchable/lib/mcp-mahoraga-grant.js',import.meta.url),'utf8');
+ const admission=source.match(/const ADMIT=`([\s\S]*?)`;/)?.[1];
+ assert.ok(admission,'exercise the production admission statement');
+ const values=['test:mahoraga-process-recovery','issue.create',JSON.stringify({
+  title:'Isolated recovery fixture',body:'Disposable HTTP provider fixture. No real GitHub write.',
+  expectedMainSha:'a'.repeat(40)}),'test-grant-123','repo.issue.create',
+  'sha256:'+'b'.repeat(64),'a'.repeat(64),'2099-01-01T00:00:00Z',1,1,'b'.repeat(64)];
+ const statement=admission.replace(/\$(11|10|[1-9])/g,(_,n)=>literal(values[Number(n)-1]));
+ await h.sql(statement);
+ assert.equal((await h.snapshot()).actions[0].state,'prepared');
+ await h.sql("UPDATE brain_authority_grants SET expires_at='2000-01-01' WHERE grant_id='test-grant-123'");
+ assert.equal((await h.worker().result()).error,'dispatch-authority-unavailable');
+ assert.equal((await h.providerState()).posts,0);
+ await h.sql(`UPDATE brain_authority_grants SET expires_at='2099-01-01' WHERE grant_id='test-grant-123';
+  UPDATE brain_owner_autonomy_profile SET version=2 WHERE id=1`);
+ assert.equal((await h.worker().result()).error,'dispatch-authority-unavailable');
+ assert.equal((await h.providerState()).posts,0);
+ await h.sql('UPDATE brain_owner_autonomy_profile SET version=1 WHERE id=1');
+ assert.equal((await h.worker().result()).state,'observed');
+ assert.equal((await h.providerState()).posts,1);
+});
+
+test('signed provider claim is atomic, one-shot and stop-fenced in PostgreSQL',options,async t=>{
+ const h=await harness(t);
+ await h.sql(await readFile(new URL('../cloud/hatchable/migrations/0031_mcp_provider_writes.sql',import.meta.url),'utf8'));
+ await h.sql(`UPDATE brain_owner_autonomy_profile SET
+  allowed_operations=allowed_operations || '["github.issue.write"]'::jsonb WHERE id=1`);
+ const source=await readFile(new URL('../cloud/hatchable/lib/mcp-provider-write.js',import.meta.url),'utf8');
+ const claim=source.match(/const CLAIM=`([\s\S]*?)`;/)?.[1];
+ const check=source.match(/const CHECK=`([\s\S]*?)`;/)?.[1];
+ const observe=source.match(/const OBSERVE=`([\s\S]*?)`;/)?.[1];
+ assert.ok(claim&&check&&observe,'exercise production provider SQL');
+ const fingerprint='b'.repeat(64),resource='c'.repeat(64);
+ const values=['provider-test-1','github.issue.write',fingerprint,'provider-grant-1',
+  'sha256:'+fingerprint,'a'.repeat(64),'2099-01-01T00:00:00Z',1,1,resource];
+ const interpolate=(sql,params)=>sql.replace(/\$(10|[1-9])/g,(_,n)=>literal(params[Number(n)-1]));
+ const claims=await Promise.all([h.sql(interpolate(claim,values)),h.sql(interpolate(claim,values))]);
+ assert.equal(claims.filter(text=>csvRows(text).length===1).length,1);
+ assert.equal(csvRows(await h.sql(interpolate(check,[values[0],fingerprint,values[3]])))[0].admitted,true);
+ await h.sql('UPDATE brain_runtime_control SET paused=TRUE WHERE id=1');
+ assert.equal(csvRows(await h.sql(interpolate(check,[values[0],fingerprint,values[3]])))[0].admitted,false);
+ const evidence=JSON.stringify({providerAcknowledged:true,readbackMatches:true,issueNumber:42,state:'closed'});
+ await h.sql(interpolate(observe,[values[0],fingerprint,values[3],evidence]));
+ assert.equal(csvRows(await h.sql("SELECT status FROM brain_mcp_provider_writes WHERE action_key='provider-test-1'"))[0].status,'observed');
+ assert.equal(csvRows(await h.sql("SELECT count(*) AS count FROM brain_events WHERE event_type='mcp-provider-write-observed'"))[0].count,'1');
+});
 
 test('lost HTTP response is reconciled by a new process with one provider write',options,async t=>{
  const h=await harness(t,{providerMode:'lose-response'});

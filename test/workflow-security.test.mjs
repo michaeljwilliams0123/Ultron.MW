@@ -18,6 +18,15 @@ test('every PR including workflow-only changes runs verification at its exact he
   assert.match(source,/node scripts\/verify.mjs/);
 });
 
+test('council debate runs computer and signed-event regressions before invoking the council',async()=>{
+  const source=(await readFile(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8'))
+    .replace(/\r\n/g,'\n');
+  const checks=source.indexOf('node --test test/computer-executor.test.mjs test/hatchable-signed-event-inbox.test.mjs');
+  const debate=source.indexOf('- name: Run owner-first council debate');
+  assert.notEqual(checks,-1);
+  assert.ok(debate > checks,'regression checks must precede council execution');
+});
+
 test('all workflow actions are SHA-pinned and checkout never persists credentials',async()=>{
   const directory=new URL('../.github/workflows/',import.meta.url);
   for(const name of await readdir(directory)){

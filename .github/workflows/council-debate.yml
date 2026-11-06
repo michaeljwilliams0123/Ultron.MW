@@ -59,6 +59,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Run computer and signed-event security regressions
+        run: node --test test/computer-executor.test.mjs test/hatchable-signed-event-inbox.test.mjs
+
       # Payload via context in JS — never embed issue body expressions in YAML (workflow-security).
       - name: Extract context (owner-first, hardened)
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1

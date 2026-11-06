@@ -1,17 +1,27 @@
-import { runMahoragaAction,mahoragaActionStatus } from 'lib/mahoraga-actions.js';
+import {prepareMahoraga,submitMahoraga,reconcileMahoraga} from 'lib/mcp-mahoraga-grant.js';
 export const access='admin';
 export default {
  name:'ultron_mahoraga',
- description:'Create one bounded Mahoraga issue or dispatch Verify at an exact branch SHA using a dedicated GitHub App. Each key is durable and any uncertain write is reconciled by readback without replay. status is read-only.',
- inputSchema:{type:'object',required:['action','key'],properties:{
-  action:{type:'string',enum:['execute','status']},
-  key:{type:'string',description:'Stable action key, 8 to 128 allowed characters'},
-  operation:{type:'string',enum:['issue.create','verify.dispatch']},
-  input:{type:'object',description:'Issue: title, body, expectedMainSha. Verify: ref, expectedHeadSha.'}
+ description:'Prepare, submit or reconcile a signed, bounded Mahoraga issue or Verify action.',
+ inputSchema:{type:'object',required:['mode','request'],additionalProperties:false,properties:{
+  mode:{type:'string',enum:['prepare','submit','reconcile']},
+  request:{type:'object',required:['action','expectedProfileVersion','expectedStopVersion'],
+   additionalProperties:false,properties:{
+    action:{type:'object',required:['key','operation','input'],additionalProperties:false,
+     properties:{key:{type:'string'},operation:{type:'string',enum:['issue.create','verify.dispatch']},
+      input:{type:'object'}}},
+    expectedProfileVersion:{type:'integer',minimum:1},expectedStopVersion:{type:'integer',minimum:1}
+   }},
+  grantId:{type:'string'},
+  envelope:{type:'object',required:['payload','signature'],additionalProperties:false,
+   properties:{payload:{type:'string'},signature:{type:'string'}}}
  }},
  async handler(args,ctx){
-   if(args.action==='status')return mahoragaActionStatus({db:ctx.db},args.key);
-   if(args.action!=='execute')return {ok:false,error:'unsupported-action'};
-   return runMahoragaAction({db:ctx.db,config:ctx.config},args);
+  if(args?.mode==='prepare')return prepareMahoraga(args.request);
+  if(args?.mode==='submit')return submitMahoraga({db:ctx?.db,config:ctx?.config,
+   request:args.request,envelope:args.envelope});
+  if(args?.mode==='reconcile')return reconcileMahoraga({db:ctx?.db,
+   request:args.request,grantId:args.grantId});
+  return {ok:false,status:'held',reason:'invalid-mode'};
  }
 };

@@ -50,7 +50,120 @@ A separate seeded evaluator can supply held-out evidence only after the candidat
 
 Owner-only API: `GET/POST /api/brain/tasks`, `POST /api/brain/command`. Scheduler-only: `/api/brain/tick` (hourly) and `/api/brain/run` (asynchronous). Commands: `/help`, `/status`, `/repo inspect`, `/repo prs`, `/repo ci`, `/site render`, `/council review`, `/remember <note>`. Actions: queue, note, cancel, retry, and `acceptance` with an objective ID and merged candidate pull-request number.
 
-MCP tools: `ultron_status`, `ultron_queue`, `ultron_remember`, `ultron_control`. These are **owner/admin-gated** and require an independent OAuth authorization before use by a connected AI client.
+MCP tools include `ultron_status`, `ultron_queue`, `ultron_remember`, and `ultron_control`. They declare admin access and require independent OAuth authorization before use by a connected AI client. The source also adds `ultron_capabilities` for read-only discovery of the queue's actual objective catalog and an explicit inventory of existing MCP operation effects and limitations. The inventory is descriptive, not an admission gate, proof of provider access, or proof of deployment.
+
+### Signed MCP queue and control
+
+The source `ultron_queue` and `ultron_control` tools use `prepare`, `submit`,
+and read-only `reconcile` modes. This replaces their legacy MCP argument
+shapes. Each request includes a unique lowercase key, operation, exact objective
+or transition and task ID, and expected profile and stop versions. `prepare`
+returns the exact grant claims, including the SHA-256 request fingerprint;
+an independent adjudicator must sign the claims. `submit` verifies the grant
+and atomically consumes it, records the unique action identity, applies the
+bounded task change and writes the event receipt. Reuse of a key with
+different content is rejected. `reconcile` takes the same request and grant
+ID and only reads the durable receipt; an absent readback remains uncertain.
+
+Migration `0029_mcp_mutation_ledger.sql` is required. The owner must explicitly
+add `mcp.queue.submit` and/or `mcp.task.control` to the versioned autonomy
+profile; neither is enabled by default. The profile, stop version, paused
+state, $0 ceiling and grant expiry are checked at the SQL boundary. A consumed
+grant may be spent without a task effect when an action key conflicts. A
+queued task is processed by the existing hourly scheduler; admission does not
+request an immediate run. `unblock` has the same eligibility as `retry`.
+Legacy HTTP queue/control paths are separate and do not receive these grants.
+The event table is not an immutable hash ledger. Source changes do not
+establish deployment or live authorization.
+
+The source `ultron_github_issue` tool reads an issue number only from the
+fixed public Ultron.MW GitHub repository. It rejects redirects, bounds response
+size and time, and returns a small metadata projection. It does not itself
+write issues or accept arbitrary URLs.
+
+The source `ultron_graph_workbook` MCP tool exposes the single-cell Graph
+reader with admin access. Server-side configuration
+`ULTRON_GRAPH_WORKBOOK_BINDING` must be a JSON object with exactly `accountId`,
+`itemId`, `worksheetId` and `allowedCells` (an array of allowed A1 addresses).
+`ULTRON_GRAPH_DELEGATED_TOKEN` must hold the delegated access token; neither
+binding nor token can be supplied by an MCP request. The reader checks `/me`
+before requesting the cell. Microsoft documents
+`Files.ReadWrite` delegated permission for the workbook range API even for
+reads, and application permissions are not supported. The account check also
+requires access to `/me`. No credential, consent, refresh flow or runtime
+configuration is provisioned here. The source has not been deployed or verified
+against Hatchable's runtime configuration or a live Microsoft account.
+
+### Signed provider writes
+
+The source `ultron_graph_workbook_write` and `ultron_github_issue_write` tools
+support `prepare`, `submit`, and read-only `reconcile`. The owner must first
+apply migration `0031_mcp_provider_writes.sql`, configure the independent
+adjudicator public JWK, and explicitly select `graph.workbook.cell.write`
+and/or `github.issue.write` in the versioned autonomy profile. Neither is
+enabled by default. `prepare` returns the exact claims to be signed; `submit`
+requires an `envelope` with the signed payload and signature. Requests also
+require an idempotency key and the expected profile and stop versions.
+`reconcile` takes the same request and grant ID.
+
+Graph requests specify the cell, expected current value and new value, while
+account, workbook, worksheet and cell allowlist come only from the protected
+`ULTRON_GRAPH_WORKBOOK_BINDING` configuration. The runtime requires a
+separately provisioned `ULTRON_GRAPH_DELEGATED_TOKEN`. Microsoft documents
+`Files.ReadWrite` delegated permission for the range API; application
+permissions are not supported. The GitHub tool updates only the body and
+optional open/closed state of an issue in `michaeljwilliams0123/Ultron.MW`,
+using the separately provisioned `ULTRON_GITHUB_ISSUE_TOKEN`. Pull requests
+are rejected. Tokens are never accepted as tool arguments or logged.
+
+The claim atomically consumes the grant and writes a durable
+`reconcile-required` checkpoint and event before the provider call. A unique
+partial index blocks another unresolved write to the same target. Successful
+provider acknowledgement and independent readback are required before an
+observed receipt is committed. A lost claim acknowledgement, timeout, non-200
+response, failed readback or uncertain receipt is never automatically retried.
+Read-only reconciliation reports the stored result, including after grant
+expiry; an unresolved action requires an owner investigation before any
+separately authorized correction. It does not infer causation from a matching
+value alone.
+
+Microsoft's range-update API does not document conditional compare-and-set:
+Graph's pre-read is not atomic with its PATCH. Other writers can overwrite or
+be overwritten, and a matching readback does not establish exclusive control.
+GitHub issue changes can likewise race external editors. The ledger only
+serializes unresolved requests through this gateway, not other clients.
+Do not use these tools when concurrent changes cannot be tolerated. Stop or
+grant revocation cannot recall a network request already in flight.
+
+This source, migration and the new MCP tools have not been deployed or tested
+against Hatchable's live database, Microsoft account or GitHub credentials.
+
+### Signed MCP note source contract
+
+The source `ultron_remember` tool now supports `prepare`, `submit`,
+and read-only `reconcile`. `prepare` validates the exact note request and
+returns the grant request to be signed; it does not authorize or write it.
+This replaces the legacy `{kind, body}` MCP interface; clients must migrate.
+The existing independent adjudicator must sign an `ultron.security-grant.v1`
+payload with that request's exact actor, objective ID, operation, resource and
+administrative-change flag, plus its existing issuer, audience, grant ID,
+policy SHA, not-before and expiry claims. The resource is the SHA-256 digest
+of the normalized note request, including its key and expected profile and
+stop versions. Only the public verification JWK is configured in Hatchable;
+the signer and private key remain independent.
+
+On `submit`, the source verifies the signature and scope, and one PostgreSQL
+statement consumes the unique grant and creates a keyed note and event, gated
+by the current owner profile, stop version, pause state, allowed operation,
+and zero paid ceiling. It checks expiry again inside the statement. A lost
+response is read back, never blindly retried. Use `reconcile` with the exact
+request and grant ID to read the result, including after grant expiry.
+Unresolved or inconsistent readback is not success. Conflicting keys or a
+grant already consumed by another operation do not authorize a new note;
+an unused grant may be consumed even if a concurrent conflicting note wins.
+The separate legacy HTTP note route remains unchanged and is not governed by
+this MCP grant contract. This source contract has not been validated against a live
+PostgreSQL instance or deployed Hatchable runtime.
 
 ## Evidence and constraints
 
@@ -69,8 +182,8 @@ accept two bounded writes: create an issue at an expected Mahoraga `main` SHA,
 or dispatch the existing Verify workflow on a `mahoraga/*` branch at an expected
 head SHA. Admission creates one `brain_tasks` identity in `external` state and
 one linked `mahoraga_actions` record with a matching event receipt. The cloud
-action key is unique; the intent is
-persisted before an external call and the state changes to `sent` before a POST.
+action key is unique; the intent is persisted before an external call and the
+state changes to `sent` before a POST.
 After that transition, repeat calls perform GitHub readback and never repeat
 the POST. A missing or ambiguous readback remains `uncertain`. The ordinary
 `brain_tasks` retry loop never executes external writes. A separate bounded
@@ -81,6 +194,29 @@ are configured and the original exact-SHA preflight passes; `sent` or `uncertain
 actions are readback-only. Missing credentials remain `prepared` with no write.
 Neither ordinary owner-requested runs nor read-only backlog continuations can
 activate the external recovery path. Recovery never creates new Mahoraga goals.
+
+The source MCP interface uses `prepare`, `submit`, and read-only `reconcile`.
+It replaces the earlier MCP argument shape. Prepare returns the exact
+independent-adjudicator grant request; submit verifies that signature and
+atomically consumes the grant, creates the action and task, binds the grant
+to the action, and emits events. Migration `0030_mahoraga_mcp_authority.sql`
+must be applied before deploying this source, including for legacy Mahoraga
+dispatch. The owner profile must explicitly include `repo.issue.create`
+and/or `repo.verify.dispatch`. The profile and stop versions, stop state, $0
+ceiling, operation membership and grant expiry are checked when a prepared
+action is claimed, including by hourly recovery, and again immediately before
+the provider POST. A profile change or expired grant therefore holds a
+prepared signed action. If authority is lost after the send checkpoint, the
+action remains non-replayable and must be reconciled; do not reset it. These
+checks cannot make PostgreSQL and GitHub one atomic transaction: revocation
+can race an already-starting network request. Grant or admission response loss
+is resolved by readback, not a blind repeated write. Existing HTTP and deep
+workflow routes remain separate legacy paths and do not acquire a signed
+grant merely because the MCP interface requires one.
+
+The migration, grant handling, scheduler recovery and source interface have
+not been validated against live PostgreSQL or deployed Hatchable, and no
+signer or provider credentials are provisioned by this change.
 
 The project manifest declares three **optional, protected** values: the
 Mahoraga-scoped GitHub App client ID, installation ID, and private key. They

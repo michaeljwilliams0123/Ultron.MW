@@ -14,7 +14,8 @@ export default async function(req,res){
  if(command==='/status')return res.json(await snapshot({db}));
  if(ROUTES[command]){
   const r=await queueObjective({db,scheduler,events},ROUTES[command],req.body.key);
-  return res.status(r.ok?202:400).json({command,r});
+  return res.status(r.ok?202:r.error==='reconcile-required'?503:
+   r.error==='idempotency-key-conflict'?409:400).json({command,r});
  }
  if(command.startsWith('/remember ')){
   const note=m.trim().slice('/remember '.length);

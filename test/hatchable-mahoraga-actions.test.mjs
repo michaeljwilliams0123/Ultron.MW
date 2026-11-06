@@ -13,7 +13,8 @@ const input={key:KEY,operation:'issue.create',
     expectedMainSha:MAIN}};
 function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
  pauseDuringPreflight=false,pat=false,authMode=null,githubAppPem=false,loseClaim=false,
- claimConflict=false,verifyConclusion='success',verifyStatus='completed',
+ claimConflict=false,signedAuthorityExpired=false,expireAfterClaim=false,
+ verifyConclusion='success',verifyStatus='completed',
  duplicateVerify=false,bareVerifyPath=false,appPermissions=null}={}){
  const calls=[],rows=new Map(),issues=[],runs=[];
  let stopped=paused,claimLost=loseClaim;
@@ -25,6 +26,10 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
      name.endsWith('INSTALLATION_ID')?'321':githubAppPem?GITHUB_APP_PEM:PEM;
  }};
  const db={async query(sql,params=[]){
+   if(sql.includes(') AS admitted')){
+     assert.match(sql,/g\.expires_at>clock_timestamp\(\)/);
+     return {rows:[{admitted:!stopped&&!expireAfterClaim}]};
+   }
    if(sql.includes('SELECT paused FROM brain_runtime_control')&&
       !sql.includes("SET state='sent'"))return {rows:[{paused:stopped}]};
    if(sql.includes('INSERT INTO mahoraga_actions')){
@@ -40,7 +45,12 @@ function fixture({uncertainWrite=false,main=MAIN,ready=true,paused=false,
    if(sql.includes("SET state='sent'")){
      assert.match(sql,/brain_runtime_control WHERE id=1 FOR SHARE/);
      assert.match(sql,/AND NOT control\.paused/);
+     assert.match(sql,/mahoraga_mcp_authority/);
+     assert.match(sql,/g\.expires_at>clock_timestamp\(\)/);
+     assert.match(sql,/p\.version=a\.profile_version/);
+     assert.match(sql,/a\.stop_version=control\.version/);
      if(stopped)return {rows:[]};
+     if(signedAuthorityExpired)return {rows:[]};
      if(row.state!=='prepared')return {rows:[]};
      if(claimLost){
        claimLost=false;
@@ -277,6 +287,21 @@ test('owner stop keeps a prepared action unsubmitted even with valid GitHub cred
  assert.equal(result.error,'owner-execution-paused');
  assert.equal(f.calls.length,0,'no App token should even be requested');
  assert.equal(f.rows.get(KEY).state,'prepared');
+});
+test('a prepared signed action with expired authority cannot reach the provider',async()=>{
+ const f=fixture({pat:true,signedAuthorityExpired:true});
+ const result=await execute(f);
+ assert.equal(result.error,'dispatch-authority-unavailable');
+ assert.equal(result.state,'prepared');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
+});
+test('expiry after the durable claim prevents the provider call without replay',async()=>{
+ const f=fixture({pat:true,expireAfterClaim:true});
+ const result=await execute(f);
+ assert.equal(result.error,'dispatch-authority-unavailable');
+ assert.equal(result.state,'uncertain');
+ assert.equal(f.rows.get(KEY).state,'uncertain');
+ assert.equal(f.calls.filter(x=>x.path.endsWith('/issues')&&x.method==='POST').length,0);
 });
 test('pause during preflight prevents dispatch admission and an external POST',async()=>{
  const f=fixture({pauseDuringPreflight:true});

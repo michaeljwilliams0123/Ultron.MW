@@ -58,9 +58,10 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
  test('a committed pause wins against an already-started worker claim',async()=>{
   await sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   for(const name of ['0001_tasks.sql','0002_events.sql','0004_mahoraga_actions.sql',
-   '0005_mahoraga_scan_fairness.sql','0007_cooperative_fencing.sql',
+   '0005_mahoraga_scan_fairness.sql','0007_cooperative_fencing.sql','0008_admin_grants.sql',
    '0010_runtime_stop.sql','0016_owner_autonomy_profile.sql',
-   '0017_owner_autonomy_capacity.sql','0018_deep_objectives.sql']){
+   '0017_owner_autonomy_capacity.sql','0018_deep_objectives.sql',
+   '0030_mahoraga_mcp_authority.sql']){
    await sql(readFileSync(new URL('../cloud/hatchable/migrations/'+name,
     import.meta.url),'utf8'));
   }
@@ -81,8 +82,8 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
    id+",'stop-action','issue.create','{}'::jsonb) RETURNING id"));
   const commit=await startUncommittedPause();
   const claim=sql(actionClaim.replaceAll('$1',String(actionId)));
-  await waitForBlockedClaim();
-  await commit();
+  try { await waitForBlockedClaim(); }
+  finally { await commit(); }
   assert.equal(await claim,'');
   assert.equal(await sql('SELECT state FROM mahoraga_actions WHERE id='+actionId),'prepared');
  });
