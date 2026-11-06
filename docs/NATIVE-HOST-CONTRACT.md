@@ -73,7 +73,12 @@ security settings, UAC bypass, input injection and unattended execution.
    with the separate owner key, binding its decision to the proposal digest,
    request, host, action and owner-session ID. Nonces are 32 random bytes represented as
    lowercase hex. Both deadlines must be future Unix milliseconds no more
-   than five minutes away. The consent may be an explicit denial.
+   than five minutes away. The consent may be an explicit denial. Pass the
+   original proposal as the third argument to `recordConsent`: its digest is
+   checked against the stored proposal, and its validated parameters are
+   passed to the owner-session verifier for disclosure. The verifier must
+   independently confirm that the owner saw and approved those exact details;
+   this module does not display a consent prompt.
 5. `dispatch` consumes a valid approval and returns `unavailable`; it never
    invokes an adapter. `readback` returns the durable local admission record,
    not proof of any external action. A repeated request or nonce is rejected.

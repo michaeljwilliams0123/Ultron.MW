@@ -244,16 +244,20 @@ export async function createNativeHost({ config, directory, ownerSession, clock 
         return Object.freeze({ requestId: payload.requestId, proposalDigest, status: 'proposed' });
       });
     },
-    async recordConsent(input, signature) {
+    async recordConsent(input, signature, proposedAction) {
       const payload = consent(input, record, clock());
       authenticated(payload, signature, ownerKey);
+      const disclosedProposal = proposal(proposedAction, record, clock());
+      const disclosedDigest = hash(JSON.stringify(disclosedProposal));
       return store.withLock(hostId, async () => {
         const state = await read();
         live(state);
         deadline(payload.expiresAt, clock());
         const row = state.records.find(item => item.requestId === payload.requestId);
         if (!row || row.status !== 'proposed' || used(state, payload.nonce) ||
-            row.action !== payload.action || row.proposalDigest !== payload.proposalDigest)
+            row.action !== payload.action || row.proposalDigest !== payload.proposalDigest ||
+            disclosedProposal.requestId !== payload.requestId ||
+            disclosedDigest !== row.proposalDigest)
           throw Error('native-host-consent-mismatch-or-replay');
         deadline(row.proposalExpiresAt, clock());
         if (await ownerSession.canContinue() !== true ||
@@ -261,6 +265,7 @@ export async function createNativeHost({ config, directory, ownerSession, clock 
               sessionId: payload.sessionId, hostId, requestId: payload.requestId,
               action: payload.action, proposalDigest: payload.proposalDigest,
               decision: payload.decision,
+              parameters: Object.freeze({ ...disclosedProposal.parameters }),
             })) !== true || await ownerSession.canContinue() !== true)
           throw Error('native-host-owner-session-required');
         deadline(payload.expiresAt, clock());
