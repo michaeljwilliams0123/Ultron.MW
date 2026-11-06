@@ -58,18 +58,20 @@ security settings, UAC bypass, input injection and unattended execution.
    identities and configure the public keys and aliases locally. No key
    generation, enrollment or installation is performed here. The proposal
    issuer cannot issue owner consent merely by having its own key.
-2. Authenticate the owner through an independently trusted, revocable owner
-   session and disclose the exact host, target and action. This module verifies
-   the owner signature but does **not** implement owner login or a consent UI;
-   possession of a key alone does not establish a current owner session.
-   Observation and discovery require their own explicit consent.
+2. Supply `ownerSession.canContinue` and `ownerSession.verifyOwner` from an
+   independently trusted, revocable owner session, and disclose the exact
+   host, target and action. The callbacks are checked at consent and dispatch;
+   the verifier must establish that the signed session ID is the current owner.
+   This module does **not** implement owner login or a consent UI. Possession
+   of a key alone does not establish a current owner session. Observation and
+   discovery require their own explicit consent.
 3. Use `canonicalNativeProposal` to serialize the fixed-field proposal and
    sign those exact UTF-8 bytes with the proposal key. The purpose, host,
    request ID, action, normalized parameters, nonce and millisecond expiry are
    authenticated. Submit with `propose`.
 4. Present the exact proposal to the owner. Sign `canonicalNativeConsent`
    with the separate owner key, binding its decision to the proposal digest,
-   request, host and action. Nonces are 32 random bytes represented as
+   request, host, action and owner-session ID. Nonces are 32 random bytes represented as
    lowercase hex. Both deadlines must be future Unix milliseconds no more
    than five minutes away. The consent may be an explicit denial.
 5. `dispatch` consumes a valid approval and returns `unavailable`; it never

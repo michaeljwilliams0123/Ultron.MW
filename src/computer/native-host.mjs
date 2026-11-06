@@ -116,7 +116,7 @@ function proposal(input, reg, now) {
 }
 
 function consent(input, reg, now) {
-  exact(input, ['purpose', 'hostId', 'requestId', 'action', 'proposalDigest', 'decision', 'nonce', 'expiresAt']);
+  exact(input, ['purpose', 'hostId', 'requestId', 'action', 'proposalDigest', 'decision', 'sessionId', 'nonce', 'expiresAt']);
   if (input.purpose !== 'ultron.native.consent.v1' || input.hostId !== reg.hostId ||
       !ACTIONS.includes(input.action) || typeof input.proposalDigest !== 'string' ||
       !DIGEST.test(input.proposalDigest) ||
@@ -125,7 +125,8 @@ function consent(input, reg, now) {
   return {
     purpose: input.purpose, hostId: reg.hostId, requestId: id(input.requestId),
     action: input.action, proposalDigest: input.proposalDigest, decision: input.decision,
-    nonce: nonce(input.nonce), expiresAt: deadline(input.expiresAt, now),
+    sessionId: id(input.sessionId), nonce: nonce(input.nonce),
+    expiresAt: deadline(input.expiresAt, now),
   };
 }
 
@@ -164,9 +165,12 @@ export function nativeHostCapabilities() {
  * Source-only local admission ledger. It cannot start a listener, load a native
  * adapter, capture pixels, or issue native actions. Never use as a remote API.
  */
-export async function createNativeHost({ config, directory, clock = () => Date.now() } = {}) {
+export async function createNativeHost({ config, directory, ownerSession, clock = () => Date.now() } = {}) {
   const { record, proposalKey, ownerKey } = registration(config);
   if (typeof clock !== 'function') throw Error('native-host-clock-invalid');
+  if (!ownerSession || typeof ownerSession.canContinue !== 'function' ||
+      typeof ownerSession.verifyOwner !== 'function')
+    throw Error('native-host-owner-session-required');
   const store = createFileComputerStore(directory);
   const registrationDigest = hash(JSON.stringify(record));
   const hostId = record.hostId;
@@ -183,6 +187,7 @@ export async function createNativeHost({ config, directory, clock = () => Date.n
           !['proposed', 'approved', 'denied', 'dispatch-unavailable'].includes(row.status) ||
           (row.status !== 'proposed' &&
             (!NONCE.test(row.consentNonce || '') || !DIGEST.test(row.consentDigest || '') ||
+             typeof row.sessionId !== 'string' || !ID.test(row.sessionId) ||
              !Number.isSafeInteger(row.consentExpiresAt)))) ||
         new Set(state.records.map(row => row.requestId)).size !== state.records.length ||
         new Set(state.records.flatMap(row => [row.proposalNonce, ...(row.consentNonce ? [row.consentNonce] : [])])).size !==
@@ -251,9 +256,19 @@ export async function createNativeHost({ config, directory, clock = () => Date.n
             row.action !== payload.action || row.proposalDigest !== payload.proposalDigest)
           throw Error('native-host-consent-mismatch-or-replay');
         deadline(row.proposalExpiresAt, clock());
+        if (await ownerSession.canContinue() !== true ||
+            await ownerSession.verifyOwner(Object.freeze({
+              sessionId: payload.sessionId, hostId, requestId: payload.requestId,
+              action: payload.action, proposalDigest: payload.proposalDigest,
+              decision: payload.decision,
+            })) !== true || await ownerSession.canContinue() !== true)
+          throw Error('native-host-owner-session-required');
+        deadline(payload.expiresAt, clock());
+        deadline(row.proposalExpiresAt, clock());
         row.consentNonce = payload.nonce;
         row.consentDigest = hash(JSON.stringify(payload));
         row.consentExpiresAt = payload.expiresAt;
+        row.sessionId = payload.sessionId;
         row.status = payload.decision === 'approve' ? 'approved' : 'denied';
         await persist(state);
         return Object.freeze({ requestId: row.requestId, status: row.status });
@@ -266,6 +281,12 @@ export async function createNativeHost({ config, directory, clock = () => Date.n
         live(state);
         const row = state.records.find(item => item.requestId === requestId);
         if (!row || row.status !== 'approved') throw Error('native-host-consent-required');
+        if (await ownerSession.canContinue() !== true ||
+            await ownerSession.verifyOwner(Object.freeze({
+              sessionId: row.sessionId, hostId, requestId: row.requestId,
+              action: row.action, proposalDigest: row.proposalDigest, decision: 'approve',
+            })) !== true || await ownerSession.canContinue() !== true)
+          throw Error('native-host-owner-session-required');
         deadline(row.proposalExpiresAt, clock());
         deadline(row.consentExpiresAt, clock());
         // Consume the approval even though this source slice has no native runtime.
