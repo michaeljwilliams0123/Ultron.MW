@@ -97,6 +97,18 @@ Workbook writes remain unavailable: they need signed exact-action admission,
 a durable pre-dispatch checkpoint, safe concurrency handling and readback
 before they can be exposed.
 
+`lib/graph-workbook-write.js` provides an unconnected single-cell adapter
+seam for that work. A trusted host must supply a durable atomic one-shot claim,
+fresh authority check and durable observation receipt. The adapter checks the
+configured account and cell, compares an expected value, performs at most one
+PATCH per claimed invocation, and reads the cell back after a successful
+response. An uncertain claim, write, readback or receipt is not retried.
+Microsoft's range update API does not document conditional compare-and-set:
+the pre-read is not atomic with the PATCH, and other writers can overwrite or
+be overwritten. A matching readback alone does not establish who caused it.
+This seam is not an MCP mutation tool, is not wired to the signed-grant ledger,
+and must not be used where concurrent workbook edits cannot be tolerated.
+
 ### Signed MCP note source contract
 
 The source `ultron_remember` tool now supports `prepare`, `submit`,
