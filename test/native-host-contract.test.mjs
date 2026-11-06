@@ -73,9 +73,9 @@ test('signed proposal and exact owner consent persist; dispatch remains unavaila
     const rebuilt = await createNativeHost({ config: f.config, directory: f.directory, clock: f.clock,
       ownerSession: f.ownerSession });
     assert.equal((await rebuilt.readback('request-one')).status, 'approved');
-    assert.equal((await rebuilt.dispatch('request-one')).status, 'unavailable');
+    assert.equal((await rebuilt.dispatch('request-one', p)).status, 'unavailable');
     assert.equal((await rebuilt.readback('request-one')).status, 'dispatch-unavailable');
-    await assert.rejects(rebuilt.dispatch('request-one'), /consent-required/);
+    await assert.rejects(rebuilt.dispatch('request-one', p), /consent-required/);
     await assert.rejects(rebuilt.recordConsent(c, f.signConsent(c), p), /replay/);
     assert.equal(JSON.stringify(await rebuilt.readback('request-one')).includes('sample'), false);
   } finally { await rm(f.directory, { recursive: true, force: true }); }
@@ -116,7 +116,7 @@ test('consent binds exact proposal and host, expires, and cannot be replayed acr
     const replay = f.makeConsent(second);
     await assert.rejects(f.host.recordConsent(replay, f.signConsent(replay), next), /replay/);
     f.setTime(now + 60000);
-    await assert.rejects(f.host.dispatch('request-one'), /expired/);
+    await assert.rejects(f.host.dispatch('request-one', p), /expired/);
   } finally { await rm(f.directory, { recursive: true, force: true }); }
 });
 
@@ -127,7 +127,7 @@ test('denial and local revocation persist across host reconstruction', async () 
     const receipt = await f.host.propose(p, f.signProposal(p));
     const c = f.makeConsent(receipt, { action: 'screen.observe', decision: 'deny' });
     await f.host.recordConsent(c, f.signConsent(c), p);
-    await assert.rejects(f.host.dispatch('request-one'), /consent-required/);
+    await assert.rejects(f.host.dispatch('request-one', p), /consent-required/);
     await f.host.revoke();
     const rebuilt = await createNativeHost({ config: f.config, directory: f.directory, clock: f.clock,
       ownerSession: f.ownerSession });
@@ -147,7 +147,7 @@ test('revoked or mismatched owner sessions cannot grant or consume consent', asy
     const c = f.makeConsent(receipt);
     await f.host.recordConsent(c, f.signConsent(c), p);
     f.revokeSession();
-    await assert.rejects(f.host.dispatch('request-one'), /owner-session-required/);
+    await assert.rejects(f.host.dispatch('request-one', p), /owner-session-required/);
     assert.equal((await f.host.readback('request-one')).status, 'approved');
   } finally { await rm(f.directory, { recursive: true, force: true }); }
 });
@@ -170,5 +170,51 @@ test('owner-session verifier receives the exact normalized action parameters', a
     assert.equal(disclosure.proposalDigest, receipt.proposalDigest);
     assert.equal(disclosure.hostId, 'owner-host');
     assert.equal(disclosure.action, 'excel.write-cell');
+    await assert.rejects(f.host.dispatch('request-one', {
+      ...p, parameters: { ...p.parameters, cell: 'B3' },
+    }), /mismatch/);
+    await f.host.dispatch('request-one', p);
+    assert.deepEqual(disclosure.parameters, {
+      workbook: 'workbook-one', sheet: 1, cell: 'B2', value: 'sample',
+    });
+  } finally { await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('revocation blocks consent while owner verification is in flight', async () => {
+  const f = await fixture();
+  try {
+    let started;
+    const entered = new Promise(resolve => { started = resolve; });
+    let release;
+    const wait = new Promise(resolve => { release = resolve; });
+    f.ownerSession.verifyOwner = async () => { started(); await wait; return true; };
+    const p = f.makeProposal();
+    const receipt = await f.host.propose(p, f.signProposal(p));
+    const c = f.makeConsent(receipt);
+    const pending = f.host.recordConsent(c, f.signConsent(c), p);
+    await entered;
+    await assert.rejects(f.host.revoke(), /lock exists/);
+    release();
+    await assert.rejects(pending, /native-host-revoked/);
+    assert.equal((await f.host.readback('request-one')).status, 'proposed');
+    await f.host.revoke();
+    const rebuilt = await createNativeHost({ config: f.config, directory: f.directory,
+      clock: f.clock, ownerSession: f.ownerSession });
+    await assert.rejects(rebuilt.recordConsent(c, f.signConsent(c), p), /native-host-revoked/);
+  } finally { await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('proposal accessors are snapshotted before normalization and signing', async () => {
+  const f = await fixture();
+  try {
+    let reads = 0;
+    const p = f.makeProposal({ action: 'uia.discover', parameters: { target: 'window-one' } });
+    Object.defineProperty(p, 'action', { enumerable: true, get() {
+      return ++reads === 1 ? 'uia.discover' : 'excel.write-cell';
+    } });
+    const bytes = canonicalNativeProposal(p, f.config, f.clock());
+    assert.equal(reads, 1);
+    assert.equal(JSON.parse(bytes).action, 'uia.discover');
+    assert.deepEqual(JSON.parse(bytes).parameters, { target: 'window-one' });
   } finally { await rm(f.directory, { recursive: true, force: true }); }
 });

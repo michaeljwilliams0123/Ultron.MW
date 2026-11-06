@@ -10,6 +10,11 @@ const ACTIONS = Object.freeze(['screen.observe', 'uia.discover', 'excel.read-cel
 const hash = value => createHash('sha256').update(value).digest('hex');
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+function snapshot(value) {
+  try { return structuredClone(value); }
+  catch { throw Error('native-host-input-invalid'); }
+}
+
 function exact(value, keys) {
   if (!isObject(value) || Object.keys(value).length !== keys.length ||
       keys.some(key => !Object.hasOwn(value, key)))
@@ -144,11 +149,11 @@ function authenticated(payload, signature, key) {
  * not a remote message, and must come from an independently trusted operator.
  */
 export function canonicalNativeProposal(input, config, now = Date.now()) {
-  return JSON.stringify(proposal(input, registration(config).record, now));
+  return JSON.stringify(proposal(snapshot(input), registration(snapshot(config)).record, now));
 }
 
 export function canonicalNativeConsent(input, config, now = Date.now()) {
-  return JSON.stringify(consent(input, registration(config).record, now));
+  return JSON.stringify(consent(snapshot(input), registration(snapshot(config)).record, now));
 }
 
 export function nativeHostCapabilities() {
@@ -166,7 +171,7 @@ export function nativeHostCapabilities() {
  * adapter, capture pixels, or issue native actions. Never use as a remote API.
  */
 export async function createNativeHost({ config, directory, ownerSession, clock = () => Date.now() } = {}) {
-  const { record, proposalKey, ownerKey } = registration(config);
+  const { record, proposalKey, ownerKey } = registration(snapshot(config));
   if (typeof clock !== 'function') throw Error('native-host-clock-invalid');
   if (!ownerSession || typeof ownerSession.canContinue !== 'function' ||
       typeof ownerSession.verifyOwner !== 'function')
@@ -174,6 +179,7 @@ export async function createNativeHost({ config, directory, ownerSession, clock 
   const store = createFileComputerStore(directory);
   const registrationDigest = hash(JSON.stringify(record));
   const hostId = record.hostId;
+  let revokedHere = false;
 
   function validateState(state) {
     if (!state || state.id !== hostId || state.schema !== 'ultron.native-host.ledger.v1' ||
@@ -221,13 +227,13 @@ export async function createNativeHost({ config, directory, ownerSession, clock 
   const used = (state, value) => state.records.some(row =>
     row.proposalNonce === value || row.consentNonce === value);
   const live = state => {
-    if (state.revoked) throw Error('native-host-revoked');
+    if (revokedHere || state.revoked) throw Error('native-host-revoked');
   };
   return Object.freeze({
     capabilities: nativeHostCapabilities,
     registration: record,
     async propose(input, signature) {
-      const payload = proposal(input, record, clock());
+      const payload = proposal(snapshot(input), record, clock());
       authenticated(payload, signature, proposalKey);
       const proposalDigest = hash(JSON.stringify(payload));
       return store.withLock(hostId, async () => {
@@ -245,9 +251,9 @@ export async function createNativeHost({ config, directory, ownerSession, clock 
       });
     },
     async recordConsent(input, signature, proposedAction) {
-      const payload = consent(input, record, clock());
+      const payload = consent(snapshot(input), record, clock());
       authenticated(payload, signature, ownerKey);
-      const disclosedProposal = proposal(proposedAction, record, clock());
+      const disclosedProposal = proposal(snapshot(proposedAction), record, clock());
       const disclosedDigest = hash(JSON.stringify(disclosedProposal));
       return store.withLock(hostId, async () => {
         const state = await read();
@@ -268,6 +274,7 @@ export async function createNativeHost({ config, directory, ownerSession, clock 
               parameters: Object.freeze({ ...disclosedProposal.parameters }),
             })) !== true || await ownerSession.canContinue() !== true)
           throw Error('native-host-owner-session-required');
+        live(state);
         deadline(payload.expiresAt, clock());
         deadline(row.proposalExpiresAt, clock());
         row.consentNonce = payload.nonce;
@@ -279,19 +286,25 @@ export async function createNativeHost({ config, directory, ownerSession, clock 
         return Object.freeze({ requestId: row.requestId, status: row.status });
       });
     },
-    async dispatch(requestId) {
+    async dispatch(requestId, proposedAction) {
       id(requestId);
+      const disclosedProposal = proposal(snapshot(proposedAction), record, clock());
+      const disclosedDigest = hash(JSON.stringify(disclosedProposal));
       return store.withLock(hostId, async () => {
         const state = await read();
         live(state);
         const row = state.records.find(item => item.requestId === requestId);
         if (!row || row.status !== 'approved') throw Error('native-host-consent-required');
+        if (disclosedProposal.requestId !== requestId || disclosedDigest !== row.proposalDigest)
+          throw Error('native-host-consent-mismatch-or-replay');
         if (await ownerSession.canContinue() !== true ||
             await ownerSession.verifyOwner(Object.freeze({
               sessionId: row.sessionId, hostId, requestId: row.requestId,
               action: row.action, proposalDigest: row.proposalDigest, decision: 'approve',
+              parameters: Object.freeze({ ...disclosedProposal.parameters }),
             })) !== true || await ownerSession.canContinue() !== true)
           throw Error('native-host-owner-session-required');
+        live(state);
         deadline(row.proposalExpiresAt, clock());
         deadline(row.consentExpiresAt, clock());
         // Consume the approval even though this source slice has no native runtime.
@@ -302,6 +315,7 @@ export async function createNativeHost({ config, directory, ownerSession, clock 
       });
     },
     async revoke() {
+      revokedHere = true;
       return store.withLock(hostId, async () => {
         const state = await read();
         if (state.revoked) return Object.freeze({ status: 'revoked' });

@@ -79,7 +79,9 @@ security settings, UAC bypass, input injection and unattended execution.
    passed to the owner-session verifier for disclosure. The verifier must
    independently confirm that the owner saw and approved those exact details;
    this module does not display a consent prompt.
-5. `dispatch` consumes a valid approval and returns `unavailable`; it never
+5. `dispatch(requestId, originalProposal)` checks the exact proposal again,
+   re-discloses its parameters to the owner-session verifier, consumes a
+   valid approval and returns `unavailable`; it never
    invokes an adapter. `readback` returns the durable local admission record,
    not proof of any external action. A repeated request or nonce is rejected.
    The store records hashes and metadata, not cell values or screen contents;
@@ -88,7 +90,11 @@ security settings, UAC bypass, input injection and unattended execution.
 The local API has no built-in authentication around `revoke`, and must only be
 held by the trusted local operator. Revocation is durable and blocks new
 proposals, consents and dispatches; historical readback remains available.
-There is no remote revocation mechanism.
+If another operation holds the local file lock, revocation immediately blocks
+new admission through this instance but returns a lock error: retry revocation
+after the operation exits to persist it. Other instances and process restarts
+are not revoked until that durable write succeeds. There is no remote
+revocation mechanism.
 
 ## Recovery and remaining work
 
