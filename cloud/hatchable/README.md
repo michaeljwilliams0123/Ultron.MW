@@ -52,33 +52,34 @@ Owner-only API: `GET/POST /api/brain/tasks`, `POST /api/brain/command`. Schedule
 
 MCP tools include `ultron_status`, `ultron_queue`, `ultron_remember`, and `ultron_control`. They declare admin access and require independent OAuth authorization before use by a connected AI client. The source also adds `ultron_capabilities` for read-only discovery of the queue's actual objective catalog and an explicit inventory of existing MCP operation effects and limitations. The inventory is descriptive, not an admission gate, proof of provider access, or proof of deployment.
 
-### Queue reconciliation and MCP write limitations
+### Signed MCP queue and control
 
-The source version of `ultron_queue` requires a caller-generated key (six to
-80 lowercase letters, digits or hyphens). Existing clients that omit the key
-must be updated. A task key binds the only admitted payload, the objective:
-reusing it for another objective is rejected. Task and `owner-queued` event
-are inserted in one database statement; the handler independently reads both
-before reporting success. If the write acknowledgement is lost but the
-matching task and receipt are visible, it returns the existing task without
-scheduling a second immediate run. The hourly scheduler remains the fallback.
-If readback is unavailable, absent or inconsistent, the response is
-`reconcile-required` and includes the task key; inspect the task and event
-ledger by calling `ultron_queue` with the same objective and key and
-`mode: "reconcile"` before taking further action. This mode only reads; it
-does not insert or schedule. A missing readback remains `reconcile-required`:
-it does not prove that an in-flight write did not commit.
+The source `ultron_queue` and `ultron_control` tools use `prepare`, `submit`,
+and read-only `reconcile` modes. This replaces their legacy MCP argument
+shapes. Each request includes a unique lowercase key, operation, exact objective
+or transition and task ID, and expected profile and stop versions. `prepare`
+returns the exact grant claims, including the SHA-256 request fingerprint;
+an independent adjudicator must sign the claims. `submit` verifies the grant
+and atomically consumes it, records the unique action identity, applies the
+bounded task change and writes the event receipt. Reuse of a key with
+different content is rejected. `reconcile` takes the same request and grant
+ID and only reads the durable receipt; an absent readback remains uncertain.
 
-This is a hardening of the existing read/advisory objective queue, not a
-universal MCP write gate: the event table is not an immutable hash ledger,
-and queue admission does not consult the versioned owner profile or stop
-control. The legacy `ultron_control` tool is not an idempotent additive-write
-interface. The owner-checked HTTP route for `cloud.note.create` is separate
-from the MCP signed-grant path. Hatchable documents role-filtered MCP access, but its published handler
-context does not establish a trusted owner identity field for this project's
-MCP calls. Do not accept identity asserted in tool arguments; new mutations
-need independently verified per-action authority and platform enforcement.
-These source changes do not establish deployment or live authorization.
+Migration `0029_mcp_mutation_ledger.sql` is required. The owner must explicitly
+add `mcp.queue.submit` and/or `mcp.task.control` to the versioned autonomy
+profile; neither is enabled by default. The profile, stop version, paused
+state, $0 ceiling and grant expiry are checked at the SQL boundary. A consumed
+grant may be spent without a task effect when an action key conflicts. A
+queued task is processed by the existing hourly scheduler; admission does not
+request an immediate run. `unblock` has the same eligibility as `retry`.
+Legacy HTTP queue/control paths are separate and do not receive these grants.
+The event table is not an immutable hash ledger. Source changes do not
+establish deployment or live authorization.
+
+The source `ultron_github_issue` tool reads an issue number only from the
+fixed public Ultron.MW GitHub repository. It rejects redirects, bounds response
+size and time, and returns a small metadata projection. It does not write
+issues or accept arbitrary URLs, and it does not establish a provider grant.
 
 ### Signed MCP note source contract
 

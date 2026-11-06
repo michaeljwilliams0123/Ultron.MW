@@ -16,7 +16,7 @@ export default {
     description:capability.description,tool:'ultron_queue'
    })),
    queue:{access:'admin',keyRequired:true,reconciliationMode:'reconcile',
-    admissionChecksOwnerProfile:false,admissionChecksStop:false},
+    admissionChecksOwnerProfile:true,admissionChecksStop:true},
    externalWrites:{universalGatewayAvailable:false,
     reason:'No verified owner identity contract for new MCP mutation admission.'},
    providerConnectivityVerified:false,

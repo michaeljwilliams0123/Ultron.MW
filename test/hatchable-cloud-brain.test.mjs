@@ -236,26 +236,24 @@ test('cloud: unsupported owner objective cannot schedule',async()=>{
  assert.equal(r.ok,false);
  assert.equal(queries,0);
 });
-test('cloud: MCP queue requires an explicit stable key before reaching the ledger',async()=>{
+test('cloud: MCP queue routes signed requests without accepting other operations',async()=>{
  const source=await readFile(new URL('../cloud/hatchable/mcp/ultron_queue.js',import.meta.url),'utf8');
  const stub='data:text/javascript;base64,'+Buffer.from(
-  "export async function queueObjective(){throw Error('unexpected-queue');}"+
-  "export async function readQueuedObjective(){return {ok:true,readback:true};}"
+  "export async function prepareMutation(){return {prepared:true};}"+
+  "export async function executeMutation(){return {submitted:true};}"+
+  "export async function reconcileMutation(){return {readback:true};}"
  ).toString('base64');
  const module=await import('data:text/javascript;base64,'+Buffer.from(
-  source.replace("'lib/brain-owner.js'","'"+stub+"'")).toString('base64'));
+  source.replace("'lib/mcp-signed-mutation.js'","'"+stub+"'")).toString('base64'));
  assert.equal(module.access,'admin');
- assert.ok(module.default.inputSchema.required.includes('key'));
- assert.deepEqual(await module.default.handler({objective:'repo.inspect'},{}),
-  {ok:false,error:'invalid-idempotency-key'});
- assert.deepEqual(await module.default.handler({objective:'council.room',key:'key-six'},{}),
-  {ok:false,error:'unsupported-objective'});
+ assert.ok(module.default.inputSchema.properties.request.required.includes('key'));
+ assert.deepEqual(await module.default.handler({request:{operation:'mcp.task.control'}},{}),
+  {ok:false,status:'held',reason:'invalid-request'});
  assert.deepEqual(await module.default.handler(
-  {objective:'repo.inspect',key:'key-six',mode:'reconcile'},{db:{}}),
-  {ok:true,readback:true});
+  {request:{operation:'mcp.queue.submit'},mode:'reconcile'},{db:{}}),{readback:true});
  assert.deepEqual(await module.default.handler(
-  {objective:'repo.inspect',key:'key-six',mode:'invalid'},{}),
-  {ok:false,error:'invalid-queue-mode'});
+  {request:{operation:'mcp.queue.submit'},mode:'invalid'},{}),
+  {ok:false,status:'held',reason:'invalid-mode'});
 });
 test('cloud: queue reconciliation is read-only and missing remains uncertain',async()=>{
  let writes=0,reads=0;
@@ -281,7 +279,7 @@ test('cloud: MCP capability discovery reflects bounded queue objectives without 
  assert.deepEqual(result.objectives.map(item=>item.id),['repo.inspect']);
  assert.equal(result.queue.keyRequired,true);
  assert.equal(result.queue.reconciliationMode,'reconcile');
- assert.equal(result.queue.admissionChecksStop,false);
+ assert.equal(result.queue.admissionChecksStop,true);
  assert.equal(result.externalWrites.universalGatewayAvailable,false);
  assert.equal(result.providerConnectivityVerified,false);
  const note=result.operations.find(item=>item.tool==='ultron_remember');

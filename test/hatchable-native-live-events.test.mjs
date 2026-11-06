@@ -50,7 +50,7 @@ test('LIVE-06: persisted owner and scheduler work emits changes, MCP calls share
  assert.match(runner,/notifyOwner\(/);
  assert.match(tick,/notifyOwner\(/);
  assert.match(control,/notifyOwner\(/);
- assert.match(mcp,/events:ctx\.events/);
+ assert.match(mcp,/events:ctx\?\.events/);
  assert.match(connectivity,/ultron:realtime-change/);
 });
 test('LIVE-07: native MCP live connectivity is owner-protected and read-only',()=>{

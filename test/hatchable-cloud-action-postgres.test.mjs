@@ -67,4 +67,32 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   assert.equal(await sql(statement('cloud:note:pg-signed-3','pg-signed-grant-2')),'');
   assert.equal(await sql("SELECT count(*) FROM brain_authority_grants WHERE grant_id='pg-signed-grant-2'"),'0');
  });
+ test('signed queue and control are atomic and one-use in PostgreSQL',async()=>{
+  await sql(migration('0029_mcp_mutation_ledger.sql'));
+  await sql(`UPDATE brain_runtime_control SET paused=FALSE WHERE id=1;
+   UPDATE brain_owner_autonomy_profile SET
+    allowed_operations=allowed_operations || '["mcp.queue.submit","mcp.task.control"]'::jsonb WHERE id=1`);
+  const signed=readFileSync(new URL('../cloud/hatchable/lib/mcp-signed-mutation.js',
+   import.meta.url),'utf8').match(/const WRITE=`([\s\S]*?)`;/)?.[1];
+  assert.ok(signed,'test actual MCP mutation statement');
+  const statement=({key,grant,operation,action,id='NULL'})=>signed.replace(/\$(11|10|[1-9])/g,(_,n)=>({
+   1:`'${key}'`,2:`'${'c'.repeat(64)}'`,3:`'${operation}'`,4:`'${action}'`,
+   5:'2',6:'1',7:`'${grant}'`,8:`'sha256:${'c'.repeat(64)}'`,
+   9:`'${'a'.repeat(64)}'`,10:"'2099-01-01T00:00:00Z'",11:id
+  })[n]);
+  const queue=statement({key:'pg-queue-001',grant:'pg-queue-grant',operation:'mcp.queue.submit',action:'repo.inspect'});
+  const result=await Promise.all([sql(queue),sql(queue)]);
+  assert.equal(result.filter(Boolean).length,1);
+  const taskId=await sql("SELECT id FROM brain_tasks WHERE task_key='mcp:pg-queue-001'");
+  assert.match(taskId,/^\d+$/);
+  assert.equal(await sql("SELECT count(*) FROM brain_events WHERE event_type='mcp-mutation-observed' AND details->>'action_key'='pg-queue-001'"),'1');
+  const cancel=statement({key:'pg-control-001',grant:'pg-control-grant',operation:'mcp.task.control',action:'cancel',id:taskId});
+  assert.notEqual(await sql(cancel),'');
+  assert.equal(await sql(cancel),'');
+  assert.equal(await sql(`SELECT status FROM brain_tasks WHERE id=${taskId}`),'canceled');
+  await sql('UPDATE brain_runtime_control SET paused=TRUE WHERE id=1');
+  assert.equal(await sql(statement({key:'pg-queue-002',grant:'pg-queue-grant-2',
+   operation:'mcp.queue.submit',action:'repo.inspect'})),'');
+  assert.equal(await sql("SELECT count(*) FROM brain_authority_grants WHERE grant_id='pg-queue-grant-2'"),'0');
+ });
 }

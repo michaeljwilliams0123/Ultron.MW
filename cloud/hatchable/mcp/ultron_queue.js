@@ -1,20 +1,27 @@
-import { queueObjective,readQueuedObjective } from 'lib/brain-owner.js';
-const OBJECTIVES=['repo.inspect','repo.prs','repo.ci','site.render','council.review'];
+import {prepareMutation,executeMutation,reconcileMutation} from 'lib/mcp-signed-mutation.js';
 export const access='admin';
 export default {
  name:'ultron_queue',
- description:'Queue an explicit read-only objective, or reconcile it by key without writing. Does not modify GitHub.',
- inputSchema:{type:'object',required:['objective','key'],properties:{
-  objective:{type:'string',enum:OBJECTIVES},
-  key:{type:'string',description:'Caller-generated lowercase idempotency key (6-80 characters)'},
-  mode:{type:'string',enum:['submit','reconcile'],description:'Use reconcile for read-only outcome recovery'}
+ description:'Prepare, submit or reconcile a signed, keyed read-only objective.',
+ inputSchema:{type:'object',required:['mode','request'],additionalProperties:false,properties:{
+  mode:{type:'string',enum:['prepare','submit','reconcile']},
+  request:{type:'object',required:['operation','key','objective','expectedProfileVersion','expectedStopVersion'],
+   additionalProperties:false,properties:{
+    operation:{const:'mcp.queue.submit'},key:{type:'string',pattern:'^[a-z0-9-]{6,80}$'},
+    objective:{type:'string',enum:['repo.inspect','repo.prs','repo.ci','site.render','council.review']},
+    expectedProfileVersion:{type:'integer',minimum:1},expectedStopVersion:{type:'integer',minimum:1}
+   }},
+  grantId:{type:'string'},
+  envelope:{type:'object',required:['payload','signature'],additionalProperties:false,
+   properties:{payload:{type:'string'},signature:{type:'string'}}}
  }},
  async handler(args,ctx){
-  if(!OBJECTIVES.includes(args?.objective))return {ok:false,error:'unsupported-objective'};
-  if(typeof args?.key!=='string')return {ok:false,error:'invalid-idempotency-key'};
-  if(args.mode!==undefined&&!['submit','reconcile'].includes(args.mode))
-   return {ok:false,error:'invalid-queue-mode'};
-  if(args.mode==='reconcile')return await readQueuedObjective({db:ctx.db},args.objective,args.key);
-  return await queueObjective({db:ctx.db,scheduler:ctx.scheduler,events:ctx.events},args.objective,args.key);
+  if(args?.request?.operation!=='mcp.queue.submit')
+   return {ok:false,status:'held',reason:'invalid-request'};
+  if(args.mode==='prepare')return prepareMutation(args.request);
+  if(args.mode==='reconcile')return reconcileMutation({db:ctx?.db,request:args.request,grantId:args.grantId});
+  if(args.mode==='submit')return executeMutation({db:ctx?.db,config:ctx?.config,events:ctx?.events,
+   request:args.request,envelope:args.envelope});
+  return {ok:false,status:'held',reason:'invalid-mode'};
  }
 };
