@@ -19,6 +19,7 @@ const git=(cwd,...args)=>{
   assert.equal(run.status,0,run.stderr);
   return run.stdout.trim();
 };
+const bareGit=(cwd,...args)=>git(cwd,'--git-dir=.',...args);
 test('mirror fast-forwards exactly, is idempotent, and never overwrites divergence',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'ultron-mirror-'));
   const src=join(dir,'source'),dst=join(dir,'mirror.git'),other=join(dir,'other');
@@ -32,7 +33,7 @@ test('mirror fast-forwards exactly, is idempotent, and never overwrites divergen
     const success=spawnSync(bash,[script,dst],{cwd:src,encoding:'utf8'});
     assert.equal(success.status,0,success.stderr);
     assert.match(success.stdout,/SYNCHRONIZED/);
-    assert.equal(git(dst,'rev-parse','refs/heads/main'),sha);
+    assert.equal(bareGit(dst,'rev-parse','refs/heads/main'),sha);
     const repeated=spawnSync(bash,[script,dst],{cwd:src,encoding:'utf8'});
     assert.equal(repeated.status,0,repeated.stderr);
     assert.match(repeated.stdout,/PARITY/);
@@ -44,7 +45,7 @@ test('mirror fast-forwards exactly, is idempotent, and never overwrites divergen
     const conflict=spawnSync(bash,[script,dst],{cwd:src,encoding:'utf8'});
     assert.equal(conflict.status,4);
     assert.match(conflict.stderr,/CONFLICT/);
-    assert.notEqual(git(dst,'rev-parse','HEAD'),git(src,'rev-parse','HEAD'));
+    assert.notEqual(bareGit(dst,'rev-parse','HEAD'),git(src,'rev-parse','HEAD'));
   }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('mirror action stays disabled until owner config and retains no checkout credential',async()=>{
