@@ -12,7 +12,7 @@ const records=[
  {tool:'ultron_control',operation:'mcp.task.control',effect:'write',
   admission:'platform-admin-and-signed-grant',keyed:true,readback:true,profileEnforced:true},
  {tool:'ultron_mahoraga',operation:'mahoraga.action.execute',effect:'external-write',
-  admission:'platform-admin-and-action-policy',keyed:true,readback:true},
+  admission:'platform-admin-and-signed-grant-and-action-policy',keyed:true,readback:true},
  {tool:'ultron_mahoraga',operation:'mahoraga.action.status',effect:'read',
   admission:'platform-admin'},
  {tool:'ultron_connectivity',operation:'brain.connectivity.read',effect:'read',

@@ -141,8 +141,8 @@ accept two bounded writes: create an issue at an expected Mahoraga `main` SHA,
 or dispatch the existing Verify workflow on a `mahoraga/*` branch at an expected
 head SHA. Admission creates one `brain_tasks` identity in `external` state and
 one linked `mahoraga_actions` record with a matching event receipt. The cloud
-action key is unique; the intent is
-persisted before an external call and the state changes to `sent` before a POST.
+action key is unique; the intent is persisted before an external call and the
+state changes to `sent` before a POST.
 After that transition, repeat calls perform GitHub readback and never repeat
 the POST. A missing or ambiguous readback remains `uncertain`. The ordinary
 `brain_tasks` retry loop never executes external writes. A separate bounded
@@ -153,6 +153,29 @@ are configured and the original exact-SHA preflight passes; `sent` or `uncertain
 actions are readback-only. Missing credentials remain `prepared` with no write.
 Neither ordinary owner-requested runs nor read-only backlog continuations can
 activate the external recovery path. Recovery never creates new Mahoraga goals.
+
+The source MCP interface uses `prepare`, `submit`, and read-only `reconcile`.
+It replaces the earlier MCP argument shape. Prepare returns the exact
+independent-adjudicator grant request; submit verifies that signature and
+atomically consumes the grant, creates the action and task, binds the grant
+to the action, and emits events. Migration `0030_mahoraga_mcp_authority.sql`
+must be applied before deploying this source, including for legacy Mahoraga
+dispatch. The owner profile must explicitly include `repo.issue.create`
+and/or `repo.verify.dispatch`. The profile and stop versions, stop state, $0
+ceiling, operation membership and grant expiry are checked when a prepared
+action is claimed, including by hourly recovery, and again immediately before
+the provider POST. A profile change or expired grant therefore holds a
+prepared signed action. If authority is lost after the send checkpoint, the
+action remains non-replayable and must be reconciled; do not reset it. These
+checks cannot make PostgreSQL and GitHub one atomic transaction: revocation
+can race an already-starting network request. Grant or admission response loss
+is resolved by readback, not a blind repeated write. Existing HTTP and deep
+workflow routes remain separate legacy paths and do not acquire a signed
+grant merely because the MCP interface requires one.
+
+The migration, grant handling, scheduler recovery and source interface have
+not been validated against live PostgreSQL or deployed Hatchable, and no
+signer or provider credentials are provisioned by this change.
 
 The project manifest declares three **optional, protected** values: the
 Mahoraga-scoped GitHub App client ID, installation ID, and private key. They

@@ -47,7 +47,7 @@ async function githubJson(transport,url,init,deadlineAt,requestTimeoutMs,errorCo
  } finally {clearTimeout(timer);}
 }
 
-function validate(action) {
+export function validateMahoragaAction(action) {
  if(!action || !KEY.test(action.key || '') ||
    !['issue.create','verify.dispatch'].includes(action.operation) ||
    !action.input || typeof action.input !== 'object' || Array.isArray(action.input))
@@ -327,6 +327,27 @@ async function reconciliationFailure(db,row,error) {
  return {ok:!conflict,state:'uncertain',id:row.id,taskId:row.task_id,
    key:row.action_key,...(conflict?{error:error.message}:{})};
 }
+async function dispatchStillAdmitted(db,id){
+ let result;
+ try{result=await db.query(`SELECT EXISTS (
+  SELECT 1 FROM mahoraga_actions action
+  JOIN brain_runtime_control control ON control.id=1
+  WHERE action.id=$1 AND action.state='sent' AND NOT control.paused
+  AND (NOT EXISTS (SELECT 1 FROM mahoraga_mcp_authority WHERE action_id=action.id)
+   OR EXISTS (
+    SELECT 1 FROM mahoraga_mcp_authority a
+    JOIN brain_authority_grants g ON g.grant_id=a.grant_id
+    JOIN brain_owner_autonomy_profile p ON p.id=1
+    WHERE a.action_id=action.id AND a.stop_version=control.version
+    AND p.version=a.profile_version AND p.owner='michaeljwilliams0123'
+    AND p.preset IN ('build','release') AND p.max_paid_cents=0
+    AND jsonb_exists(p.allowed_operations,g.operation)
+    AND g.expires_at>clock_timestamp()
+   ))
+ ) AS admitted`,[id]);}
+ catch{return false;}
+ return result?.rows?.length===1&&result.rows[0].admitted===true;
+}
 export async function runMahoragaAction({db,config,transport=fetch,
  requestTimeoutMs=REQUEST_TIMEOUT_MS,actionDeadlineMs=ACTION_DEADLINE_MS},raw) {
  if(!Number.isSafeInteger(requestTimeoutMs)||requestTimeoutMs<1||
@@ -334,7 +355,7 @@ export async function runMahoragaAction({db,config,transport=fetch,
    actionDeadlineMs<1||actionDeadlineMs>ACTION_DEADLINE_MS)
    throw Error('invalid-mahoraga-network-deadline');
  let action;
- try { action=validate(raw); } catch(error) {
+ try { action=validateMahoragaAction(raw); } catch(error) {
    return {ok:false,error:error.message};
  }
  await db.query(`WITH task AS (
@@ -394,17 +415,36 @@ export async function runMahoragaAction({db,config,transport=fetch,
  // Admission to 'sent' is the dispatch boundary. Serialize it with an owner
  // pause so no prepared action can be admitted after the pause commits.
  const claim=await db.query(`WITH control AS MATERIALIZED (
-   SELECT paused FROM brain_runtime_control WHERE id=1 FOR SHARE
+   SELECT paused,version FROM brain_runtime_control WHERE id=1 FOR SHARE
+ ), profile AS MATERIALIZED (
+   SELECT owner,preset,version,max_paid_cents,allowed_operations
+   FROM brain_owner_autonomy_profile WHERE id=1 FOR SHARE
  ), moved AS (UPDATE mahoraga_actions
    SET state='sent',attempt_started_at=now(),updated_at=now()
    FROM control WHERE id=$1 AND state='prepared' AND NOT control.paused
+   AND (NOT EXISTS (SELECT 1 FROM mahoraga_mcp_authority WHERE action_id=$1)
+     OR EXISTS (
+       SELECT 1 FROM mahoraga_mcp_authority a
+       JOIN brain_authority_grants g ON g.grant_id=a.grant_id
+       JOIN profile p ON true
+       WHERE a.action_id=$1 AND a.stop_version=control.version
+       AND p.version=a.profile_version AND p.owner='michaeljwilliams0123'
+       AND p.preset IN ('build','release') AND p.max_paid_cents=0
+       AND jsonb_exists(p.allowed_operations,g.operation)
+       AND g.expires_at>clock_timestamp()
+     ))
    RETURNING id,task_id,action_key,operation,request,state,attempt_started_at,result
  ) SELECT * FROM moved`,[row.id]);
  if(!claim.rows.length) {
    row=(await db.query(`SELECT id,task_id,action_key,operation,request,state,attempt_started_at,result
      FROM mahoraga_actions WHERE id=$1`,[row.id])).rows[0];
-   if(row?.state==='prepared')return {ok:false,state:'prepared',id:row.id,
-     taskId:row.task_id,key:action.key,error:'owner-execution-paused'};
+   if(row?.state==='prepared'){
+     let stop;
+     try{stop=await db.query("SELECT paused FROM brain_runtime_control WHERE id=1");}
+     catch{return {ok:false,state:'prepared',error:'stop-control-unavailable'};}
+     return {ok:false,state:'prepared',id:row.id,taskId:row.task_id,key:action.key,
+       error:stop?.rows?.[0]?.paused===true?'owner-execution-paused':'dispatch-authority-unavailable'};
+   }
    if(row.state==='observed')
      return {ok:true,state:'observed',id:row.id,taskId:row.task_id,
        key:action.key,result:row.result,reused:true};
@@ -414,9 +454,13 @@ export async function runMahoragaAction({db,config,transport=fetch,
  row=claim.rows[0];
  try {
    if(action.operation==='issue.create') {
+     if(!await dispatchStillAdmitted(db,row.id))
+       throw Error('dispatch-authority-unavailable');
      await get('/issues','POST',{title:action.input.title,
        body:action.input.body+'\n\n'+MARKER(action.key)});
    } else if(!await observe(get,row)) {
+     if(!await dispatchStillAdmitted(db,row.id))
+       throw Error('dispatch-authority-unavailable');
      await get('/actions/workflows/verify.yml/dispatches','POST',
        {ref:action.input.ref,inputs:{ultron_action_key:action.key,
          ultron_expected_head_sha:action.input.expectedHeadSha}});
@@ -424,6 +468,11 @@ export async function runMahoragaAction({db,config,transport=fetch,
    return await reconcile(db,get,row);
  } catch(error) {
    // A sent operation remains non-replayable after any ambiguous outcome.
+   if(error?.message==='dispatch-authority-unavailable'){
+     await reconciliationFailure(db,row,error);
+     return {ok:false,state:'uncertain',id:row.id,taskId:row.task_id,
+       key:row.action_key,error:error.message};
+   }
    return reconciliationFailure(db,row,error);
  }
 }
