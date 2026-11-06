@@ -30,6 +30,11 @@ async function digest(value){
  const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
  return [...hash].map(byte=>byte.toString(16).padStart(2,'0')).join('');
 }
+export async function cloudNoteBinding(raw){
+ const input=copy(raw);
+ if(!input)throw Error('invalid-cloud-action');
+ return {input,fingerprint:await digest(input)};
+}
 const READ_SQL=`SELECT n.id,n.kind,n.body,n.fingerprint,
  e.id AS "receiptId" FROM brain_notes n
  JOIN brain_events e ON e.event_type='cloud-action-observed'

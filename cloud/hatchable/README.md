@@ -50,7 +50,62 @@ A separate seeded evaluator can supply held-out evidence only after the candidat
 
 Owner-only API: `GET/POST /api/brain/tasks`, `POST /api/brain/command`. Scheduler-only: `/api/brain/tick` (hourly) and `/api/brain/run` (asynchronous). Commands: `/help`, `/status`, `/repo inspect`, `/repo prs`, `/repo ci`, `/site render`, `/council review`, `/remember <note>`. Actions: queue, note, cancel, retry, and `acceptance` with an objective ID and merged candidate pull-request number.
 
-MCP tools: `ultron_status`, `ultron_queue`, `ultron_remember`, `ultron_control`. These are **owner/admin-gated** and require an independent OAuth authorization before use by a connected AI client.
+MCP tools include `ultron_status`, `ultron_queue`, `ultron_remember`, and `ultron_control`. They declare admin access and require independent OAuth authorization before use by a connected AI client. The source also adds `ultron_capabilities` for read-only discovery of the queue's actual objective catalog and an explicit inventory of existing MCP operation effects and limitations. The inventory is descriptive, not an admission gate, proof of provider access, or proof of deployment.
+
+### Queue reconciliation and MCP write limitations
+
+The source version of `ultron_queue` requires a caller-generated key (six to
+80 lowercase letters, digits or hyphens). Existing clients that omit the key
+must be updated. A task key binds the only admitted payload, the objective:
+reusing it for another objective is rejected. Task and `owner-queued` event
+are inserted in one database statement; the handler independently reads both
+before reporting success. If the write acknowledgement is lost but the
+matching task and receipt are visible, it returns the existing task without
+scheduling a second immediate run. The hourly scheduler remains the fallback.
+If readback is unavailable, absent or inconsistent, the response is
+`reconcile-required` and includes the task key; inspect the task and event
+ledger by calling `ultron_queue` with the same objective and key and
+`mode: "reconcile"` before taking further action. This mode only reads; it
+does not insert or schedule. A missing readback remains `reconcile-required`:
+it does not prove that an in-flight write did not commit.
+
+This is a hardening of the existing read/advisory objective queue, not a
+universal MCP write gate: the event table is not an immutable hash ledger,
+and queue admission does not consult the versioned owner profile or stop
+control. The legacy `ultron_control` tool is not an idempotent additive-write
+interface. The owner-checked HTTP route for `cloud.note.create` is separate
+from the MCP signed-grant path. Hatchable documents role-filtered MCP access, but its published handler
+context does not establish a trusted owner identity field for this project's
+MCP calls. Do not accept identity asserted in tool arguments; new mutations
+need independently verified per-action authority and platform enforcement.
+These source changes do not establish deployment or live authorization.
+
+### Signed MCP note source contract
+
+The source `ultron_remember` tool now supports `prepare`, `submit`,
+and read-only `reconcile`. `prepare` validates the exact note request and
+returns the grant request to be signed; it does not authorize or write it.
+This replaces the legacy `{kind, body}` MCP interface; clients must migrate.
+The existing independent adjudicator must sign an `ultron.security-grant.v1`
+payload with that request's exact actor, objective ID, operation, resource and
+administrative-change flag, plus its existing issuer, audience, grant ID,
+policy SHA, not-before and expiry claims. The resource is the SHA-256 digest
+of the normalized note request, including its key and expected profile and
+stop versions. Only the public verification JWK is configured in Hatchable;
+the signer and private key remain independent.
+
+On `submit`, the source verifies the signature and scope, and one PostgreSQL
+statement consumes the unique grant and creates a keyed note and event, gated
+by the current owner profile, stop version, pause state, allowed operation,
+and zero paid ceiling. It checks expiry again inside the statement. A lost
+response is read back, never blindly retried. Use `reconcile` with the exact
+request and grant ID to read the result, including after grant expiry.
+Unresolved or inconsistent readback is not success. Conflicting keys or a
+grant already consumed by another operation do not authorize a new note;
+an unused grant may be consumed even if a concurrent conflicting note wins.
+The separate legacy HTTP note route remains unchanged and is not governed by
+this MCP grant contract. This source contract has not been validated against a live
+PostgreSQL instance or deployed Hatchable runtime.
 
 ## Evidence and constraints
 

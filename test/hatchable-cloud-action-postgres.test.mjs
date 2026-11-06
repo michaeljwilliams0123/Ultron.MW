@@ -29,7 +29,7 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
 
  test('native cloud action is atomic, keyed, pause-fenced and immutable in PostgreSQL',async()=>{
   await sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
-  for(const name of ['0001_tasks.sql','0002_events.sql','0003_native_commands.sql',
+  for(const name of ['0001_tasks.sql','0002_events.sql','0003_native_commands.sql','0008_admin_grants.sql',
    '0010_runtime_stop.sql','0016_owner_autonomy_profile.sql',
    '0019_cloud_actions.sql'])await sql(migration(name));
   await sql(`UPDATE brain_owner_autonomy_profile SET preset='release',version=2,
@@ -45,5 +45,26 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
   await sql('UPDATE brain_runtime_control SET paused=TRUE WHERE id=1');
   assert.equal(await sql(writeCanary('cloud:note:pg-0003')),'');
   assert.equal(await sql('SELECT count(*) FROM brain_notes WHERE action_key IS NOT NULL'),'1');
+ });
+ test('signed MCP note consumes one grant with the note and receipt atomically',async()=>{
+  const signed=readFileSync(new URL('../cloud/hatchable/lib/mcp-signed-note.js',
+   import.meta.url),'utf8').match(/const WRITE=`([\s\S]*?)`;/)?.[1];
+  assert.ok(signed,'test the actual signed note statement');
+  await sql('UPDATE brain_runtime_control SET paused=FALSE WHERE id=1');
+  const statement=(key,grant)=>signed.replace(/\$(10|[1-9])/g,(_,n)=>({
+   1:`'${key}'`,2:`'${'b'.repeat(64)}'`,3:"'goal'",4:"'signed pg canary'",
+   5:'2',6:'1',7:`'${grant}'`,8:`'sha256:${'b'.repeat(64)}'`,
+   9:`'${'a'.repeat(64)}'`,10:"'2099-01-01T00:00:00Z'"
+  })[n]);
+  const first=statement('cloud:note:pg-signed-1','pg-signed-grant-1');
+  const results=await Promise.all([sql(first),sql(first)]);
+  assert.equal(results.filter(Boolean).length,1);
+  assert.equal(await sql("SELECT count(*) FROM brain_notes WHERE action_key='cloud:note:pg-signed-1'"),'1');
+  assert.equal(await sql("SELECT count(*) FROM brain_authority_grants WHERE grant_id='pg-signed-grant-1'"),'1');
+  assert.equal(await sql("SELECT count(*) FROM brain_events WHERE event_type='mcp-cloud-note-observed' AND details->>'grant_id'='pg-signed-grant-1'"),'1');
+  assert.equal(await sql(statement('cloud:note:pg-signed-2','pg-signed-grant-1')),'');
+  await sql('UPDATE brain_runtime_control SET paused=TRUE WHERE id=1');
+  assert.equal(await sql(statement('cloud:note:pg-signed-3','pg-signed-grant-2')),'');
+  assert.equal(await sql("SELECT count(*) FROM brain_authority_grants WHERE grant_id='pg-signed-grant-2'"),'0');
  });
 }

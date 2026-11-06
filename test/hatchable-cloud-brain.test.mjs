@@ -31,7 +31,7 @@ async function moduleUnderTest(path,core=coreUrl){
  return import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 }
 const {runOne}=await moduleUnderTest('brain-runner.js');
-const {queueObjective,controlTask,saveNote,admitAcceptanceEvidence}=
+const {queueObjective,readQueuedObjective,controlTask,saveNote,admitAcceptanceEvidence}=
  await moduleUnderTest('brain-owner.js');
 
 test('cloud: owner acceptance combines independent review and held-out receipts',async()=>{
@@ -147,14 +147,15 @@ test('cloud: claim and recovery include their receipts in the same SQL call',asy
  }
 });
 test('cloud: owner task admission is idempotent and schedules only on insertion',async()=>{
- const statements=[];let scheduled=0;
+ const statements=[];let scheduled=0,insertions=0;
+ const task={id:3,task_key:'key-six',objective:'repo.inspect',status:'queued',
+  receipt_id:11,receipt_objective:'repo.inspect'};
  const db={async query(sql){
   statements.push(sql);
-  if(sql.includes("'owner-queued'")){
-   return {rows:statements.filter(s=>s.includes("'owner-queued'")).length===1
-    ?[{id:3,task_key:'key-six',objective:'repo.inspect',status:'queued'}]:[]};
+  if(sql.includes('INSERT INTO brain_tasks')){
+   return {rows:++insertions===1?[task]:[]};
   }
-  if(sql.includes('WHERE task_key=$1'))return {rows:[{id:3,task_key:'key-six',objective:'repo.inspect',status:'queued'}]};
+  if(sql.includes('WHERE t.task_key=$1'))return {rows:[task]};
   throw Error('unexpected-sql');
  }};
  const scheduler={async now(){scheduled++;}};
@@ -165,11 +166,128 @@ test('cloud: owner task admission is idempotent and schedules only on insertion'
  assert.equal(scheduled,1);
  assert.match(statements[0],/INSERT INTO brain_events/);
 });
+test('cloud: concurrent queue admissions converge on one task and receipt',async()=>{
+ let task,writes=0,scheduled=0;
+ const db={async query(sql){
+  if(sql.includes('INSERT INTO brain_tasks')){
+   writes++;
+   if(task)return {rows:[]};
+   task={id:3,task_key:'key-six',objective:'repo.inspect',status:'queued',
+    receipt_id:11,receipt_objective:'repo.inspect'};
+   return {rows:[task]};
+  }
+  return {rows:[task]};
+ }};
+ const scheduler={async now(){scheduled++;}};
+ const results=await Promise.all([
+  queueObjective({db,scheduler},'repo.inspect','key-six'),
+  queueObjective({db,scheduler},'repo.inspect','key-six')
+ ]);
+ assert.equal(writes,2);
+ assert.deepEqual(results.map(x=>x.created).sort(),[false,true]);
+ assert.deepEqual(results.map(x=>x.receipt_id),[11,11]);
+ assert.equal(scheduled,1);
+});
+test('cloud: lost queue acknowledgement is reconciled without rescheduling',async()=>{
+ let writes=0,scheduled=0;
+ const db={async query(sql){
+  if(sql.includes('INSERT INTO brain_tasks')){writes++;throw Error('lost-ack');}
+  return {rows:[{id:3,task_key:'key-six',objective:'repo.inspect',status:'queued',
+   receipt_id:11,receipt_objective:'repo.inspect'}]};
+ }};
+ const result=await queueObjective({db,scheduler:{async now(){scheduled++;}}},
+  'repo.inspect','key-six');
+ assert.equal(result.ok,true);
+ assert.equal(result.created,false);
+ assert.equal(result.receipt_id,11);
+ assert.equal(writes,1);
+ assert.equal(scheduled,0);
+});
+test('cloud: uncertain or inconsistent queue readback does not claim success',async()=>{
+ const good={id:3,task_key:'key-six',objective:'repo.inspect',status:'queued',
+  receipt_id:11,receipt_objective:'repo.inspect'};
+ for(const readback of [null,[],[{...good,receipt_id:null}],
+  [good,good],[{...good,receipt_objective:'different'}]]){
+  let scheduled=0;
+  const db={async query(sql){
+   if(sql.includes('INSERT INTO brain_tasks'))return {rows:[good]};
+   if(readback===null)throw Error('readback-unavailable');
+   return {rows:readback};
+  }};
+  const result=await queueObjective({db,scheduler:{async now(){scheduled++;}}},
+   'repo.inspect','key-six');
+  assert.equal(result.error,'reconcile-required');
+  assert.equal(result.task_key,'key-six');
+  assert.equal(scheduled,0);
+ }
+});
+test('cloud: queue key cannot be reused for a different objective',async()=>{
+ const db={async query(sql){
+  if(sql.includes('INSERT INTO brain_tasks'))return {rows:[]};
+  return {rows:[{id:3,task_key:'key-six',objective:'other',status:'queued',
+   receipt_id:11,receipt_objective:'other'}]};
+ }};
+ const result=await queueObjective({db},'repo.inspect','key-six');
+ assert.equal(result.error,'idempotency-key-conflict');
+});
 test('cloud: unsupported owner objective cannot schedule',async()=>{
  let queries=0;
  const r=await queueObjective({db:{query:async()=>{queries++;}},scheduler:{now:async()=>{}}},'repo.mutate','safe-key');
  assert.equal(r.ok,false);
  assert.equal(queries,0);
+});
+test('cloud: MCP queue requires an explicit stable key before reaching the ledger',async()=>{
+ const source=await readFile(new URL('../cloud/hatchable/mcp/ultron_queue.js',import.meta.url),'utf8');
+ const stub='data:text/javascript;base64,'+Buffer.from(
+  "export async function queueObjective(){throw Error('unexpected-queue');}"+
+  "export async function readQueuedObjective(){return {ok:true,readback:true};}"
+ ).toString('base64');
+ const module=await import('data:text/javascript;base64,'+Buffer.from(
+  source.replace("'lib/brain-owner.js'","'"+stub+"'")).toString('base64'));
+ assert.equal(module.access,'admin');
+ assert.ok(module.default.inputSchema.required.includes('key'));
+ assert.deepEqual(await module.default.handler({objective:'repo.inspect'},{}),
+  {ok:false,error:'invalid-idempotency-key'});
+ assert.deepEqual(await module.default.handler({objective:'council.room',key:'key-six'},{}),
+  {ok:false,error:'unsupported-objective'});
+ assert.deepEqual(await module.default.handler(
+  {objective:'repo.inspect',key:'key-six',mode:'reconcile'},{db:{}}),
+  {ok:true,readback:true});
+ assert.deepEqual(await module.default.handler(
+  {objective:'repo.inspect',key:'key-six',mode:'invalid'},{}),
+  {ok:false,error:'invalid-queue-mode'});
+});
+test('cloud: queue reconciliation is read-only and missing remains uncertain',async()=>{
+ let writes=0,reads=0;
+ const db={async query(sql){
+  if(/\b(?:INSERT|UPDATE|DELETE)\b/i.test(sql))writes++;
+  reads++;
+  return {rows:[]};
+ }};
+ const result=await readQueuedObjective({db},'repo.inspect','key-six');
+ assert.deepEqual(result,{ok:false,error:'reconcile-required',task_key:'key-six'});
+ assert.equal(reads,1);
+ assert.equal(writes,0);
+});
+test('cloud: MCP capability discovery reflects bounded queue objectives without claiming access',async()=>{
+ const source=await readFile(new URL('../cloud/hatchable/mcp/ultron_capabilities.js',import.meta.url),'utf8');
+ const registrySource=await readFile(new URL('../cloud/hatchable/lib/mcp-capability-registry.js',import.meta.url),'utf8');
+ const registryUrl='data:text/javascript;base64,'+Buffer.from(registrySource).toString('base64');
+ const transformed=source.replace("'lib/brain-core.js'","'"+coreUrl+"'")
+  .replace("'lib/mcp-capability-registry.js'","'"+registryUrl+"'");
+ const module=await import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
+ assert.equal(module.access,'admin');
+ const result=await module.default.handler();
+ assert.deepEqual(result.objectives.map(item=>item.id),['repo.inspect']);
+ assert.equal(result.queue.keyRequired,true);
+ assert.equal(result.queue.reconciliationMode,'reconcile');
+ assert.equal(result.queue.admissionChecksStop,false);
+ assert.equal(result.externalWrites.universalGatewayAvailable,false);
+ assert.equal(result.providerConnectivityVerified,false);
+ const note=result.operations.find(item=>item.tool==='ultron_remember');
+ assert.equal(note.keyed,true);
+ assert.equal(note.profileEnforced,true);
+ assert.ok(result.operations.some(item=>item.operation==='mahoraga.action.execute'&&item.effect==='external-write'));
 });
 test('cloud: owner task control updates task and journal atomically',async()=>{
  const statements=[];

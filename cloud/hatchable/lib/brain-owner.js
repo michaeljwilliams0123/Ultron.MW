@@ -3,29 +3,55 @@ import {notifyOwner} from 'lib/owner-live-events.js';
 import { persistAcceptanceEvidence } from 'lib/acceptance-evidence.js';
 import { persistHeldOutEvidence } from 'lib/heldout-evidence.js';
 const IDKEY=/^[a-z0-9-]{6,80}$/;
+export async function readQueuedObjective({db},objective,key){
+ if(!ALLOWED.has(objective))return {ok:false,error:'unsupported-objective'};
+ if(typeof key!=='string'||!IDKEY.test(key))return {ok:false,error:'invalid-idempotency-key'};
+ let observed;
+ try{observed=await db.query(`SELECT t.id,t.task_key,t.objective,t.status,
+   e.id AS receipt_id,e.details->>'objective' AS receipt_objective
+  FROM brain_tasks t LEFT JOIN brain_events e
+   ON e.task_id=t.id AND e.event_type='owner-queued'
+  WHERE t.task_key=$1`,[key]);}
+ catch{return {ok:false,error:'reconcile-required',task_key:key};}
+ if(!Array.isArray(observed?.rows)||observed.rows.length!==1)
+  return {ok:false,error:'reconcile-required',task_key:key};
+ const exists=observed.rows[0];
+ if(exists.objective!==objective)return {ok:false,error:'idempotency-key-conflict'};
+ if(exists.task_key!==key||exists.id==null||
+  exists.receipt_objective!==objective||exists.receipt_id==null)
+  return {ok:false,error:'reconcile-required',task_key:key};
+ const {receipt_id,receipt_objective,...task}=exists;
+ return {ok:true,task,receipt_id};
+}
 export async function queueObjective({db,scheduler,events},objective,key){
  if(!ALLOWED.has(objective))return {ok:false,error:'unsupported-objective'};
  if(key!=null && (typeof key!=='string'||!IDKEY.test(key)))return {ok:false,error:'invalid-idempotency-key'};
  const taskKey=key||('owner-'+crypto.randomUUID());
- const added=await db.query(`WITH admitted AS (
+ let added,writeFailed=false;
+ try{added=await db.query(`WITH admitted AS (
     INSERT INTO brain_tasks(task_key,objective) VALUES($1,$2)
     ON CONFLICT(task_key) DO NOTHING RETURNING id,task_key,objective,status
   ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'owner-queued',jsonb_build_object('objective',objective)
-    FROM admitted RETURNING task_id
-  ) SELECT id,task_key,objective,status FROM admitted`,[taskKey,objective]);
- const exists=added.rows[0]||(await db.query(
-  "SELECT id,task_key,objective,status FROM brain_tasks WHERE task_key=$1",[taskKey])).rows[0];
- if(!exists)return {ok:false,error:'task-not-found-after-admission'};
- if(exists.objective!==objective)return {ok:false,error:'idempotency-key-conflict'};
+    FROM admitted RETURNING id,task_id
+  ) SELECT admitted.id,admitted.task_key,admitted.objective,admitted.status,
+    receipt.id AS receipt_id FROM admitted JOIN receipt ON receipt.task_id=admitted.id`,
+  [taskKey,objective]);}catch{writeFailed=true;}
+ const observed=await readQueuedObjective({db},objective,taskKey);
+ if(!observed.ok)return observed;
+ if((!writeFailed&&(!Array.isArray(added?.rows)||added.rows.length>1))||
+  (added?.rows?.length===1&&(added.rows[0].id!==observed.task.id||
+    added.rows[0].receipt_id!==observed.receipt_id)))
+  return {ok:false,error:'reconcile-required',task_key:taskKey};
+ const created=!writeFailed&&added.rows.length===1;
  let scheduled=false;
- if(added.rows.length){
+ if(created){
   try{await scheduler.now('/api/brain/run',{via:'owner'});scheduled=true;}
   catch(_e){scheduled=false;}
  }
- if(added.rows.length)await notifyOwner(events,'task',Number(exists.id));
- return {ok:true,task:exists,created:!!added.rows.length,immediate_scheduled:scheduled,scheduled_fallback:'hourly'};
+ if(created)await notifyOwner(events,'task',Number(observed.task.id));
+ return {...observed,created,immediate_scheduled:scheduled,scheduled_fallback:'hourly'};
 }
 export async function saveNote({db,events},kind,body){
  if(!['goal','observation','decision'].includes(kind)||typeof body!=='string'||!body.trim()||body.trim().length>1200)return {ok:false,error:'invalid-note'};

@@ -5,7 +5,7 @@ const VERIFIED=new WeakSet();
 const OPERATIONS=new Set([
  'repo.inspect','repo.issue.create','repo.verify.dispatch','repo.pr.review',
  'repo.pr.squash','repo.branch.update','cloud.deploy','permissions.change',
- 'webhook.configure'
+ 'webhook.configure','cloud.note.create'
 ]);
 const GRANT_SCHEMA='ultron.security-grant.v1';
 const ISSUER='ultron-independent-security';
