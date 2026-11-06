@@ -81,6 +81,17 @@ fixed public Ultron.MW GitHub repository. It rejects redirects, bounds response
 size and time, and returns a small metadata projection. It does not write
 issues or accept arbitrary URLs, and it does not establish a provider grant.
 
+`lib/graph-workbook-read.js` is a source-only single-cell Graph reader, not
+an MCP tool or connected account. Trusted runtime code must bind one account,
+drive item, worksheet and explicit cells, and supply a delegated access token;
+the reader checks `/me` before requesting the cell. Microsoft documents
+`Files.ReadWrite` delegated permission for the workbook range API even for
+reads, and application permissions are not supported. The account check also
+requires access to `/me`. No credential, consent, refresh flow or runtime
+binding is provisioned here. Workbook writes remain unavailable: they need
+signed exact-action admission, a durable pre-dispatch checkpoint, safe
+concurrency handling and readback before they can be exposed.
+
 ### Signed MCP note source contract
 
 The source `ultron_remember` tool now supports `prepare`, `submit`,
