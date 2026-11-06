@@ -20,4 +20,4 @@ ALTER TABLE brain_owner_autonomy_profile
 ALTER TABLE brain_owner_autonomy_profile
  ADD CONSTRAINT brain_owner_autonomy_profile_allowed_operations_check
  CHECK (jsonb_typeof(allowed_operations)='array'
- AND jsonb_array_length(allowed_operations) BETWEEN 1 AND 17);
+ AND jsonb_array_length(allowed_operations) BETWEEN 1 AND 21);
