@@ -81,16 +81,21 @@ fixed public Ultron.MW GitHub repository. It rejects redirects, bounds response
 size and time, and returns a small metadata projection. It does not write
 issues or accept arbitrary URLs, and it does not establish a provider grant.
 
-`lib/graph-workbook-read.js` is a source-only single-cell Graph reader, not
-an MCP tool or connected account. Trusted runtime code must bind one account,
-drive item, worksheet and explicit cells, and supply a delegated access token;
-the reader checks `/me` before requesting the cell. Microsoft documents
+The source `ultron_graph_workbook` MCP tool exposes the single-cell Graph
+reader with admin access. Server-side configuration
+`ULTRON_GRAPH_WORKBOOK_BINDING` must be a JSON object with exactly `accountId`,
+`itemId`, `worksheetId` and `allowedCells` (an array of allowed A1 addresses).
+`ULTRON_GRAPH_DELEGATED_TOKEN` must hold the delegated access token; neither
+binding nor token can be supplied by an MCP request. The reader checks `/me`
+before requesting the cell. Microsoft documents
 `Files.ReadWrite` delegated permission for the workbook range API even for
 reads, and application permissions are not supported. The account check also
 requires access to `/me`. No credential, consent, refresh flow or runtime
-binding is provisioned here. Workbook writes remain unavailable: they need
-signed exact-action admission, a durable pre-dispatch checkpoint, safe
-concurrency handling and readback before they can be exposed.
+configuration is provisioned here. The source has not been deployed or verified
+against Hatchable's runtime configuration or a live Microsoft account.
+Workbook writes remain unavailable: they need signed exact-action admission,
+a durable pre-dispatch checkpoint, safe concurrency handling and readback
+before they can be exposed.
 
 ### Signed MCP note source contract
 

@@ -19,6 +19,9 @@ const records=[
   admission:'platform-admin'},
  {tool:'ultron_github_issue',operation:'github.issue.read',effect:'read',
   admission:'platform-admin',scope:'public Ultron.MW repository'},
+ {tool:'ultron_graph_workbook',operation:'graph.workbook.cell.read',effect:'read',
+  admission:'platform-admin-and-configured-delegated-token',
+  scope:'one configured account, workbook, worksheet and cell allowlist'},
  {tool:'ultron_hf_lab',operation:'brain.hf-lab.read',effect:'read',
   admission:'platform-admin'}
 ];
