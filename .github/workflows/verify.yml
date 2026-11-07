@@ -53,6 +53,46 @@ jobs:
           ULTRON_POSTGRES_TEST: '1'
           ULTRON_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
         run: node --test --test-concurrency=1 test/hatchable-acceptance-postgres.test.mjs test/hatchable-heldout-postgres.test.mjs test/hatchable-owner-stop-postgres.test.mjs test/hatchable-completion-readback-postgres.test.mjs test/hatchable-process-recovery-postgres.test.mjs test/mahoraga-process-recovery-postgres.test.mjs test/repair-pr-postgres-live.test.mjs test/continuum-outbox-postgres.test.mjs test/hatchable-cloud-action-postgres.test.mjs
+  attested-receipt:
+    needs: test
+    if: >-
+      needs.test.result == 'success' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'michaeljwilliams0123'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Create non-sensitive exact-source verification receipt
+        run: node scripts/write-github-verification-receipt.mjs artifacts/github-verification-receipt.json
+      - name: Sign receipt provenance with GitHub OIDC and Sigstore
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: artifacts/github-verification-receipt.json
+      - name: Retain receipt and Sigstore bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: attested-verification-${{ env.SOURCE_SHA }}-${{ github.run_attempt }}
+          path: |
+            artifacts/github-verification-receipt.json
+            ${{ steps.attest.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 7
   fixed-comparison:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
