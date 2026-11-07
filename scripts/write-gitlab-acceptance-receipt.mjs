@@ -1,6 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const GITLAB_PROJECT = 'michaelj.williams0123/Ultron.MW';
@@ -67,9 +66,15 @@ export function buildGitLabAcceptanceReceipt({ env = process.env, observedSha })
   });
 }
 
+export async function readDetachedGitHead(directory = process.cwd()) {
+  const head = (await readFile(join(directory, '.git', 'HEAD'), 'utf8')).trim();
+  if (!SHA_PATTERN.test(head)) throw new Error('detached Git HEAD is required');
+  return head;
+}
+
 async function main() {
   const outputPath = resolve(process.argv[2] ?? 'artifacts/gitlab-exact-sha-acceptance.json');
-  const observedSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const observedSha = await readDetachedGitHead();
   const receipt = buildGitLabAcceptanceReceipt({ observedSha });
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });

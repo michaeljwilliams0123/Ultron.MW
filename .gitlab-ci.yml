@@ -18,7 +18,7 @@ exact-sha-acceptance:
   script:
     - test "$CI_PROJECT_PATH" = "michaelj.williams0123/Ultron.MW"
     - test "$CI_PIPELINE_SOURCE" = "push"
-    - test "$(git rev-parse HEAD)" = "$CI_COMMIT_SHA"
+    - test "$(cat .git/HEAD)" = "$CI_COMMIT_SHA"
     - node --version
     - node scripts/verify-audited-lockfile.mjs
     - npm ci --ignore-scripts --no-audit --no-fund

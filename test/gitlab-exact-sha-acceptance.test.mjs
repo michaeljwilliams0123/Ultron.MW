@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
-import { buildGitLabAcceptanceReceipt } from '../scripts/write-gitlab-acceptance-receipt.mjs';
+import {
+  buildGitLabAcceptanceReceipt,
+  readDetachedGitHead,
+} from '../scripts/write-gitlab-acceptance-receipt.mjs';
 
 const SHA = 'a'.repeat(40);
 const pipelineUrl = 'https://gitlab.example.test/group/project/-/pipelines/123';
@@ -74,13 +78,28 @@ test('GitLab acceptance receipt fails closed on a stale checkout or incomplete p
   );
 });
 
+test('GitLab receipt reads the detached checkout identity without requiring a git executable', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ultron-gitlab-head-'));
+  try {
+    await mkdir(join(directory, '.git'));
+    await writeFile(join(directory, '.git', 'HEAD'), `${SHA}\n`);
+    assert.equal(await readDetachedGitHead(directory), SHA);
+
+    await writeFile(join(directory, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    await assert.rejects(() => readDetachedGitHead(directory), /detached Git HEAD is required/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('GitLab workflow is verify-branch-only, exact-SHA, locked, and retains a bounded receipt', async () => {
   const yml = await readFile(resolve(import.meta.dirname, '../.gitlab-ci.yml'), 'utf8');
 
   assert.match(yml, /CI_PIPELINE_SOURCE == "push"/);
   assert.match(yml, /CI_COMMIT_BRANCH =~ \/\^verify\\\//);
   assert.match(yml, /when: never/);
-  assert.match(yml, /test "\$\(git rev-parse HEAD\)" = "\$CI_COMMIT_SHA"/);
+  assert.match(yml, /test "\$\(cat \.git\/HEAD\)" = "\$CI_COMMIT_SHA"/);
+  assert.doesNotMatch(yml, /git rev-parse|apt-get|apk add/);
   assert.match(yml, /node scripts\/verify-audited-lockfile\.mjs/);
   assert.match(yml, /npm ci --ignore-scripts --no-audit --no-fund/);
   assert.match(yml, /node scripts\/verify\.mjs/);
