@@ -2,7 +2,10 @@ import {observeMahoragaMain} from 'lib/mahoraga-actions.js';
 
 // Native owner-OAuth MCP binding. It reuses the existing PAT/App credential
 // selection and exact private-repository identity checks. Read-only: the
-// adapter performs two GitHub GETs and cannot submit issues or Actions.
+// adapter performs two GitHub repository GETs. PAT mode needs no token mint;
+// GitHub App mode first issues one App installation-token POST, requesting
+// ONLY contents:read + the implicit metadata:read. Neither mode performs
+// repository writes or dispatches Actions.
 export const access='admin';
 export default {
  name:'ultron_mahoraga_repo',
