@@ -68,7 +68,11 @@ description = "Base64 32-byte AES-256-GCM key sealing owner credentials and coun
 # Optional owner-consented GitLab API connection. No GitLab credential is
 # stored in source, GitHub Actions, an MCP argument, or a task receipt.
 [[api]]
-name = "gitlab"
-base_url = "https://gitlab.com"
-auth = "oauth2"
-description = "Private read-only Ultron GitLab CI observation; consent separately before activation."
+name          = "gitlab"
+auth          = "oauth2"
+base_url      = "https://gitlab.com"
+authorize_url = "https://gitlab.com/oauth/authorize"
+token_url     = "https://gitlab.com/oauth/token"
+scopes        = ["read_api"]
+required      = false
+description   = "Read-only private Ultron GitLab project CI observation; connect separately via owner OAuth."
