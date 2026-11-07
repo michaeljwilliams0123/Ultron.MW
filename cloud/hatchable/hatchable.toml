@@ -64,3 +64,11 @@ description = "Optional exact credential mode: auto (legacy PAT-first), pat (no 
 name = "ULTRON_VAULT_KEY"
 required = true
 description = "Base64 32-byte AES-256-GCM key sealing owner credentials and council GitHub App private keys."
+
+# Optional owner-consented GitLab API connection. No GitLab credential is
+# stored in source, GitHub Actions, an MCP argument, or a task receipt.
+[[api]]
+name = "gitlab"
+base_url = "https://gitlab.com"
+auth = "oauth2"
+description = "Private read-only Ultron GitLab CI observation; consent separately before activation."
