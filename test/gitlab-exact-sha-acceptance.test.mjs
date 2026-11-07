@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import {
   buildGitLabAcceptanceReceipt,
   readDetachedGitHead,
+  verifyGitHubSourceCommit,
 } from '../scripts/write-gitlab-acceptance-receipt.mjs';
 
 const SHA = 'a'.repeat(40);
@@ -16,6 +17,7 @@ const jobUrl = 'https://gitlab.example.test/group/project/-/jobs/456';
 test('GitLab acceptance receipt binds the successful job to its exact checkout SHA', () => {
   const receipt = buildGitLabAcceptanceReceipt({
     observedSha: SHA,
+    observedGitHubSourceSha: SHA,
     env: {
       CI: 'true',
       CI_PROJECT_PATH: 'michaelj.williams0123/Ultron.MW',
@@ -38,6 +40,7 @@ test('GitLab acceptance receipt binds the successful job to its exact checkout S
     verificationProvider: 'gitlab:michaelj.williams0123/Ultron.MW',
     sourceSha: SHA,
     observedCheckoutSha: SHA,
+    observedGitHubSourceSha: SHA,
     ref: 'verify/exact-sha-example',
     pipelineSource: 'push',
     pipelineId: 123,
@@ -65,16 +68,65 @@ test('GitLab acceptance receipt fails closed on a stale checkout or incomplete p
   };
 
   assert.throws(
-    () => buildGitLabAcceptanceReceipt({ env: base, observedSha: 'b'.repeat(40) }),
+    () => buildGitLabAcceptanceReceipt({ env: base, observedSha: 'b'.repeat(40), observedGitHubSourceSha: SHA }),
     /checkout SHA does not match CI_COMMIT_SHA/,
   );
   assert.throws(
-    () => buildGitLabAcceptanceReceipt({ env: { ...base, CI_PIPELINE_URL: '' }, observedSha: SHA }),
+    () => buildGitLabAcceptanceReceipt({ env: { ...base, CI_PIPELINE_URL: '' }, observedSha: SHA, observedGitHubSourceSha: SHA }),
     /CI_PIPELINE_URL is required/,
   );
   assert.throws(
-    () => buildGitLabAcceptanceReceipt({ env: { ...base, CI_PROJECT_PATH: 'other/repo' }, observedSha: SHA }),
+    () => buildGitLabAcceptanceReceipt({ env: { ...base, CI_PROJECT_PATH: 'other/repo' }, observedSha: SHA, observedGitHubSourceSha: SHA }),
     /unexpected GitLab project/,
+  );
+  assert.throws(
+    () => buildGitLabAcceptanceReceipt({ env: base, observedSha: SHA, observedGitHubSourceSha: 'b'.repeat(40) }),
+    /GitHub source SHA does not match CI_COMMIT_SHA/,
+  );
+});
+
+test('GitLab acceptance independently observes the exact commit in GitHub without credentials', async () => {
+  const requests = [];
+  const observedSha = await verifyGitHubSourceCommit({
+    sourceSha: SHA,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return new Response(JSON.stringify({ sha: SHA }), {
+        status: 200,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      });
+    },
+  });
+
+  assert.equal(observedSha, SHA);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, `https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/git/commits/${SHA}`);
+  assert.equal(requests[0].options.method, 'GET');
+  assert.equal(requests[0].options.headers.authorization, undefined);
+  assert.ok(requests[0].options.signal instanceof AbortSignal);
+});
+
+test('GitLab acceptance fails closed when GitHub lacks or mismatches the exact source commit', async () => {
+  await assert.rejects(
+    () => verifyGitHubSourceCommit({
+      sourceSha: SHA,
+      fetchImpl: async () => new Response(JSON.stringify({ message: 'Not Found' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      }),
+    }),
+    /GitHub source lookup failed with HTTP 404/,
+  );
+
+  await assert.rejects(
+    () => verifyGitHubSourceCommit({
+      sourceSha: SHA,
+      fetchImpl: async () => new Response(JSON.stringify({ sha: 'b'.repeat(40) }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    }),
+    /GitHub source response does not match requested SHA/,
   );
 });
 

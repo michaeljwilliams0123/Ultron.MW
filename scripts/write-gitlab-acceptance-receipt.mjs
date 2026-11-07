@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 const GITLAB_PROJECT = 'michaelj.williams0123/Ultron.MW';
 const GITHUB_SOURCE = 'michaeljwilliams0123/Ultron.MW';
+const GITHUB_API_ROOT = 'https://api.github.com';
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
 function required(env, name) {
@@ -29,7 +30,28 @@ function httpsUrl(env, name) {
   return url.toString();
 }
 
-export function buildGitLabAcceptanceReceipt({ env = process.env, observedSha }) {
+export async function verifyGitHubSourceCommit({ sourceSha, fetchImpl = globalThis.fetch }) {
+  if (!SHA_PATTERN.test(sourceSha ?? '')) throw new Error('source SHA must be a full lowercase SHA');
+  if (typeof fetchImpl !== 'function') throw new Error('fetch implementation is required');
+
+  const url = `${GITHUB_API_ROOT}/repos/${GITHUB_SOURCE}/git/commits/${sourceSha}`;
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: {
+      accept: 'application/vnd.github+json',
+      'user-agent': 'ultron-gitlab-exact-sha-verifier',
+      'x-github-api-version': '2022-11-28',
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`GitHub source lookup failed with HTTP ${response.status}`);
+
+  const body = await response.json();
+  if (body?.sha !== sourceSha) throw new Error('GitHub source response does not match requested SHA');
+  return body.sha;
+}
+
+export function buildGitLabAcceptanceReceipt({ env = process.env, observedSha, observedGitHubSourceSha }) {
   if (required(env, 'CI') !== 'true') throw new Error('GitLab CI is required');
   if (required(env, 'CI_PROJECT_PATH') !== GITLAB_PROJECT) {
     throw new Error('unexpected GitLab project');
@@ -45,6 +67,12 @@ export function buildGitLabAcceptanceReceipt({ env = process.env, observedSha })
   if (!SHA_PATTERN.test(sourceSha)) throw new Error('CI_COMMIT_SHA must be a full lowercase SHA');
   if (!SHA_PATTERN.test(observedSha ?? '')) throw new Error('observed checkout SHA must be a full lowercase SHA');
   if (sourceSha !== observedSha) throw new Error('checkout SHA does not match CI_COMMIT_SHA');
+  if (!SHA_PATTERN.test(observedGitHubSourceSha ?? '')) {
+    throw new Error('observed GitHub source SHA must be a full lowercase SHA');
+  }
+  if (sourceSha !== observedGitHubSourceSha) {
+    throw new Error('GitHub source SHA does not match CI_COMMIT_SHA');
+  }
 
   return Object.freeze({
     schemaVersion: 1,
@@ -54,6 +82,7 @@ export function buildGitLabAcceptanceReceipt({ env = process.env, observedSha })
     verificationProvider: `gitlab:${GITLAB_PROJECT}`,
     sourceSha,
     observedCheckoutSha: observedSha,
+    observedGitHubSourceSha,
     ref,
     pipelineSource: 'push',
     pipelineId: positiveInteger(env, 'CI_PIPELINE_ID'),
@@ -75,7 +104,9 @@ export async function readDetachedGitHead(directory = process.cwd()) {
 async function main() {
   const outputPath = resolve(process.argv[2] ?? 'artifacts/gitlab-exact-sha-acceptance.json');
   const observedSha = await readDetachedGitHead();
-  const receipt = buildGitLabAcceptanceReceipt({ observedSha });
+  const sourceSha = required(process.env, 'CI_COMMIT_SHA');
+  const observedGitHubSourceSha = await verifyGitHubSourceCommit({ sourceSha });
+  const receipt = buildGitLabAcceptanceReceipt({ observedSha, observedGitHubSourceSha });
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
   process.stdout.write(`${JSON.stringify(receipt)}\n`);
