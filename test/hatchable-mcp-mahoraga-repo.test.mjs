@@ -106,3 +106,36 @@ test('native Mahoraga App mode obtains only a read-scoped installation token bef
   assert.equal(calls.filter(c=>c.url.includes('/repos/'+repo)&&c.method==='POST').length,0);
  }finally{globalThis.fetch=original;}
 });
+
+test('Mahoraga MCP rejects an over-scoped App token before repository reads',async()=>{
+ const {generateKeyPairSync}=await import('node:crypto');
+ const privateKey=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'}).toString();
+ const source=await readFile(new URL('../cloud/hatchable/mcp/ultron_mahoraga_repo.js',import.meta.url),'utf8');
+ const helper=new URL('../cloud/hatchable/lib/mahoraga-actions.js',import.meta.url).href;
+ const {default:tool}=await import('data:text/javascript;base64,'+
+  Buffer.from(source.replace("'lib/mahoraga-actions.js'",JSON.stringify(helper))).toString('base64'));
+ let attempts=0;const original=globalThis.fetch;
+ const config={get:async name=>({
+  ULTRON_MAHORAGA_CREDENTIAL_MODE:'app',
+  ULTRON_MAHORAGA_GITHUB_APP_CLIENT_ID:'Iv1.testappclient',
+  ULTRON_MAHORAGA_GITHUB_APP_INSTALLATION_ID:'123456',
+  ULTRON_MAHORAGA_GITHUB_APP_PRIVATE_KEY:privateKey
+ })[name]??null};
+ globalThis.fetch=async(url,options)=>{
+  attempts++;
+  assert.equal(url,'https://api.github.com/app/installations/123456/access_tokens');
+  assert.equal(options.method,'POST');
+  return new Response(JSON.stringify({
+   token:'ghs_test_only_token_1234567890123456',
+   expires_at:new Date(Date.now()+600000).toISOString(),
+   repositories:[{id:1343333190,full_name:repo}],
+   permissions:{contents:'read',metadata:'read',issues:'write'}
+  }),{status:200});
+ };
+ try{
+  const denied=await tool.handler({}, {config});
+  assert.equal(denied.ok,false);
+  assert.equal(denied.status,'held');
+  assert.equal(attempts,1,'over-scoped token must be refused before repo GETs');
+ }finally{globalThis.fetch=original;}
+});
