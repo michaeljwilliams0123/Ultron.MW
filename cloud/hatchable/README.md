@@ -1,5 +1,44 @@
 # Ultron.MW — Hatchable cloud brain (v2 design, deployment v3)
 
+## Independent signer release gate
+
+This checkout deliberately does not include a repository-controlled signing
+workflow or private signing key. Review found that loading an exportable key
+into GitHub Actions would leave the repository administration plane in control
+of both signer code and key custody, which is not independent adjudication.
+The production verifier therefore remains unset and existing MCP tools remain
+fail-closed rather than accepting grants from an unproven signer.
+
+Before enabling signed writes, an owner must provision a non-exportable P-256
+key in a separately administered Vault Transit or HSM service. The caller must
+use short-lived workload identity, submit only the canonical grant payload or
+digest, and receive only the signature and public-key identifier. Pin the
+returned public JWK and fingerprint in the Hatchable verifier, prove that the
+signer policy and protected source are at the current exact `main` SHA, and run
+an end-to-end canary that the resulting grant is accepted before adding signed
+operations to the active owner profile. Also prove authenticated delivery,
+durable receipts, replay recovery, independent approval and a hard $0
+additional-cash-spend boundary. Never place the private signing key in GitHub,
+Hatchable, an artifact, workflow input, repository file or event payload.
+
+Production migration reconciliation is also incomplete. The live Hatchable
+ledger was observed through `0028`; `0029` and `0030` tables were absent, while
+`0031`'s provider table was applied directly without a corresponding ledger
+entry. Do not fabricate ledger entries or blindly deploy all three migrations:
+`0029` changes the operations constraint and `0031` already has partial
+effects. Reconcile the schema and ledger through a reviewed, tested migration
+procedure first. Existing production handlers remain unchanged. Rollback of a
+future deployment must restore the prior runtime version without dropping or
+rewriting ledger data, and must be tested before deployment.
+On November 6, 2026, a read-only query observed 15 allowed operations and no
+provider write rows; those values can change. A local PGlite regression runs
+the actual migration files against a representative partial `0031` schema:
+it verifies that the full `0029`–`0031` sequence accepts an existing
+18-operation profile, preserves the pre-existing provider write, creates the
+two missing ledgers and retains the mutation ledger's immutability guard. This
+is not a production rehearsal, a current preflight, or evidence that Hatchable
+executes multiple migrations in a single transaction.
+
 **Cloud action extension (November 3, 2026):** `cloud.note.create` is a bounded Hatchable native write outside GitHub. The admin route also checks the authenticated owner handle, versioned Build/Release operation membership, current stop version, pause state and $0 paid ceiling. One PostgreSQL statement creates a keyed note and event receipt; replay reads the original without another write. An uncertain response is reconciled by the same key. This is not a generic HTTP executor or proof of a Destiny/Codex handoff.
 
 Source snapshot of the **deployed private owner-only** `ultron-mw-cloud` Hatchable backend. This is a source-review PR, not a GitHub Pages/UI replacement.

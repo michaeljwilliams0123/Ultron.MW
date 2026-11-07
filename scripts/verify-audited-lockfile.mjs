@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-// This dependency graph produced zero reported vulnerabilities in exact-head
-// Verify run 39706366720. The project package version is deliberately omitted:
+// This dependency graph produced zero reported vulnerabilities in `npm audit`
+// on 2026-11-06. The project package version is deliberately omitted:
 // it does not alter installed dependencies, and package.json remains authoritative.
-const AUDITED_GRAPH_SHA256 = 'e11b69c25b76e88d0eda9acdffd9cc7761f348425ebfaf9c37f68d516e99f860';
+const AUDITED_GRAPH_SHA256 = '6ae127846592518ea3128f9ebd382f394bc34361c8636d5d4a8d2dd28ccbeb29';
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
