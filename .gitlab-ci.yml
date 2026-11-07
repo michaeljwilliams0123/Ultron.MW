@@ -8,7 +8,7 @@ stages:
 
 exact-sha-acceptance:
   stage: verify
-  image: node:22.21.1-bookworm-slim@sha256:25b3eb23a00590b7499f2a2ce939322727fcce1b15fdd69754fcd09536a3ae2c
+  image: node:22.21.1-bookworm@sha256:b84d52cd45bfe261096ccbf886955d431b8b9ed01b72eaef588e8886bda09e78
   timeout: 10m
   interruptible: false
   variables:

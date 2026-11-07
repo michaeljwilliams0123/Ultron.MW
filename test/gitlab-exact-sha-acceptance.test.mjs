@@ -98,6 +98,11 @@ test('GitLab workflow is verify-branch-only, exact-SHA, locked, and retains a bo
   assert.match(yml, /CI_PIPELINE_SOURCE == "push"/);
   assert.match(yml, /CI_COMMIT_BRANCH =~ \/\^verify\\\//);
   assert.match(yml, /when: never/);
+  assert.match(
+    yml,
+    /node:22\.21\.1-bookworm@sha256:b84d52cd45bfe261096ccbf886955d431b8b9ed01b72eaef588e8886bda09e78/,
+  );
+  assert.doesNotMatch(yml, /bookworm-slim/);
   assert.match(yml, /test "\$\(cat \.git\/HEAD\)" = "\$CI_COMMIT_SHA"/);
   assert.doesNotMatch(yml, /git rev-parse|apt-get|apk add/);
   assert.match(yml, /node scripts\/verify-audited-lockfile\.mjs/);
