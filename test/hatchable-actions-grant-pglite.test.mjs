@@ -5,6 +5,8 @@ import { webcrypto } from 'node:crypto';
 
 let PGlite;
 try { ({ PGlite } = await import('@electric-sql/pglite')); } catch {}
+if (process.env.CI === 'true' && !PGlite)
+  throw new Error('pglite-ci-dependency-unavailable');
 const skip = PGlite ? false : '@electric-sql/pglite not installed';
 const file = name => readFile(new URL(`../cloud/hatchable/migrations/${name}`, import.meta.url), 'utf8');
 
