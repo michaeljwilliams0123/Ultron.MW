@@ -29,10 +29,10 @@ async function bind(raw){
  });
  return {request,branch,binding};
 }
-function publicResult(result,branch){
+function publicResult(result,branch,sourceSha){
  if(result?.status!=='observed')return result;
  if(result.evidence?.branchName!==branch||
-  result.evidence?.projectId!==PROJECT_ID)return uncertain('invalid-branch-receipt');
+  result.evidence?.projectId!==PROJECT_ID||result.evidence?.sourceSha!==sourceSha)return uncertain('invalid-branch-receipt');
  return {...result,branch,url:'https://gitlab.com/'+PROJECT_PATH+'/-/tree/'+branch};
 }
 async function gitlab(api,method,path,query){
@@ -99,7 +99,7 @@ async function observed({db,api,b,grantId,providerAcknowledged}){
   db,binding:b.binding,grantId,
   evidence:{providerAcknowledged,readbackMatches:true,projectId:PROJECT_ID,
    branchName:b.branch,sourceSha:b.request.sourceSha}
- }),b.branch);
+ }),b.branch,b.request.sourceSha);
 }
 export async function gitlabBranchWrite({
  mode,request,envelope,grantId,db,config,api,transport=fetch
@@ -110,14 +110,14 @@ export async function gitlabBranchWrite({
  if(mode==='reconcile'){
   const prior=await reconcileProvider({db,binding:b.binding,grantId});
   if(prior.status!=='reconcile-required'||prior.reason!=='provider-outcome-unresolved')
-   return publicResult(prior,b.branch);
+   return publicResult(prior,b.branch,b.request.sourceSha);
   if(typeof api?.call!=='function')return prior;
   return observed({db,api,b,grantId,providerAcknowledged:false});
  }
  if(mode!=='submit')return held('invalid-mode');
  if(typeof api?.call!=='function')return held('gitlab-write-oauth-required');
  const authority=await authorizeProvider({db,config,binding:b.binding,envelope});
- if(authority.error)return publicResult(authority.error,b.branch);
+ if(authority.error)return publicResult(authority.error,b.branch,b.request.sourceSha);
  let pre;
  try{pre=await preflight({api,transport,branch:b.branch,sourceSha:b.request.sourceSha});}
  catch{return held('gitlab-branch-preflight-unavailable');}
