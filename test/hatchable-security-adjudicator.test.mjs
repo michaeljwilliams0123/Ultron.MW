@@ -16,7 +16,8 @@ const base={
  policySha:'a'.repeat(64),
  notBefore:'2026-10-25T10:00:00.000Z',
  expiresAt:'2026-10-25T10:10:00.000Z',
- administrativeChange:false
+ administrativeChange:false,
+ profileVersion:5,stopVersion:3
 };
 const request={
  actor:base.actor,objectiveId:base.objectiveId,
@@ -42,7 +43,8 @@ test('owner-signed capability authorizes one exact worker/objective/operation/re
  assert.deepEqual(result,{
   authorized:true,authorizedBy:'michaeljwilliams0123',grantId:base.grantId,actor:base.actor,
   objectiveId:base.objectiveId,operation:base.operation,resource:base.resource,
-  policySha:base.policySha,expiresAt:base.expiresAt,administrativeChange:false
+  policySha:base.policySha,profileVersion:5,stopVersion:3,
+  expiresAt:base.expiresAt,administrativeChange:false
  });
  assert.equal('privateKey' in result,false);
 });
@@ -122,4 +124,40 @@ test('database admission itself rejects expired grants if execution waits after 
  }};
  const result=await consumeDelegatedGrant({db,verifiedGrant:verified});
  assert.deepEqual(result,{ok:false,error:'grant-expired'});
+});
+
+test('unversioned signatures cannot be consumed after a profile or stop change',async()=>{
+ const at=new Date(),legacy={...base,
+  notBefore:new Date(at.getTime()-1000).toISOString(),
+  expiresAt:new Date(at.getTime()+60000).toISOString()};
+ delete legacy.profileVersion;
+ delete legacy.stopVersion;
+ const verified=await check(legacy,request,at.toISOString());
+ let writes=0;
+ const result=await consumeDelegatedGrant({db:{query:async()=>{writes++;return {rows:[]};}},
+  verifiedGrant:verified});
+ assert.deepEqual(result,{ok:false,error:'grant-unbound'});
+ assert.equal(writes,0);
+});
+
+test('signed grant consumption is fenced to the current owner profile and stop versions',async()=>{
+ const at=new Date(),live={...base,
+  notBefore:new Date(at.getTime()-1000).toISOString(),
+  expiresAt:new Date(at.getTime()+60000).toISOString()};
+ const verified=await check(live,request,at.toISOString());
+ let queries=0;
+ const result=await consumeDelegatedGrant({db:{query:async(sql,params)=>{
+  queries++;
+  assert.match(sql,/JOIN brain_runtime_control c/);
+  assert.match(sql,/FOR SHARE/);
+  assert.match(sql,/NOT c.paused/);
+  assert.match(sql,/a.max_paid_cents=0/);
+  assert.match(sql,/jsonb_exists\(a.allowed_operations,\$4::text\)/);
+  assert.match(sql,/a.version=\$8/);
+  assert.match(sql,/c.version=\$9/);
+  assert.deepEqual(params.slice(7),[5,3]);
+  return {rows:[{grant_id:null,receipt_id:null,expired:false,denied:true}]};
+ }},verifiedGrant:verified});
+ assert.deepEqual(result,{ok:false,error:'authority-denied'});
+ assert.equal(queries,1);
 });
