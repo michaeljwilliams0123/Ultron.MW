@@ -7,16 +7,28 @@ const submitButton=get('cloud-gitlab-submit'),reconcileButton=get('cloud-gitlab-
 const grantBox=get('cloud-gitlab-grant'),envelopeBox=get('cloud-gitlab-envelope');
 const status=get('cloud-gitlab-status');
 const EXACT_SHA=/^[a-f0-9]{40}$/,KEY=/^[a-z0-9-]{8,48}$/;
-let prepared=null,signable=null,grantId=null,submitted=false,busy=false;
+let prepared=null,signable=null,grantId=null,submitted=false,busy=false,revision=0;
 const report=message=>{status.textContent=message;};
 function controls(){
+ key.disabled=busy||submitted;
+ sha.disabled=busy||submitted;
  prepareButton.disabled=busy||submitted;
  copyButton.disabled=busy||!signable;
  submitButton.disabled=busy||submitted||!signable||!envelopeBox.value.trim();
  reconcileButton.disabled=busy||!grantId||!prepared;
 }
 function reset(){
- prepared=null;signable=null;grantId=null;submitted=false;
+ revision++;
+ if(submitted){
+  // Once a POST was attempted, preserve the original grant and target until
+  // a readback is complete. Editing inputs must not unlock another submit.
+  key.value=prepared?.key??key.value;
+  sha.value=prepared?.sourceSha??sha.value;
+  controls();
+  report('Write already attempted. Reconcile the original grant; do not submit again.');
+  return;
+ }
+ prepared=null;signable=null;grantId=null;
  grantBox.value='';envelopeBox.value='';controls();
  report('Input changed. Prepare a fresh owner-signed request before submitting.');
 }
@@ -46,6 +58,9 @@ function signedEnvelope(){
  if(!prepared||!signable||payload.operation!==signable.operation||
     payload.objectiveId!==signable.objectiveId||
     payload.resource!==signable.resource||
+    payload.policySha!==signable.policySha||
+    payload.actor!==signable.actor||
+    payload.administrativeChange!==signable.administrativeChange||
     payload.profileVersion!==signable.profileVersion||
     payload.stopVersion!==signable.stopVersion||
     payload.authorizedBy!=='michaeljwilliams0123'||
@@ -53,29 +68,29 @@ function signedEnvelope(){
    throw Error('signed-grant-does-not-match-preparation');
  return {env,id:payload.grantId};
 }
-async function policyDigest(req){
- const material=JSON.stringify(['ultron.owner.gitlab.branch.policy.v1',req.key,
-  req.sourceSha,req.expectedProfileVersion,req.expectedStopVersion,0]);
- const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',
-  new TextEncoder().encode(material)));
- return [...bytes].map(v=>v.toString(16).padStart(2,'0')).join('');
-}
 prepareButton.addEventListener('click',()=>lock(async()=>{
- if(!KEY.test(key.value)||!EXACT_SHA.test(sha.value)){
+ const inputKey=key.value,inputSha=sha.value,generation=revision;
+ if(!KEY.test(inputKey)||!EXACT_SHA.test(inputSha)){
   throw Error('invalid-idempotency-key-or-commit-sha');
  }
  const owner=await request('GET','/api/brain/autonomy');
+ if(generation!==revision||key.value!==inputKey||sha.value!==inputSha)return;
  const p=owner.profile;
  if(p?.owner!=='michaeljwilliams0123'||p.paused||
     p.maxPaidCents!==0||!p.allowedOperations?.includes('gitlab.branch.create'))
   throw Error('owner-profile-or-stop-denied');
- const req={key:key.value,sourceSha:sha.value,
+ const req={key:inputKey,sourceSha:inputSha,
   expectedProfileVersion:p.version,expectedStopVersion:p.stopVersion};
  const value=await request('POST','/api/brain/gitlab-branch',{mode:'prepare',request:req});
- if(value.mode!=='prepare'||value.grantRequest?.operation!=='gitlab.branch.create')
+ if(generation!==revision||key.value!==inputKey||sha.value!==inputSha)return;
+ if(value.mode!=='prepare'||value.grantRequest?.operation!=='gitlab.branch.create'||
+    value.grantRequest.objectiveId!==inputKey||
+    value.grantRequest.profileVersion!==p.version||
+    value.grantRequest.stopVersion!==p.stopVersion||
+    !/^[a-f0-9]{64}$/.test(value.grantRequest.policySha))
   throw Error('unverified-preparation');
  prepared=req;submitted=false;grantId=null;
- signable={...value.grantRequest,policySha:await policyDigest(req)};
+ signable={...value.grantRequest};
  grantBox.value=JSON.stringify(signable,null,2);
  envelopeBox.value='';
  report('Owner profile v'+p.version+' / stop v'+p.stopVersion+

@@ -11,9 +11,11 @@ on the *local Codex OAuth client* to run the provider operation.
   handle `michaeljwilliams0123`. Cross-site browser POSTs are denied.
 - `prepare` is side-effect-free and returns the exact provider-bound grant
   request (actor, operation, objective, resource hash and profile/stop versions).
-- The owner signs the prepared request with their **existing owner-controlled
-  P-256 private key outside the Hatchable runtime**, adding a SHA-256 policy
-  digest. The production owner *public* JWK verifies the envelope.
+- The provider builds a SHA-256 policy digest from the immutable action,
+  resource fingerprint, current profile/stop versions, and $0 spend ceiling.
+  The owner signs that exact prepared request with their **existing
+  owner-controlled P-256 private key outside Hatchable**. The provider checks
+  the digest again *after* signature verification and before ledger claim.
 - `submit` uses `lib/gitlab-branch-write.js` without alternative SQL,
   direct provider POST handlers or an authorization bypass. It enforces current
   PostgreSQL profile, stop/pause, one-shot dispatch claim, exactly one provider
