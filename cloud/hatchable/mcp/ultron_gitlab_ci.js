@@ -1,4 +1,5 @@
 import {observeGitLabCI} from 'lib/gitlab-ci-read.js';
+import {api as sdkApi} from 'hatchable';
 
 // Exposes GitLab observations via Ultron's own project-scoped OAuth MCP.
 // GitLab API authentication is separately consented through Hatchable's
@@ -13,9 +14,13 @@ export default {
   if(!args||typeof args!=='object'||Array.isArray(args)||
     Object.keys(args).length!==0)
    return {schema,ok:false,status:'held',reason:'invalid-arguments'};
-  if(typeof ctx?.api?.call!=='function')
+  // MCP ctx does not have to expose the external API broker. Hatchable's
+  // documented module SDK import is the primary production integration;
+  // context injection remains available to the source regression suite.
+  const broker=typeof ctx?.api?.call==='function'?ctx.api:sdkApi;
+  if(typeof broker?.call!=='function')
    return {schema,ok:false,status:'held',reason:'gitlab-oauth-not-connected'};
-  try{return await observeGitLabCI({api:ctx.api});}
+  try{return await observeGitLabCI({api:broker});}
   catch{return {schema,ok:false,status:'held',reason:'gitlab-observation-unavailable'};}
  }
 };
