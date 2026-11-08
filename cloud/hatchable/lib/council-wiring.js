@@ -64,7 +64,8 @@ export function assessCouncilWiring({
  // Installation metadata alone never proves a worker is authenticated.
  const missingProduction=Object.freeze([
   ...missing.map(t=>'missing-table:'+t),
-  ...rolesUnverified.map(r=>'app-installation-unverified:'+r),
+  // Role labels are not seven separate human/App release prerequisites.
+  // Preserve their diagnostic status without fabricating identities.
   'independent-executor-unverified',
   'web-egress-adapter-unverified',
   'mahoraga-receipt-unverified',
@@ -78,8 +79,8 @@ export function assessCouncilWiring({
   capabilities,
   provenance:Object.freeze({
    runtimeEvidence:'hatchable-deployed-brain-core-capabilities',
-   candidateEvidence:'git-pr-208-unmerged',
-   installationEvidence:'none-authenticated'
+   candidateEvidence:'source-candidate-not-deployed',
+   installationEvidence:'no-authenticated-installation-observations'
   }),
   githubRoleInstallationsObserved:appRoles.size,
   roleIdentities:Object.freeze([...appRoles].sort()),
