@@ -19,9 +19,8 @@ async function observeMain(){
  return {sha};
 }
 async function observePullRequest({number,headSha}){
- const [pr,reviews,checks]=await Promise.all([
-  github('/pulls/'+number),github('/pulls/'+number+'/reviews'),
-  github('/commits/'+headSha+'/check-runs')
+ const [pr,checks]=await Promise.all([
+  github('/pulls/'+number),github('/commits/'+headSha+'/check-runs')
  ]);
  const runs=Array.isArray(checks?.check_runs)?checks.check_runs:[];
  const exact=runs.filter(x=>x?.head_sha===headSha).map(x=>({
@@ -29,16 +28,12 @@ async function observePullRequest({number,headSha}){
   url:x.html_url||null
  }));
  const required=exact.filter(x=>x.name==='test');
- const approvals=(Array.isArray(reviews)?reviews:[]).filter(x=>
-  x?.state==='APPROVED'&&x?.user?.type==='User'&&
-  x?.user?.login&&x.user.login!=='michaeljwilliams0123');
  return {
   number:pr?.number,headSha:pr?.head?.sha,baseRef:pr?.base?.ref,
   state:pr?.state,draft:pr?.draft===true,url:pr?.html_url||null,
   exactHeadChecksGreen:required.length>0&&required.every(x=>
    x.status==='completed'&&['success','neutral','skipped'].includes(x.conclusion)),
-  requiredChecks:required,eligibleIndependentApproval:approvals.length>0,
-  eligibleApprovalCount:approvals.length
+  requiredChecks:required,ownerReleaseGrantVerified:false
  };
 }
 

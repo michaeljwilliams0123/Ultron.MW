@@ -2,7 +2,8 @@ import {verifyDelegatedGrant} from 'lib/security-adjudicator.js';
 
 const KEY=/^[a-z0-9][a-z0-9_.:-]{7,127}$/i;
 const GRANT=/^[A-Za-z0-9_.:-]{8,128}$/;
-const OPERATIONS=new Set(['graph.workbook.cell.write','github.issue.write']);
+const OPERATIONS=new Set(['graph.workbook.cell.write','github.issue.write',
+ 'gitlab.branch.create']);
 const held=reason=>({ok:false,status:'held',reason});
 const uncertain=reason=>({ok:false,status:'reconcile-required',reason});
 export function dataObject(value){
@@ -23,16 +24,27 @@ export async function providerBinding({key,operation,target,payload,expectedProf
  if(typeof key!=='string'||!KEY.test(key)||!OPERATIONS.has(operation)||
   !Array.isArray(target)||!Array.isArray(payload)||
   !Number.isSafeInteger(expectedProfileVersion)||expectedProfileVersion<1||
-  !Number.isSafeInteger(expectedStopVersion)||expectedStopVersion<1)
+  !Number.isSafeInteger(expectedStopVersion)||expectedStopVersion<1||
+  (operation==='gitlab.branch.create'&&
+   (payload.length!==1||!/^[a-f0-9]{40}$/.test(payload[0]))))
   throw Error('invalid-request');
  const resourceKey=await hash(['ultron.provider.target.v1',operation,...target]);
  const fingerprint=await hash(['ultron.provider.write.v1',key,operation,target,payload,
   expectedProfileVersion,expectedStopVersion]);
- return Object.freeze({key,operation,resourceKey,fingerprint,expectedProfileVersion,expectedStopVersion});
+ // Signed policy provenance is derived by the trusted provider from the
+ // immutable binding, never supplied or invented by a browser client.
+ const policySha=operation==='gitlab.branch.create'
+  ?await hash(['ultron.owner.gitlab.branch.policy.v1',key,operation,
+    resourceKey,fingerprint,expectedProfileVersion,expectedStopVersion,0])
+  :undefined;
+ return Object.freeze({key,operation,resourceKey,fingerprint,expectedProfileVersion,expectedStopVersion,
+  ...(operation==='gitlab.branch.create'?{sourceSha:payload[0],policySha}:{})});
 }
 export function grantRequest(binding){
  return {actor:'mcp:ultron',objectiveId:binding.key,operation:binding.operation,
-  resource:'sha256:'+binding.fingerprint,administrativeChange:false};
+  resource:'sha256:'+binding.fingerprint,administrativeChange:false,
+  profileVersion:binding.expectedProfileVersion,stopVersion:binding.expectedStopVersion,
+  ...(binding.policySha?{policySha:binding.policySha}:{})};
 }
 const READ=`SELECT action_key,operation,fingerprint,resource_key,grant_id,status,evidence
  FROM brain_mcp_provider_writes WHERE action_key=$1`;
@@ -113,11 +125,20 @@ export async function authorizeProvider({db,config,binding,envelope}){
  }catch{return {error:held('adjudicator-unconfigured')};}
  try{grant=await verifyDelegatedGrant({envelope,publicJwk,request:grantRequest(binding)});}
  catch{return {error:held('grant-invalid-or-expired')};}
+ if(!Number.isSafeInteger(grant.profileVersion)||!Number.isSafeInteger(grant.stopVersion))
+  return {error:held('grant-version-unbound')};
+ if(grant.profileVersion!==binding.expectedProfileVersion||
+    grant.stopVersion!==binding.expectedStopVersion)
+  return {error:held('grant-version-mismatch')};
+ if(binding.operation==='gitlab.branch.create'&&
+    grant.policySha!==binding.policySha)
+  return {error:held('grant-policy-mismatch')};
  let prior;
  try{prior=await read(db,binding,grant.grantId);}catch{return {error:uncertain('readback-unavailable')};}
  if(prior)return {error:prior};
  let claimed=false;
  return {
+  grantId:grant.grantId,
   async claim(){
    if(claimed)return false;
    let result;
@@ -148,4 +169,36 @@ export async function authorizeProvider({db,config,binding,envelope}){
   },
   async result(){return reconcileProvider({db,binding,grantId:grant.grantId});}
  };
+}
+
+function reconciledEvidence(binding,evidence){
+ if(evidence?.readbackMatches!==true ||
+  typeof evidence.providerAcknowledged!=='boolean')
+  throw Error('invalid-reconciliation-evidence');
+ if(binding.operation==='gitlab.branch.create'){
+  if(evidence.branchName!=='ultron/task-'+binding.key ||
+   !/^[a-f0-9]{40}$/.test(evidence.sourceSha||'')||
+   evidence.sourceSha!==binding.sourceSha||evidence.projectId!==87884831)
+   throw Error('invalid-reconciliation-evidence');
+  return {providerAcknowledged:evidence.providerAcknowledged,readbackMatches:true,
+   projectId:87884831,branchName:evidence.branchName,sourceSha:evidence.sourceSha};
+ }
+ throw Error('unsupported-reconciliation-evidence');
+}
+// This only promotes an already-claimed, matching write after independent
+// provider readback. It never grants authority or sends another provider POST.
+export async function reconcileProviderObserved({db,binding,grantId,evidence}={}){
+ if(typeof db?.query!=='function'||typeof grantId!=='string'||!GRANT.test(grantId))
+  return held('invalid-readback-request');
+ let safe;
+ try{safe=reconciledEvidence(binding,evidence);}
+ catch{return held('invalid-reconciliation-evidence');}
+ let prior;
+ try{prior=await read(db,binding,grantId);}
+ catch{return uncertain('readback-unavailable');}
+ if(!prior)return uncertain('dispatch-not-observed');
+ if(prior.ok===true||prior.status==='held')return prior;
+ try{await db.query(OBSERVE,[binding.key,binding.fingerprint,grantId,JSON.stringify(safe)]);}
+ catch{/* The update may have committed. Always use independent ledger readback. */}
+ return reconcileProvider({db,binding,grantId});
 }

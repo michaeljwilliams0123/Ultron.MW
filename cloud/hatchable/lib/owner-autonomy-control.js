@@ -10,7 +10,8 @@ export const DEFAULT_OPERATIONS=Object.freeze({
 });
 const MODES=new Set(Object.keys(DEFAULT_OPERATIONS));
 const OPS=new Set([...RELEASE,'mcp.queue.submit','mcp.task.control',
- 'repo.issue.create','repo.verify.dispatch','graph.workbook.cell.write','github.issue.write']);
+ 'repo.issue.create','repo.verify.dispatch','graph.workbook.cell.write','github.issue.write',
+ 'gitlab.branch.create']);
 const LIMIT_BOUNDS={maxFiles:[1,64],maxFileBytes:[1000,100000],
  maxTotalBytes:[4000,500000],maxConcurrent:[1,8],maxSteps:[1,256]};
 const PRESET_LIMITS={

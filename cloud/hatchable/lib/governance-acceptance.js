@@ -137,8 +137,9 @@ export async function recordGovernanceAcceptance({db,request,observeMain,observe
   if(!pr||pr.number!==input.prNumber||pr.headSha!==input.prHeadSha)
    return uncertain('pull-request-evidence-unavailable');
   observed.pullRequest=pr;
-  reason=pr.exactHeadChecksGreen&&pr.eligibleIndependentApproval===false?
-   'independent-review-required':pr.exactHeadChecksGreen?
+  // This endpoint never accepts a release grant: prove that an otherwise
+  // green source cannot merge without a separate, owner-issued release grant.
+  reason=pr.exactHeadChecksGreen?
    'release-mutation-not-authorized':'exact-head-ci-unverified';
  }
 

@@ -142,8 +142,8 @@ function assertApproval(approval,planDigest,requiresStepUp,now){
   approval.planDigest===planDigest&&
   typeof approval.grantId==='string'&&approval.grantId.length>5&&
   instant(approval.expiresAt)>now&&
-  (approval.source==='independent-owner-authorization'||
-   (!requiresStepUp && approval.source==='independent-standing-grant'));
+  (approval.source==='owner-step-up-authorization'||
+   (!requiresStepUp && approval.source==='owner-standing-authorization'));
  check(valid,'Admin authorization invalid or missing');
 }
 function getPreconditionPath(plan){

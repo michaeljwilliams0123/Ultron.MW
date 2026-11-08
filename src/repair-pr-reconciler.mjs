@@ -191,7 +191,7 @@ export async function runRepairPR({plan,ledger,github,readContext}={}){
     const branch=await confirmBranch();
     if(!branch || !admission.preparedHeadSha || branch.sha!==admission.preparedHeadSha)
       return result(entry,admission,marker,'reconcile-required');
-    // Commit preparation is an independently authorized external worker step.
+    // Commit preparation is an owner-authorized, externally performed worker step.
     // Never send GitHub a PR write while the branch still equals the base.
     const foreign=await github.findPR({
       repository:admission.repository,branch:admission.branch,base:'main'

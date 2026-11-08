@@ -89,7 +89,7 @@ Capture the actual Codex Cloud task link/ID, account-side execution record, sele
 | Source verifier + synthetic negative tests | PR #216 branch & exact-head CI | Check CI after edits |
 | Account-owned cloud environment published | Owner reports environment published and credits restored; no independently verified environment ID | **Reported, not attested** |
 | Real account/GitHub repo binding | GitHub connector alone cannot attest Work/Codex account | **Blocked** |
-| External signer independently bound | No pinned authorized key | **Blocked** |
+| Owner-controlled grant verifier bound | No pinned owner public verification key | **Blocked** |
 | One live read-only cloud task | One task now feasible in published environment; no task URL/execution receipt yet | **Pending external task** |
 | C01/C03 persisted end-to-end result and replay | Missing live receiver and completion proof | **Blocked** |
 | Production release | No positive live acceptance; `productionAccepted=false` | **Not accepted** |

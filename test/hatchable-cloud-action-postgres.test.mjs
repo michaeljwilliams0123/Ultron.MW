@@ -95,4 +95,47 @@ if(process.env.ULTRON_POSTGRES_TEST==='1'){
    operation:'mcp.queue.submit',action:'repo.inspect'})),'');
   assert.equal(await sql("SELECT count(*) FROM brain_authority_grants WHERE grant_id='pg-queue-grant-2'"),'0');
  });
+
+ test('real PostgreSQL fences generic delegated grants against stop, profile and operation changes',async()=>{
+  // Run the exact SQL from the delegated-grant consumer in ephemeral CI PostgreSQL.
+  // It must never accept authority merely because an ECDSA signature was valid.
+  await sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+  for(const name of ['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
+   '0010_runtime_stop.sql','0016_owner_autonomy_profile.sql'])await sql(migration(name));
+  const source=readFileSync(new URL('../cloud/hatchable/lib/security-adjudicator.js',
+   import.meta.url),'utf8');
+  const statement=source.match(/export async function consumeDelegatedGrant[\s\S]*?const sql=\`([\s\S]*?)\`;/)?.[1];
+  assert.ok(statement,'test must execute the real delegated-grant SQL');
+  const literal=value=>"'"+String(value).replaceAll("'","''")+"'";
+  const claim=(grant,operation='repo.inspect',profile=1,stop=1)=>statement.replace(
+   /\$(\d+)/g,(_,n)=>({
+    1:literal(grant),2:literal('pg-authority-objective'),3:literal('worker:owner'),
+    4:literal(operation),5:literal('michaeljwilliams0123/Ultron.MW'),
+    6:literal('a'.repeat(64)),7:literal('2099-01-01T00:00:00Z'),
+    8:String(profile),9:String(stop)
+   })[n]);
+  const first=await sql(claim('pg-authority-valid-001'));
+  assert.match(first,/^pg-authority-valid-001\|\d+\|f\|f$/);
+  assert.equal(await sql("SELECT count(*) FROM brain_authority_grants"),'1');
+  assert.equal(await sql("SELECT count(*) FROM brain_events WHERE event_type='authority-grant-consumed'"),'1');
+  assert.equal(await sql(claim('pg-authority-valid-001')),'||f|f',
+   'replaying the same authority must not create another receipt');
+  assert.equal(await sql("SELECT count(*) FROM brain_events WHERE event_type='authority-grant-consumed'"),'1');
+
+  assert.equal(await sql(claim('pg-authority-admin-deny','permissions.change')),'||f|t',
+   'signed privileged operations absent from the owner profile fail closed');
+  await sql('UPDATE brain_owner_autonomy_profile SET version=version+1 WHERE id=1');
+  assert.equal(await sql(claim('pg-authority-stale-profile')),'||f|t',
+   'profile changes invalidate older signed grants');
+  await sql('UPDATE brain_runtime_control SET version=version+1 WHERE id=1');
+  assert.equal(await sql(claim('pg-authority-stale-stop','repo.inspect',2,1)),'||f|t',
+   'stop-version changes invalidate older signed grants');
+  await sql('UPDATE brain_runtime_control SET paused=TRUE WHERE id=1');
+  assert.equal(await sql(claim('pg-authority-paused','repo.inspect',2,2)),'||f|t',
+   'pause overrides otherwise valid matching signed versions');
+  assert.equal(await sql("SELECT count(*) FROM brain_authority_grants"),'1');
+  assert.equal(await sql("SELECT count(*) FROM brain_events WHERE event_type='authority-grant-consumed'"),'1',
+   'denied and stale grants must never leave authorization receipts');
+ });
+
 }

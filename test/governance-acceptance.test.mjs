@@ -43,7 +43,7 @@ const observers={observeMain:async()=>({sha:MAIN}),observePullRequest:async()=>(
  number:292,headSha:HEAD,baseRef:'main',state:'open',draft:false,
  url:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/292',
  exactHeadChecksGreen:true,requiredChecks:[{name:'test',conclusion:'success'}],
- eligibleIndependentApproval:false,eligibleApprovalCount:0
+ ownerReleaseGrantVerified:false
 })};
 
 test('positive paid cost is durably held with zero provider writes',async()=>{
@@ -76,15 +76,15 @@ test('forbidden GitHub administration is denied without a mutation adapter',asyn
  assert.equal(result.receipt.providerWrites,0);
 });
 
-test('green exact-head PR without independent approval stays held',async()=>{
+test('green exact-head PR without an owner release grant stays held',async()=>{
  const db=database();
  const result=await recordGovernanceAcceptance({db,...observers,request:request({
   key:'gov:acceptance-material-04',scenario:'ineligible-release',
   operation:'repo.pr.squash',requestedCostCents:0,prNumber:292,prHeadSha:HEAD
  })});
- assert.equal(result.reason,'independent-review-required');
+ assert.equal(result.reason,'release-mutation-not-authorized');
  assert.equal(result.receipt.observed.pullRequest.exactHeadChecksGreen,true);
- assert.equal(result.receipt.observed.pullRequest.eligibleIndependentApproval,false);
+ assert.equal(result.receipt.observed.pullRequest.ownerReleaseGrantVerified,false);
 });
 
 test('same key reuses one immutable receipt and changed payload conflicts',async()=>{
