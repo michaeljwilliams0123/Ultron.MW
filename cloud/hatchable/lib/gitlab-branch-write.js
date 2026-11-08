@@ -5,6 +5,10 @@ const PROJECT_ID=87884831;
 const PROJECT_PATH='michaelj.williams0123/Ultron.MW';
 const PROJECT='/api/v4/projects/'+PROJECT_ID;
 const GITHUB_COMMIT='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/git/commits/';
+// Reviewed GitLab CI workflow at GitHub/GitLab exact commit 531544828c4e...
+// Only push events on verify/* branches can run jobs. No ultron/task-* branch
+// may dispatch while this byte-for-byte CI contract is not observed.
+const SAFE_CI_SHA256='b0499aea45936fe683aa91147fcc9cab8eac8b7bb4912adf7160c4d2ce77f965';
 const SHA=/^[a-f0-9]{40}$/;
 const KEY=/^[a-z0-9-]{8,48}$/;
 const held=reason=>({ok:false,status:'held',reason});
@@ -59,6 +63,15 @@ async function preflight({api,transport,branch,sourceSha}){
  const commit=await gitlab(api,'GET',PROJECT+'/repository/commits/'+sourceSha);
  if(commit.status!==200||commit.body?.id!==sourceSha)
   return held('gitlab-source-commit-unavailable');
+ // A branch creation is cash-free only if the source commit's CI rules are
+ // exactly the reviewed, verify/*-only workflow. Fail closed on other YAML.
+ const ci=await gitlab(api,'GET',PROJECT+'/repository/files/.gitlab-ci.yml/raw',{ref:sourceSha});
+ if(ci.status!==200||typeof ci.body!=='string'||ci.body.length>8192)
+  return held('gitlab-ci-policy-unverified');
+ const digestBytes=new Uint8Array(await crypto.subtle.digest('SHA-256',
+  new TextEncoder().encode(ci.body)));
+ const digest=[...digestBytes].map(b=>b.toString(16).padStart(2,'0')).join('');
+ if(digest!==SAFE_CI_SHA256)return held('gitlab-ci-policy-unverified');
  let response;
  try{response=await transport(GITHUB_COMMIT+sourceSha,{
   method:'GET',redirect:'error',headers:{
