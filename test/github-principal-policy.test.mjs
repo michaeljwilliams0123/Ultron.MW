@@ -57,13 +57,13 @@ test('routine operations accept only standing grants and high-impact operations 
  const common={planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',
   installationId:9123,now:NOW};
  assert.equal(assertOperationAuthorization(authorization(routine,
-  'independent-standing-grant'),{operation:routine,...common}).authorization,'standing');
+  'owner-standing-authorization'),{operation:routine,...common}).authorization,'standing');
  assert.equal(assertOperationAuthorization(authorization(stepUp,
-  'independent-owner-authorization'),{operation:stepUp,...common}).authorization,'step-up');
+  'owner-step-up-authorization'),{operation:stepUp,...common}).authorization,'step-up');
  assert.throws(()=>assertOperationAuthorization(authorization(stepUp,
-  'independent-standing-grant'),{operation:stepUp,...common}),/authorization/i);
+  'owner-standing-authorization'),{operation:stepUp,...common}),/authorization/i);
  assert.throws(()=>assertOperationAuthorization(authorization(routine,
-  'independent-owner-authorization'),{operation:routine,...common}),/authorization/i);
+  'owner-step-up-authorization'),{operation:routine,...common}),/authorization/i);
 });
 
 test('protected-head requires authenticated owner queue approval and exact-head checks',()=>{
@@ -134,7 +134,7 @@ test('RED: impossible calendar timestamps cannot authorize GitHub principal or p
  ),/identity|profile/i);
  const op='actions.rerun_failed';
  assert.throws(()=>assertOperationAuthorization(
-   authorization(op,'independent-standing-grant',
+   authorization(op,'owner-standing-authorization',
      {expiresAt:'2026-02-30T20:05:00Z'}),
    {operation:op,planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',
     installationId:9123,now:realNow}

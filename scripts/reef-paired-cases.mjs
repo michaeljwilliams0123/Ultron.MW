@@ -469,7 +469,7 @@ export async function evaluateRepairPair({baseSource,candidateSource,baseSha,can
       criticalRegressions:heldout.filter(x=>x.critical&&x.candidate.score<x.baseline.score).length,
       failedCandidateCases:caseResults.filter(x=>x.candidate.score===0).length},
     evaluationType:'deterministic-source-behavior',
-    caseSetProvenance:'checked-in-evaluator; independent review required',
+    caseSetProvenance:'checked-in-evaluator; owner authorization and trusted evaluation required',
     reefRunVerified:false,heldoutCertified:false,
     eligibleForMerge:false,disposition:'INCONCLUSIVE_NO_REEF_FEEDBACK'
   };

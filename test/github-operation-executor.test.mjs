@@ -35,7 +35,7 @@ function harness(input,options={}){
  const expectedDigest=digest(input);
  const authorization={
   source:operationProfile(input.operation).authorization==='step-up'
-   ?'independent-owner-authorization':'independent-standing-grant',
+   ?'owner-step-up-authorization':'owner-standing-authorization',
   verified:true,actor:'michaeljwilliams0123',repository:ULTRON_REPOSITORY,
   operation:input.operation,planDigest:expectedDigest,
   idempotencyKey:input.idempotencyKey,installationId:9123,
@@ -106,7 +106,7 @@ test('high-impact setting change requires exact independent step-up and verified
  assert.equal(result.state,'verified');
  assert.equal(calls.filter(call=>call.method==='PATCH').length,1);
  for(const patch of [
-  {source:'independent-standing-grant'}, {verified:false},
+  {source:'owner-standing-authorization'}, {verified:false},
   {actor:'someone-else'}, {planDigest:'0'.repeat(64)},
   {operation:'actions.cancel'}, {installationId:99},
  ]){
