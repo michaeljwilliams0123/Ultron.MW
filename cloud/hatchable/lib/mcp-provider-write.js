@@ -31,13 +31,20 @@ export async function providerBinding({key,operation,target,payload,expectedProf
  const resourceKey=await hash(['ultron.provider.target.v1',operation,...target]);
  const fingerprint=await hash(['ultron.provider.write.v1',key,operation,target,payload,
   expectedProfileVersion,expectedStopVersion]);
+ // Signed policy provenance is derived by the trusted provider from the
+ // immutable binding, never supplied or invented by a browser client.
+ const policySha=operation==='gitlab.branch.create'
+  ?await hash(['ultron.owner.gitlab.branch.policy.v1',key,operation,
+    resourceKey,fingerprint,expectedProfileVersion,expectedStopVersion,0])
+  :undefined;
  return Object.freeze({key,operation,resourceKey,fingerprint,expectedProfileVersion,expectedStopVersion,
-  ...(operation==='gitlab.branch.create'?{sourceSha:payload[0]}:{})});
+  ...(operation==='gitlab.branch.create'?{sourceSha:payload[0],policySha}:{})});
 }
 export function grantRequest(binding){
  return {actor:'mcp:ultron',objectiveId:binding.key,operation:binding.operation,
   resource:'sha256:'+binding.fingerprint,administrativeChange:false,
-  profileVersion:binding.expectedProfileVersion,stopVersion:binding.expectedStopVersion};
+  profileVersion:binding.expectedProfileVersion,stopVersion:binding.expectedStopVersion,
+  ...(binding.policySha?{policySha:binding.policySha}:{})};
 }
 const READ=`SELECT action_key,operation,fingerprint,resource_key,grant_id,status,evidence
  FROM brain_mcp_provider_writes WHERE action_key=$1`;
@@ -123,6 +130,9 @@ export async function authorizeProvider({db,config,binding,envelope}){
  if(grant.profileVersion!==binding.expectedProfileVersion||
     grant.stopVersion!==binding.expectedStopVersion)
   return {error:held('grant-version-mismatch')};
+ if(binding.operation==='gitlab.branch.create'&&
+    grant.policySha!==binding.policySha)
+  return {error:held('grant-policy-mismatch')};
  let prior;
  try{prior=await read(db,binding,grant.grantId);}catch{return {error:uncertain('readback-unavailable')};}
  if(prior)return {error:prior};

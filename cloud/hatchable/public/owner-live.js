@@ -1,31 +1,53 @@
 (()=>{
 'use strict';
-// The Hatchable runtime manages connection state, reconnect and event replay.
-// A native message is only an invalidation hint; refresh trusted API readbacks.
+// Realtime access is a separate capability from the authenticated owner
+// session. Failure to subscribe must not falsely label the owner signed out.
 const indicator=document.getElementById('live-indicator');
 const show=message=>{if(indicator)indicator.textContent=message};
-if(!window.hatchable?.events?.connect){show('Realtime transport unavailable · manual refresh available');return}
+let transport='starting',detail='';
+function render(){
+ if(transport==='connected'){show(detail);return;}
+ if(transport==='auth-challenge'){
+  const owner=window.ultronOwnerSessionState;
+  show(owner==='authenticated'?
+   'Owner authenticated · live updates unavailable; manual refresh available':
+   owner==='guest'?'Owner sign-in required for live updates':
+   'Verifying owner session · live updates unavailable');
+  return;
+ }
+ show('Realtime unavailable · manual refresh available');
+}
+window.addEventListener('ultron:owner-session-state',render);
+if(!window.hatchable?.events?.connect){
+ transport='unavailable';render();return;
+}
 async function attach(){
  try{
-  // Do not establish an owner subscription from an unauthenticated page.
-  const access=await fetch('/api/brain/events-token',{method:'GET',credentials:'same-origin',cache:'no-store'});
+  const access=await fetch('/api/brain/events-token',{
+   method:'GET',credentials:'same-origin',cache:'no-store'
+  });
   if(!access.ok){
-   show(access.status===401||access.status===403?
-    'Sign in for live private updates':'Realtime unavailable · manual refresh available');
-   return;
+   transport=access.status===401||access.status===403?
+    'auth-challenge':'unavailable';render();return;
   }
-  const connection=window.hatchable.events.connect({authUrl:'/api/brain/events-token'});
+  const connection=window.hatchable.events.connect({
+   authUrl:'/api/brain/events-token'
+  });
   const channel=connection.channel('ultron.owner');
   function updated(kind){
-   show('Live updates connected · '+(kind==='reset'?'reconciling after reconnect':'new persisted activity'));
+   transport='connected';
+   detail='Live updates connected · '+(kind==='reset'?
+    'reconciling after reconnect':'new persisted activity');
+   render();
    window.dispatchEvent(new CustomEvent('ultron:realtime-change',{detail:{kind}}));
   }
   channel.on('changed',event=>updated(
-   ['task','runtime','profile','github','note'].includes(event?.data?.kind)?event.data.kind:'reset'));
+   ['task','runtime','profile','github','note'].includes(event?.data?.kind)?
+    event.data.kind:'reset'));
   channel.on('$reset',()=>updated('reset'));
-  show('Live channel connected · waiting for activity');
+  transport='connected';detail='Live channel connected · waiting for activity';render();
  }catch{
-  show('Realtime setup unavailable · manual refresh available');
+  transport='unavailable';render();
  }
 }
 attach();

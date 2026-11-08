@@ -33,25 +33,35 @@ async function getJSON(path,options={}){
  }
  return body;
 }
+// One in-flight database read and at most one trailing read per event burst.
+// Realtime notifications carry no receipt payload; a final read sees latest state.
+let refreshing=false,refreshAgain=false;
 async function refresh(){
+ if(refreshing){refreshAgain=true;return;}
+ refreshing=true;
  try{
-  const data=await getJSON('/api/brain/c06-live-canary');
-  rows.replaceChildren();
-  if(!Array.isArray(data.rows)||data.rows.length===0){
-   const li=document.createElement('li');
-   li.textContent='No source-verified C06 runtime receipt recorded yet.';
-   rows.append(li);
-  }
-  else for(const item of data.rows)rows.append(addRow(item));
-  if(!pending)say(data.rows?.length?
-   'Latest verified runtime receipt shown. Full production acceptance remains open.':
-   'Owner ready · click to perform a source-pinned, $0 C06 verification.');
- }catch(error){
-  rows.replaceChildren();
-  say([401,403].includes(error.status)?
-   'Owner sign-in required to view or record runtime evidence.':
-   'Receipt readback unavailable; no success inferred.');
- }
+  do{
+   refreshAgain=false;
+   try{
+    const data=await getJSON('/api/brain/c06-live-canary');
+    rows.replaceChildren();
+    if(!Array.isArray(data.rows)||data.rows.length===0){
+     const li=document.createElement('li');
+     li.textContent='No source-verified C06 runtime receipt recorded yet.';
+     rows.append(li);
+    }
+    else for(const item of data.rows)rows.append(addRow(item));
+    if(!pending)say(data.rows?.length?
+     'Latest verified runtime receipt shown. Full production acceptance remains open.':
+     'Owner ready · click to perform a source-pinned, $0 C06 verification.');
+   }catch(error){
+    rows.replaceChildren();
+    say([401,403].includes(error.status)?
+     'Owner sign-in required to view or record runtime evidence.':
+     'Receipt readback unavailable; no success inferred.');
+   }
+  }while(refreshAgain);
+ }finally{refreshing=false;}
 }
 start.addEventListener('click',async()=>{
  if(busy)return;
