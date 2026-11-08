@@ -13,7 +13,7 @@ const file = name => readFile(new URL(`../cloud/hatchable/migrations/${name}`, i
 async function signGrant(grantRequest, privateKey, grantId) {
   const now = Date.now();
   const payload = JSON.stringify({ schema: 'ultron.security-grant.v1',
-    issuer: 'ultron-independent-security', audience: 'ultron-cloud-brain', grantId,
+    issuer:'ultron-owner-authority',authorizedBy:'michaeljwilliams0123', audience: 'ultron-cloud-brain', grantId,
     policySha: 'a'.repeat(64), notBefore: new Date(now - 1000).toISOString(),
     expiresAt: new Date(now + 60000).toISOString(), ...grantRequest });
   const signature = await webcrypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' },

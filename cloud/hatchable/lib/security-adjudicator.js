@@ -1,5 +1,5 @@
-// Delegated administrator capability verifier. The independent adjudicator
-// signs these grants; workers possess ONLY the trusted public verification key.
+// Delegated owner-authority verifier. The sole repository owner controls the
+// signing key; workers hold ONLY the pinned public verification key.
 // This module cannot mint credentials, grant itself privileges, or change policy.
 const VERIFIED=new WeakSet();
 const OPERATIONS=new Set([
@@ -9,7 +9,8 @@ const OPERATIONS=new Set([
  'graph.workbook.cell.write','github.issue.write'
 ]);
 const GRANT_SCHEMA='ultron.security-grant.v1';
-const ISSUER='ultron-independent-security';
+const ISSUER='ultron-owner-authority';
+const OWNER='michaeljwilliams0123';
 const AUDIENCE='ultron-cloud-brain';
 const SHA256=/^[a-f0-9]{64}$/;
 const GRANT_ID=/^[A-Za-z0-9_.:-]{8,128}$/;
@@ -55,6 +56,7 @@ export async function verifyDelegatedGrant({
  catch{refuse('invalid-grant-payload');}
  if(!grant||typeof grant!=='object'||Array.isArray(grant)||
     grant.schema!==GRANT_SCHEMA||grant.issuer!==ISSUER||
+    grant.authorizedBy!==OWNER||
     grant.audience!==AUDIENCE||!GRANT_ID.test(grant.grantId||'')||
     !SHA256.test(grant.policySha||'')||
     typeof grant.administrativeChange!=='boolean')
@@ -74,7 +76,7 @@ export async function verifyDelegatedGrant({
  if(grant.operation==='permissions.change'&&!grant.administrativeChange)
   refuse('administrative-grant-required');
  const verified=Object.freeze({
-  authorized:true,grantId:grant.grantId,actor:grant.actor,
+  authorized:true,authorizedBy:OWNER,grantId:grant.grantId,actor:grant.actor,
   objectiveId:grant.objectiveId,operation:grant.operation,
   resource:grant.resource,policySha:grant.policySha,
   expiresAt:grant.expiresAt,administrativeChange:grant.administrativeChange
