@@ -7,7 +7,7 @@ const subtle=webcrypto.subtle;
 const base={
  schema:'ultron.security-grant.v1',
  grantId:'owner-approved-20261025-001',
- issuer:'ultron-independent-security',
+ issuer:'ultron-owner-authority',authorizedBy:'michaeljwilliams0123',
  audience:'ultron-cloud-brain',
  actor:'worker:destiny',
  objectiveId:'issue-95-reconcile',
@@ -38,10 +38,10 @@ async function check(grant=base,otherRequest=request,now='2026-10-25T10:05:00.00
   publicJwk:await subtle.exportKey('jwk',pair.publicKey),
   request:otherRequest,now,subtle});
 }
-test('independent signed capability authorizes one exact worker/objective/operation/resource',async()=>{
+test('owner-signed capability authorizes one exact worker/objective/operation/resource',async()=>{
  const result=await check();
  assert.deepEqual(result,{
-  authorized:true,grantId:base.grantId,actor:base.actor,
+  authorized:true,authorizedBy:'michaeljwilliams0123',grantId:base.grantId,actor:base.actor,
   objectiveId:base.objectiveId,operation:base.operation,resource:base.resource,
   policySha:base.policySha,profileVersion:5,stopVersion:3,
   expiresAt:base.expiresAt,administrativeChange:false
@@ -70,7 +70,7 @@ test('worker identity, objective and resource must match every signed claim',asy
   await assert.rejects(check(base,mismatch),/grant-scope-mismatch/);
  }
 });
-test('privilege changes require independently signed administrative-change authority',async()=>{
+test('privilege changes require owner-signed administrative-change authority',async()=>{
  await assert.rejects(check(base,{...request,operation:'permissions.change',
   administrativeChange:true}),/grant-scope-mismatch/);
  const admin={...base,operation:'permissions.change',administrativeChange:true,

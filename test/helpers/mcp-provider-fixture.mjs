@@ -60,7 +60,7 @@ export async function fixture({lostClaim=false,lostReceipt=false,denied=false,re
  const config={async get(key){return values[key];}};
  async function sign(claim,overrides={}){
   const now=Date.now();
-  const payload=JSON.stringify({schema:'ultron.security-grant.v1',issuer:'ultron-independent-security',
+  const payload=JSON.stringify({schema:'ultron.security-grant.v1',issuer:'ultron-owner-authority',authorizedBy:'michaeljwilliams0123',
    audience:'ultron-cloud-brain',grantId:'test-provider-grant',policySha:'a'.repeat(64),
    notBefore:new Date(now-1000).toISOString(),expiresAt:new Date(now+60000).toISOString(),
    ...claim,...overrides});

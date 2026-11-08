@@ -141,7 +141,7 @@ export function assessOwnerAutonomyRequest({
   if(FORBIDDEN.has(operation))
     return decision('held','protected-operation');
   if(STEP_UP.has(operation))
-    return decision('owner-step-up-required','independent-owner-authorization');
+    return decision('owner-step-up-required','owner-step-up-authorization');
   if(!profile.allowedOperations.includes(operation))
     return decision('held','operation-out-of-profile');
   const current=dayTime(now);
