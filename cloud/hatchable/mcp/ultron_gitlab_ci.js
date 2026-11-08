@@ -14,7 +14,7 @@ export default {
   if(!args||typeof args!=='object'||Array.isArray(args)||
     Object.keys(args).length!==0)
    return {schema,ok:false,status:'held',reason:'invalid-arguments'};
-  // MCP ctx does not have to expose the external API broker. Hatchable's
+  // MCP ctx does not have to expose the external API broker. The
   // documented module SDK import is the primary production integration;
   // context injection remains available to the source regression suite.
   const broker=typeof ctx?.api?.call==='function'?ctx.api:sdkApi;
