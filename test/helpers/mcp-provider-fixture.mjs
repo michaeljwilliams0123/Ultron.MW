@@ -16,8 +16,14 @@ export const graph=await import(data((await load('lib/mcp-graph-write.js'))
  .replace("'lib/mcp-provider-write.js'",JSON.stringify(provider))));
 export const github=await import(data((await load('lib/github-issue-write.js'))
  .replace("'lib/mcp-provider-write.js'",JSON.stringify(provider))));
+export const gitlabModule=data((await load('lib/gitlab-branch-write.js'))
+ .replace("'lib/mcp-provider-write.js'",JSON.stringify(provider)));
+export const gitlabWriter=await import(gitlabModule);
 export async function makeTool(file,dependency,source){
- return (await import(data((await load(file)).replace(dependency,JSON.stringify(source))))).default;
+ return (await import(data((await load(file))
+  .replace(dependency,JSON.stringify(source))
+  .replace("import {api as sdkApi} from 'hatchable';",
+   "const sdkApi={call:async()=>{throw Error('OAuth not connected')}};")))).default;
 }
 export const graphModule=data((await load('lib/mcp-graph-write.js'))
  .replace("'lib/graph-workbook-read.js'",JSON.stringify(reader))
