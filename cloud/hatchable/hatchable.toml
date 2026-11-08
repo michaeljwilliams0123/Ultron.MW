@@ -33,7 +33,7 @@ description = "Private HMAC key for an authenticated Ultron event bridge; no una
 [[secret]]
 name = "ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK"
 required = false
-description = "Pinned ECDSA P-256 PUBLIC verification JWK for independently authorized, short-lived admin capability grants. No private key belongs in this runtime."
+description = "Pinned ECDSA P-256 PUBLIC verification JWK for owner-issued, short-lived capability grants. No private key belongs in this runtime."
 
 [[secret]]
 name = "ULTRON_GRAPH_WORKBOOK_BINDING"

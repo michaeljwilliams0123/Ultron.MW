@@ -21,10 +21,13 @@ test('Reef provenance does not claim a mandatory second human review',async()=>{
 
 test('active owner policy and Hatchable UI name the owner as the only human release authority',async()=>{
  const files=await Promise.all([
-  '../README.md','../cloud/hatchable/public/index.html',
-  '../docs/DESTINY-EXECUTOR-CANARY.md','../docs/UNIFIED-GITHUB-PRINCIPAL.md'
+  '../README.md','../cloud/hatchable/public/index.html','../cloud/hatchable/hatchable.toml',
+  '../docs/DESTINY-EXECUTOR-CANARY.md','../docs/UNIFIED-GITHUB-PRINCIPAL.md',
+  '../docs/mutation-branches/D-AUTONOMY.md','../src/repair-pr-reconciler.mjs'
  ].map(path=>readFile(new URL(path,import.meta.url),'utf8')));
  const active=files.join('\n');
+ assert.doesNotMatch(active,/independently authorized, short-lived admin capability grants/i);
+ assert.doesNotMatch(active,/independently authorized (?:operations|external worker)/i);
  assert.match(active,/No second reviewer or co-signer is required|never another human signer/);
  assert.doesNotMatch(active,/production release and independent reviewer gates remain separate/);
  assert.doesNotMatch(active,/External signer independently bound/);

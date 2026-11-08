@@ -1,6 +1,6 @@
 # D — Owner autonomy without lost authorization guarantees
 
-**Hypothesis:** Ultron's increasingly powerful customization must remain executable while independently authorized operations retain the correct boundaries.
+**Hypothesis:** Ultron's increasingly powerful customization must remain executable while owner-authorized operations retain the correct boundaries.
 
 ## Executed contract in PR #202
 
