@@ -27,7 +27,7 @@ export default async function(req,res){
    deploymentStatus:'source-candidate-not-production-accepted',
    identityEvidence:'not-observed',
    browserExecution:'not-configured',
-   mahoragaPeerRead:'not-authorized-for-seven-apps'
+   mahoragaPeerRead:'not-authorized'
   });
  }catch{
   return res.status(503).json({
