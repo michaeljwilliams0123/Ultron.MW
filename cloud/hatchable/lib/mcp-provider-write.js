@@ -119,6 +119,7 @@ export async function authorizeProvider({db,config,binding,envelope}){
  if(prior)return {error:prior};
  let claimed=false;
  return {
+  grantId:grant.grantId,
   async claim(){
    if(claimed)return false;
    let result;
