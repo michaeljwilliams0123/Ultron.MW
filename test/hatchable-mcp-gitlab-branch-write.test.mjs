@@ -9,7 +9,7 @@ const branch='ultron/task-'+key;
 const path='/api/v4/projects/87884831';
 const input=()=>({key,sourceSha:SHA,expectedProfileVersion:2,expectedStopVersion:3});
 
-function remote({loseAck=false,foreignSha=false,preexisting=false,maliciousCi=false}={}){
+function remote({loseAck=false,foreignSha=false,preexisting=false,maliciousCi=false,alternateCiPath=false}={}){
  let created=preexisting,posts=0;
  const calls=[];
  const branchResponse=()=>({name:branch,commit:{id:foreignSha?'b'.repeat(40):SHA},
@@ -20,7 +20,7 @@ function remote({loseAck=false,foreignSha=false,preexisting=false,maliciousCi=fa
   calls.push({method:options.method,path:options.path,query:options.query});
   if(options.path===path&&options.method==='GET')
    return {status:200,body:{id:87884831,path_with_namespace:'michaelj.williams0123/Ultron.MW',
-    default_branch:'main',visibility:'private'}};
+    default_branch:'main',visibility:'private',ci_config_path:alternateCiPath?'ci/alternate.yml':''}};
   if(options.path===path+'/repository/commits/'+SHA&&options.method==='GET')
    return {status:200,body:{id:SHA}};
   if(options.path===path+'/repository/files/.gitlab-ci.yml/raw'&&options.method==='GET'){
@@ -140,4 +140,16 @@ test('a corrupted observed receipt with a different source SHA cannot satisfy th
  assert.equal(denied.status,'reconcile-required');
  assert.equal(denied.reason,'invalid-branch-receipt');
  assert.equal(p.posts,1,'a mismatched persisted receipt must never cause another POST');
+});
+
+test('GitLab custom project CI path is denied before branch POST or authority claim',async()=>{
+ const h=await fixture(),p=remote({alternateCiPath:true}),request=input();
+ const prepared=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request});
+ const envelope=await h.sign(prepared.grantRequest);
+ const result=await gitlabWriter.gitlabBranchWrite({
+  mode:'submit',request,envelope,db:h.db,config:h.config,api:p.api,transport:p.github});
+ assert.equal(result.status,'held');
+ assert.equal(result.reason,'gitlab-ci-policy-unverified');
+ assert.equal(p.posts,0);
+ assert.equal(h.claimCount,0);
 });
