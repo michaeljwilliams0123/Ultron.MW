@@ -7,7 +7,7 @@ import {api as sdkApi} from 'hatchable';
 export const access='admin';
 export default {
  name:'ultron_gitlab_ci',
- description:'Read private Ultron GitLab mirror parity and latest successful verify/* pipeline metadata. Only fixed GET calls, owner access and no credential or execution authority.',
+ description:'Read private Ultron GitLab mirror parity and latest successful verification-branch pipeline metadata. Only fixed GET calls, owner access and no credential or execution authority.',
  inputSchema:{type:'object',properties:{},additionalProperties:false},
  async handler(args,ctx){
   const schema='ultron.gitlab.ci-observation.v1';
