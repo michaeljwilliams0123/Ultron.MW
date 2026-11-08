@@ -127,3 +127,17 @@ test('changed GitLab CI workflow cannot turn a branch write into a billed runner
  assert.equal(p.posts,0);
  assert.equal(h.claimCount,0);
 });
+
+test('a corrupted observed receipt with a different source SHA cannot satisfy this request',async()=>{
+ const h=await fixture(),p=remote(),request=input();
+ const prepared=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request});
+ const envelope=await h.sign(prepared.grantRequest);
+ const submit=()=>gitlabWriter.gitlabBranchWrite({
+  mode:'submit',request,envelope,db:h.db,config:h.config,api:p.api,transport:p.github});
+ assert.equal((await submit()).status,'observed');
+ h.row.evidence.sourceSha='b'.repeat(40);
+ const denied=await submit();
+ assert.equal(denied.status,'reconcile-required');
+ assert.equal(denied.reason,'invalid-branch-receipt');
+ assert.equal(p.posts,1,'a mismatched persisted receipt must never cause another POST');
+});
