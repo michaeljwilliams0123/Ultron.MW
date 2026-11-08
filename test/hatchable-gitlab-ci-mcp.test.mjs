@@ -105,3 +105,14 @@ test('MCP GitLab API broker works through the documented Hatchable SDK when ctx 
   globalThis.fetch=oldFetch;
  }
 });
+
+test('GitLab observation is declared in the MCP capability registry as a read-only scoped tool',async()=>{
+ const {MCP_CAPABILITIES}=await import('../cloud/hatchable/lib/mcp-capability-registry.js');
+ const entry=MCP_CAPABILITIES.find(x=>x.tool==='ultron_gitlab_ci');
+ assert.deepEqual(entry,{
+  tool:'ultron_gitlab_ci',operation:'gitlab.ci.observe',effect:'read',
+  admission:'platform-admin-and-configured-gitlab-oauth',readback:true,
+  scope:'private GitLab Ultron.MW project 87884831 and public GitHub main ref'
+ });
+ assert.equal(MCP_CAPABILITIES.filter(x=>x.tool==='ultron_gitlab_ci').length,1);
+});
