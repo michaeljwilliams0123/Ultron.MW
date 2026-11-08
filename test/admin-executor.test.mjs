@@ -23,7 +23,7 @@ function harness(plan,{readback,approval,identity,occupied=false,mutateFailure=f
   control:{read:async()=>({paused:false,revoked:false})},
   identity:{read:async()=>actor},
   authority:{verify:async(received,d)=>approval??({
-   source:'independent-owner-authorization',verified:true,actor:'michaeljwilliams0123',
+   source:'owner-step-up-authorization',verified:true,actor:'michaeljwilliams0123',
    planDigest:d,grantId:'grant-admin-169',expiresAt:'2026-10-31T20:10:00Z'})},
   ledger:{
    reserve:async entry=>{records.push(['reserve',entry]);return {created:!occupied};},
@@ -77,8 +77,8 @@ test('reject forged, expired and mismatched owner authorization before dispatch'
  const plan=base();
  for(const approval of [
   {source:'model-generated',verified:true,actor:'michaeljwilliams0123',planDigest:digest(plan),expiresAt:'2026-10-31T20:10:00Z'},
-  {source:'independent-owner-authorization',verified:true,actor:'michaeljwilliams0123',planDigest:'0'.repeat(64),expiresAt:'2026-10-31T20:10:00Z'},
-  {source:'independent-owner-authorization',verified:true,actor:'michaeljwilliams0123',planDigest:digest(plan),expiresAt:'2026-10-31T19:00:00Z'},
+  {source:'owner-step-up-authorization',verified:true,actor:'michaeljwilliams0123',planDigest:'0'.repeat(64),expiresAt:'2026-10-31T20:10:00Z'},
+  {source:'owner-step-up-authorization',verified:true,actor:'michaeljwilliams0123',planDigest:digest(plan),expiresAt:'2026-10-31T19:00:00Z'},
  ]){
   const {services,calls}=harness(plan,{approval});
   await assert.rejects(executeAdminOperation(plan,services),/authorization/);
@@ -226,7 +226,7 @@ test('successful GitHub effect with unavailable receipt ledger remains uncertain
 
 test('caller mutation during reservation cannot replace an approved routine action',async()=>{
  const plan=base();
- const approval={source:'independent-standing-grant',verified:true,
+ const approval={source:'owner-standing-authorization',verified:true,
   actor:'michaeljwilliams0123',planDigest:digest(plan),grantId:'grant-admin-169',
   expiresAt:'2026-10-31T20:10:00Z'};
  const {services,calls,records}=harness(plan,{approval});
@@ -259,7 +259,7 @@ test('authority changes during preflight or reservation prevent the external wri
   for(const change of ['plan-expiry','identity-expiry','grant-expiry','paused','revoked']){
    await t.test(`${phase}: ${change}`,async()=>{
     const plan=base();
-    const approval={source:'independent-owner-authorization',verified:true,
+    const approval={source:'owner-step-up-authorization',verified:true,
      actor:'michaeljwilliams0123',planDigest:digest(plan),grantId:'grant-admin-169',
      expiresAt:change==='grant-expiry'?'2026-10-31T20:01:00Z':'2026-10-31T20:10:00Z'};
     const {services,calls,records}=harness(plan,{approval});

@@ -17,7 +17,7 @@ const control=()=>({operation:'mcp.task.control',key:'test-key-002',action:'canc
  expectedProfileVersion:2,expectedStopVersion:3});
 async function sign(request,changes={}){
  const {grantRequest}=await prepareMutation(request),now=Date.now();
- const payload=JSON.stringify({schema:'ultron.security-grant.v1',issuer:'ultron-independent-security',
+ const payload=JSON.stringify({schema:'ultron.security-grant.v1',issuer:'ultron-owner-authority',authorizedBy:'michaeljwilliams0123',
   audience:'ultron-cloud-brain',grantId:'test-mutation-grant',policySha:'a'.repeat(64),
   notBefore:new Date(now-1000).toISOString(),expiresAt:new Date(now+60000).toISOString(),
   ...grantRequest,...changes});

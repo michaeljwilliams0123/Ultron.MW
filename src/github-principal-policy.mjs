@@ -3,7 +3,7 @@
  *
  * The App installation is identity only. Authority comes from the exact
  * operation profile, a freshly down-scoped installation token, durable stop
- * state, and (for high-impact operations) an independent one-use owner grant.
+ * state, and (for high-impact operations) a one-use grant issued by the owner.
  * No caller may use the App's full installed permission set as a runtime token.
  */
 export const ULTRON_REPOSITORY='michaeljwilliams0123/Ultron.MW';
@@ -98,7 +98,7 @@ export function assertUnifiedGitHubIdentity(identity,{operation,now}={}){
 
 /**
  * Standing grants may authorize only routine profiles. High-impact profiles
- * require a separately verified owner step-up bound to the exact plan digest.
+ * require a verified owner step-up bound to the exact plan digest.
  */
 export function assertOperationAuthorization(authorization,{
  operation,planDigest,idempotencyKey,installationId,now,
@@ -106,7 +106,7 @@ export function assertOperationAuthorization(authorization,{
  const profile=operationProfile(operation),instant=parseInstant(now);
  const expires=parseInstant(authorization?.expiresAt);
  const expectedSource=profile.authorization==='step-up'
-  ?'independent-owner-authorization':'independent-standing-grant';
+  ?'owner-step-up-authorization':'owner-standing-authorization';
  const valid=Number.isFinite(instant)&&authorization&&
   authorization.verified===true&&authorization.source===expectedSource&&
   authorization.actor==='michaeljwilliams0123'&&
@@ -127,8 +127,8 @@ export function assertOperationAuthorization(authorization,{
  * This function MUST receive verified observations from trusted GitHub/owner
  * readers, not a model, candidate worker, or caller-supplied assertion. GitHub
  * branch protection and material security/dependency holds remain separate.
- * Issue #209 contains the owner-approved queue; PR #200 requires independent
- * security assessment (#201), and #198 remains architecturally parked.
+ * Issue #209 contains the owner-approved queue; PR #200 requires technical
+ * security evaluation (#201), not a second human signer. #198 remains parked.
  */
 export function evaluateProtectedHead(evidence,{headSha,principalActorRef,prNumber,now}={}){
  const instant=parseInstant(now),observed=parseInstant(evidence?.observedAt);
@@ -156,12 +156,12 @@ export function evaluateProtectedHead(evidence,{headSha,principalActorRef,prNumb
   rules?.verified===true&&rules?.eligible===true;
  const securityReady=evidence?.dependenciesSatisfied===true&&
   evidence?.materialSecurityFindingsClear===true&&
-  // A critical independent security assessment is distinct from generic code
-  // review. Owner approval cannot silently clear Reef #201's release hold.
+  // Critical security findings require machine-verifiable evaluation evidence,
+  // not a separate human approver. Owner approval alone does not fabricate it.
   (prNumber!==200&&evidence?.criticalSecurityHold!==true||
-   evidence?.independentSecurityAssessment?.source==='trusted-security-adjudication'&&
-   evidence?.independentSecurityAssessment?.verified===true&&
-   evidence?.independentSecurityAssessment?.status==='cleared')&&
+   evidence?.securityEvaluation?.source==='trusted-automated-security-evaluation'&&
+   evidence?.securityEvaluation?.verified===true&&
+   evidence?.securityEvaluation?.status==='cleared')&&
   // #198 proposes a separate Admin App inconsistent with the single principal.
   prNumber!==198;
  const ready=Number.isFinite(instant)&&Number.isFinite(observed)&&

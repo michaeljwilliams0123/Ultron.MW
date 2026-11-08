@@ -24,7 +24,7 @@ const request=()=>({action:{key:'test:issue-123',operation:'issue.create',
  expectedProfileVersion:2,expectedStopVersion:3});
 async function sign(value,changes={}){
  const {grantRequest}=await prepareMahoraga(value),now=Date.now();
- const payload=JSON.stringify({schema:'ultron.security-grant.v1',issuer:'ultron-independent-security',
+ const payload=JSON.stringify({schema:'ultron.security-grant.v1',issuer:'ultron-owner-authority',authorizedBy:'michaeljwilliams0123',
   audience:'ultron-cloud-brain',grantId:'test-grant-123',policySha:'a'.repeat(64),
   notBefore:new Date(now-1000).toISOString(),expiresAt:new Date(now+60000).toISOString(),
   ...grantRequest,...changes});
