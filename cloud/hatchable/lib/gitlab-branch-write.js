@@ -124,5 +124,5 @@ export async function gitlabBranchWrite({
    response.body?.commit?.id===b.request.sourceSha;
  }catch{/* POST may have committed before the acknowledgement was lost. */}
  // Never retry the POST, even when the response was lost or malformed.
- return observed({db,api,b,grantId:null,providerAcknowledged:acknowledged});
+ return observed({db,api,b,grantId:authority.grantId,providerAcknowledged:acknowledged});
 }
