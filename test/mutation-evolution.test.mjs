@@ -403,5 +403,5 @@ test('passing new capability does not authorize external credentials or release'
  });
  assert.equal(out.classification,'ADVANCEMENT');
  assert.equal(out.releaseEligible,false);
- assert.equal(out.independentSecurityApprovalRequired,true);
+ assert.equal(out.ownerSecurityEvidenceRequired,true);
 });

@@ -2,7 +2,7 @@
  * Evidence-indexed, preservation-first mutation classification.
  *
  * This classifies externally supplied case results; evidenceId is an audit
- * pointer, NOT proof that a check ran or independent release authorization.
+ * pointer, NOT proof that a check ran or authenticated owner release authorization.
  * Never use this classifier as an autonomous merge or production gate.
  */
 const ID=/^[a-z][a-z0-9_.-]{2,79}$/;
@@ -63,8 +63,8 @@ export function classifyMutation({baseline,candidate}={}){
   regressed:Object.freeze(sorted(regressed)),
   failed:Object.freeze(sorted(failed)),
   unverified:Object.freeze(sorted(new Set(unverified))),
-  // Functional classification is not trusted or independent release evidence.
+  // Functional classification is not sufficient security evidence or owner release authority.
   releaseEligible:false,
-  independentSecurityApprovalRequired:true
+  ownerSecurityEvidenceRequired:true
  });
 }
