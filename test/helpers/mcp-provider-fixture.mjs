@@ -7,6 +7,7 @@ const data=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('
 const load=async file=>readFile(new URL(file,root),'utf8');
 const provider=data((await load('lib/mcp-provider-write.js'))
  .replace("'lib/security-adjudicator.js'",JSON.stringify(url('lib/security-adjudicator.js'))));
+export const providerWriter=await import(provider);
 const reader=url('lib/graph-workbook-read.js');
 const graphWriter=data((await load('lib/graph-workbook-write.js'))
  .replace("'lib/graph-workbook-read.js'",JSON.stringify(reader)));

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {fixture,gitlabWriter,gitlabModule,makeTool} from './helpers/mcp-provider-fixture.mjs';
+import {fixture,gitlabWriter,gitlabModule,providerWriter,makeTool} from './helpers/mcp-provider-fixture.mjs';
 
 const SHA='a'.repeat(40);
 const key='branchcanary001';
@@ -152,4 +152,27 @@ test('GitLab custom project CI path is denied before branch POST or authority cl
  assert.equal(result.reason,'gitlab-ci-policy-unverified');
  assert.equal(p.posts,0);
  assert.equal(h.claimCount,0);
+});
+
+test('reconciliation rejects a GitLab receipt with a source SHA different from its signed binding',async()=>{
+ const h=await fixture({revoked:true}),p=remote(),request=input();
+ const prepared=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request});
+ const envelope=await h.sign(prepared.grantRequest);
+ const attempt=await gitlabWriter.gitlabBranchWrite({
+  mode:'submit',request,envelope,db:h.db,config:h.config,api:p.api,transport:p.github});
+ assert.equal(attempt.status,'reconcile-required');
+ assert.equal(h.row.status,'reconcile-required');
+ assert.equal(p.posts,0);
+ const binding=await providerWriter.providerBinding({
+  key,operation:'gitlab.branch.create',target:[87884831,branch],payload:[SHA],
+  expectedProfileVersion:2,expectedStopVersion:3
+ });
+ const result=await providerWriter.reconcileProviderObserved({
+  db:h.db,binding,grantId:'test-provider-grant',
+  evidence:{providerAcknowledged:false,readbackMatches:true,projectId:87884831,
+   branchName:branch,sourceSha:'b'.repeat(40)}
+ });
+ assert.equal(result.status,'held',JSON.stringify(result));
+ assert.equal(result.reason,'invalid-reconciliation-evidence');
+ assert.equal(h.row.status,'reconcile-required','forged evidence must not persist');
 });
