@@ -9,7 +9,7 @@ const flush=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediat
 function harness(){
  const listeners=new Map(),pending=[],calls=[];
  const nodes=new Map(['c06-live-start','c06-live-status','c06-live-history'].map(id=>[id,{
-   id,textContent:'',disabled:false,replaceChildren(...items){this.children=items},
+   id,textContent:'',disabled:false,addEventListener(){},replaceChildren(...items){this.children=items},
    append(...items){this.children??=[];this.children.push(...items)}
  }]));
  const document={getElementById:id=>nodes.get(id),createElement:tag=>({
