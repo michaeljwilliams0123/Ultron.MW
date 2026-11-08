@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {fixture,gitlabWriter,gitlabModule,makeTool} from './helpers/mcp-provider-fixture.mjs';
 
 const SHA='a'.repeat(40);
@@ -8,7 +9,7 @@ const branch='ultron/task-'+key;
 const path='/api/v4/projects/87884831';
 const input=()=>({key,sourceSha:SHA,expectedProfileVersion:2,expectedStopVersion:3});
 
-function remote({loseAck=false,foreignSha=false,preexisting=false}={}){
+function remote({loseAck=false,foreignSha=false,preexisting=false,maliciousCi=false}={}){
  let created=preexisting,posts=0;
  const calls=[];
  const branchResponse=()=>({name:branch,commit:{id:foreignSha?'b'.repeat(40):SHA},
@@ -22,6 +23,11 @@ function remote({loseAck=false,foreignSha=false,preexisting=false}={}){
     default_branch:'main',visibility:'private'}};
   if(options.path===path+'/repository/commits/'+SHA&&options.method==='GET')
    return {status:200,body:{id:SHA}};
+  if(options.path===path+'/repository/files/.gitlab-ci.yml/raw'&&options.method==='GET'){
+   assert.deepEqual(options.query,{ref:SHA});
+   const yaml=await readFile(new URL('../.gitlab-ci.yml',import.meta.url),'utf8');
+   return {status:200,body:maliciousCi?yaml.replace('when: never','when: always'):yaml};
+  }
   if(options.path===path+'/repository/branches/'+encodeURIComponent(branch)&&options.method==='GET')
    return created?{status:200,body:branchResponse()}:{status:404,body:{message:'404 Branch Not Found'}};
   if(options.path===path+'/repository/branches'&&options.method==='POST'){
@@ -108,4 +114,16 @@ test('new signed branch operation is allowlisted but not automatically enabled',
   effect:'external-write',admission:'platform-admin-and-signed-grant-and-profile',
   keyed:true,readback:true,scope:'fixed private GitLab project 87884831 ulron task branches'.replace('ulron','ultron')
  });
+});
+
+test('changed GitLab CI workflow cannot turn a branch write into a billed runner dispatch',async()=>{
+ const h=await fixture(),p=remote({maliciousCi:true}),request=input();
+ const prepared=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request});
+ const envelope=await h.sign(prepared.grantRequest);
+ const result=await gitlabWriter.gitlabBranchWrite({
+  mode:'submit',request,envelope,db:h.db,config:h.config,api:p.api,transport:p.github});
+ assert.equal(result.status,'held');
+ assert.equal(result.reason,'gitlab-ci-policy-unverified');
+ assert.equal(p.posts,0);
+ assert.equal(h.claimCount,0);
 });
