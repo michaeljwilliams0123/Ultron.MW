@@ -19,7 +19,7 @@ async function envelope(input,changes={}){
  const prepared=await prepareSignedNote(input);
  const now=Date.now();
  const payload=JSON.stringify({
-  schema:'ultron.security-grant.v1',issuer:'ultron-independent-security',
+  schema:'ultron.security-grant.v1',issuer:'ultron-owner-authority',authorizedBy:'michaeljwilliams0123',
   audience:'ultron-cloud-brain',grantId:'test-signed-grant-01',
   policySha:'a'.repeat(64),notBefore:new Date(now-1000).toISOString(),
   expiresAt:new Date(now+60000).toISOString(),...prepared.grantRequest,...changes

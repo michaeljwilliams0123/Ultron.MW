@@ -1,25 +1,30 @@
 # Ultron.MW — Hatchable cloud brain (v2 design, deployment v3)
 
-## Independent signer release gate
+## Sole-owner grant signing and release authority
 
-This checkout deliberately does not include a repository-controlled signing
-workflow or private signing key. Review found that loading an exportable key
-into GitHub Actions would leave the repository administration plane in control
-of both signer code and key custody, which is not independent adjudication.
-The production verifier therefore remains unset and existing MCP tools remain
-fail-closed rather than accepting grants from an unproven signer.
+Only `michaeljwilliams0123` is required to approve a release or sign a
+delegated capability grant. Neither a second human reviewer nor a separately
+administered Vault/HSM co-signer is required. GitHub's live `main` protection
+currently requires zero PR reviews and no signed commits, while preserving
+the required CI status check. GitHub's automated checks are evidence, not
+another person's authorization.
 
-Before enabling signed writes, an owner must provision a non-exportable P-256
-key in a separately administered Vault Transit or HSM service. The caller must
-use short-lived workload identity, submit only the canonical grant payload or
-digest, and receive only the signature and public-key identifier. Pin the
-returned public JWK and fingerprint in the Hatchable verifier, prove that the
-signer policy and protected source are at the current exact `main` SHA, and run
-an end-to-end canary that the resulting grant is accepted before adding signed
-operations to the active owner profile. Also prove authenticated delivery,
-durable receipts, replay recovery, independent approval and a hard $0
-additional-cash-spend boundary. Never place the private signing key in GitHub,
-Hatchable, an artifact, workflow input, repository file or event payload.
+The owner may generate and use a self-controlled P-256 signing key with
+`scripts/owner-grant.mjs`; see `docs/OWNER-SOLE-AUTHORITY.md`. The signing
+private key must remain outside the repository and deployment runtime.
+Hatchable receives only the owner-approved public JWK. A signed grant still
+binds exact operation, actor, objective, resource, profile/stop versions,
+policy digest, expiration and a unique grant ID. No worker may issue its own
+grant or bypass authorization, provider readback, replay prevention, pause,
+revocation or the $0 paid-spend ceiling.
+
+**Production release is not implied by this source change.** The verifier's
+owner-controlled public key must be configured by the owner and tested with
+an authenticated end-to-end canary after the migration ledger is reconciled.
+The old requirement for an externally administered independent signer is
+retired; security evaluation remains automated evidence and not a co-signer.
+Never place the private key in GitHub, Hatchable, artifacts, workflow inputs
+or event payloads.
 
 Production migration reconciliation is also incomplete. The live Hatchable
 ledger was observed through `0028`; `0029` and `0030` tables were absent, while

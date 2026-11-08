@@ -1,5 +1,5 @@
-// Delegated administrator capability verifier. The independent adjudicator
-// signs these grants; workers possess ONLY the trusted public verification key.
+// Delegated owner-authority verifier. The sole repository owner controls the
+// signing key; workers hold ONLY the pinned public verification key.
 // This module cannot mint credentials, grant itself privileges, or change policy.
 const VERIFIED=new WeakSet();
 const OPERATIONS=new Set([
@@ -9,7 +9,8 @@ const OPERATIONS=new Set([
  'graph.workbook.cell.write','github.issue.write','gitlab.branch.create'
 ]);
 const GRANT_SCHEMA='ultron.security-grant.v1';
-const ISSUER='ultron-independent-security';
+const ISSUER='ultron-owner-authority';
+const OWNER='michaeljwilliams0123';
 const AUDIENCE='ultron-cloud-brain';
 const SHA256=/^[a-f0-9]{64}$/;
 const GRANT_ID=/^[A-Za-z0-9_.:-]{8,128}$/;
@@ -55,11 +56,17 @@ export async function verifyDelegatedGrant({
  catch{refuse('invalid-grant-payload');}
  if(!grant||typeof grant!=='object'||Array.isArray(grant)||
     grant.schema!==GRANT_SCHEMA||grant.issuer!==ISSUER||
+    grant.authorizedBy!==OWNER||
     grant.audience!==AUDIENCE||!GRANT_ID.test(grant.grantId||'')||
     !SHA256.test(grant.policySha||'')||
     typeof grant.administrativeChange!=='boolean')
   refuse('invalid-grant-claims');
  if(!OPERATIONS.has(grant.operation))refuse('unsupported-grant-operation');
+ const versioned=Object.hasOwn(grant,'profileVersion')||
+  Object.hasOwn(grant,'stopVersion');
+ if(versioned&&(!Number.isSafeInteger(grant.profileVersion)||
+  grant.profileVersion<1||!Number.isSafeInteger(grant.stopVersion)||
+  grant.stopVersion<1))refuse('invalid-grant-versions');
  const begin=parseTime(grant.notBefore),end=parseTime(grant.expiresAt);
  if(end<=begin||end-begin>MAX_TTL_MS)refuse('grant-ttl-exceeded');
  const current=parseTime(now);
@@ -74,9 +81,10 @@ export async function verifyDelegatedGrant({
  if(grant.operation==='permissions.change'&&!grant.administrativeChange)
   refuse('administrative-grant-required');
  const verified=Object.freeze({
-  authorized:true,grantId:grant.grantId,actor:grant.actor,
+  authorized:true,authorizedBy:OWNER,grantId:grant.grantId,actor:grant.actor,
   objectiveId:grant.objectiveId,operation:grant.operation,
   resource:grant.resource,policySha:grant.policySha,
+  ...(versioned?{profileVersion:grant.profileVersion,stopVersion:grant.stopVersion}:{}),
   expiresAt:grant.expiresAt,administrativeChange:grant.administrativeChange
  });
  VERIFIED.add(verified);
@@ -84,17 +92,36 @@ export async function verifyDelegatedGrant({
 }
 // Consume once through a single SQL command; public API callers cannot forge a
 // verifiedGrant by passing {authorized:true} because VERIFIED is module-private.
+// A signed grant is not enough: admission must be bound atomically to the
+// *current* owner profile, stop version, unpaused state and zero-cost policy.
+// Legacy grants without signed version claims can be verified for audit but
+// never consumed into fresh authority.
 export async function consumeDelegatedGrant({db,verifiedGrant}={}){
  if(!db?.query||!VERIFIED.has(verifiedGrant))refuse('invalid-verified-grant');
+ if(!Number.isSafeInteger(verifiedGrant.profileVersion)||
+   verifiedGrant.profileVersion<1||
+   !Number.isSafeInteger(verifiedGrant.stopVersion)||
+   verifiedGrant.stopVersion<1)
+  return {ok:false,error:'grant-unbound'};
  if(Date.parse(verifiedGrant.expiresAt)<=Date.now())
   return {ok:false,error:'grant-expired'};
- const sql=`WITH gate AS MATERIALIZED (
-  SELECT $7::timestamptz > clock_timestamp() AS live
+ const sql=`WITH authority AS MATERIALIZED (
+  SELECT 1 FROM brain_owner_autonomy_profile a
+  JOIN brain_runtime_control c ON c.id=1
+  WHERE a.id=1 AND a.owner='michaeljwilliams0123'
+    AND a.preset IN ('build','release')
+    AND a.version=$8 AND c.version=$9 AND NOT c.paused
+    AND a.max_paid_cents=0
+    AND jsonb_exists(a.allowed_operations,$4::text)
+  FOR SHARE
+ ), gate AS MATERIALIZED (
+  SELECT $7::timestamptz > clock_timestamp() AS live,
+    EXISTS(SELECT 1 FROM authority) AS permitted
  ), admitted AS (
   INSERT INTO brain_authority_grants(
    grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
   SELECT $1,$2,$3,$4,$5,$6,$7::timestamptz
-  FROM gate WHERE live
+  FROM gate WHERE live AND permitted
   ON CONFLICT(grant_id) DO NOTHING RETURNING grant_id
  ), receipt AS (
   INSERT INTO brain_events(event_type,details)
@@ -102,16 +129,19 @@ export async function consumeDelegatedGrant({db,verifiedGrant}={}){
    jsonb_build_object('grantId',grant_id,'operation',$4::text,'policySha',$6::text)
   FROM admitted RETURNING id
  )
- SELECT admitted.grant_id,receipt.id AS receipt_id,false AS expired
+ SELECT admitted.grant_id,receipt.id AS receipt_id,
+   false AS expired,false AS denied
  FROM admitted JOIN receipt ON true
  UNION ALL
- SELECT NULL,NULL,NOT gate.live
+ SELECT NULL,NULL,NOT gate.live,NOT gate.permitted
  FROM gate WHERE NOT EXISTS(SELECT 1 FROM admitted)`;
  const result=await db.query(sql,[verifiedGrant.grantId,verifiedGrant.objectiveId,
   verifiedGrant.actor,verifiedGrant.operation,verifiedGrant.resource,
-  verifiedGrant.policySha,verifiedGrant.expiresAt]);
+  verifiedGrant.policySha,verifiedGrant.expiresAt,verifiedGrant.profileVersion,
+  verifiedGrant.stopVersion]);
  const row=result?.rows?.[0];
  if(row?.expired)return {ok:false,error:'grant-expired'};
+ if(row?.denied)return {ok:false,error:'authority-denied'};
  return row?.grant_id?{ok:true,grantId:row.grant_id,receiptId:row.receipt_id}:
   {ok:false,error:'grant-replayed'};
 }
