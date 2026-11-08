@@ -1,0 +1,32 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH =~ /^verify\//'
+    - when: never
+
+stages:
+  - verify
+
+exact-sha-acceptance:
+  stage: verify
+  image: node:22.21.1-bookworm@sha256:b84d52cd45bfe261096ccbf886955d431b8b9ed01b72eaef588e8886bda09e78
+  timeout: 10m
+  interruptible: false
+  variables:
+    NPM_CONFIG_AUDIT: "false"
+    NPM_CONFIG_FUND: "false"
+    NPM_CONFIG_UPDATE_NOTIFIER: "false"
+  script:
+    - test "$CI_PROJECT_PATH" = "michaelj.williams0123/Ultron.MW"
+    - test "$CI_PIPELINE_SOURCE" = "push"
+    - test "$(cat .git/HEAD)" = "$CI_COMMIT_SHA"
+    - node --version
+    - node scripts/verify-audited-lockfile.mjs
+    - npm ci --ignore-scripts --no-audit --no-fund
+    - node scripts/verify.mjs
+    - node scripts/write-gitlab-acceptance-receipt.mjs artifacts/gitlab-exact-sha-acceptance.json
+  artifacts:
+    name: "gitlab-exact-sha-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - artifacts/gitlab-exact-sha-acceptance.json
+    expire_in: 7 days
+    when: on_success
