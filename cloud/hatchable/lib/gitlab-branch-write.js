@@ -60,6 +60,11 @@ async function preflight({api,transport,branch,sourceSha}){
   project.body?.path_with_namespace!==PROJECT_PATH||
   project.body?.visibility!=='private'||project.body?.default_branch!=='main')
   return held('gitlab-project-identity-mismatch');
+ // GitLab's project-level custom CI path takes precedence over the normal
+ // .gitlab-ci.yml. Reject it before spending any branch creation authority,
+ // or the fixed file digest below could falsely imply zero runner usage.
+ if(project.body.ci_config_path!=='')
+  return held('gitlab-ci-policy-unverified');
  const commit=await gitlab(api,'GET',PROJECT+'/repository/commits/'+sourceSha);
  if(commit.status!==200||commit.body?.id!==sourceSha)
   return held('gitlab-source-commit-unavailable');
