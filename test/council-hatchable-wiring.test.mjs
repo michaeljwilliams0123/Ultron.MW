@@ -11,6 +11,11 @@ test('C04 Hatchable V8 readiness exposes all missing live Council prerequisites'
  assert.equal(r.canonicalStateOwner,'Hatchable/PostgreSQL');
  assert.equal(r.roleCount,7);
  assert.equal(r.githubRoleInstallationsObserved,0);
+ assert.equal(r.rolesUnverified.length,7,'logical Council roles remain unverified');
+ assert.equal(r.missingProduction.filter(x=>x.startsWith('app-installation-unverified:')).length,0,
+  'seven separate GitHub Apps are no longer owner-policy release prerequisites');
+ assert.ok(r.missingProduction.includes('independent-executor-unverified'),
+  'do not misstate worker execution as accepted');
  assert.ok(r.missingTables.includes('brain_continuum_outbox'));
  assert.ok(r.missingTables.includes('brain_council_cases'));
  assert.equal(r.readyForProduction,false);
@@ -67,7 +72,7 @@ test('C04 cloud brain distinguishes deployed capability registry from source-onl
  }
  assert.equal(r.readyForProduction,false);
  assert.equal(r.provenance.runtimeEvidence,'hatchable-deployed-brain-core-capabilities');
- assert.equal(r.provenance.candidateEvidence,'git-pr-208-unmerged');
+ assert.equal(r.provenance.candidateEvidence,'source-candidate-not-deployed');
  assert.throws(()=>assessCouncilWiring({tables:COUNCIL_TABLES,
   runtimeCapabilities:[{id:'web.open',effect:'write'}]}),/observation-invalid/);
  assert.throws(()=>assessCouncilWiring({tables:COUNCIL_TABLES,
