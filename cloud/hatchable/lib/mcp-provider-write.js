@@ -24,12 +24,15 @@ export async function providerBinding({key,operation,target,payload,expectedProf
  if(typeof key!=='string'||!KEY.test(key)||!OPERATIONS.has(operation)||
   !Array.isArray(target)||!Array.isArray(payload)||
   !Number.isSafeInteger(expectedProfileVersion)||expectedProfileVersion<1||
-  !Number.isSafeInteger(expectedStopVersion)||expectedStopVersion<1)
+  !Number.isSafeInteger(expectedStopVersion)||expectedStopVersion<1||
+  (operation==='gitlab.branch.create'&&
+   (payload.length!==1||!/^[a-f0-9]{40}$/.test(payload[0]))))
   throw Error('invalid-request');
  const resourceKey=await hash(['ultron.provider.target.v1',operation,...target]);
  const fingerprint=await hash(['ultron.provider.write.v1',key,operation,target,payload,
   expectedProfileVersion,expectedStopVersion]);
- return Object.freeze({key,operation,resourceKey,fingerprint,expectedProfileVersion,expectedStopVersion});
+ return Object.freeze({key,operation,resourceKey,fingerprint,expectedProfileVersion,expectedStopVersion,
+  ...(operation==='gitlab.branch.create'?{sourceSha:payload[0]}:{})});
 }
 export function grantRequest(binding){
  return {actor:'mcp:ultron',objectiveId:binding.key,operation:binding.operation,
@@ -159,7 +162,7 @@ function reconciledEvidence(binding,evidence){
  if(binding.operation==='gitlab.branch.create'){
   if(evidence.branchName!=='ultron/task-'+binding.key ||
    !/^[a-f0-9]{40}$/.test(evidence.sourceSha||'')||
-   evidence.projectId!==87884831)
+   evidence.sourceSha!==binding.sourceSha||evidence.projectId!==87884831)
    throw Error('invalid-reconciliation-evidence');
   return {providerAcknowledged:evidence.providerAcknowledged,readbackMatches:true,
    projectId:87884831,branchName:evidence.branchName,sourceSha:evidence.sourceSha};
