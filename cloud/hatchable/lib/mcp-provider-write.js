@@ -2,7 +2,8 @@ import {verifyDelegatedGrant} from 'lib/security-adjudicator.js';
 
 const KEY=/^[a-z0-9][a-z0-9_.:-]{7,127}$/i;
 const GRANT=/^[A-Za-z0-9_.:-]{8,128}$/;
-const OPERATIONS=new Set(['graph.workbook.cell.write','github.issue.write']);
+const OPERATIONS=new Set(['graph.workbook.cell.write','github.issue.write',
+ 'gitlab.branch.create']);
 const held=reason=>({ok:false,status:'held',reason});
 const uncertain=reason=>({ok:false,status:'reconcile-required',reason});
 export function dataObject(value){
@@ -148,4 +149,36 @@ export async function authorizeProvider({db,config,binding,envelope}){
   },
   async result(){return reconcileProvider({db,binding,grantId:grant.grantId});}
  };
+}
+
+function reconciledEvidence(binding,evidence){
+ if(evidence?.readbackMatches!==true ||
+  typeof evidence.providerAcknowledged!=='boolean')
+  throw Error('invalid-reconciliation-evidence');
+ if(binding.operation==='gitlab.branch.create'){
+  if(evidence.branchName!=='ultron/task-'+binding.key ||
+   !/^[a-f0-9]{40}$/.test(evidence.sourceSha||'')||
+   evidence.projectId!==87884831)
+   throw Error('invalid-reconciliation-evidence');
+  return {providerAcknowledged:evidence.providerAcknowledged,readbackMatches:true,
+   projectId:87884831,branchName:evidence.branchName,sourceSha:evidence.sourceSha};
+ }
+ throw Error('unsupported-reconciliation-evidence');
+}
+// This only promotes an already-claimed, matching write after independent
+// provider readback. It never grants authority or sends another provider POST.
+export async function reconcileProviderObserved({db,binding,grantId,evidence}={}){
+ if(typeof db?.query!=='function'||typeof grantId!=='string'||!GRANT.test(grantId))
+  return held('invalid-readback-request');
+ let safe;
+ try{safe=reconciledEvidence(binding,evidence);}
+ catch{return held('invalid-reconciliation-evidence');}
+ let prior;
+ try{prior=await read(db,binding,grantId);}
+ catch{return uncertain('readback-unavailable');}
+ if(!prior)return uncertain('dispatch-not-observed');
+ if(prior.ok===true||prior.status==='held')return prior;
+ try{await db.query(OBSERVE,[binding.key,binding.fingerprint,grantId,JSON.stringify(safe)]);}
+ catch{/* The update may have committed. Always use independent ledger readback. */}
+ return reconcileProvider({db,binding,grantId});
 }
