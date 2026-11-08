@@ -35,6 +35,9 @@ const records=[
   admission:'platform-admin-and-signed-grant-and-profile',keyed:true,readback:true,
   scope:'one configured account, workbook, worksheet and cell allowlist'},
  {tool:'ultron_hf_lab',operation:'brain.hf-lab.read',effect:'read',
-  admission:'platform-admin'}
+  admission:'platform-admin'},
+ {tool:'ultron_gitlab_ci',operation:'gitlab.ci.observe',effect:'read',
+  admission:'platform-admin-and-configured-gitlab-oauth',readback:true,
+  scope:'private GitLab Ultron.MW project 87884831 and public GitHub main ref'},
 ];
 export const MCP_CAPABILITIES=Object.freeze(records.map(record=>Object.freeze(record)));
