@@ -17,11 +17,14 @@ const MAX_ISSUE_PAGES = 40;
 const INSTALLATION_PERMISSIONS = Object.freeze({
   actions:'write',contents:'read',issues:'write'
 });
+// The owner-only repository observation must not mint a write-scoped token.
+const READ_INSTALLATION_PERMISSIONS = Object.freeze({contents:'read'});
 
 export async function observeMahoragaMain({config:sdkConfig,transport=fetch}={}) {
  if(!sdkConfig)throw Error('mahoraga-config-required');
  const deadlineAt=Date.now()+ACTION_DEADLINE_MS;
- const get=await appClient(sdkConfig,transport,deadlineAt,REQUEST_TIMEOUT_MS);
+ const get=await appClient(sdkConfig,transport,deadlineAt,REQUEST_TIMEOUT_MS,
+   READ_INSTALLATION_PERMISSIONS);
  const repo=await get('/');
  if(repo?.id!==REPO_ID||repo?.full_name!==REPO||repo?.private!==true||
     repo?.default_branch!=='main')throw Error('mahoraga-repository-mismatch');
@@ -100,7 +103,7 @@ async function jwt(clientId,pem,now=Date.now()) {
    'RSASSA-PKCS1-v1_5',key,new TextEncoder().encode(content)));
 }
 async function appClient(config,transport=fetch,deadlineAt=Date.now()+ACTION_DEADLINE_MS,
- requestTimeoutMs=REQUEST_TIMEOUT_MS) {
+ requestTimeoutMs=REQUEST_TIMEOUT_MS,permissions=INSTALLATION_PERMISSIONS) {
  // The mode is explicitly selectable so an installed PAT cannot silently
  // shadow a deliberately authorized GitHub App identity. Missing mode keeps
  // the established PAT-first behavior; invalid mode fails before any I/O.
@@ -140,19 +143,18 @@ async function appClient(config,transport=fetch,deadlineAt=Date.now()+ACTION_DEA
    method:'POST',redirect:'error',headers:{...HEADERS,Authorization:'Bearer '+await jwt(clientId,key),
      'Content-Type':'application/json'},
    body:JSON.stringify({repository_ids:[REPO_ID],
-     permissions:INSTALLATION_PERMISSIONS})},
+     permissions})},
    deadlineAt,requestTimeoutMs,'app-installation-admission-denied');
  const expiry = Date.parse(value.expires_at || '');
  if(typeof value.token !== 'string' || value.token.length < 16 ||
    !Number.isFinite(expiry) || expiry < Date.now()+60000 ||
    value.repositories?.length !== 1 || value.repositories[0].id !== REPO_ID ||
    value.repositories[0].full_name !== REPO ||
-   value.permissions?.contents !== 'read' ||
-   value.permissions?.issues !== 'write' ||
-   value.permissions?.actions !== 'write' ||
+   Object.entries(permissions).some(([permission,level]) =>
+     value.permissions?.[permission] !== level) ||
    Object.entries(value.permissions || {}).some(([permission,level]) =>
      permission === 'metadata' ? level !== 'read' :
-       INSTALLATION_PERMISSIONS[permission] !== level))
+       permissions[permission] !== level))
    throw Error('app-token-repository-or-grant-mismatch');
  return async (path,method='GET',body) => {
    if(!/^\/[a-zA-Z0-9/?=&._-]*$/.test(path) || path.includes('..') ||
