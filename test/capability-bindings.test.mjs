@@ -73,7 +73,7 @@ test('read operation completes once and exact retry returns its receipt', async 
   }), /Idempotency key/);
 });
 
-test('write operation requires independent approval before provider dispatch', async () => {
+test('write operation requires owner authorization before provider dispatch', async () => {
   const target = adapter();
   const denied = createCapabilityBroker({ clock: () => now });
   denied.bind(manifest(), target);

@@ -68,12 +68,12 @@ conditional-write mechanism.
 ## Protected release remains independent
 
 The principal can prepare and verify work but cannot merge it. A protected head
-is merely **ready for a human-controlled merge decision** when a fresh GitHub
-readback proves the required checks succeeded at the exact head SHA and an
-independent reviewer approved that same SHA. The App actor cannot serve as its
-own independent reviewer. Green CI, a council report, a Reef probe, a source
-declaration, or an installation-token readback alone does not satisfy this
-release evidence.
+is merely **ready for the owner's merge decision** when a fresh GitHub readback
+proves the required checks and trusted automated security evaluation succeeded
+at the exact head SHA. The App actor cannot authorize its own release; only the
+authenticated owner can do so. No second reviewer or co-signer is required.
+Green CI, a council report, a Reef probe, a source declaration, or an
+installation-token readback alone does not supply owner release authority.
 
 ## Activation and rollback
 
