@@ -176,3 +176,22 @@ test('reconciliation rejects a GitLab receipt with a source SHA different from i
  assert.equal(result.reason,'invalid-reconciliation-evidence');
  assert.equal(h.row.status,'reconcile-required','forged evidence must not persist');
 });
+
+test('signed owner versions must match exact provider binding before any claim or POST',async()=>{
+ for(const tamper of ['unbound','wrong-profile','wrong-stop']){
+  const h=await fixture(),p=remote(),request=input();
+  const prepared=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request});
+  const {profileVersion,stopVersion,...withoutVersions}=prepared.grantRequest;
+  let claims=tamper==='unbound'?withoutVersions:prepared.grantRequest;
+  if(tamper==='wrong-profile')claims={...claims,profileVersion:request.expectedProfileVersion+1};
+  if(tamper==='wrong-stop')claims={...claims,stopVersion:request.expectedStopVersion+1};
+  const envelope=await h.sign(claims);
+  const result=await gitlabWriter.gitlabBranchWrite({
+   mode:'submit',request,envelope,db:h.db,config:h.config,api:p.api,transport:p.github});
+  assert.equal(result.status,'held',JSON.stringify(result));
+  assert.equal(result.reason,
+   tamper==='unbound'?'grant-version-unbound':'grant-version-mismatch');
+  assert.equal(p.posts,0,'a mismatched owner version must never POST');
+  assert.equal(h.claimCount,0,'a mismatched owner version must never consume a grant');
+ }
+});

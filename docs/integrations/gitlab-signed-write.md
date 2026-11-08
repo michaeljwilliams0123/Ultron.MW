@@ -16,9 +16,10 @@ pipeline variable, branch prefix, private key, arbitrary ref or token.
 1. `prepare` returns a canonical `gitlab.branch.create` grant request, with
    resource fingerprint covering the source SHA, branch key and versioned
    owner profile and stop state. It has **zero external writes**.
-2. An independently administered signer must approve the exact operation and
-   return a short-lived signed grant; the Hatchable runtime holds only the
-   pinned **public** P-256 verification key.
+2. The authenticated sole owner signs the exact operation and versioned
+   grant with their own P-256 key. No outside human, Vault administrator or
+   separate co-signer is required. Hatchable holds only the owner-pinned
+   **public** P-256 verification JWK.
 3. `submit` verifies the signed envelope, current stop/profile versions,
    zero paid-spend ceiling, fixed project identity, GitLab commit and GitHub
    commit, plus branch absence. The PostgreSQL ledger atomically consumes the
@@ -47,10 +48,10 @@ pipeline variable, branch prefix, private key, arbitrary ref or token.
   `api` scope, **separately** from the read-only `gitlab` `read_api`
   connection in PR #315. On GitLab.com Free, project access tokens are not
   available; generic OAuth `api` grants broad account-level API access.
-  For production, use an independently administered gateway or otherwise
-  provably restrict the egress credential to this fixed operation. An
-  admin-only MCP input schema alone does **not** restrict a compromised
-  application that possesses a broad OAuth token.
+  For production, restrict this broad credential through a narrow,
+  owner-administered egress boundary fixed to the approved operation. No
+  additional person's signature is required. An admin-only MCP schema
+  alone does **not** restrict a compromised application with broad OAuth.
 - No GitLab OAuth client ID, secret, private key, bearer token, protected
   settings, production profile, policy, migration ledger or deployment is
   changed by this source PR. Owner consent and authentication are separate.
@@ -63,7 +64,7 @@ On November 8, 2026, the connected GitLab integration created and separately
 read back a real private branch at `ultron/canary-write-20261108`, pointing
 to `531544828c4e28dc391fc119c7029c950a22f87a`. GitLab listed **zero**
 pipelines for that branch. This validates provider-side write access only;
-it does not validate the Hatchable production MCP or independent signer.
+it does not validate the Hatchable production MCP or a live owner-signed grant.
 
 ## Future write adapters
 
@@ -73,5 +74,5 @@ Add more executionary operations as discrete catalog entries, not generic
 applications. Each must have its own operation-typed grant, unique
 idempotency target, post-claim stop check, no automatic uncertain-write
 retry and actual provider readback. Never use the deterministic Council's
-agreement as an independent signed authorization or as evidence of the
+agreement as an owner-signed authorization or as evidence of the
 external action's effect.

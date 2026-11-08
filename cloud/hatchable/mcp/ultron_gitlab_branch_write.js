@@ -3,11 +3,11 @@ import {gitlabBranchWrite} from 'lib/gitlab-branch-write.js';
 
 // This is a signed, bounded provider WRITE. Unlike ulron_gitlab_ci it requests
 // a separately consented GitLab API connection and persists one-shot receipts.
-// No private key is loaded in this project; a different trust plane signs.
+// No private key is loaded in this project; the sole owner signs externally.
 export const access='admin';
 export default {
  name:'ultron_gitlab_branch_write',
- description:'Prepare, submit or reconcile one independently authorized GitLab branch creation from an exact GitHub source SHA. Requires a signed grant, versioned stop/profile policy and separate GitLab API OAuth.',
+ description:'Prepare, submit or reconcile one owner-authorized GitLab branch creation from an exact GitHub source SHA. Requires a signed grant, versioned stop/profile policy and separate GitLab API OAuth.',
  inputSchema:{type:'object',required:['mode','request'],additionalProperties:false,properties:{
   mode:{type:'string',enum:['prepare','submit','reconcile']},
   request:{type:'object',required:['key','sourceSha','expectedProfileVersion','expectedStopVersion'],

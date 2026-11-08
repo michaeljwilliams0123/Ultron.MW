@@ -36,7 +36,8 @@ export async function providerBinding({key,operation,target,payload,expectedProf
 }
 export function grantRequest(binding){
  return {actor:'mcp:ultron',objectiveId:binding.key,operation:binding.operation,
-  resource:'sha256:'+binding.fingerprint,administrativeChange:false};
+  resource:'sha256:'+binding.fingerprint,administrativeChange:false,
+  profileVersion:binding.expectedProfileVersion,stopVersion:binding.expectedStopVersion};
 }
 const READ=`SELECT action_key,operation,fingerprint,resource_key,grant_id,status,evidence
  FROM brain_mcp_provider_writes WHERE action_key=$1`;
@@ -117,6 +118,11 @@ export async function authorizeProvider({db,config,binding,envelope}){
  }catch{return {error:held('adjudicator-unconfigured')};}
  try{grant=await verifyDelegatedGrant({envelope,publicJwk,request:grantRequest(binding)});}
  catch{return {error:held('grant-invalid-or-expired')};}
+ if(!Number.isSafeInteger(grant.profileVersion)||!Number.isSafeInteger(grant.stopVersion))
+  return {error:held('grant-version-unbound')};
+ if(grant.profileVersion!==binding.expectedProfileVersion||
+    grant.stopVersion!==binding.expectedStopVersion)
+  return {error:held('grant-version-mismatch')};
  let prior;
  try{prior=await read(db,binding,grant.grantId);}catch{return {error:uncertain('readback-unavailable')};}
  if(prior)return {error:prior};
