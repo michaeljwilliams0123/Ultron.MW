@@ -1,6 +1,19 @@
 [mcp]
 enabled = true
 
+# Separate, optional WRITE-capable GitLab connection. This is never the
+# read_api credential used by the read-only GitLab observer. Owner OAuth
+# activation and per-operation signed grants are both required.
+[[api]]
+name          = "gitlab_write"
+auth          = "oauth2"
+base_url      = "https://gitlab.com"
+authorize_url = "https://gitlab.com/oauth/authorize"
+token_url     = "https://gitlab.com/oauth/token"
+scopes        = ["api"]
+required      = false
+description   = "Privileged GitLab branch canary only; fixed project, signed grant and independent readback required."
+
 [[cron]]
 path = "/api/brain/tick"
 schedule = "17 * * * *"
