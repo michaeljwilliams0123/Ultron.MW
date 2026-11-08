@@ -118,6 +118,37 @@ button:disabled{opacity:.4;cursor:not-allowed}
  <p class="connection-footnote">Requires an active owner session and a matching, unpaused runtime-stop version. Reusing a submission key does not repeat the effect. A receipt means evaluation succeeded; production release still requires authenticated owner authorization and trusted automated security evidence, never another human signer.</p>
 </section>
 
+<section class="card" id="cloud-gitlab-write" aria-labelledby="cloud-gitlab-heading" style="margin:22px 0">
+ <div class="eyebrow">CLOUD EXECUTION / OWNER ONLY</div>
+ <h2 id="cloud-gitlab-heading">GitLab branch canary</h2>
+ <p class="small">Hatchable executes the existing signed GitLab branch-write operation directly. No local Codex MCP login, second human signer, or private signing key on this server. Requires one owner-signed grant.</p>
+ <div class="grid">
+  <div>
+   <label for="cloud-gitlab-key">Idempotency key (one branch)</label>
+   <input id="cloud-gitlab-key" autocomplete="off" value="release-v60-canary-20261108" maxlength="48">
+  </div>
+  <div>
+   <label for="cloud-gitlab-sha">Exact approved GitHub / GitLab commit SHA</label>
+   <input id="cloud-gitlab-sha" autocomplete="off" value="8c03bc3a56b41be88f65caa18568d6876bbe974c" maxlength="40">
+  </div>
+ </div>
+ <div class="button-line">
+  <button type="button" id="cloud-gitlab-prepare">Prepare signed operation</button>
+  <button type="button" id="cloud-gitlab-copy" disabled>Copy signable request</button>
+ </div>
+ <label for="cloud-gitlab-grant">Signable request (no private keys)</label>
+ <textarea id="cloud-gitlab-grant" readonly rows="4" spellcheck="false" placeholder="Prepare first; this is a bounded request for the owner to sign."></textarea>
+ <p class="small">Sign the copied JSON on a trusted owner-controlled device with `node scripts/owner-grant.mjs sign PRIVATE_JWK REQUEST_JSON`. The key stays on that device; execution occurs in Hatchable.</p>
+ <label for="cloud-gitlab-envelope">Owner-signed grant envelope (payload and signature only)</label>
+ <textarea id="cloud-gitlab-envelope" rows="3" spellcheck="false" autocomplete="off" placeholder="Paste the short-lived signed envelope. Never paste your private key."></textarea>
+ <div class="button-line">
+  <button type="button" id="cloud-gitlab-submit" disabled>Submit once to GitLab</button>
+  <button type="button" id="cloud-gitlab-reconcile" disabled>Read back existing grant</button>
+ </div>
+ <p class="status" id="cloud-gitlab-status" role="status" aria-live="polite">No write submitted. Owner session and current profile must be verified before prepare.</p>
+ <p class="small">After any uncertain POST, use readback only—do not submit again. The branch creation is constrained to private GitLab project 87884831, exact SHA, zero-runner CI, owner profile and stop version. Paid spend: $0.</p>
+</section>
+
 <div class="eyebrow">ULTRON.MW / ONE OWNER CONTROL SURFACE</div>
 <h1>Persistent cloud brain</h1>
 <p class="intro">Review and customize Ultron's autonomy preferences without granting new credentials or bypassing runtime authorization. Profile selection never grants execution authority; Release requires separate verified CI, owner authorization, GitHub eligibility and rollback gates.</p>
@@ -338,5 +369,6 @@ refresh();
 <script src="./owner-live.js" defer></script>
 <script src="./hf-lab.js" defer></script>
 <script src="./c06-live.js" defer></script>
+<script src="./cloud-gitlab.js" defer></script>
 </body>
 </html>
