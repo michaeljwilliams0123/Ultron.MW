@@ -195,3 +195,52 @@ test('signed owner versions must match exact provider binding before any claim o
   assert.equal(h.claimCount,0,'a mismatched owner version must never consume a grant');
  }
 });
+
+test('GitLab policy digest is prepared by provider and mismatch never claims or POSTs',async()=>{
+ const h=await fixture(),p=remote(),request=input();
+ const prepared=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request});
+ assert.match(prepared.grantRequest.policySha,/^[a-f0-9]{64}$/);
+ const incorrect=await h.sign(prepared.grantRequest,{policySha:'f'.repeat(64)});
+ const result=await gitlabWriter.gitlabBranchWrite({
+  mode:'submit',request,envelope:incorrect,db:h.db,config:h.config,api:p.api,transport:p.github});
+ assert.equal(result.status,'held');
+ assert.equal(result.reason,'grant-policy-mismatch');
+ assert.equal(h.claimCount,0);
+ assert.equal(p.posts,0);
+});
+
+test('twelve concurrent signed submit calls create at most one external branch POST',async()=>{
+ const h=await fixture(),p=remote(),request=input();
+ const prepared=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request});
+ const envelope=await h.sign(prepared.grantRequest);
+ const requests=Array.from({length:12},()=>gitlabWriter.gitlabBranchWrite({
+  mode:'submit',request,envelope,db:h.db,config:h.config,api:p.api,transport:p.github}));
+ const results=await Promise.all(requests);
+ assert.equal(p.posts,1,'concurrent retries must never multiply GitLab POSTs');
+ assert.equal(p.calls.filter(x=>x.method==='POST').length,1);
+ assert.ok(results.some(r=>r.status==='observed'),JSON.stringify(results));
+ assert.ok(results.every(r=>['observed','held','reconcile-required'].includes(r.status)));
+ const receipt=await gitlabWriter.gitlabBranchWrite({
+  mode:'reconcile',request,grantId:'test-provider-grant',db:h.db,api:p.api});
+ assert.equal(receipt.status,'observed');
+ assert.equal(receipt.evidence.sourceSha,SHA);
+ assert.equal(p.posts,1);
+});
+
+test('policy digest changes whenever immutable source, action key or stop fence changes',async()=>{
+ const base=input();
+ const cases=[
+  {...base,key:'otherbranch001'},
+  {...base,sourceSha:'b'.repeat(40)},
+  {...base,expectedProfileVersion:base.expectedProfileVersion+1},
+  {...base,expectedStopVersion:base.expectedStopVersion+1}
+ ];
+ const first=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request:base});
+ assert.match(first.grantRequest.policySha,/^[a-f0-9]{64}$/);
+ for(const request of cases){
+  const later=await gitlabWriter.gitlabBranchWrite({mode:'prepare',request});
+  assert.match(later.grantRequest.policySha,/^[a-f0-9]{64}$/);
+  assert.notEqual(later.grantRequest.policySha,first.grantRequest.policySha,
+   'policy hash must change with '+JSON.stringify(request));
+ }
+});
