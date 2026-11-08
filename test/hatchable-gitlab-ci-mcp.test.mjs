@@ -8,7 +8,9 @@ const projectId=87884831;
 const load=async()=>{
  const source=await readFile(new URL('../cloud/hatchable/mcp/ultron_gitlab_ci.js',import.meta.url),'utf8');
  const helper=new URL('../cloud/hatchable/lib/gitlab-ci-read.js',import.meta.url).href;
- const sourceWithImport=source.replace("'lib/gitlab-ci-read.js'",JSON.stringify(helper));
+ const sourceWithImport=source.replace("'lib/gitlab-ci-read.js'",JSON.stringify(helper))
+  .replace("import {api as sdkApi} from 'hatchable';",
+           "const sdkApi={call:(...args)=>globalThis.__ultronGitLabTestSdkApi?.call(...args)};");
  return (await import('data:text/javascript;base64,'+
   Buffer.from(sourceWithImport).toString('base64'))).default;
 };
@@ -82,4 +84,24 @@ test('GitLab SHA divergence is surfaced explicitly, not reported as verified',as
   assert.equal(value.parity,'diverged');
   assert.equal(value.acceptanceVerified,false);
  }finally{globalThis.fetch=old;}
+});
+
+test('MCP GitLab API broker works through the documented Hatchable SDK when ctx has no api',async()=>{
+ const {api,calls}=connected();
+ const previous=globalThis.__ultronGitLabTestSdkApi;
+ const oldFetch=globalThis.fetch;
+ globalThis.__ultronGitLabTestSdkApi=api;
+ globalThis.fetch=async()=>new Response(JSON.stringify({ref:'refs/heads/main',object:{sha}}),{status:200});
+ try {
+  const tool=await load();
+  const result=await tool.handler({},{});
+  assert.equal(result.ok,true,JSON.stringify(result));
+  assert.equal(result.readOnly,true);
+  assert.equal(result.parity,'exact-main-match');
+  assert.equal(calls.length,3);
+  assert.ok(calls.every(call=>call.method==='GET'));
+ }finally{
+  globalThis.__ultronGitLabTestSdkApi=previous;
+  globalThis.fetch=oldFetch;
+ }
 });
