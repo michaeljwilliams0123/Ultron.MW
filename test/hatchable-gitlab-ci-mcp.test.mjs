@@ -57,6 +57,10 @@ test('native GitLab MCP uses fixed read-only private project and exposes source 
   assert.ok(calls.every(x=>x.method==='GET'&&x.keys.join(',')==='method,path'));
   assert.ok(ghCalls.every(x=>x.method==='GET'&&x.url===
    'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/main'));
+  assert.equal((await tool.handler([], {api})).ok,true);
+  const before=calls.length;
+  assert.equal((await tool.handler(['unexpected'], {api})).reason,'invalid-arguments');
+  assert.equal(calls.length,before);
  }finally{globalThis.fetch=old;}
 });
 test('invalid MCP argument, missing OAuth connection and provider mismatches fail closed before effect',async()=>{

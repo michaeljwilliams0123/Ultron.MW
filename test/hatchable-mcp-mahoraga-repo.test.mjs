@@ -45,6 +45,10 @@ test('native OAuth MCP tool reads authenticated Mahoraga repository with real ad
   assert.equal(result.visibility,'private');
   assert.equal(calls.length,2);
   assert.ok(calls.every(c=>c.method==='GET'&&c.authProvided));
+  assert.equal((await tool.handler([], {config})).ok,true);
+  const before=calls.length;
+  assert.equal((await tool.handler(['unexpected'], {config})).reason,'invalid-arguments');
+  assert.equal(calls.length,before);
  }finally{globalThis.fetch=original;}
 });
 

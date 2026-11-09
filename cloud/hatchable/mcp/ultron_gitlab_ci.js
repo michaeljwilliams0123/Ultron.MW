@@ -11,7 +11,7 @@ export default {
  inputSchema:{type:'object',properties:{},additionalProperties:false},
  async handler(args,ctx){
   const schema='ultron.gitlab.ci-observation.v1';
-  if(!args||typeof args!=='object'||Array.isArray(args)||
+  if(!args||typeof args!=='object'||
     Object.keys(args).length!==0)
    return {schema,ok:false,status:'held',reason:'invalid-arguments'};
   // MCP ctx does not have to expose the external API broker. The
