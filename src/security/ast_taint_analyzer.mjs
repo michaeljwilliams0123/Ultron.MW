@@ -248,7 +248,7 @@ export function analyzePayloadAST(codeSnippet) {
           }
           case 'ExportNamedDeclaration': case 'ExportDefaultDeclaration':
             if (stmt.declaration) runStatements([stmt.declaration], env, returns, depth); break;
-          case 'FunctionDeclaration': break;
+          case 'FunctionDeclaration': case 'ImportDeclaration': break;
           default:
             // Unsupported control flow must not silently produce a safe verdict.
             unknown('Unsupported statement ' + stmt.type + ' at line ' + line);
