@@ -86,3 +86,14 @@ test('the analyzer never evaluates a payload', () => {
   assert.equal(result.status, 'no-known-flow');
   delete globalThis.__taintCanary;
 });
+
+test('flags direct eval even inside an unmodeled immediate closure', () => {
+  const result = scan('(() => { eval(req.body.code); })();');
+  assert.ok(result.flows.some(flow => flow.sink === 'eval'));
+});
+
+test('does not clear tainted computed function dispatch without arguments', () => {
+  const result = scan('handlers[req.body.action]()');
+  assert.equal(result.status, 'unknown');
+  assert.equal(result.isSafe, false);
+});
