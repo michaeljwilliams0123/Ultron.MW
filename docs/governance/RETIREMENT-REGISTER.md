@@ -36,3 +36,18 @@ Unknown consumers, stale docs, uncertain writes, missing runtime conformance or 
 - **Cross-cutting architecture governance:** #346 and this register.
 
 **Evidence quality:** User-provided Gemini blueprint is a useful proposal, but its claims of an inaccessible repository and astrophysics-related developer profile are not connected-Ultron facts. The 80–95% savings figure is also not a measured Ultron baseline. The official 2026 MCP protocol gives migration and backward-compatibility rules, not a blanket order to delete all sessions or software wrappers.
+
+## Addendum — administrative and browser execution inventory
+
+The [owner-admin/browser governance decision](OWNER-ADMIN-BROWSER-EXECUTION.md) reconciles the additional November 9 proposal against Ultron source. These are **KEEP / HARDEN**, not retirement orders:
+
+| Existing component | Decision | Required before any proposed replacement |
+| --- | --- | --- |
+| `.github/workflows/council-worker.yml`, `scripts/council-worker.mjs` | **KEEP** one bounded GitHub worker | Prove a replacement respects the Hatchable ledger, owner scope, environment handoff and no source-to-shell interpolation (#187/#204) |
+| `src/browser-action.mjs` | **KEEP** isolated DOM-only action path | A proposed authenticated multi-site path must preserve origin/egress controls and separately attest provider effects (#192) |
+| `src/browser-external-write.mjs` | **KEEP** internal service write canary | Do not conflate one validated Hatchable readback with arbitrary SaaS login/write capability (#192/#285) |
+| `docs/OWNER-SOLE-AUTHORITY.md`, existing owner P-256 grants | **KEEP** existing step-up authority | No arbitrary `humanApprovalSignature` presence check or second admin grant authorizer (#169/#225) |
+| New `admin-execution.yml`, `governance-gate.yml` proposed by external blueprint | **DEFER** competing dispatcher | Require proven capability gap, isolated design review and parity against one current executor; do not create merely to match a sample file tree (#169/#187) |
+| Proposed regex-only `taint_engine.ts` | **DEFER** as AST/IR replacement | Demonstrate measured parser/flow recall and false negatives; regex alone is not a taint engine (#349) |
+
+The snippet's suggested `BROWSER_STORAGE_STATE` serialized workflow secret and direct `github.event.inputs.payload_json` shell interpolation are **not** accepted as baseline patterns. Any real provider session requires expiry/revocation, redaction, tenant/origin binding and independent provider readback before promotion.
