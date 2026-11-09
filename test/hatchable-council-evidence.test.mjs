@@ -24,6 +24,9 @@ async function coreUnderTest(){
  const researchUrl='data:text/javascript;base64,'+Buffer.from(
   'export async function collectResearchIntake(){return {objective:"research.intake",source:"fixture"}};'
  ).toString('base64');
+ const githubReadUrl='data:text/javascript;base64,'+Buffer.from(await readFile(
+  new URL('../cloud/hatchable/lib/github-public-read.js',import.meta.url),'utf8'
+ )).toString('base64');
  const coreSource=await readFile(new URL('../cloud/hatchable/lib/brain-core.js',
   import.meta.url),'utf8');
  const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource.replace(
@@ -32,6 +35,7 @@ async function coreUnderTest(){
  ).replace("from 'lib/heldout-evidence.js'","from '"+heldoutUrl+"'"
  ).replace("from 'lib/council-room-core.js'","from '"+councilRoomUrl+"'"
  ).replace("from 'lib/research-intake.js'","from '"+researchUrl+"'"
+ ).replace("from 'lib/github-public-read.js'","from '"+githubReadUrl+"'"
  )).toString('base64');
  return import(coreUrl);
 }
