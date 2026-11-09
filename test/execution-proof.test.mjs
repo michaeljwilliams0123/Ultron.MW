@@ -13,6 +13,7 @@ test('browser DOM changes do not masquerade as externally persisted effects',()=
  assert.equal(classifyExecutionProof(p).state,'dom-verified-only');
  assert.equal(classifyExecutionProof({...p,domRereadMatches:false}).state,'unverified');
  assert.equal(classifyExecutionProof({...p,paidCents:1}).state,'held');
+ assert.equal(classifyExecutionProof({...p,paidCents:undefined}).state,'held');
 });
 test('external browser write requires owner authority and provider readback',()=>{
  const p={kind:'browser.external-write',paidCents:0,authorized:true,providerWriteConfirmed:true,independentReadback:true,providerReceiptId:'receipt-12345'};
