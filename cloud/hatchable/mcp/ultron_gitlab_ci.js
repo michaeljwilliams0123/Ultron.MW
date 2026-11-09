@@ -7,14 +7,14 @@ import {api as sdkApi} from 'hatchable';
 export const access='admin';
 export default {
  name:'ultron_gitlab_ci',
- description:'Read private Ultron GitLab mirror parity and latest successful verify/* pipeline metadata. Only fixed GET calls, owner access and no credential or execution authority.',
+ description:'Read private Ultron GitLab mirror parity and latest successful verification-branch pipeline metadata. Only fixed GET calls, owner access and no credential or execution authority.',
  inputSchema:{type:'object',properties:{},additionalProperties:false},
  async handler(args,ctx){
   const schema='ultron.gitlab.ci-observation.v1';
   if(!args||typeof args!=='object'||Array.isArray(args)||
     Object.keys(args).length!==0)
    return {schema,ok:false,status:'held',reason:'invalid-arguments'};
-  // MCP ctx does not have to expose the external API broker. Hatchable's
+  // MCP ctx does not have to expose the external API broker. The
   // documented module SDK import is the primary production integration;
   // context injection remains available to the source regression suite.
   const broker=typeof ctx?.api?.call==='function'?ctx.api:sdkApi;
