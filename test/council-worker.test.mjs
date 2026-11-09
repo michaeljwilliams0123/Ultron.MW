@@ -14,7 +14,11 @@ test('requests are validated: allowlisted op, role, sha, size',()=>{
   assert.throws(()=>parseWorkerRequest(base(bad)));
  assert.equal(parseWorkerRequest(base()).caseDigest,parseWorkerRequest(base()).caseDigest);
  assert.notEqual(parseWorkerRequest(base()).caseDigest,parseWorkerRequest(base({objectiveId:'obj-2'})).caseDigest);
- assert.ok(WORKER_OPS.every(o=>!/write|merge|delete|exec/.test(o)));
+ // Only the controlled owner-OIDC browser write may have an external effect.
+ assert.deepEqual(WORKER_OPS.filter(o=>/write|merge|delete|exec/.test(o)),
+  ['browser.external-write']);
+ assert.throws(()=>parseWorkerRequest(base({op:'browser.external-write',params:{
+  url:'https://github.com/',marker:'unsafe'}})),/browser-write-/);
 });
 
 test('browser egress is SSRF-safe',()=>{

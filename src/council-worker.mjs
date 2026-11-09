@@ -6,8 +6,9 @@
 import {createHash} from 'node:crypto';
 import {isIP} from 'node:net';
 import {parseBrowserAction,executeBrowserAction} from './browser-action.mjs';
+import {parseBrowserWritePlan} from './browser-external-write.mjs';
 
-export const WORKER_OPS=Object.freeze(['github.repo.inspect','github.ci.status','browser.check','browser.action','mahoraga.repo.inspect']);
+export const WORKER_OPS=Object.freeze(['github.repo.inspect','github.ci.status','browser.check','browser.action','browser.external-write','mahoraga.repo.inspect']);
 export const WORKER_TIMEOUT_MS=120000;
 export const WORKER_ROLES=Object.freeze(['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion']);
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -47,7 +48,8 @@ export function parseWorkerRequest(input,{allow=EGRESS_ALLOW}={}){
  if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>4000)throw Error('worker-params-invalid');
  if(issueNumber!==undefined&&(!Number.isSafeInteger(issueNumber)||issueNumber<1))throw Error('worker-issue-invalid');
  if(op==='browser.check'){checkEgressUrl(params.url,allow);}
- const browserPlan=op==='browser.action'?parseBrowserAction(params):null;
+ const browserPlan=op==='browser.action'?parseBrowserAction(params):
+  op==='browser.external-write'?parseBrowserWritePlan(params,sourceSha,objectiveId):null;
  if(op==='github.ci.status'&&!SHA40.test(params.sha||sourceSha))throw Error('worker-sha-invalid');
  return Object.freeze({objectiveId,op,role,sourceSha,params:Object.freeze({...params}),issueNumber,
   caseDigest:sha256('council-worker/1\n'+objectiveId+(browserPlan?JSON.stringify(browserPlan):''))});
@@ -112,6 +114,18 @@ export async function runWorkerOperation(req,deps,{timeoutMs=WORKER_TIMEOUT_MS}=
       {method:'isolated-browser-postcondition-double-read',ok:observed.ok},
       observed.ok?undefined:'browser-postcondition-unverified');
    })(),timeoutMs,'browser');
+   case 'browser.external-write':return await withTimeout((async()=>{
+    if(!deps.browser?.externalWrite)
+     return finish('unconfigured',null,{ok:false},'browser-external-write-unavailable');
+    const plan=parseBrowserWritePlan(req.params,req.sourceSha,req.objectiveId);
+    const observed=await deps.browser.externalWrite(plan);
+    const ok=observed?.ok===true&&observed.externalWriteVerified===true&&
+      Number.isSafeInteger(observed.receiptId)&&observed.receiptId>0;
+    return finish(ok?'verified':'failed',observed,
+      {method:'owner-oidc-postgresql-independent-readback',ok,
+       externalWriteVerified:ok,receiptId:ok?observed.receiptId:null},
+      ok?undefined:(observed?.reason||'external-effect-unverified'));
+   })(),timeoutMs,'browser-external');
    case 'mahoraga.repo.inspect':return await withTimeout((async()=>{
     if(!deps.mahoragaRepo||!deps.mahoragaGithub)
      return finish('unconfigured',null,{ok:false},'mahoraga-repository-or-token-not-configured');
@@ -129,8 +143,16 @@ export async function runWorkerOperation(req,deps,{timeoutMs=WORKER_TIMEOUT_MS}=
 /** Map a worker result onto the ledger's action-result contract. Only a
  * verified result is `done`; the worker is never an independent identity. */
 export function toLedgerResult(result){
+ if(result.op==='browser.external-write'&&
+   (result.status!=='verified'||result.verification?.externalWriteVerified!==true||
+    result.observed?.externalWriteVerified!==true))
+  return {op:result.op,status:'failed',reason:'browser-write-external-effect-not-verified',result};
  if(result.status==='verified')return{op:result.op,status:'done',
-  effect:{executor:'github-actions[bot]',url:'worker:'+result.objectiveId},result};
+  effect:{executor:'github-actions[bot]',url:'worker:'+result.objectiveId,
+   ...(result.op==='browser.external-write'?{
+    externalWriteVerified:true,receiptId:result.observed.receiptId,
+    verifiedActor:result.observed.actor,sourceSha:result.observed.sourceSha
+   }:{})},result};
  return{op:result.op,status:result.status==='unconfigured'?'unconfigured':'failed',
   reason:result.reason||result.status,result};
 }

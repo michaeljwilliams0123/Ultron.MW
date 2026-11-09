@@ -6,6 +6,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {parseWorkerRequest,runWorkerOperation,toLedgerResult,sha256,assertWorkerSourceSha} from '../src/council-worker.mjs';
 import {unwrapBrowserIssue} from '../src/browser-action.mjs';
+import {unwrapBrowserWriteIssue,executeBrowserExternalWrite} from '../src/browser-external-write.mjs';
 import {createLedgerClient,runLedgeredAction} from '../src/council-ledger-client.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -16,13 +17,19 @@ if(process.env.GITHUB_EVENT_NAME==='issues'){
   if(process.env.GITHUB_REPOSITORY!=='michaeljwilliams0123/Ultron.MW'||
     process.env.GITHUB_ACTOR!=='michaeljwilliams0123'||
     event?.action!=='opened'||event.issue?.user?.login!=='michaeljwilliams0123'||
-    event.issue?.title!=='[Ultron Worker] Browser execution'||
     event.issue?.state!=='open')
     throw Error('browser-issue-authority-denied');
-  input=unwrapBrowserIssue(event.issue.body,event.issue.number);
+  if(event.issue.title==='[Ultron Worker] Browser execution')
+    input=unwrapBrowserIssue(event.issue.body,event.issue.number);
+  else if(event.issue.title==='[Ultron Worker] Browser external acceptance')
+    input=unwrapBrowserWriteIssue(event.issue.body,event.issue.number);
+  else throw Error('browser-issue-title-denied');
 }else input=process.env.WORKER_REQUEST||readFileSync('council-worker-request.json','utf8');
 const req=parseWorkerRequest(input);
 assertWorkerSourceSha(req,process.env.GITHUB_SHA);
+if(req.op==='browser.external-write'&&
+   (process.env.GITHUB_EVENT_NAME!=='issues'||!Number.isSafeInteger(req.issueNumber)))
+  throw Error('browser-write-owner-issue-required');
 
 const requestUrl=process.env.ACTIONS_ID_TOKEN_REQUEST_URL,requestToken=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 if(!requestUrl||!requestToken)throw Error('github-oidc-unavailable');
@@ -53,7 +60,7 @@ if(process.env.MAHORAGA_REPOSITORY&&process.env.MAHORAGA_READ_TOKEN){
   deps.mahoragaRepo=process.env.MAHORAGA_REPOSITORY;
   deps.mahoragaGithub=gh(process.env.MAHORAGA_READ_TOKEN);
 }
-if(req.op==='browser.check'||req.op==='browser.action'){
+if(req.op==='browser.check'||req.op==='browser.action'||req.op==='browser.external-write'){
   try{
     const {chromium}=await import('playwright');
     deps.browser={
@@ -100,6 +107,74 @@ if(req.op==='browser.check'||req.op==='browser.action'){
             close:async()=>browser.close()
           };
         }catch(error){await browser.close();throw error;}
+      },
+      async externalWrite(plan){
+        const origin='https://ultron-mw-cloud.hatchable.site';
+        const endpoint=origin+'/api/brain/browser-write-acceptance';
+        return executeBrowserExternalWrite(plan,{
+          perform:async p=>{
+            const live=await chromium.launch();
+            let submits=0;
+            try{
+              const context=await live.newContext({
+                acceptDownloads:false,serviceWorkers:'block',permissions:[]});
+              await context.route('**/*',async route=>{
+                const request=route.request();
+                let u;
+                try{u=new URL(request.url());}catch{return route.abort();}
+                if(u.protocol!=='https:'||u.origin!==origin||u.port||
+                   u.username||u.password)return route.abort();
+                if(u.pathname==='/api/brain/browser-write-acceptance'){
+                  if(request.method()!=='POST'||submits!==0)
+                    return route.abort();
+                  const body=request.postData();
+                  let parsed;
+                  try{parsed=JSON.parse(body);}catch{return route.abort();}
+                  if(parsed.schema!=='ultron.browser-write.v1'||parsed.phase!=='submit'||
+                     parsed.objectiveId!==p.objectiveId||
+                     parsed.sourceSha!==p.sourceSha||parsed.marker!==p.marker||
+                     parsed.issueNumber!==req.issueNumber)return route.abort();
+                  submits++;
+                  const token=await oidcFor(body);
+                  return route.continue({headers:{
+                    ...request.headers(),authorization:'Bearer '+token}});
+                }
+                return route.continue();
+              });
+              const url=new URL(p.url);
+              url.search=new URLSearchParams({
+                objectiveId:p.objectiveId,sourceSha:p.sourceSha,
+                issueNumber:String(req.issueNumber)}).toString();
+              const page=await context.newPage();
+              page.on('popup',popup=>{popup.close().catch(()=>{});});
+              const response=await page.goto(url.toString(),{
+                timeout:30000,waitUntil:'domcontentloaded'});
+              if(!response||response.status()!==200)
+                throw Error('browser-write-page-unavailable');
+              const before=await page.locator('#result').innerText();
+              await page.locator('#work-input').fill(p.marker);
+              await page.locator('#run-task').click();
+              await page.waitForFunction(marker=>
+                document.getElementById('result')?.textContent==='Persisted: '+marker,
+                p.marker,{timeout:20000});
+              const domText=await page.locator('#result').innerText();
+              return {domChanged:domText!==before,domText,
+                origin:new URL(page.url()).origin};
+            }finally{await live.close();}
+          },
+          readback:async p=>{
+            const body=JSON.stringify({
+              schema:'ultron.browser-write.v1',phase:'readback',
+              objectiveId:p.objectiveId,sourceSha:p.sourceSha,
+              marker:p.marker,issueNumber:req.issueNumber});
+            const response=await fetch(endpoint,{
+              method:'POST',signal:AbortSignal.timeout(15000),
+              headers:{authorization:'Bearer '+await oidcFor(body),
+                'content-type':'application/json'},body});
+            if(!response.ok)throw Error('browser-write-readback-http-'+response.status);
+            return response.json();
+          }
+        });
       }
     };
   }catch{/* missing Playwright -> explicitly unconfigured */}

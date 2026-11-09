@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<title>Ultron — authenticated external browser acceptance</title>
+<style>:root{color-scheme:dark;font:16px system-ui}body{background:#0c1527;color:#e5efff;max-width:650px;margin:3rem auto;padding:1rem}section{border:1px solid #475973;border-radius:1rem;padding:1.5rem}input,button{font:inherit;padding:.6rem;margin:.5rem 0;border-radius:.4rem}input{background:#15253e;color:white;border:1px solid #526783}button{background:#95bdff;color:#101b30;border:0}#result{padding:1rem;background:#263952}</style>
+</head><body><main><section>
+<h1>Ultron — authenticated cloud browser write</h1>
+<p>This acceptance task requires an owner-triggered GitHub Actions OIDC identity. A browser DOM change alone is not completion; a separate authenticated PostgreSQL readback is required.</p>
+<label for="work-input">Harmless marker</label><input id="work-input" maxlength="80" autocomplete="off">
+<button type="button" id="run-task">Persist one approved effect</button>
+<p id="result" role="status" aria-live="polite">Not executed</p>
+</section></main>
+<script>
+'use strict';
+const input=document.getElementById('work-input'),result=document.getElementById('result');
+document.getElementById('run-task').addEventListener('click',async()=>{
+ const query=new URLSearchParams(location.search);
+ const objectiveId=query.get('objectiveId'),sourceSha=query.get('sourceSha'),
+ issueNumber=Number(query.get('issueNumber')),marker=input.value.trim();
+ if(!/^[A-Za-z0-9._:-]{10,80}$/.test(objectiveId||'')||
+    !/^[a-f0-9]{40}$/.test(sourceSha||'')||
+    !Number.isSafeInteger(issueNumber)||issueNumber<1||
+    !/^[A-Za-z][A-Za-z0-9_-]{3,79}$/.test(marker)){
+  result.textContent='Invalid approved objective';return;
+ }
+ result.textContent='Submitting authenticated write';
+ const payload=JSON.stringify({schema:'ultron.browser-write.v1',phase:'submit',
+   objectiveId,sourceSha,marker,issueNumber});
+ try{
+  const response=await fetch('/api/brain/browser-write-acceptance',{
+   method:'POST',credentials:'omit',cache:'no-store',
+   headers:{'content-type':'application/json'},body:payload});
+  const receipt=await response.json();
+  result.textContent=response.ok&&receipt.ok&&
+    Number.isSafeInteger(receipt.receiptId)&&receipt.receiptId>0?
+    'Persisted: '+marker:'Write denied or reconciliation needed';
+ }catch{result.textContent='Write uncertain; independent readback required';}
+});
+</script></body></html>
