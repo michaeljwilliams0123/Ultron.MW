@@ -78,6 +78,10 @@ test('worker request identity changes with action payload to prevent stale actio
   steps:[{kind:'click',selector:'#run-task'}]}});
  assert.notEqual(a.caseDigest,b.caseDigest);
  assert.equal(parseWorkerRequest(request()).caseDigest,a.caseDigest);
+ const rearranged={...request(),params:{expect:{contains:'Applied: Ultron-E2E-001',selector:'#result'},
+  steps:[{selector:'#work-input',value:'Ultron-E2E-001',kind:'fill'},
+   {selector:'#run-task',kind:'click'}],url:URL}};
+ assert.equal(parseWorkerRequest(rearranged).caseDigest,a.caseDigest);
 });
 
 test('only owner issue format can activate browser.action and preserves issue receipt',()=>{
