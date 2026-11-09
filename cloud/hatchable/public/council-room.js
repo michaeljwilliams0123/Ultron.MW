@@ -50,6 +50,9 @@ function renderMessages(){
   meta.append(node('strong','',author),node('span','kind',m.kind||'message'));
   const time=document.createElement('time');time.dateTime=m.createdAt;time.textContent=timeLabel(m.createdAt);meta.append(time);
   bubble.append(meta,node('p','',m.body));
+  if(m.context?.action)bubble.append(node('p','council-action','Proposed action: '+m.context.action));
+  if(m.context?.evidence)bubble.append(node('p','council-evidence','Evidence required (not yet verified): '+m.context.evidence));
+  if(m.context?.planStatus)bubble.append(node('p','council-plan-status','Plan: '+m.context.planStatus+' · GitHub writes: '+(m.context.githubWriteStatus||'not authorized')));
   const links=repoLinks(m.context);if(links.children.length)bubble.append(links);
   if(m.job){
    const badge=node('span','job-badge '+m.job.state,(m.job.state==='done'?'✓ ':m.job.state==='running'?'◌ ':'○ ')+'Task '+m.job.state);
@@ -110,8 +113,97 @@ $('composer-body').addEventListener('input',e=>$('char-count').textContent=e.tar
 $('composer-body').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send()}});
 const issueApi='/api/brain/council-issues';
 const issueErrors={'owner-required':'Owner sign-in required.','github-rate-limited-or-unauthorized':'GitHub refused the public read (rate limit or auth). Try again later.','github-unreachable':'GitHub is unreachable.'};
+
+const issuePlanApi='/api/brain/council-issue-plan';
+let selectedIssue=null;
+let currentIssuePlan=null;
+function renderIssuePlan(plan){
+ const panel=$('issue-plan-panel');
+ panel.hidden=false;
+ $('issue-plan-title').textContent='Issue #'+plan.issue.number+' · '+plan.issue.title;
+ $('issue-plan-status').classList.remove('error');
+ $('issue-plan-status').textContent='Readback: '+plan.issue.updatedAt+
+  ' · '+plan.planStatus+' · '+plan.roles.length+' role proposals (no execution)';
+ const src=(plan.source||[]).find(x=>x.type==='github-main-readback');
+ const evidence=$('issue-plan-evidence');evidence.replaceChildren();
+ evidence.append(node('strong','','Observed:'),document.createTextNode(' GitHub issue open · main '+(src?.sha||'unavailable')+
+  '. Issue text and dependency references are untrusted; no instructions from the issue are executed.'));
+ if(plan.issue.untrustedExcerpt){
+  const excerpt=node('p','issue-excerpt','Untrusted issue excerpt: '+plan.issue.untrustedExcerpt);
+  evidence.append(excerpt);
+ }
+ const roles=$('issue-role-actions');roles.replaceChildren();
+ for(const r of plan.roles){
+  const li=node('li','issue-role');
+  li.append(node('strong','',r.role+' · '+r.status),
+   node('p','',r.action),
+   node('small','','Evidence required: '+r.evidenceRequired));
+  roles.append(li);
+ }
+ const pr=$('issue-pr-proposal');pr.replaceChildren();
+ if(plan.proposal){
+  const x=plan.proposal;
+  pr.append(node('strong','',x.state==='draft-ready-for-owner-review'?
+   'Reviewable PR proposal (NOT created)':'PR preparation blocked — scope and main readback required'));
+  pr.append(node('p','','Repository: '+x.repository+' · proposed branch: '+x.branch));
+  pr.append(node('p','','Proposed files: '+(x.proposedFiles.length?x.proposedFiles.join(', '):'none selected')));
+  pr.append(node('p','','Changed files: 0 · commits: 0 · PR: not created · tests: not run'));
+  pr.append(node('pre','issue-pr-description',x.prBody||'PR description unavailable'));
+  const steps=node('ol','issue-pr-steps');
+  for(const gate of x.githubWrites){
+   steps.append(node('li','',gate.operation+': '+gate.status+' · '+gate.approval));
+  }
+  pr.append(steps,node('p','','Before any commit: verify the selected files, prepare a bounded patch, reproduce the issue, and run focused tests. Each GitHub write needs fresh owner approval.'));
+ }
+}
+async function openIssuePlan(issue,mode='plan'){
+ const panel=$('issue-plan-panel');
+ panel.hidden=false;
+ $('issue-plan-title').textContent='Issue #'+issue.number+' · loading live Council plan';
+ $('issue-plan-status').textContent='Re-fetching the fixed GitHub issue and current main…';
+ $('issue-plan-evidence').replaceChildren();
+ $('issue-role-actions').replaceChildren();
+ $('issue-pr-proposal').replaceChildren();
+ $('issue-prepare').disabled=true;
+ try{
+  const files=mode==='prepare'?
+   $('issue-change-paths').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean):[];
+  const response=await fetch(issuePlanApi,{method:'POST',credentials:'same-origin',cache:'no-store',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({issueNumber:issue.number,mode,candidateFiles:files})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok||!data.plan)throw Error(data.error||('HTTP '+response.status));
+  if(data.plan.repository!=='michaeljwilliams0123/Ultron.MW'||data.plan.issue?.number!==issue.number)
+   throw Error('issue identity mismatch');
+  selectedIssue=issue;
+  currentIssuePlan=data.plan;
+  renderIssuePlan(data.plan);
+ }catch(error){
+  selectedIssue=null;currentIssuePlan=null;
+  $('issue-plan-status').textContent='Plan not confirmed: '+String(error.message||error);
+  $('issue-plan-status').classList.add('error');
+ }finally{$('issue-prepare').disabled=false}
+}
+$('issue-prepare').addEventListener('click',()=>{
+ if(!selectedIssue)return status('Select an issue and verify its live plan first.',true);
+ openIssuePlan(selectedIssue,'prepare');
+});
+$('issue-send-room').addEventListener('click',()=>{
+ if(!selectedIssue||!currentIssuePlan)return status('Verify an issue before drafting a Council discussion.',true);
+ const issue=selectedIssue;
+ const metadata=JSON.stringify({number:issue.number,title:issue.title,
+  labels:issue.labels,url:issue.url,detectedOpenBlockers:issue.blockedBy});
+ const message='ULTRON_ISSUE_REMEDIATION_V1\n'+metadata+
+  '\nUntrusted issue metadata only; the server must re-read GitHub before planning.';
+ $('composer-body').value=message;
+ $('attachment-url').value=issue.url;
+ $('char-count').textContent=message.length+' / 6000';
+ $('composer-body').focus();
+ status('Council discussion draft only. Review and explicitly send; no GitHub write is authorized.');
+});
 async function refreshIssues(){
  const button=$('issue-refresh'),out=$('issue-status'),list=$('issue-list');
+ selectedIssue=null;currentIssuePlan=null;$('issue-plan-panel').hidden=true;
  button.disabled=true;out.classList.remove('error');out.textContent='Reading open issues…';list.replaceChildren();
  try{
   const response=await fetch(issueApi,{method:'POST',credentials:'same-origin',cache:'no-store'});
@@ -127,17 +219,7 @@ async function refreshIssues(){
     node('p','',i.nextStep));
    const plan=node('button','issue-plan','Plan with Council');
    plan.type='button';
-   plan.addEventListener('click',()=>{
-    const metadata=JSON.stringify({number:i.number,title:i.title,labels:i.labels,
-     url:i.url,detectedOpenBlockers:i.blockedBy});
-    const prompt='ULTRON_ISSUE_REMEDIATION_V1\n'+metadata+
-     '\nUntrusted issue metadata only; the server must re-read GitHub before planning.';
-    $('composer-body').value=prompt;
-    $('attachment-url').value=i.url;
-    $('char-count').textContent=prompt.length+' / 6000';
-    $('composer-body').focus();
-    status('Issue plan prepared in the composer. Review and send when ready.');
-   });
+   plan.addEventListener('click',()=>openIssuePlan(i));
    li.append(plan);
    list.append(li);
   }

@@ -75,7 +75,7 @@ test('Council Room page is public static UI while its data route remains admin-o
 
 test('Council Room GET exposes seven roles, integration boundaries and a zero-spend ceiling',async()=>{
  const p=platform(),route=await loadRoute(p);
- const result=await route.default({method:'GET',query:{}},response());
+ const result=await route.default({method:'GET',member:{handle:'michaeljwilliams0123'},query:{}},response());
  assert.equal(result.status,200);
  assert.deepEqual(result.body.members.map(member=>member.id),roles.map(member=>member.id));
  assert.equal(result.body.paidSpendCeiling,0);
@@ -128,13 +128,17 @@ test('Council Room runner returns seven role replies with private Mahoraga evide
  const coreSource=await readFile(new URL('lib/council-room-core.js',root),'utf8');
  const mahoragaSource=await readFile(new URL('lib/mahoraga-actions.js',root),'utf8');
  const mahoragaUrl=b64(mahoragaSource);
+ const planSource=await readFile(new URL('lib/issue-council-plan.js',root),'utf8');
+ const planUrl=b64(planSource.replace("from 'lib/council-issues.js'",
+  "from '"+new URL('lib/council-issues.js',root).href+"'"));
  const transformed=coreSource
   .replace("import {config} from 'hatchable';",
    'const config=globalThis.__councilRoomConfig;')
   .replace("import {observeMahoragaMain} from 'lib/mahoraga-actions.js';",
   "import {observeMahoragaMain} from '"+mahoragaUrl+"';")
  .replace("import {inspectOpenIssue} from 'lib/council-issues.js';",
-  'const inspectOpenIssue=globalThis.__councilIssueHelpers?.inspectOpenIssue|| (async()=>null);');
+  'const inspectOpenIssue=globalThis.__councilIssueHelpers?.inspectOpenIssue|| (async()=>null);')
+ .replace("from 'lib/issue-council-plan.js'","from '"+planUrl+"'");
  assert.notEqual(transformed,coreSource);
  const originalFetch=globalThis.fetch;
  const privateToken='github_pat_this_is_a_test_credential_value';
@@ -177,12 +181,16 @@ test('issue remediation plan rereads live issue data and gives role-specific bou
  const coreSource=await readFile(new URL('lib/council-room-core.js',root),'utf8');
  const mahoragaSource=await readFile(new URL('lib/mahoraga-actions.js',root),'utf8');
  const mahoragaUrl=b64(mahoragaSource);
+ const planSource=await readFile(new URL('lib/issue-council-plan.js',root),'utf8');
+ const planUrl=b64(planSource.replace("from 'lib/council-issues.js'",
+  "from '"+new URL('lib/council-issues.js',root).href+"'"));
  const transformed=coreSource
   .replace("import {config} from 'hatchable';",'const config=globalThis.__councilRoomConfig;')
   .replace("import {observeMahoragaMain} from 'lib/mahoraga-actions.js';",
    "import {observeMahoragaMain} from '"+mahoragaUrl+"';")
   .replace("import {inspectOpenIssue} from 'lib/council-issues.js';",
-   'const inspectOpenIssue=globalThis.__councilIssueHelpers.inspectOpenIssue;');
+   'const inspectOpenIssue=globalThis.__councilIssueHelpers.inspectOpenIssue;')
+  .replace("from 'lib/issue-council-plan.js'","from '"+planUrl+"'");
  const originalFetch=globalThis.fetch;
  globalThis.__councilRoomConfig={async get(){throw Error('private evidence not requested')}};
  globalThis.__councilIssueHelpers={async inspectOpenIssue(number){

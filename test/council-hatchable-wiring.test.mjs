@@ -94,6 +94,18 @@ test('C04 production readiness accepts all six deployed Council capabilities',()
  assert.equal(result.releaseApproved,false);
 });
 
+test('Council readiness accepts the actual current Brain capability inventory',async()=>{
+ const source=readFileSync(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8');
+ const withoutImports=source.replace(/^import[\s\S]*?;\n/gm,'');
+ const brain=await import('data:text/javascript;base64,'+
+  Buffer.from(withoutImports).toString('base64'));
+ const result=assessCouncilWiring({tables:COUNCIL_TABLES,
+  runtimeCapabilities:brain.CAPABILITIES});
+ assert.deepEqual(result.capabilities.filter(c=>c.status==='runtime-registered').map(c=>c.id),
+  brain.CAPABILITIES.map(c=>c.id));
+ assert.equal(result.readyForProduction,false);
+});
+
 test('C04 cloud readiness imports the current deployed Brain capability inventory',()=>{
  const src=readFileSync(new URL('../cloud/hatchable/api/brain/council-readiness.js',import.meta.url),'utf8');
  assert.match(src,/CAPABILITIES/);
