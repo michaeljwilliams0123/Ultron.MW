@@ -1,6 +1,8 @@
 name: Council worker
 # Phase 2: short-lived GitHub-hosted execution worker. Hatchable stays the brain/ledger.
 on:
+  issues:
+    types: [opened]
   workflow_dispatch:
     inputs:
       request:
@@ -19,7 +21,12 @@ jobs:
     if: >-
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
-      github.ref == 'refs/heads/main'
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issues' &&
+        github.event.issue.user.login == 'michaeljwilliams0123' &&
+        github.event.issue.title == '[Ultron Worker] Browser execution' &&
+        startsWith(github.event.issue.body, 'ULTRON_BROWSER_ACTION_V1')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -32,7 +39,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install Playwright for browser objectives
-        if: contains(inputs.request, 'browser.check') || contains(inputs.request, 'browser.action')
+        if: contains(inputs.request, 'browser.check') || contains(inputs.request, 'browser.action') || (github.event_name == 'issues' && github.event.issue.title == '[Ultron Worker] Browser execution')
         run: |
           npm install --no-save --ignore-scripts --no-audit --no-fund playwright@1.65.0
           npx playwright install --with-deps chromium
@@ -43,7 +50,8 @@ jobs:
           node --check scripts/council-worker.mjs
       - name: Execute objective with ledger, timeout and post-action verification
         env:
-          WORKER_REQUEST: ${{ inputs.request }}
+          WORKER_REQUEST: ${{ inputs.request || github.event.issue.body }}
+          WORKER_ISSUE_NUMBER: ${{ github.event.issue.number || '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAHORAGA_REPOSITORY: ${{ vars.MAHORAGA_REPOSITORY }}
           MAHORAGA_READ_TOKEN: ${{ secrets.MAHORAGA_READ_TOKEN }}
