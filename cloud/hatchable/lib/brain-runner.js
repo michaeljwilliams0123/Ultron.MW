@@ -167,11 +167,29 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
     SELECT id,'council-case-admitted',
       jsonb_build_object('origin','council.room')
     FROM council_review_tasks RETURNING task_id
+  ), research_new AS (
+    INSERT INTO brain_research_observations
+      (repository,version,pinned_version,source_url,published_at,priority,first_task_id)
+    SELECT item.value->>'repository',item.value->>'version',
+      item.value->>'pinnedVersion',item.value->>'sourceUrl',
+      (item.value->>'publishedAt')::timestamptz,
+      (item.value->>'priority')::integer,moved.id
+    FROM moved CROSS JOIN LATERAL jsonb_array_elements(
+      COALESCE($1::jsonb->'observations','[]'::jsonb)) AS item
+    WHERE moved.objective='research.intake'
+      AND item.value->>'status'='candidate'
+    ON CONFLICT (repository,version,pinned_version) DO NOTHING
+    RETURNING repository,version,pinned_version,source_url,first_task_id
+  ), research_observation_receipts AS (
+    INSERT INTO brain_events(task_id,event_type,details)
+    SELECT first_task_id,'research-opportunity-observed',
+      jsonb_build_object('repository',repository,'version',version,
+       'sourceUrl',source_url,'paidCents',0)
+    FROM research_new RETURNING task_id
   ), research_review_tasks AS (
     INSERT INTO brain_tasks(task_key,objective)
-    SELECT 'research-review:' || moved.id::text,'council.review'
-    FROM moved WHERE moved.objective='research.intake'
-      AND COALESCE(($1::jsonb->>'actionableCount')::integer,0)>0
+    SELECT DISTINCT 'research-review:' || first_task_id::text,'council.review'
+    FROM research_new
     ON CONFLICT(task_key) DO NOTHING RETURNING id
   ), research_review_events AS (
     INSERT INTO brain_events(task_id,event_type,details)
