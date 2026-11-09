@@ -5,8 +5,9 @@
  */
 import {createHash} from 'node:crypto';
 import {isIP} from 'node:net';
+import {parseBrowserAction,executeBrowserAction} from './browser-action.mjs';
 
-export const WORKER_OPS=Object.freeze(['github.repo.inspect','github.ci.status','browser.check','mahoraga.repo.inspect']);
+export const WORKER_OPS=Object.freeze(['github.repo.inspect','github.ci.status','browser.check','browser.action','mahoraga.repo.inspect']);
 export const WORKER_TIMEOUT_MS=120000;
 export const WORKER_ROLES=Object.freeze(['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion']);
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -46,9 +47,10 @@ export function parseWorkerRequest(input,{allow=EGRESS_ALLOW}={}){
  if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>4000)throw Error('worker-params-invalid');
  if(issueNumber!==undefined&&(!Number.isSafeInteger(issueNumber)||issueNumber<1))throw Error('worker-issue-invalid');
  if(op==='browser.check'){checkEgressUrl(params.url,allow);}
+ if(op==='browser.action'){parseBrowserAction(params);}
  if(op==='github.ci.status'&&!SHA40.test(params.sha||sourceSha))throw Error('worker-sha-invalid');
  return Object.freeze({objectiveId,op,role,sourceSha,params:Object.freeze({...params}),issueNumber,
-  caseDigest:sha256('council-worker/1\n'+objectiveId)});
+  caseDigest:sha256('council-worker/1\n'+objectiveId+(op==='browser.action'?JSON.stringify(params):''))});
 }
 
 function withTimeout(promise,ms,label){
@@ -95,6 +97,14 @@ export async function runWorkerOperation(req,deps,{timeoutMs=WORKER_TIMEOUT_MS}=
     const ok=page.status>=200&&page.status<400&&textOk;
     return finish(ok?'verified':'failed',{url,status:page.status,title:page.title,
      screenshotSha256:page.screenshotSha256},{method:'http-status+expected-text',ok,expectText:expect});
+   })(),timeoutMs,'browser');
+   case 'browser.action':return await withTimeout((async()=>{
+    if(!deps.browser?.open)return finish('unconfigured',null,{ok:false},'browser-action-adapter-unavailable');
+    const plan=parseBrowserAction(req.params);
+    const observed=await executeBrowserAction(plan,deps.browser);
+    return finish(observed.ok?'verified':'failed',observed,
+      {method:'isolated-browser-postcondition-double-read',ok:observed.ok},
+      observed.ok?undefined:'browser-postcondition-unverified');
    })(),timeoutMs,'browser');
    case 'mahoraga.repo.inspect':return await withTimeout((async()=>{
     if(!deps.mahoragaRepo||!deps.mahoragaGithub)
