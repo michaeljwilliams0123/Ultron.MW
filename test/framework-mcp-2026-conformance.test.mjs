@@ -16,7 +16,7 @@ const handler=()=>createMcpHandler({
   kind:'mcp',name:'gov-mcp',operations:['status','ci'],
 },{githubGet});
 const request=(id,method,params={})=>({jsonrpc:'2.0',id,method,
-  params:{...params,_meta:meta}});
+  params:{_meta:meta,...params}});
 
 test('modern server/discover accepts spec-shaped params._meta',async()=>{
   const response=await handler()(request(1,'server/discover'));
