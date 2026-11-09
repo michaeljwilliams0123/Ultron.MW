@@ -1,3 +1,4 @@
+import {createVerify} from 'node:crypto';
 // Delegated owner-authority verifier. The sole repository owner controls the
 // signing key; workers hold ONLY the pinned public verification key.
 // This module cannot mint credentials, grant itself privileges, or change policy.
@@ -6,7 +7,8 @@ const OPERATIONS=new Set([
  'repo.inspect','repo.issue.create','repo.verify.dispatch','repo.pr.review',
  'repo.pr.squash','repo.branch.update','cloud.deploy','permissions.change',
  'webhook.configure','cloud.note.create','mcp.queue.submit','mcp.task.control',
- 'graph.workbook.cell.write','github.issue.write','gitlab.branch.create'
+ 'graph.workbook.cell.write','github.issue.write','gitlab.branch.create',
+ 'owner.passkey.enroll'
 ]);
 const GRANT_SCHEMA='ultron.security-grant.v1';
 const ISSUER='ultron-owner-authority';
@@ -34,6 +36,29 @@ function decodeSignature(encoded){
  if(raw.length!==64)refuse('invalid-grant-signature');
  return Uint8Array.from(raw,x=>x.charCodeAt(0));
 }
+function keyFromJwk(jwk){
+ const dec=v=>{
+  if(typeof v!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(v))refuse('invalid-adjudicator-public-key');
+  return Uint8Array.from(atob(v.replace(/-/g,'+').replace(/_/g,'/')+'='),c=>c.charCodeAt(0));
+ };
+ const x=dec(jwk.x),y=dec(jwk.y);
+ const prefix='3059301306072a8648ce3d020106082a8648ce3d03010703420004';
+ const raw=new Uint8Array(91);
+ raw.set(Uint8Array.from(prefix.match(/../g).map(h=>parseInt(h,16))));
+ raw.set(x,27);raw.set(y,59);
+ const base64=btoa(String.fromCharCode(...raw));
+ return '-----BEGIN PUBLIC KEY-----\n'+base64.match(/.{1,64}/g).join('\n')+
+  '\n-----END PUBLIC KEY-----';
+}
+function rawEcdsaToDer(raw){
+ const component=bytes=>{
+  let i=0;while(i<bytes.length-1&&bytes[i]===0)i++;
+  const value=bytes.slice(i);
+  return value[0]&0x80?Uint8Array.from([0,...value]):value;
+ };
+ const r=component(raw.slice(0,32)),s=component(raw.slice(32));
+ return Uint8Array.from([0x30,4+r.length+s.length,2,r.length,...r,2,s.length,...s]);
+}
 export async function verifyDelegatedGrant({
  envelope,publicJwk,request,now=new Date().toISOString(),
  subtle=globalThis.crypto?.subtle
@@ -43,12 +68,11 @@ export async function verifyDelegatedGrant({
  if(!envelope||typeof envelope.payload!=='string'||envelope.payload.length>4096||
     !envelope.payload.length)refuse('invalid-grant-payload');
  const signature=decodeSignature(envelope.signature);
- let key,ok=false;
+ let ok=false;
  try{
-  key=await subtle.importKey('jwk',publicJwk,{name:'ECDSA',namedCurve:'P-256'},
-   false,['verify']);
-  ok=await subtle.verify({name:'ECDSA',hash:'SHA-256'},key,signature,
-   new TextEncoder().encode(envelope.payload));
+  const v=createVerify('SHA256');
+  v.update(new TextEncoder().encode(envelope.payload));v.end();
+  ok=v.verify(keyFromJwk(publicJwk),rawEcdsaToDer(signature));
  }catch{refuse('invalid-grant-signature');}
  if(!ok)refuse('invalid-grant-signature');
  let grant;

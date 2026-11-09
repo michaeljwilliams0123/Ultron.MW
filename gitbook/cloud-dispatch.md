@@ -7,7 +7,7 @@ description: "Cloud-first owner-controlled execution, release states, and passke
 
 Ultron's primary owner console is [Hatchable](https://ultron-mw-cloud.hatchable.site). GitHub [Ultron.MW](https://github.com/michaeljwilliams0123/Ultron.MW) is the authoritative source and required CI system. Private GitLab project 87884831 is a separately authenticated integration and source mirror; this handbook is Git-synced from the GitHub `gitbook/` directory.
 
-At the November 9, 2026 deployment checkpoint, Hatchable v65 exposes 32 active functions, an authenticated owner session, and a durable hourly cloud task lifecycle. The current canonical GitHub and GitLab main SHA is `d94b0962d82a2f7d93c8124e5f19d3f6925a9e36`. A real owner-authorized internal cloud decision was persisted as note 13 and event receipt 1731. That internal receipt does not prove an external GitLab write.
+At the November 9, 2026 initial checkpoint, Hatchable v66 exposes 32 active functions, an authenticated owner session, and a durable hourly cloud task lifecycle. The initial canonical GitHub and GitLab main SHA was `f03d5e8c2dea3be7d9e9b33d96b4317f8d74ccf5`. This is a historical baseline: always re-read the live SHA after each release. A real owner-authorized internal cloud decision was persisted as note 13 and event receipt 1731. That internal receipt does not prove an external GitLab write.
 
 ## Bounded external action pathway
 
@@ -24,6 +24,14 @@ A configured OAuth connection, authenticated login, green CI, or advisory counci
 [PR #327](https://github.com/michaeljwilliams0123/Ultron.MW/pull/327) introduces the pure ES256 WebAuthn assertion verifier and schema-only registered-passkey and one-use-challenge tables. This is an inert prerequisite, **not** a live passkey enrollment or execution implementation. It does not modify owner operation permissions, profile version, stop version, credentials, or payment settings.
 
 Before passkey execution can be activated, implement an owner-signed initial registration, validate credential registration attestation/public-key binding, use the exact prepared policy/challenge with verified origin, RP, user verification and expiration, atomically consume a one-shot challenge under current owner profile and stop fence, and then reuse the existing provider claim/readback engine. Keep the signed-envelope recovery path available.
+
+## Owner passkey enrollment and GitLab execution (release candidate)
+
+The integrated owner page is `/passkey-owner.html`. Enrollment prepares a short-lived request; the owner signs it *once* using the existing private P-256 key outside the hosted service. Submit only the signed envelope. The platform authenticator then creates a WebAuthn ES256 passkey, which cannot be enrolled without the original signed authorization. Source migration 0034 corrects pre-existing PostgreSQL long-regex constraints and adds the one-time owner enrollment capability with an explicit profile version increment.
+
+After enrollment, the owner selects the exact main SHA and an action key, prepares one challenge for the private GitLab project, and confirms through `navigator.credentials.get`. The passkey assertion binds the requested operation, target hash, policy SHA, profile/stop versions and expiry; one database statement consumes the challenge with the original provider claim. If the provider response is ambiguous, only the existing read-only reconciliation path is permitted. Passkey enrollment and a live GitLab write must each be observed before this pathway is labeled production-accepted.
+
+The owner's private key never belongs in Hatchable. Passkey registration and browser prompts require genuine owner interaction; an authenticated administrator session by itself does not constitute a valid signed grant or passkey ceremony.
 
 ## Release and recovery
 

@@ -47,6 +47,12 @@ test('owner-signed capability authorizes one exact worker/objective/operation/re
   expiresAt:base.expiresAt,administrativeChange:false
  });
  assert.equal('privateKey' in result,false);
+ // Hatchable V8 can hash, but cannot import asymmetric WebCrypto keys.
+ const pair=await keyPair();
+ const isolateVerified=await verifyDelegatedGrant({envelope:await signed(),
+  publicJwk:await subtle.exportKey('jwk',pair.publicKey),request,
+  now:'2026-10-25T10:05:00.000Z',subtle:{digest:subtle.digest.bind(subtle)}});
+ assert.equal(isolateVerified.grantId,base.grantId);
 });
 test('editing signed grant details after issuance fails cryptographic verification',async()=>{
  const pair=await keyPair(),envelope=await signed();

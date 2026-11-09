@@ -41,7 +41,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 <link rel="stylesheet" href="./hf-lab.css">
 </head>
 <body>
-<nav class="unified-nav" aria-label="Primary Ultron workspace"><a href="/workspace.html">Workspace · Brain / Learning / Systems</a><a href="/" aria-current="page">Cloud controls</a><a href="/council-room.html">Council room</a></nav>
+<nav class="unified-nav" aria-label="Primary Ultron workspace"><a href="/workspace.html">Workspace · Brain / Learning / Systems</a><a href="/" aria-current="page">Cloud controls</a><a href="/council-room.html">Council room</a><a href="/passkey-owner.html">Owner passkeys</a></nav>
 <main class="shell">
 <section class="connectivity" aria-labelledby="connection-heading">
  <div class="connectivity-titlebar">
@@ -230,7 +230,7 @@ limits:{maxFiles:12,maxFileBytes:24000,maxTotalBytes:96000,maxConcurrent:4,maxSt
 release:{operations:['research.public','repo.inspect','plan.create','test.local','evidence.read','branch.create','branch.update','pr.open','pr.comment','verify.dispatch','capability.sandbox.propose','capability.sandbox.test','cloud.note.create','pr.squash.merge','deploy.reversible'],
 limits:{maxFiles:24,maxFileBytes:36000,maxTotalBytes:192000,maxConcurrent:4,maxSteps:48}}
 };
-const all=modes.release.operations;
+const all=[...modes.release.operations,'owner.passkey.enroll'];
 const ids=['preset','maxFiles','maxConcurrent','maxSteps','reason'];
 const el=id=>document.getElementById(id);
 let profile=null;

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Ultron.MW — owner passkeys</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}
+*{box-sizing:border-box}body{background:#0c1425;color:#e6f0ff;margin:0}
+main{max-width:900px;margin:auto;padding:30px 18px 70px}
+a{color:#aac9ff}.muted{color:#bac8db;line-height:1.6}
+section{border:1px solid #34465e;border-radius:13px;background:#13223a;margin:21px 0;padding:20px}
+label{display:block;margin:12px 0 5px;color:#c2d4ee;font-size:14px}
+input,textarea,select{width:100%;border:1px solid #587498;background:#182a45;color:#f2f7ff;border-radius:8px;padding:11px;font:inherit}
+textarea{min-height:90px;font:12px ui-monospace,monospace}
+button{padding:11px 15px;margin:12px 8px 0 0;border:0;border-radius:8px;background:#90b5ff;color:#081626;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.status{padding:13px;border-radius:9px;background:#1d3351;color:#d7e7ff;overflow-wrap:anywhere}
+header{display:flex;justify-content:space-between;gap:20px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<main>
+<header><div><p class="muted">ULTRON CLOUD / OWNER AUTHORITY</p><h1>Passkey execution</h1></div><a href="/">Back to Command Center</a></header>
+<p class="muted">One-time owner-signed enrollment, then a device passkey authorizes exact GitLab branch operations. Everything executes in Hatchable cloud. Your passkey private key stays inside your authenticator. The existing owner-signing private key must never be uploaded here.</p>
+<section>
+<h2>1. Register your passkey</h2>
+<p class="muted">Initial enrollment requires an existing owner-signed P-256 grant. This establishes that the new credential belongs to the owner rather than merely someone with an authenticated browser session.</p>
+<label for="label">Device label</label><input id="label" value="My owner passkey" maxlength="64" autocomplete="off">
+<label for="enroll-key">Enrollment key</label><input id="enroll-key" readonly>
+<button id="enroll-prepare">Prepare owner enrollment</button>
+<button id="enroll-copy" disabled>Copy signing request</button>
+<label for="signable">Exact grant request (read-only)</label><textarea id="signable" readonly></textarea>
+<p class="muted">Sign this request with your existing owner-controlled key using <code>node scripts/owner-grant.mjs sign PRIVATE_JWK REQUEST_JSON</code> on a trusted device. Paste only the resulting JSON envelope—not the private key—below. This bootstrap step is needed only for registering a new device.</p>
+<label for="envelope">Owner-signed grant envelope</label><textarea id="envelope" autocomplete="off" spellcheck="false" placeholder='{"payload":"...","signature":"..."}'></textarea>
+<button id="enroll-finish" disabled>Create passkey on this device</button>
+<p class="status" id="enroll-status" role="status" aria-live="polite">Checking owner session…</p>
+</section>
+<section>
+<h2>2. Execute an owner-authorized GitLab branch</h2>
+<p class="muted">A hardware- or platform-protected passkey assertion authorizes one exact branch. The cloud backend enforces current owner profile/stop versions, the zero-paid-spend limit, and independent GitLab readback. One ambiguous POST is reconciled, never retried.</p>
+<label for="credential">Registered passkey</label><select id="credential"></select>
+<button id="refresh">Refresh enrolled keys</button>
+<label for="source-sha">Exact GitHub/GitLab source SHA (40 lowercase hexadecimal characters)</label><input id="source-sha" maxlength="40" autocomplete="off" spellcheck="false">
+<label for="action-key">Action idempotency key</label><input id="action-key" readonly>
+<button id="action-prepare">Prepare one branch</button>
+<button id="action-submit" disabled>Authorize with passkey and create branch</button>
+<button id="action-reconcile" disabled>Read back existing attempt</button>
+<p class="status" id="action-status" role="status" aria-live="polite">No external write prepared.</p>
+</section>
+<p class="muted">Only the private GitLab project 87884831 is in scope. No signing key, OAuth token or passkey secret is transmitted by these browser actions. A browser session or a successful test alone does not imply a production provider effect.</p>
+</main>
+<script src="./owner-passkeys.js" defer></script>
+</body>
+</html>

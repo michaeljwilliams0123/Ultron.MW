@@ -1,6 +1,6 @@
 # Cloud-first owner passkey dispatch — staged security foundation
 
-Status: **source-only prerequisite**. No passkey enrollment, WebAuthn assertion exchange, or GitLab write via passkey is deployed or authorized by this change.
+Status: **release candidate**. The registration and passkey-authorized GitLab branch pathways are implemented and tested in source. Do not claim a real enrolled owner credential or external provider effect until the owner completes WebAuthn enrollment and the GitLab branch is read back in production.
 
 ## Authority and objective
 
@@ -14,14 +14,15 @@ Current production GitLab branch creation still uses `/api/brain/gitlab-branch` 
 - Migration `0033_owner_passkey_authority.sql`: passkey registry and one-use, TTL-bounded operation-specific challenges. It changes **no owner profile, allowed operation, stop counter, grant, or existing production behavior**.
 - Negative assertion tests and a PGlite migration/idempotence test.
 
-## Integration work still required before enabling
+## Owner deployment and first-device acceptance
 
-1. Owner-authenticated registration challenge endpoint; verify WebAuthn registration attestation and binding to the registered public key, credential ID, RP ID, origin and fresh challenge. Registration must consume a distinct short-lived owner-issued signed grant with the current profile/stop versions and must never silently trust a client-provided SPKI key.
-2. Browser `navigator.credentials.create` and `navigator.credentials.get` UI: the credential remains in platform authenticator, with no private signing material exported.
-3. Bind an assertion challenge to the exact server-prepared `gitlab.branch.create` grant request: idempotency key, target GitLab project, source SHA, immutable policy SHA, profile/stop versions, expiry, and zero paid spend.
-4. Verify the assertion and atomically consume the challenge with the **existing** provider claim; enforce replay protection, signature counter behavior, concurrent requests and stop/pause races. Never create a second GitLab POST path.
-5. Run focused invalid-origin/RP, wrong-credential, replay, expiry, duplicate-action, stop/profile, lost-ack, and postcondition tests before shipping owner enrollment and a single authorized live GitLab canary.
-6. Only after exact-head CI, protected squash merge, Hatchable dry run, migration readback, owner passkey enrollment and GitLab branch readback should operational acceptance be declared.
+1. Merge the source after exact-head CI and deploy the matching `cloud/hatchable` files to the existing Hatchable app. Migration 0034 corrects the v66 PostgreSQL credential regex constraints and opts in to `owner.passkey.enroll` with a one-time owner profile-version increment.
+2. Visit `/passkey-owner.html` while signed into the Hatchable owner account. Select a device label and click **Prepare owner enrollment**. Copy the exact signable request.
+3. On a trusted device where the existing owner's private JWK resides, save the request as JSON and run `node scripts/owner-grant.mjs sign ABSOLUTE_PRIVATE_JWK ABSOLUTE_REQUEST_JSON`. Do not upload or paste the private key into any website, issue, action log, or cloud environment. Paste only the short-lived signed envelope into the owner UI.
+4. Click **Create passkey on this device**; approve the native browser/platform authenticator prompt. The registration verifies origin, RP, challenge, UV, ES256 COSE public key and the existing signed owner grant; one database transaction consumes the session, registers the key and persists the grant receipt.
+5. Select the registered passkey, exact GitHub/GitLab `main` SHA and a durable action key. Click **Prepare one branch**, then **Authorize with passkey and create branch**. The browser's `navigator.credentials.get` ceremony signs the operation-bound challenge; a one-shot claim shares the existing provider write/readback engine.
+6. Confirm the GitLab branch at that exact source SHA, the owner's cloud provider-write receipt and zero additional paid spend. If a submit returns an uncertain result, click **Read back existing attempt** only; never submit a second provider mutation for the same key. Use the existing signed-envelope route as a recovery path.
+7. No production acceptance is claimed until the owner has physically completed the passkey prompt and the external GitLab branch and durable receipt both match. Profile-version changes invalidate grants prepared against the prior profile, by design.
 
 ## Release boundaries
 
