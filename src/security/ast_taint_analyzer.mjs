@@ -52,6 +52,8 @@ export function analyzePayloadAST(codeSnippet) {
   const unknowns = [];
   const reported = new Set();
   const functions = new Map();
+  const lexicalSinks = [];
+  const callbacks = [];
   const imports = new Map();
   const moduleNames = new Set(['child_process']);
   let nodes = 0;
@@ -91,6 +93,15 @@ export function analyzePayloadAST(codeSnippet) {
       }
     }
     visit(ast.program, node => {
+      if (['CallExpression', 'NewExpression', 'OptionalCallExpression'].includes(node.type)) {
+        if (['eval', 'Function', 'globalThis.eval', 'globalThis.Function', 'window.eval', 'window.Function'].includes(memberName(node.callee)))
+          lexicalSinks.push({ sink: memberName(node.callee), node });
+        if (node.arguments?.some(arg => ['ArrowFunctionExpression', 'FunctionExpression'].includes(arg?.type)))
+          callbacks.push(node.loc?.start?.line || 1);
+      }
+      if (['MemberExpression', 'OptionalMemberExpression'].includes(node.type) &&
+        ['document.cookie', 'window.document.cookie'].includes(memberName(node)))
+        lexicalSinks.push({ sink: 'document.cookie', node });
       if (node.type === 'FunctionDeclaration' && node.id?.name) functions.set(node.id.name, node);
       if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' &&
         ['ArrowFunctionExpression', 'FunctionExpression'].includes(node.init?.type)) functions.set(node.id.name, node.init);
@@ -115,6 +126,8 @@ export function analyzePayloadAST(codeSnippet) {
       }
     };
     const unknown = msg => { if (!unknowns.includes(msg)) unknowns.push(msg); };
+    for (const hit of lexicalSinks) mark(hit.sink, hit.node, new Set(), true);
+    if (callbacks.length) unknown('Callback analysis incomplete at lines ' + [...new Set(callbacks)].join(','));
     const isExec = name => EXEC_METHODS.has(imports.get(name)) ||
       [...moduleNames].some(mod => name?.startsWith(mod + '.') && EXEC_METHODS.has(name.slice(mod.length + 1))) ||
       /^require\(['"](?:node:)?child_process['"]\)\.(?:exec|execSync|spawn|spawnSync|execFile|execFileSync)$/.test(name || '');
@@ -162,7 +175,7 @@ export function analyzePayloadAST(codeSnippet) {
           if (node.callee?.type === 'Identifier' && env.has('$sink:' + name)) {
             mark(name, node, all, true);
           }
-          if (!name && all.size) unknown('Unresolved dynamic call at line ' + (node.loc?.start?.line || 1));
+          if (!name && union(all, next(node.callee)).size) unknown('Unresolved dynamic call at line ' + (node.loc?.start?.line || 1));
           // Unknown function results may preserve taint; absence of a finding is not a policy approval.
           return all;
         }
