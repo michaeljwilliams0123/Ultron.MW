@@ -20,6 +20,8 @@
 - New tool wrappers must declare schema, identity, resource fence, effects, cost, error modes, limits and readback. Native Hatchable MCP transport must be independently probed; `[mcp] enabled = true` alone does not prove remote-version compatibility.
 - A2A is an **optional interoperability boundary for independently deployed agents** (e.g., Mahoraga or authorized external peer), not a mandatory replacement for the internal Council or a means to share credentials. Require authenticated AgentCards, version/capability negotiation, bounded delegate authority, correlation IDs, idempotency, timeout/recovery and independent peer evidence. See #190.
 
+See the [MCP source-versus-live conformance matrix](MCP-CONFORMANCE-MATRIX.md) for observed and unresolved compatibility evidence under #348.
+
 **Primary references:**
 - https://blog.modelcontextprotocol.io/posts/2026-07-28/
 - https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/changelog.mdx
