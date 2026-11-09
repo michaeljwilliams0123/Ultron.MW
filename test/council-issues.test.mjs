@@ -85,7 +85,9 @@ test('room exposes an explicit admin POST-only refresh action',async()=>{
  assert.match(ui,/Plan with Council/);
  assert.match(ui,/ULTRON_ISSUE_REMEDIATION_V1/);
  assert.match(ui,/server must re-read GitHub/);
- assert.match(ui,/Review and send when ready/);
+ assert.match(ui,/Review and explicitly send/);
+ assert.match(ui,/\/api\/brain\/council-issue-plan/);
+ assert.match(html,/id="issue-plan-panel"/);
  assert.match(ui,/attachment-url/);
  assert.ok(html.indexOf('id="issue-card"')<html.indexOf('id="composer-body"'));
  assert.ok(html.indexOf('id="issue-refresh"')<html.indexOf('id="composer-body"'),

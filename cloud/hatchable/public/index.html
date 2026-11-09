@@ -48,7 +48,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   <div>
    <div class="connectivity-overline">ULTRON.MW / CONNECTIVITY</div>
    <h2 id="connection-heading">Mission Control</h2>
-   <p class="small">One view of the hosted brain, GitHub source, CI and durable objectives. Every result identifies what was actually observed.</p>
+   <p class="small">One view of the hosted brain, GitHub source, CI, Council wiring and durable objectives. Every result identifies what was actually observed.</p>
   </div>
   <div class="connectivity-controls">
    <button type="button" id="connection-refresh">Refresh connections</button>
@@ -62,6 +62,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   <article class="connection-tile" id="connection-runtime" data-state="warning"><div class="connection-label">Hatchable / PostgreSQL</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking runtime state…</div></article>
   <article class="connection-tile" id="connection-github" data-state="warning"><div class="connection-label">GitHub main</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking source revision…</div></article>
   <article class="connection-tile" id="connection-ci" data-state="warning"><div class="connection-label">GitHub Actions</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking current-main workflow…</div></article>
+  <article class="connection-tile" id="connection-council" data-state="warning"><div class="connection-label">Council wiring / GitHub Apps</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking owner-only wiring evidence…</div></article>
   <article class="connection-tile" id="connection-queue" data-state="warning"><div class="connection-label">Durable objectives</div><div class="connection-value">Unverified</div><div class="connection-detail">Checking task state…</div></article>
  </div>
  <div class="connection-lower">
@@ -367,6 +368,7 @@ refresh();
 </script>
 <script src="/__hatchable/events.js" defer></script>
 <script src="./connectivity.js" defer></script>
+<script src="./council-readiness.js" defer></script>
 <script src="./owner-session.js" defer></script>
 <script src="./owner-live.js" defer></script>
 <script src="./hf-lab.js" defer></script>

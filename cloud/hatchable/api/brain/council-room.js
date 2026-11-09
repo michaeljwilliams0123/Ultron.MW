@@ -47,7 +47,10 @@ function flatten(rows){
      authorType:'member',authorId:m.id,authorRole:m.role,
      kind:m.kind||'inference',body:String(m.body||'').slice(0,1200),
      mentions:[],context:{taskId:row.task_id,source:result.source,
-      observedRepositories:result.observedRepositories||[]},
+      observedRepositories:result.observedRepositories||[],
+     ...(m.action?{action:m.action,evidence:m.evidence,
+      evidenceStatus:m.evidenceStatus,executionStatus:m.executionStatus,
+      issueUrl:result.issuePlan?.issue?.url}: {})},
      createdAt:result.at||row.task_updated_at,job:null
     });
    }
@@ -58,7 +61,10 @@ function flatten(rows){
     mentions:[],context:{taskId:row.task_id,paidCents:result.paidCents||0,
      githubAdapter:result.githubAdapter,cloudflareRole:result.cloudflareRole,
      executionState:row.execution_state||'not_requested',
-     externalUrl:row.external_url||null},
+     externalUrl:row.external_url||null,
+     planStatus:result.planStatus||null,
+     githubWriteStatus:result.githubWriteStatus||null,
+     issueUrl:result.issuePlan?.issue?.url||null},
     createdAt:result.at||row.task_updated_at,job:null
    });
   }
@@ -145,7 +151,7 @@ async function post(res,req){
 }
 
 export default async function(req,res){
- if(req.member?.handle&&req.member.handle!=='michaeljwilliams0123')
+ if(req.member?.handle!=='michaeljwilliams0123')
   return reply(res,403,{ok:false,error:'owner-required'});
  if(req.method==='GET')return snapshot(res,req);
  if(req.method==='POST')return post(res,req);
