@@ -3,16 +3,20 @@ import {notifyOwner} from 'lib/owner-live-events.js';
 export const access='scheduler';
 export const methods=['POST'];
 export default async function(req,res){
- const hour=new Date().toISOString().slice(0,13).replace(/[^0-9]/g,'');
+ const now=new Date();
+ const hour=now.toISOString().slice(0,13).replace(/[^0-9]/g,'');
+ // One durable admission per 6-hour UTC slot. If the boundary tick is late
+ // or missed, the next hourly tick still admits that slot exactly once.
+ const researchSlot=now.toISOString().slice(0,10).replace(/[^0-9]/g,'')+'-'+Math.floor(now.getUTCHours()/6);
  const admitted=await db.query(`WITH admitted AS (
    INSERT INTO brain_tasks(task_key,objective)
-   VALUES($1,'repo.inspect'),($2,'council.review')
+   VALUES($1,'repo.inspect'),($2,'council.review'),($3,'research.intake')
    ON CONFLICT(task_key) DO NOTHING RETURNING id,objective
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type,details)
    SELECT id,'scheduled-hourly',jsonb_build_object('objective',objective)
    FROM admitted RETURNING task_id
- ) SELECT id,objective FROM admitted`,['hourly-'+hour,'council-hourly-'+hour]);
+ ) SELECT id,objective FROM admitted`,['hourly-'+hour,'council-hourly-'+hour,'research-slot-'+researchSlot]);
  // A scheduled tick has a short fire budget. Queue only: browser renders and
  // bounded multi-task processing belong to /api/brain/run, never this tick.
  // Continue once through the existing scheduler endpoint, without recursion.

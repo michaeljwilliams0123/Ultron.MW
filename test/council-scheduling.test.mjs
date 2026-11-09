@@ -44,7 +44,7 @@ test('C04 hourly admission is idempotent across repeated scheduler calls',async(
    ctx.calls.push({sql,params});
    if(sql.includes("scheduled-hourly")){
     ctx.ticks++;
-    return {rows:ctx.ticks===1?[{id:301,objective:'repo.inspect'},{id:302,objective:'council.review'}]:[]};
+    return {rows:ctx.ticks===1?[{id:301,objective:'repo.inspect'},{id:302,objective:'council.review'},{id:303,objective:'research.intake'}]:[]};
    }
    return {rows:[{n:0}]};
   }},
@@ -56,14 +56,15 @@ test('C04 hourly admission is idempotent across repeated scheduler calls',async(
   const endpoint=await import(url);
   const first=await endpoint.default({}, {json:value=>value});
   const second=await endpoint.default({}, {json:value=>value});
-  assert.equal(first.scheduled_count,2);
+  assert.equal(first.scheduled_count,3);
   assert.equal(second.scheduled_count,0);
   assert.equal(ctx.notifications,1);
   const calls=ctx.calls.filter(x=>x.sql.includes("scheduled-hourly"));
   assert.equal(calls.length,2);
-  assert.equal(calls[0].params.length,2);
+  assert.equal(calls[0].params.length,3);
   assert.match(calls[0].params[0],/^hourly-\d{10}$/);
   assert.match(calls[0].params[1],/^council-hourly-\d{10}$/);
+  assert.match(calls[0].params[2],/^research-slot-\d{8}-[0-3]$/);
   assert.equal(calls[0].params[0].slice('hourly-'.length),
    calls[0].params[1].slice('council-hourly-'.length));
  }finally{

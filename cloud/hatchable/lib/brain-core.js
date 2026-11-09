@@ -4,6 +4,7 @@ import {
 import { verifyPersistedAcceptanceEvidence } from 'lib/acceptance-evidence.js';
 import { verifyPersistedHeldOutEvidence } from 'lib/heldout-evidence.js';
 import { buildCouncilRoomResult } from 'lib/council-room-core.js';
+import { collectResearchIntake } from 'lib/research-intake.js';
 
 const REPO = 'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const SITE = 'https://michaeljwilliams0123.github.io/Ultron.MW/';
@@ -17,7 +18,8 @@ export const CAPABILITIES = [
  {id:'repo.ci',kind:'github-native',effect:'read',description:'Observe up to twelve recent Actions runs'},
  {id:'site.render',kind:'browser-native',effect:'read',description:'Render public GitHub Pages with managed Chromium'},
  {id:'council.review',kind:'brain-native',effect:'advisory',description:'Review recent verified receipts and propose next inspection'},
- {id:'council.room',kind:'brain-native',effect:'advisory',description:'Answer an owner message through the persistent seven-member council room'}
+ {id:'council.room',kind:'brain-native',effect:'advisory',description:'Answer an owner message through the persistent seven-member council room'},
+ {id:'research.intake',kind:'github-public-primary',effect:'read',description:'Read six bounded upstream releases and prioritize a zero-cost review'}
 ];
 export const ALLOWED = new Set(CAPABILITIES.map(x=>x.id));
 async function github(path){
@@ -92,6 +94,9 @@ export async function executeObjective(objective, {db,browser,task={}}){
     has_app_shell:rendered.includes('<body'),has_ultron:rendered.includes('ultron'),
     runtime_source_sha:marker};
   });
+ }
+ if(objective==='research.intake'){
+  return sourceBound(async()=>collectResearchIntake());
  }
  if(objective==='council.room'){
   const row=(await db.query(`SELECT m.id,m.body,m.mentions,m.context,m.created_at

@@ -21,6 +21,9 @@ async function coreUnderTest(){
  const councilRoomUrl='data:text/javascript;base64,'+Buffer.from(
   "export async function buildCouncilRoomResult(){return {objective:'council.room',members:[]};}"
  ).toString('base64');
+ const researchUrl='data:text/javascript;base64,'+Buffer.from(
+  'export async function collectResearchIntake(){return {objective:"research.intake",source:"fixture"}};'
+ ).toString('base64');
  const coreSource=await readFile(new URL('../cloud/hatchable/lib/brain-core.js',
   import.meta.url),'utf8');
  const coreUrl='data:text/javascript;base64,'+Buffer.from(coreSource.replace(
@@ -28,6 +31,7 @@ async function coreUnderTest(){
  ).replace("from 'lib/acceptance-evidence.js'","from '"+acceptanceUrl+"'"
  ).replace("from 'lib/heldout-evidence.js'","from '"+heldoutUrl+"'"
  ).replace("from 'lib/council-room-core.js'","from '"+councilRoomUrl+"'"
+ ).replace("from 'lib/research-intake.js'","from '"+researchUrl+"'"
  )).toString('base64');
  return import(coreUrl);
 }

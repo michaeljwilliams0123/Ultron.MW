@@ -62,7 +62,7 @@ async function harness(t,{maxAttempts=3}={}){
  });
  for(const name of ['0001_tasks.sql','0002_events.sql','0007_cooperative_fencing.sql',
   '0010_runtime_stop.sql','0016_owner_autonomy_profile.sql',
-  '0027_council_case_memory.sql']){
+  '0027_council_case_memory.sql','0035_research_observations.sql']){
   await sql(await readFile(new URL('../cloud/hatchable/migrations/'+name,import.meta.url),'utf8'));
  }
  await sql("INSERT INTO brain_tasks(task_key,objective,max_attempts) VALUES "+
