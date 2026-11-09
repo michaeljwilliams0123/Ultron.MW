@@ -10,11 +10,18 @@ import {createLedgerClient,runLedgeredAction} from '../src/council-ledger-client
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const LEDGER='https://ultron-mw-cloud.hatchable.site/api/brain/council-ledger';
-const raw=process.env.WORKER_REQUEST||readFileSync('council-worker-request.json','utf8');
-const issueNumber=Number(process.env.WORKER_ISSUE_NUMBER||0);
-const request=process.env.GITHUB_EVENT_NAME==='issues'?
-  unwrapBrowserIssue(raw,issueNumber):raw;
-const req=parseWorkerRequest(request);
+let input;
+if(process.env.GITHUB_EVENT_NAME==='issues'){
+  const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
+  if(process.env.GITHUB_REPOSITORY!=='michaeljwilliams0123/Ultron.MW'||
+    process.env.GITHUB_ACTOR!=='michaeljwilliams0123'||
+    event?.action!=='opened'||event.issue?.user?.login!=='michaeljwilliams0123'||
+    event.issue?.title!=='[Ultron Worker] Browser execution'||
+    event.issue?.state!=='open')
+    throw Error('browser-issue-authority-denied');
+  input=unwrapBrowserIssue(event.issue.body,event.issue.number);
+}else input=process.env.WORKER_REQUEST||readFileSync('council-worker-request.json','utf8');
+const req=parseWorkerRequest(input);
 
 const requestUrl=process.env.ACTIONS_ID_TOKEN_REQUEST_URL,requestToken=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 if(!requestUrl||!requestToken)throw Error('github-oidc-unavailable');
