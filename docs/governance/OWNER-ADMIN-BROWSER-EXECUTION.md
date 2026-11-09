@@ -17,7 +17,7 @@ This addendum reconciles the user-supplied November 9 write/admin MCP + Playwrig
 
 ### What the user blueprint gets right
 
-New remote MCP requests in protocol `2026-07-28` carry self-describing version/client metadata inside `params._meta`. GitHub administration generally requires an identity with the actual provider-supported granular permissions rather than simply expanding the default workflow `GITHUB_TOKEN`. Short-lived installation tokens and fail-closed worker admission are appropriate **after** owner, installation, operation and scope are verified. Real browser login/session state is distinct from MCP transport state. See the [MCP conformance matrix](MCP-CONFORMANCE-MATRIX.md) in PR #350 and official references below.
+New remote MCP requests in protocol `2026-07-28` carry self-describing version/client metadata inside `params._meta`. GitHub administration generally requires an identity with the actual provider-supported granular permissions rather than simply expanding the default workflow `GITHUB_TOKEN`. Short-lived installation tokens and fail-closed worker admission are appropriate **after** owner, installation, operation and scope are verified. Real browser login/session state is distinct from MCP transport state. See the [MCP conformance matrix proposed in PR #350](https://github.com/michaeljwilliams0123/Ultron.MW/pull/350) in PR #350 and official references below.
 
 ## 2. Do NOT copy the example workflow or runner verbatim
 
