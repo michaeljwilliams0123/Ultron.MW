@@ -12,6 +12,8 @@ test('C04 hourly tick durably admits one repository observation and one $0 advis
  assert.match(tick,/ON CONFLICT\(task_key\) DO NOTHING/);
  assert.match(tick,/council-hourly-/);
  assert.match(tick,/scheduled-hourly/);
+ assert.match(tick,/x-hatchable-trigger/);
+ assert.match(tick,/'trigger',\$4::text,'admittedAt',\$5::text/);
  assert.match(tick,/mode:'dispatch-only'/);
  assert.doesNotMatch(tick,/executeObjective\(/);
 });
@@ -56,17 +58,20 @@ test('C04 hourly admission is idempotent across repeated scheduler calls',async(
  try{
   const url='data:text/javascript;base64,'+Buffer.from(transformed).toString('base64');
   const endpoint=await import(url);
-  const first=await endpoint.default({}, {json:value=>value});
-  const second=await endpoint.default({}, {json:value=>value});
+  const request={headers:{'x-hatchable-trigger':'cron'}};
+  const first=await endpoint.default(request, {json:value=>value});
+  const second=await endpoint.default(request, {json:value=>value});
   assert.equal(first.scheduled_count,3);
   assert.equal(second.scheduled_count,0);
   assert.equal(ctx.notifications,1);
   const calls=ctx.calls.filter(x=>x.sql.includes("scheduled-hourly"));
   assert.equal(calls.length,2);
-  assert.equal(calls[0].params.length,3);
+  assert.equal(calls[0].params.length,5);
   assert.match(calls[0].params[0],/^hourly-\d{10}$/);
   assert.match(calls[0].params[1],/^council-hourly-\d{10}$/);
   assert.match(calls[0].params[2],/^research-slot-\d{8}-[0-3]$/);
+  assert.equal(calls[0].params[3],'cron');
+  assert.match(calls[0].params[4],/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.equal(calls[0].params[0].slice('hourly-'.length),
    calls[0].params[1].slice('council-hourly-'.length));
  }finally{
