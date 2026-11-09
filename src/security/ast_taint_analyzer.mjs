@@ -49,6 +49,7 @@ export function analyzePayloadAST(codeSnippet) {
   const flows = [];
   const edges = [];
   const callGraph = [];
+  const activeCalls = [];
   const unknowns = [];
   const reported = new Set();
   const functions = new Map();
@@ -168,8 +169,8 @@ export function analyzePayloadAST(codeSnippet) {
           if (['document.write', 'document.writeln'].includes(name)) mark(name, node, all);
           if (name && functions.has(name)) {
             if (depth > MAX_CALL_DEPTH) { unknown('Call depth exceeded for ' + name); return all; }
-            if (callGraph.length < MAX_IR_EDGES) callGraph.push({ callee: name, line: node.loc?.start?.line || 1 });
-            return executeFunction(functions.get(name), args, env, depth + 1);
+            if (callGraph.length < MAX_IR_EDGES) callGraph.push({ caller: activeCalls.at(-1) || '<module>', callee: name, line: node.loc?.start?.line || 1 });
+            return executeFunction(functions.get(name), args, env, depth + 1, name);
           }
           if (node.callee?.type === 'Identifier' && env.has('$sink:' + name)) {
             mark(name, node, all, true);
@@ -203,8 +204,10 @@ export function analyzePayloadAST(codeSnippet) {
         default: return new Set();
       }
     }
-    function executeFunction(fn, args, closureEnv, depth) {
+    function executeFunction(fn, args, closureEnv, depth, name = '<anonymous>') {
       if (depth > MAX_CALL_DEPTH) { unknown('Interprocedural call budget exceeded'); return union(...args); }
+      activeCalls.push(name);
+      try {
       const scope = clone(closureEnv);
       (fn.params || []).forEach((p, i) => bind(p, args[i] || new Set(), scope, edges, fn.loc?.start?.line || 1));
       const returns = [];
@@ -212,6 +215,7 @@ export function analyzePayloadAST(codeSnippet) {
       if (body) runStatements(body, scope, returns, depth);
       else returns.push(evaluate(fn.body, scope, depth));
       return union(...returns);
+      } finally { activeCalls.pop(); }
     }
     function runStatements(statements, env, returns, depth = 0) {
       for (const stmt of statements || []) {
@@ -270,7 +274,7 @@ export function analyzePayloadAST(codeSnippet) {
     const root = new Map();
     runStatements(ast.program.body, root, [], 0);
     // Scan uncalled functions for direct sinks, but do not assume unknown callers are safe.
-    for (const fn of functions.values()) executeFunction(fn, [], root, 0);
+    for (const [name, fn] of functions) executeFunction(fn, [], root, 0, name);
     for (const hit of lexicalSinks) mark(hit.sink, hit.node, new Set(), true);
   } catch (error) {
     unknown(error instanceof Error ? error.message : 'Analysis failed');
