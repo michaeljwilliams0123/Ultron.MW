@@ -38,7 +38,7 @@ test('browser action runs two real UI steps and double-reads the changed DOM',as
  assert.deepEqual(result.checks,{sameOrigin:true,changed:true,matched:true});
  assert.equal(a.closed,1);
  assert.deepEqual(a.calls.filter(x=>x[0]==='perform').map(x=>x[1]),['fill','click']);
- const worker=await runWorkerOperation(parseWorkerRequest(request()),a);
+ const worker=await runWorkerOperation(parseWorkerRequest(request()),adapter());
  assert.equal(worker.status,'verified');
  assert.equal(worker.verification.ok,true);
  assert.equal(toLedgerResult(worker).status,'done');
