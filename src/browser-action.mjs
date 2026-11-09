@@ -37,7 +37,7 @@ export function parseBrowserAction(params){
   params.expect.contains.length>160||HIDDEN.test(params.expect.contains))
   throw Error('browser-action-postcondition-invalid');
  return Object.freeze({url:url.toString(),origin:url.origin,steps:Object.freeze(normalized),
-  expect:Object.freeze({...params.expect})});
+  expect:Object.freeze({selector:params.expect.selector,contains:params.expect.contains})});
 }
 export async function executeBrowserAction(plan,browser){
  if(!browser||typeof browser.open!=='function')throw Error('browser-action-adapter-unavailable');
