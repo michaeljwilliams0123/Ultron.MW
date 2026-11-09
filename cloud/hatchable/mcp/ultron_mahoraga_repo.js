@@ -14,7 +14,7 @@ export default {
  async handler(args,ctx){
   const schema='ultron.mahoraga.repo-read.v1';
   let valid=false;
-  try{valid=args&&typeof args==='object'&&!Array.isArray(args)&&
+  try{valid=args&&typeof args==='object'&&
    Object.keys(args).length===0;}catch{}
   if(!valid)return {schema,ok:false,status:'held',reason:'invalid-arguments'};
   if(typeof ctx?.config?.get!=='function')
