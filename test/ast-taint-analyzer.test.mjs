@@ -36,6 +36,37 @@ test('resolves namespace imports and CommonJS child_process calls', () => {
   assert.ok(sinks("const cp = require('child_process'); cp.exec(req.body.cmd)").includes('cp.exec'));
 });
 
+test('resolves destructured CommonJS child_process execution methods and aliases', () => {
+  const cases = [
+    ["const { exec } = require('child_process'); exec(req.body.cmd);", 'exec'],
+    ["const { exec: run } = require('node:child_process'); run(req.body.cmd);", 'run'],
+    ["const cp = require('child_process'); const { execSync: run } = cp; run(request.body.cmd);", 'run'],
+    ["const cp = require('child_process'); const alias = cp; const { exec } = alias; exec(event.body.cmd);", 'exec'],
+    ["const cp = require('node:child_process'); const { ['spawn']: launch } = cp; launch('tool', [event.body.arg]);", 'launch'],
+    ["const { exec = fallback } = require('child_process'); exec(payload.cmd);", 'exec'],
+    ["const { exec } = require('child_process'); const run = exec; run(payload.cmd);", 'run'],
+  ];
+  for (const [code, sink] of cases) {
+    const result = scan(code);
+    assert.equal(result.status, 'findings', code);
+    assert.equal(result.isSafe, false, code);
+    assert.ok(result.flows.some(flow => flow.sink === sink && flow.sources.length), code);
+  }
+});
+
+test('tainted arguments to unresolved calls are unknown, not safe', () => {
+  const result = scan('unmodeledCommand(req.body.cmd)');
+  assert.equal(result.status, 'unknown');
+  assert.equal(result.isSafe, false);
+  assert.ok(result.unknowns.some(message => message.includes('Tainted data passed to unresolved call')));
+});
+
+test('benign non-execution CommonJS destructuring stays no-known-flow', () => {
+  const result = scan("const { join } = require('path'); join('fixed', 'path');");
+  assert.equal(result.status, 'no-known-flow');
+  assert.equal(result.isSafe, true);
+});
+
 test('follows interprocedural returns and records a call graph', () => {
   const result = scan("function forward(value) { return value; }\nconst param = forward(request.query.value);\neval(param);");
   assert.ok(result.ir.callGraph.some(edge => edge.callee === 'forward'));

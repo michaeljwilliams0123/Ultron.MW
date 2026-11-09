@@ -25,13 +25,15 @@ input, userInput, message, webhook. It recognizes process.env,
 import.meta.env, and browser location as sensitive origins.
 
 Execution sinks: direct/qualified/aliased eval, Function, imported or
-namespace node:child_process shell methods, and tainted string timer calls.
+namespace/destructured node:child_process shell methods, and tainted string timer calls.
 DOM sinks: innerHTML, outerHTML, srcdoc, insertAdjacentHTML,
 document.write/writeln, plus sensitive document.cookie access.
 
 The IR walks assignments, destructuring, expressions, templates, branches,
 and same-file named/arrow function arguments and returns. Tainted computed
 dynamic dispatch is reported as unknown, not cleared.
+Tainted arguments passed to calls that are not resolved as modeled sinks or
+same-file functions also produce an unknown result rather than no-known-flow.
 
 ## Limits and deployment posture
 

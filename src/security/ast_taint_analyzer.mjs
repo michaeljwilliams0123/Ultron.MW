@@ -132,6 +132,16 @@ export function analyzePayloadAST(codeSnippet) {
       [...moduleNames].some(mod => name?.startsWith(mod + '.') && EXEC_METHODS.has(name.slice(mod.length + 1))) ||
       /^require\(['"](?:node:)?child_process['"]\)\.(?:exec|execSync|spawn|spawnSync|execFile|execFileSync)$/.test(name || '');
     const isGlobalEval = name => ['eval', 'Function', 'globalThis.eval', 'globalThis.Function', 'window.eval', 'window.Function'].includes(name);
+    const registerDestructuredImports = (pattern, sourceIsChildProcess) => {
+      if (!sourceIsChildProcess || pattern?.type !== 'ObjectPattern') return;
+      for (const spec of pattern.properties) {
+        if (spec.type !== 'ObjectProperty') continue;
+        const imported = spec.computed ? property(spec.key) : spec.key?.name ?? spec.key?.value;
+        const binding = spec.value?.type === 'AssignmentPattern' ? spec.value.left : spec.value;
+        if (EXEC_METHODS.has(imported) && binding?.type === 'Identifier')
+          imports.set(binding.name, imported);
+      }
+    };
 
     function evaluate(node, env, depth = 0) {
       if (!node || typeof node !== 'object') return new Set();
@@ -175,6 +185,10 @@ export function analyzePayloadAST(codeSnippet) {
           if (node.callee?.type === 'Identifier' && env.has('$sink:' + name)) {
             mark(name, node, all, true);
           }
+          if (all.size && name && !isExec(name) && !isGlobalEval(name) &&
+            imports.get(name) !== 'eval' && !functions.has(name) &&
+            !(node.callee?.type === 'Identifier' && env.has('$sink:' + name)))
+            unknown('Tainted data passed to unresolved call ' + name + ' at line ' + (node.loc?.start?.line || 1));
           if (!name && union(all, next(node.callee)).size) unknown('Unresolved dynamic call at line ' + (node.loc?.start?.line || 1));
           // Unknown function results may preserve taint; absence of a finding is not a policy approval.
           return all;
@@ -225,13 +239,23 @@ export function analyzePayloadAST(codeSnippet) {
           case 'BlockStatement': runStatements(stmt.body, env, returns, depth); break;
           case 'VariableDeclaration':
             for (const decl of stmt.declarations) {
-              if (decl.id?.type === 'Identifier' && decl.init?.type === 'CallExpression' &&
-                decl.init.callee?.name === 'require' && ['child_process', 'node:child_process'].includes(decl.init.arguments?.[0]?.value))
+              const requiredModule = decl.init?.type === 'CallExpression' && decl.init.callee?.name === 'require'
+                ? decl.init.arguments?.[0]?.value
+                : null;
+              const isChildProcessRequire = ['child_process', 'node:child_process'].includes(requiredModule);
+              if (decl.id?.type === 'Identifier' && isChildProcessRequire)
                 moduleNames.add(decl.id.name);
+              else if (decl.id?.type === 'Identifier' && decl.init?.type === 'Identifier' && moduleNames.has(decl.init.name))
+                moduleNames.add(decl.id.name);
+              const sourceIsChildProcess = isChildProcessRequire ||
+                (decl.init?.type === 'Identifier' && moduleNames.has(decl.init.name));
+              registerDestructuredImports(decl.id, sourceIsChildProcess);
               const value = evaluate(decl.init, env, depth);
               bind(decl.id, value, env, edges, line);
               const assigned = decl.id?.name;
               const sinkAlias = memberName(decl.init);
+              if (assigned && decl.init?.type === 'Identifier' && imports.has(decl.init.name))
+                imports.set(assigned, imports.get(decl.init.name));
               if (assigned && (isGlobalEval(sinkAlias) || isExec(sinkAlias))) env.set('$sink:' + assigned, new Set([sinkAlias]));
             }
             break;
