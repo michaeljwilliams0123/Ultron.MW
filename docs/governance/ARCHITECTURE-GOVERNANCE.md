@@ -1,6 +1,6 @@
 # Ultron MW — Architecture Governance Decision (AGD-2026-11-09)
 
-**Status:** proposed in issue #346; becomes the repository's architecture governance baseline after the governance PR merges. It is a policy and review contract, **not** a claim of runtime admission enforcement or production deployment.
+**Status:** adopted on `main` in squash-merged PR #347 (`57d5107ec4738101e4999dbb685a30432f8f37d4`), closing issue #346. This is a repository policy and review contract, **not** a claim of runtime admission enforcement or production deployment. Specific implementation and live acceptance remain governed by linked open issues.
 
 **Canonical name:** Ultron MW Cloud Brain (never "Ultro"). **Source and CI:** `michaeljwilliams0123/Ultron.MW`. **Owner-facing UI and cloud control:** `https://ultron-mw-cloud.hatchable.site`, project `proj_A6GCXRSKizko`. **Durable execution authority:** Hatchable PostgreSQL. GitHub owns branches, PRs, tests, exact-head release evidence. GitHub Pages remains an explicit fallback until #170 proves retirement parity. Mahoraga, GitLab, Codex and third-party services are external peers, not implied co-owners.
 
