@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {observeExternalEffect,verifyExternalEffect,verifyAndReportExternalEffect} from '../src/verification/readback_oracle.mjs';
+import {canonicalJson} from '../src/verification/canonical_json.mjs';
 
 const gh='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/pulls/42';
 const http='https://ultron-mw-cloud.hatchable.site/health';
@@ -9,6 +10,11 @@ const githubAssertion={checkType:'github_api_readback',targetEndpointOrSelector:
 const httpAssertion={checkType:'http_status',targetEndpointOrSelector:http,expectedValue:200};
 const fetcher=async()=>({status:200,ok:true,json:async()=>({state:'closed'})});
 const services={fetcher,allowedOrigins:['https://ultron-mw-cloud.hatchable.site']};
+
+test('canonical JSON digest input is stable across object key ordering',()=>{
+ assert.equal(canonicalJson({outer:{z:1,a:2},checks:[{reason:'matched',ok:true}]}),
+  canonicalJson({checks:[{ok:true,reason:'matched'}],outer:{a:2,z:1}}));
+});
 
 test('HTTP status verifies transport only; no durable external completion',async()=>{
  const checked=await observeExternalEffect(httpAssertion,services);

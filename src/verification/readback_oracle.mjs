@@ -4,6 +4,7 @@
  * injected by a trusted execution composition root, not by MCP _meta fields.
  */
 import {createHash} from 'node:crypto';
+import {canonicalJson} from './canonical_json.mjs';
 
 const REPO='/repos/michaeljwilliams0123/Ultron.MW/';
 const GITHUB_PATH=/^\/(?:pulls\/[1-9]\d*|issues\/[1-9]\d*|commits\/[a-f0-9]{40}|actions\/runs\/[1-9]\d*|git\/ref\/heads\/[a-zA-Z0-9._/-]+|branches\/[a-zA-Z0-9._/-]+)$/;
@@ -11,7 +12,7 @@ const FIELDS=new Set(['state','merged','sha','head.sha','object.sha','conclusion
 const TIERS=Object.freeze({http_status:'transport-only',dom_element_present:'dom-only',
  github_api_readback:'provider-state',database_readback:'provider-state'});
 const ATTEMPT=/^[a-zA-Z0-9][a-zA-Z0-9._:-]{5,127}$/;
-const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const hash=value=>createHash('sha256').update(canonicalJson(value)).digest('hex');
 const result=(ok,tier,reason)=>Object.freeze({ok,tier,reason});
 
 function externalUrl(value,allowedOrigins){

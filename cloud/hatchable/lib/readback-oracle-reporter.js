@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {canonicalJson} from '../../../src/verification/canonical_json.mjs';
 
 // Use only inside an already authenticated Hatchable runtime. This storage
 // adapter is deliberately not an HTTP endpoint and grants no execution rights.
@@ -35,7 +36,7 @@ function validate(event){
   durable?'verified-external':'observed-only';
  if(event.status!==inferred)throw Error('oracle-event-invalid');
  const {evidenceDigest,...unsigned}=event;
- if(createHash('sha256').update(JSON.stringify(unsigned)).digest('hex')!==evidenceDigest)
+ if(createHash('sha256').update(canonicalJson(unsigned)).digest('hex')!==evidenceDigest)
   throw Error('oracle-event-invalid');
 }
 function fromRow(row){

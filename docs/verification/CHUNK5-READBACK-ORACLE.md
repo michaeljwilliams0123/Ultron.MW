@@ -13,8 +13,8 @@ Status: **source implementation and local deterministic tests only**. This chang
 
 ## Hatchable adapter
 
-- cloud/hatchable/migrations/0037_readback_oracle_events.sql creates an immutable event register; no existing C04 Council ledger or Council Room table is repurposed or bypassed.
-- cloud/hatchable/lib/readback-oracle-reporter.js exposes createHatchableReadbackReporter(db) with parameterized, idempotent INSERT and independent SELECT. It validates event schema, SHA-256 digest, evidence-tier consistency and collision identity; this is **evidence storage**, not owner authorization.
+- cloud/hatchable/migrations/0038_readback_oracle_events.sql creates an immutable event register; migration 0037 is reserved for the GitHub approval nonce migration in PR #354. No existing C04 Council ledger or Council Room table is repurposed or bypassed.
+- cloud/hatchable/lib/readback-oracle-reporter.js exposes createHatchableReadbackReporter(db) with parameterized, idempotent INSERT and independent SELECT. It validates event schema, SHA-256 digest over deterministic canonical JSON, evidence-tier consistency and collision identity; this is **evidence storage**, not owner authorization.
 - An authenticated Hatchable backend composition root can create the reporter using its existing db service, then pass it to the oracle alongside independent readers. **Do not expose this module as a public unauthenticated POST route.** Future GitHub-to-Hatchable ingress must be authenticated with repository/workflow-bound OIDC or another separately reviewed signature protocol before persistence.
 - The existing council-room-execution API intentionally rejects verified status for documentation-only proposal PRs. This patch neither changes that rule nor claims PR creation satisfies runtime acceptance.
 
@@ -34,6 +34,6 @@ const result = await verifyAndReportExternalEffect({
 
 ## Verification and remaining acceptance
 
-Local focused suite: node --test test/readback-oracle*.test.mjs — **13/13 passed**, using real source modules and isolated adapter fakes; syntax checks passed. Repository full validation: node scripts/verify.mjs; CI must run this on the exact new PR head.
+Local focused suite: `node --test test/readback-oracle*.test.mjs` exercises the real reporter against both an isolated adapter fake and a PGlite PostgreSQL JSONB write/read round-trip, including idempotent and conflicting replays. Repository full validation: `node scripts/verify.mjs`; CI must run this on the exact new PR head.
 
-**Not yet proven:** migration 0037 in real Hatchable PostgreSQL; authenticated GitHub-origin intake; independent provider readback after an owner-approved write; protected exact-head CI; production runtime wiring; live service read-after-write; owner UI trajectory display. Separately test these before closing acceptance issues. No paid provider spend or new credential material.
+**Not yet proven:** migration 0038 in real Hatchable PostgreSQL; authenticated GitHub-origin intake; independent provider readback after an owner-approved write; protected exact-head CI; production runtime wiring; live service read-after-write; owner UI trajectory display. Separately test these before closing acceptance issues. No paid provider spend or new credential material.
