@@ -55,7 +55,7 @@ test('only owner main-branch dispatches and owner-triggered reruns are allowed',
 });
 
 test('injection strings and mutation attempts never become executable operations',()=>{
- const injection='$(touch /tmp/never-executed); 'whoami'';
+ const injection='$(touch /tmp/never-executed); `whoami`';
  for(const bad of [
    payload({op:injection}),payload({op:'browser.external-write'}),
    payload({op:'github.repo.inspect',params:{script:injection}}),
