@@ -1,5 +1,7 @@
 # Ultron.MW
 
+**Architecture governance:** [2026-11-09 decision](docs/governance/ARCHITECTURE-GOVERNANCE.md), [component/retirement register](docs/governance/RETIREMENT-REGISTER.md) and [machine-readable advisory contract](docs/governance/architecture-policy.v1.json). These documents define proposal/review gates, not new runtime permission or deployment acceptance. Tracked in [#346](https://github.com/michaeljwilliams0123/Ultron.MW/issues/346).
+
 Ultron is an independent, single-owner execution platform with one shared interface, GitHub-hosted workflows, an existing Hatchable backend, optional device inference, and evidence-gated routing improvements. Its capability and release decisions are defined by this repository. Mahoraga supplies historical design references and an optional, separately authorized issue/Verify connector; it supplies no implicit authority or required core infrastructure.
 
 **Acceptance:** [current issue dispositions and evidence boundaries](docs/ACCEPTANCE-STATUS.md). Issue #65 completed its scoped supervised local-fixture milestone; broader browser or operator authority requires separate evidence.
