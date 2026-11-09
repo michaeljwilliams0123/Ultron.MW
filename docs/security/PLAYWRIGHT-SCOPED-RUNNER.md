@@ -10,7 +10,10 @@ This adapter is NOT an automatically exposed MCP tool or an owner approval servi
 - A trusted host passes `targetUrl`, a canonical approved `allowedOrigin`,
   `actionType` and an exact accessible target: `role=button[name="Save"]`
   for click, or `label=Display name` for fill. Raw CSS, pixels, arbitrary
-  JavaScript, and password/MFA fill are rejected. Empty-string fill is valid.
+  JavaScript, and password/MFA fill are rejected, including text inputs
+  identified by MFA-like labels, names, placeholders, or other field metadata
+  even when autocomplete is absent. Ambiguous code, PIN, and token fields fail
+  closed. Empty-string fill is valid.
 - The host must supply `authorizeAction(metadata)`, backed by an existing
   verified, action-specific owner grant; user-controlled `_meta`, issue text,
   DOM content, and model assertions cannot create approval. The host must
@@ -28,8 +31,12 @@ This adapter is NOT an automatically exposed MCP tool or an owner approval servi
 - The runner creates a clean context, blocks service workers, installs the
   EXISTING `installNetworkPolicy` before page navigation (strict HTTP origin,
   redirect control, and no WebSocket connections), rejects extra tabs, pins
-  the accessible DOM element before approval, and closes context/browser in
-  `finally` even when denied. The trusted deployment must ALSO enforce a
+  the accessible DOM element before approval, then after authorization verifies
+  the same unique accessible target is still attached, visible, actionable,
+  and unchanged in relevant accessibility and control state before dispatch.
+  A replaced, relabeled, or state-mutated target is rejected rather than
+  acted on under stale approval. Context/browser are closed in `finally` even
+  when denied. The trusted deployment must ALSO enforce a
   network-level DNS/IP egress boundary (e.g. to mitigate WebRTC and DNS
   prefetch); Playwright request interception is not a full network sandbox.
 - Optional `persistSession(origin, validatedState)` receives only verified
@@ -42,8 +49,9 @@ This adapter is NOT an automatically exposed MCP tool or an owner approval servi
 
 Run `node --test test/playwright-scoped-runner.test.mjs`. The tests use
 synthetic Playwright interfaces and exercise origin rejection, hostile state,
-authorization denial, scoped action selection, expired session revocation,
-network policy installation, and closure. Real live-browser acceptance,
+authorization denial, post-approval target replacement and state mutation,
+MFA text-field labels and names, scoped action selection, expired session
+revocation, network policy installation, and closure. Real live-browser acceptance,
 provider-side write evidence and deployment are deliberately **not** claimed.
 Playwright remains an optional dependency, installed only in an authorized,
 network-isolated browser worker. No new paid services are required.

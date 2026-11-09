@@ -51,6 +51,66 @@ function accessibleTarget(selector, action) {
   throw Error('[ACCESSIBLE_TARGET_REQUIRED]: Use role=button[name="..."] or label=...');
 }
 
+async function targetSnapshot(element) {
+  if (typeof element.evaluate !== 'function')
+    throw Error('[TARGET_REVALIDATION_UNAVAILABLE]: Browser cannot inspect the pinned element');
+  return element.evaluate(el => {
+    const attr = name => el.getAttribute(name);
+    return {
+      tagName: String(el.tagName || '').toLowerCase(),
+      type: String(attr('type') || '').toLowerCase(),
+      autocomplete: String(attr('autocomplete') || '').toLowerCase(),
+      name: attr('name'),
+      id: attr('id'),
+      placeholder: attr('placeholder'),
+      title: attr('title'),
+      inputMode: attr('inputmode'),
+      role: attr('role'),
+      ariaLabel: attr('aria-label'),
+      ariaLabelledby: attr('aria-labelledby'),
+      ariaChecked: attr('aria-checked'),
+      ariaPressed: attr('aria-pressed'),
+      ariaSelected: attr('aria-selected'),
+      ariaDisabled: attr('aria-disabled'),
+      disabled: 'disabled' in el ? Boolean(el.disabled) : false,
+      checked: 'checked' in el ? Boolean(el.checked) : null,
+      selected: 'selected' in el ? Boolean(el.selected) : null,
+      value: 'value' in el ? String(el.value) : null,
+    };
+  });
+}
+
+function isCredentialTarget(target, snapshot) {
+  const fieldDescription = [
+    target.name, snapshot.type, snapshot.autocomplete, snapshot.name,
+    snapshot.id, snapshot.placeholder, snapshot.title, snapshot.inputMode,
+    snapshot.ariaLabel, snapshot.ariaLabelledby,
+  ].filter(Boolean).join(' ').normalize('NFKC').toLowerCase().replace(/[_-]+/g, ' ');
+  return ['password', 'hidden'].includes(snapshot.type) ||
+    /(?:one time code|current password|new password|cc number|cc csc)/.test(snapshot.autocomplete) ||
+    /\b(?:code|codes|otp|totp|mfa|2fa|pin|passcode|token|verification|authenticator|authentication|one time|two factor|multi factor)\b/.test(fieldDescription);
+}
+
+async function revalidateApprovedTarget(locator, pinned, actionType, baseline) {
+  if (await locator.count() !== 1 ||
+      typeof locator.evaluate !== 'function' ||
+      await locator.evaluate((element, expected) => element === expected, pinned) !== true ||
+      typeof pinned.evaluate !== 'function' ||
+      await pinned.evaluate(element => element.isConnected) !== true)
+    throw Error('[TARGET_CHANGED]: Approved accessible target is no longer attached and unique');
+
+  if (await pinned.isVisible() !== true || await pinned.isEnabled() !== true ||
+      actionType === 'fill' && await pinned.isEditable() !== true)
+    throw Error('[TARGET_CHANGED]: Approved target is no longer visible and actionable');
+
+  const current = await targetSnapshot(pinned);
+  if (JSON.stringify(current) !== JSON.stringify(baseline))
+    throw Error('[TARGET_CHANGED]: Approved target accessibility or state changed');
+  if (actionType === 'click')
+    await pinned.click({trial:true,timeout:4000});
+  return current;
+}
+
 export function validateScopedBrowserInput(params) {
   if (!params || typeof params !== 'object') throw TypeError('Browser action parameters required');
   const allowed = canonicalOrigin(params.allowedOrigin);
@@ -160,12 +220,13 @@ export async function runScopedBrowserTask(params, storageStateJson, options={})
       throw Error('[ELEMENT_PIN_REQUIRED]: Browser must support stable element handles');
     const pinned = await locator.elementHandle({timeout:4000});
     if (!pinned) throw Error('[TARGET_GONE]: Accessible target detached');
+    const approvedState = await targetSnapshot(pinned);
     if (params.actionType === 'fill') {
-      const inputType=String(await pinned.getAttribute('type')||'').toLowerCase();
-      const autocomplete=String(await pinned.getAttribute('autocomplete')||'').toLowerCase();
-      if (['password','hidden'].includes(inputType) ||
-          /(?:one-time-code|current-password|new-password|cc-number|cc-csc)/.test(autocomplete))
+      if (isCredentialTarget(target, approvedState))
         throw Error('[CREDENTIAL_TARGET_DENIED]: Secret and MFA controls require owner takeover');
+      if (await pinned.isVisible() !== true || await pinned.isEnabled() !== true ||
+          await pinned.isEditable() !== true)
+        throw Error('[TARGET_NOT_ACTIONABLE]: Fill target must be visible, enabled, and editable');
     } else {
       // Trial checks actionability without dispatching a write.
       await pinned.click({trial:true,timeout:4000});
@@ -177,6 +238,9 @@ export async function runScopedBrowserTask(params, storageStateJson, options={})
     }));
     if (approved !== true) throw Error('[APPROVAL_DENIED]: Browser write not authorized');
     assertSameOrigin(page.url(),origin);
+    const currentState=await revalidateApprovedTarget(locator,pinned,params.actionType,approvedState);
+    if (params.actionType === 'fill' && isCredentialTarget(target,currentState))
+      throw Error('[CREDENTIAL_TARGET_DENIED]: Secret and MFA controls require owner takeover');
     if (params.actionType==='click') await pinned.click({timeout:10000});
     else await pinned.fill(params.fillValue,{timeout:10000});
     await page.waitForLoadState?.('domcontentloaded',{timeout:2000}).catch(()=>{});

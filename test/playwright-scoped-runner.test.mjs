@@ -18,22 +18,73 @@ const state = {
   origins:[{origin, localStorage:[{name:'theme',value:'dark'}]}],
 };
 
-function fakeBrowser({ startUrl=TARGET, status=200, count=1, loginOk=true, onAct, failGoto=false, afterUrl=TARGET, type='text' }={}) {
+function fakeBrowser({
+  startUrl=TARGET, status=200, count=1, loginOk=true, onAct, failGoto=false,
+  afterUrl=TARGET, type='text', target:targetOverrides={},
+}={}) {
   const metrics={ launched:0, contextCreated:0, contextsClosed:0, browsersClosed:0, clicks:0, fills:[], locatorSelectors:[], routes:[] };
   let currentUrl=startUrl;
-  const locator={
-    count:async()=>count,
-    elementHandle:async()=>locator,
-    isVisible:async()=>true,
-    click:async opts=>{ if(!opts?.trial){ metrics.clicks++;currentUrl=afterUrl;await onAct?.();}},
-    fill:async v=>{metrics.fills.push(v);currentUrl=afterUrl;await onAct?.();},
-    getAttribute:async attr=>attr==='type'?type:null,
+  const createTarget=overrides=>{
+    const node={
+      tagName:overrides.tagName||(type==='text'?'INPUT':'BUTTON'),
+      type:overrides.type||type,
+      autocomplete:overrides.autocomplete??null,
+      name:overrides.name??null,
+      id:overrides.id??null,
+      placeholder:overrides.placeholder??null,
+      title:overrides.title??null,
+      inputMode:overrides.inputMode??null,
+      accessibleRole:overrides.role||'button',
+      accessibleName:overrides.accessibleName||'Save settings',
+      labelText:overrides.labelText||'Display name',
+      role:overrides.roleAttribute??null,
+      ariaLabel:overrides.ariaLabel??null,
+      ariaLabelledby:overrides.ariaLabelledby??null,
+      ariaChecked:overrides.ariaChecked??null,
+      ariaPressed:overrides.ariaPressed??null,
+      ariaSelected:overrides.ariaSelected??null,
+      ariaDisabled:overrides.ariaDisabled??null,
+      disabled:overrides.disabled??false,
+      checked:overrides.checked??false,
+      selected:overrides.selected??false,
+      value:overrides.value??'',
+      isConnected:overrides.isConnected??true,
+      visible:overrides.visible??true,
+      editable:overrides.editable??true,
+      getAttribute(attr){
+        return ({
+          type:this.type,autocomplete:this.autocomplete,name:this.name,id:this.id,
+          placeholder:this.placeholder,title:this.title,inputmode:this.inputMode,
+          role:this.role,'aria-label':this.ariaLabel,'aria-labelledby':this.ariaLabelledby,
+          'aria-checked':this.ariaChecked,'aria-pressed':this.ariaPressed,
+          'aria-selected':this.ariaSelected,'aria-disabled':this.ariaDisabled,
+        })[attr]??null;
+      },
+      evaluate:async(fn,...args)=>fn(node,...args),
+      isVisible:async()=>node.visible,
+      isEnabled:async()=>!node.disabled&&node.ariaDisabled!=='true',
+      isEditable:async()=>node.editable,
+      click:async opts=>{ if(!opts?.trial){ metrics.clicks++;currentUrl=afterUrl;await onAct?.();}},
+      fill:async v=>{metrics.fills.push(v);currentUrl=afterUrl;await onAct?.();},
+    };
+    return node;
   };
+  let currentTarget=createTarget(targetOverrides);
+  const locator=query=>({
+    count:async()=>count===1&&(
+      query.type==='role'?
+        currentTarget.accessibleRole===query.role&&currentTarget.accessibleName===query.name:
+        currentTarget.labelText===query.name||currentTarget.ariaLabel===query.name
+    )?1:0,
+    elementHandle:async()=>count===1?currentTarget:null,
+    isVisible:async()=>currentTarget.visible,
+    evaluate:async(fn,...args)=>fn(currentTarget,...args),
+  });
   const page={
     url:()=>currentUrl,
     goto:async target=>{if(failGoto)throw Error('navigation failed');currentUrl=target;return {status:()=>status};},
-    getByRole:(role,{name,exact})=>{metrics.locatorSelectors.push(['role',role,name,exact]);return locator;},
-    getByLabel:(label,{exact})=>{metrics.locatorSelectors.push(['label',label,exact]);return locator;},
+    getByRole:(role,{name,exact})=>{metrics.locatorSelectors.push(['role',role,name,exact]);return locator({type:'role',role,name});},
+    getByLabel:(label,{exact})=>{metrics.locatorSelectors.push(['label',label,exact]);return locator({type:'label',name:label});},
     waitForLoadState:async()=>{},
   };
   const context={
@@ -46,7 +97,11 @@ function fakeBrowser({ startUrl=TARGET, status=200, count=1, loginOk=true, onAct
   };
   const browser={newContext:async args=>{metrics.contextCreated++;metrics.args=args;return context;},close:async()=>{metrics.browsersClosed++;}};
   const chromium={launch:async()=>{metrics.launched++;return browser;}};
-  return {chromium,metrics,page,context,validSession:async()=>loginOk};
+  return {
+    chromium,metrics,page,context,validSession:async()=>loginOk,
+    get target(){return currentTarget;},
+    replaceTarget:overrides=>{currentTarget=createTarget(overrides);},
+  };
 }
 const opts=(b,more={})=>({chromium:b.chromium, authorizeAction:async()=>true, validateSession:b.validSession, revokeSession:async()=>{}, ...more});
 
@@ -121,6 +176,62 @@ test('supports accessible label and empty-string fill, but rejects passwords',as
   assert.deepEqual(b.metrics.locatorSelectors,[['label','Display name',true]]);
   const secret=fakeBrowser({type:'password'});
   await assert.rejects(runScopedBrowserTask(fill,undefined,opts(secret)),/CREDENTIAL_TARGET_DENIED/);
+});
+test('rejects a replaced or relabeled target after owner authorization',async()=>{
+  const replacement=fakeBrowser();
+  await assert.rejects(runScopedBrowserTask(params,undefined,opts(replacement,{
+    authorizeAction:async()=>{replacement.replaceTarget({role:'button',accessibleName:'Save settings'});return true;},
+  })),/TARGET_CHANGED/);
+  assert.equal(replacement.metrics.clicks,0);
+
+  const fill={...params,actionType:'fill',actionSelector:'label=Display name',fillValue:'new value'};
+  const relabeled=fakeBrowser();
+  await assert.rejects(runScopedBrowserTask(fill,undefined,opts(relabeled,{
+    authorizeAction:async()=>{relabeled.target.labelText='Account name';return true;},
+  })),/TARGET_CHANGED/);
+  assert.deepEqual(relabeled.metrics.fills,[]);
+});
+test('rejects relevant control-state changes while owner authorization is pending',async()=>{
+  const checkboxParams={
+    ...params,actionSelector:'role=checkbox[name="Enable notifications"]',
+  };
+  const checkbox=fakeBrowser({target:{
+    role:'checkbox',accessibleName:'Enable notifications',type:'checkbox',
+    ariaChecked:'false',checked:false,
+  }});
+  await assert.rejects(runScopedBrowserTask(checkboxParams,undefined,opts(checkbox,{
+    authorizeAction:async()=>{checkbox.target.ariaChecked='true';checkbox.target.checked=true;return true;},
+  })),/TARGET_CHANGED/);
+  assert.equal(checkbox.metrics.clicks,0);
+});
+test('rejects targets made hidden or disabled while owner authorization is pending',async()=>{
+  for(const property of ['visible','disabled']){
+    const b=fakeBrowser();
+    await assert.rejects(runScopedBrowserTask(params,undefined,opts(b,{
+      authorizeAction:async()=>{b.target[property]=property==='visible'?false:true;return true;},
+    })),/TARGET_CHANGED/);
+    assert.equal(b.metrics.clicks,0);
+  }
+});
+test('blocks recognizable MFA text inputs by accessible label or input name without autocomplete',async()=>{
+  const cases=[
+    {selector:'label=Verification code',target:{labelText:'Verification code'}},
+    {selector:'role=textbox[name="otp"]',target:{role:'textbox',accessibleName:'otp',name:'otp'}},
+    {selector:'label=Enter your 6-digit code',target:{labelText:'Enter your 6-digit code',name:'verification_code'}},
+    {selector:'label=Authenticator code',target:{labelText:'Authenticator code',name:'authenticator_code'}},
+  ];
+  for(const entry of cases){
+    const fill={
+      ...params,actionType:'fill',actionSelector:entry.selector,fillValue:'123456',
+    };
+    const b=fakeBrowser({target:{type:'text',tagName:'INPUT',...entry.target}});
+    let authorizationCalls=0;
+    await assert.rejects(runScopedBrowserTask(fill,undefined,opts(b,{
+      authorizeAction:async()=>{authorizationCalls++;return true;},
+    })),/CREDENTIAL_TARGET_DENIED/);
+    assert.equal(authorizationCalls,0);
+    assert.deepEqual(b.metrics.fills,[]);
+  }
 });
 test('detects rejected or expired state, revokes saved state, never clicks',async()=>{
   const b=fakeBrowser({loginOk:false});let revoked=[];
