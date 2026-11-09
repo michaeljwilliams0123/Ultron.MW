@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {browserActionUrl,parseBrowserAction,executeBrowserAction}
+import {browserActionUrl,parseBrowserAction,executeBrowserAction,unwrapBrowserIssue,BROWSER_ISSUE_MARKER}
  from '../src/browser-action.mjs';
 import {parseWorkerRequest,runWorkerOperation,toLedgerResult}
  from '../src/council-worker.mjs';
@@ -78,4 +78,16 @@ test('worker request identity changes with action payload to prevent stale actio
   steps:[{kind:'click',selector:'#run-task'}]}});
  assert.notEqual(a.caseDigest,b.caseDigest);
  assert.equal(parseWorkerRequest(request()).caseDigest,a.caseDigest);
+});
+
+test('only owner issue format can activate browser.action and preserves issue receipt',()=>{
+ const source=request();
+ const body=BROWSER_ISSUE_MARKER+'\n'+JSON.stringify(source);
+ const parsed=unwrapBrowserIssue(body,345);
+ assert.equal(parsed.issueNumber,345);
+ assert.equal(parseWorkerRequest(parsed).op,'browser.action');
+ for(const invalid of [body.replace('browser.action','shell.exec'),
+  body.replace(BROWSER_ISSUE_MARKER,'OTHER_MARKER'),BROWSER_ISSUE_MARKER+'\nnot-json'])
+  assert.throws(()=>unwrapBrowserIssue(invalid,345),/browser-issue-/);
+ assert.throws(()=>unwrapBrowserIssue(body,0),/browser-issue-invalid/);
 });
