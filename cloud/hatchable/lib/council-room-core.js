@@ -1,6 +1,7 @@
 import {config} from 'hatchable';
 import {observeMahoragaMain} from 'lib/mahoraga-actions.js';
 import {inspectOpenIssue} from 'lib/council-issues.js';
+import {makeIssueCouncilPlan} from 'lib/issue-council-plan.js';
 
 const ROLES = Object.freeze([
  ['builder','Builder','Execution path'],
@@ -91,15 +92,23 @@ export async function buildCouncilRoomResult({message}){
   sentinel:'I am watching the two live evidence sources represented here: Ultron.MW and Mahoraga. Cloudflare is not part of the core control path; it should appear only when a task explicitly needs managed browser or VM execution.',
   companion:'I will keep this thread as the owner-facing continuity layer: what you asked, what each member concluded, what ran, what is blocked, and the next concrete action. Current topic: “'+prompt+'”.'
  };
- const members=ROLES.filter(([id])=>targets.includes(id)).map(([id,role])=>
-  member(role,id,templates[id],id==='builder'?'action':'inference'));
+ const issueReview=issue?makeIssueCouncilPlan({issue,
+  sourceSha:ultron.status==='observed'?ultron.sha:null,mode:'plan'}):null;
+ const members=ROLES.filter(([id])=>targets.includes(id)).map(([id,role])=>{
+  const assessment=issueReview?.roles.find(x=>x.role===role);
+  return {...member(role,id,templates[id],issue?'proposal':id==='builder'?'action':'inference',
+   issue?'proposed':'complete'),
+   ...(assessment?{action:assessment.action,evidence:assessment.evidenceRequired,
+    evidenceStatus:'not-yet-verified',executionStatus:'not-started'}:{})};
+ });
  return {
   objective:'council.room',at:new Date().toISOString(),
   source:'hatchable-council-room',prompt,
   summary:issue?'Issue #'+issue.number+' is open; Council prepared an advisory remediation plan.':
    'Council completed '+members.length+' member responses with Ultron.MW and Mahoraga evidence.',
   members,observedRepositories:observed,
-  ...(issue?{issueRemediation:issue}:{}),
+  ...(issue?{issueRemediation:issue,issuePlan:issueReview,
+   planStatus:'proposal-only',githubWriteStatus:'requires-per-operation-owner-approval'}:{}),
   executionAdapter:'hatchable-runner',
   githubAdapter:'actions-copilot-ready',
   cloudflareRole:'optional-browser-only',

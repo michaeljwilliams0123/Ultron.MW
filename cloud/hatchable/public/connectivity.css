@@ -12,7 +12,7 @@
 .connection-stamp{margin:15px 0 18px!important;color:#b4cce0;font-size:12px}
 .connection-stamp[data-state="error"]{color:#ffc0c5}
 .connection-stamp[data-state="session"]{color:#ffcc75}
-.connection-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.connection-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
 .connection-tile{border:1px solid #344969;background:#0c192b;padding:16px;border-radius:13px;min-width:0}
 .connection-label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#96b2d0;font-weight:800}
 .connection-value{font-size:18px;font-weight:760;margin:10px 0 4px;overflow-wrap:anywhere}

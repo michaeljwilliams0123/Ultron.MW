@@ -1,0 +1,1 @@
+{"resource":"https://ultron-mw-cloud.hatchable.site/mcp","authorization_servers":["https://hatchable.com/oauth/ultron-mw-cloud"],"bearer_methods_supported":["header"],"scopes_supported":["project:full"]}

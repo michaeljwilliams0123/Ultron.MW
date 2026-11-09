@@ -55,6 +55,18 @@
   <button id="issue-refresh" class="ghost-button" type="button">Refresh open issue inventory</button>
   <div id="issue-status" class="issue-status" role="status" aria-live="polite"></div>
   <ol id="issue-list" class="issue-list"></ol>
+  <section id="issue-plan-panel" class="issue-plan-panel" aria-label="Issue-specific Council plan" hidden>
+   <h3 id="issue-plan-title">Council plan</h3>
+   <p id="issue-plan-status" role="status" aria-live="polite">Plan not requested.</p>
+   <p id="issue-plan-evidence"></p>
+   <ol id="issue-role-actions" class="issue-role-actions"></ol>
+   <label for="issue-change-paths">Optional owner-selected repository paths (one per line; maximum 6)</label>
+   <textarea id="issue-change-paths" rows="3" maxlength="1200" placeholder="cloud/hatchable/lib/example.js&#10;.github/workflows/verify.yml"></textarea>
+   <button id="issue-prepare" class="ghost-button" type="button">Prepare bounded PR proposal</button>
+   <button id="issue-send-room" class="ghost-button" type="button">Draft Council room discussion</button>
+   <div id="issue-pr-proposal" class="issue-pr-proposal" aria-live="polite"></div>
+   <p class="issue-warning">Plans are advisory. GitHub branches, commits and pull requests each require a separate owner approval. No automatic merge or deployment.</p>
+  </section>
  </section>
  <section class="composer" aria-label="Message the council">
   <div class="composer-topline">
