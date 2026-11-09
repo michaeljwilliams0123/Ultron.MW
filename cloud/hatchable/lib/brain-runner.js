@@ -46,6 +46,7 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
        WHEN 'repo.prs' THEN jsonb_exists(autonomy.allowed_operations,'evidence.read')
        WHEN 'repo.ci' THEN jsonb_exists(autonomy.allowed_operations,'evidence.read')
        WHEN 'site.render' THEN jsonb_exists(autonomy.allowed_operations,'research.public')
+       WHEN 'research.intake' THEN jsonb_exists(autonomy.allowed_operations,'research.public')
        WHEN 'council.review' THEN jsonb_exists(autonomy.allowed_operations,'plan.create')
        WHEN 'council.room' THEN jsonb_exists(autonomy.allowed_operations,'plan.create')
        ELSE FALSE
@@ -166,6 +167,16 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
     SELECT id,'council-case-admitted',
       jsonb_build_object('origin','council.room')
     FROM council_review_tasks RETURNING task_id
+  ), research_review_tasks AS (
+    INSERT INTO brain_tasks(task_key,objective)
+    SELECT 'research-review:' || moved.id::text,'council.review'
+    FROM moved WHERE moved.objective='research.intake'
+      AND COALESCE(($1::jsonb->>'actionableCount')::integer,0)>0
+    ON CONFLICT(task_key) DO NOTHING RETURNING id
+  ), research_review_events AS (
+    INSERT INTO brain_events(task_id,event_type,details)
+    SELECT id,'research-review-admitted',jsonb_build_object('objective','research.intake')
+    FROM research_review_tasks RETURNING task_id
   ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown',
    JSON.stringify(Array.isArray(result.assessment_receipts)?result.assessment_receipts:[]),
    task.fencing_generation]);
