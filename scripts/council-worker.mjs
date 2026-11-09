@@ -5,11 +5,16 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {parseWorkerRequest,runWorkerOperation,toLedgerResult,sha256} from '../src/council-worker.mjs';
+import {unwrapBrowserIssue} from '../src/browser-action.mjs';
 import {createLedgerClient,runLedgeredAction} from '../src/council-ledger-client.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const LEDGER='https://ultron-mw-cloud.hatchable.site/api/brain/council-ledger';
-const req=parseWorkerRequest(process.env.WORKER_REQUEST||readFileSync('council-worker-request.json','utf8'));
+const raw=process.env.WORKER_REQUEST||readFileSync('council-worker-request.json','utf8');
+const issueNumber=Number(process.env.WORKER_ISSUE_NUMBER||0);
+const request=process.env.GITHUB_EVENT_NAME==='issues'?
+  unwrapBrowserIssue(raw,issueNumber):raw;
+const req=parseWorkerRequest(request);
 
 const requestUrl=process.env.ACTIONS_ID_TOKEN_REQUEST_URL,requestToken=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 if(!requestUrl||!requestToken)throw Error('github-oidc-unavailable');
