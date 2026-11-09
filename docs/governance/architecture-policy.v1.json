@@ -1,0 +1,94 @@
+{
+  "schema": "ultron.architecture-governance.v1",
+  "status": "review-contract-not-runtime-enforcement",
+  "owner": "michaeljwilliams0123",
+  "repository": "michaeljwilliams0123/Ultron.MW",
+  "cloudProject": "proj_A6GCXRSKizko",
+  "cloudName": "Ultron MW Cloud Brain",
+  "authorities": {
+    "source": "GitHub main/PR/CI",
+    "execution": "Hatchable PostgreSQL",
+    "ui": "Hatchable Cloud Brain",
+    "independentProviderEffects": "provider readback"
+  },
+  "controls": {
+    "llmCanGrantAuthority": false,
+    "ownerApprovalRequiredForNewPrivilegedAction": true,
+    "operationScopedTokens": true,
+    "versionedStopAndPauseRequired": true,
+    "independentReadbackForWrites": true,
+    "unknownWriteOutcome": "reconcile-before-retry",
+    "paidSpendCeilingUsd": 0,
+    "protectedMainBypass": false,
+    "automaticRetirement": false
+  },
+  "protocol": {
+    "newRemoteMcp": "2026-07-28",
+    "modernRemoteTransport": "streamable-http",
+    "legacyAdapter": "2025-06-18",
+    "legacyAdapterPolicy": "retain-until-compatibility-parity-and-rollout",
+    "localStdio": "permitted",
+    "transportSessionState": "not-required-modern-mcp",
+    "businessExecutionState": "durable-postgresql",
+    "a2aExternalPeers": "opt-in-after-owner-authenticated-evidence"
+  },
+  "lifecycle": [
+    "proposed",
+    "sandbox",
+    "authorized",
+    "canary",
+    "active",
+    "revoked"
+  ],
+  "conditionalOutcomes": [
+    "blocked",
+    "reconcile-required"
+  ],
+  "retirementRequirements": [
+    "authoritative-component-and-consumer-inventory",
+    "versioned-compatibility-matrix",
+    "negative-security-and-replay-tests",
+    "exact-head-ci",
+    "independent-live-provider-postcondition",
+    "rollback-and-revocation-evidence",
+    "owner-authorized-release",
+    "zero-unapproved-paid-spend"
+  ],
+  "componentDecisions": [
+    {
+      "component": "framework-mcp-bridge",
+      "decision": "modernize",
+      "issue": 346
+    },
+    {
+      "component": "durable-execution-ledger",
+      "decision": "keep",
+      "issue": 183
+    },
+    {
+      "component": "browser-session-authentication",
+      "decision": "keep",
+      "issue": 192
+    },
+    {
+      "component": "static-source-analysis",
+      "decision": "modernize",
+      "issue": 173
+    },
+    {
+      "component": "verified-experience-learning",
+      "decision": "keep",
+      "issue": 193
+    },
+    {
+      "component": "a2a-external-federation",
+      "decision": "defer",
+      "issue": 190
+    },
+    {
+      "component": "github-pages-rollback-console",
+      "decision": "defer",
+      "issue": 170
+    }
+  ]
+}
