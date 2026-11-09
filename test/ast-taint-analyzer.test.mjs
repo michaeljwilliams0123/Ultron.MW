@@ -97,3 +97,10 @@ test('does not clear tainted computed function dispatch without arguments', () =
   assert.equal(result.status, 'unknown');
   assert.equal(result.isSafe, false);
 });
+
+test('records nested caller-to-callee edges and propagated return taint', () => {
+  const result = scan('function inner(value) { return value; } function outer(value) { return inner(value); } eval(outer(req.body.cmd));');
+  assert.ok(result.ir.callGraph.some(edge => edge.caller === '<module>' && edge.callee === 'outer'));
+  assert.ok(result.ir.callGraph.some(edge => edge.caller === 'outer' && edge.callee === 'inner'));
+  assert.ok(result.flows.some(flow => flow.sink === 'eval' && flow.sources.includes('req')));
+});
