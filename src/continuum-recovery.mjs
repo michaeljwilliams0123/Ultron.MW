@@ -153,6 +153,24 @@ export async function reconcileContinuumTick({
 }
 
 /**
+ * Convert only a canonical primary hourly admission into SLO input. Recovery
+ * and canary receipts deliberately return null: they may prove useful work,
+ * but neither can retroactively prove that the original scheduler slot fired.
+ */
+export function schedulerSloObservationFromReceipt({taskKey,eventType,details,success}={}){
+  if(eventType!=='scheduled-hourly'||details?.objective!=='repo.inspect'||
+     typeof success!=='boolean')return null;
+  const match=/^hourly-(\d{4})(\d{2})(\d{2})(\d{2})$/.exec(taskKey||'');
+  if(!match)return null;
+  const scheduledAt=`${match[1]}-${match[2]}-${match[3]}T${match[4]}:00:00.000Z`;
+  const parsed=new Date(scheduledAt);
+  if(!Number.isFinite(parsed.getTime())||
+     parsed.toISOString().slice(0,13).replace(/[^0-9]/g,'')!==match.slice(1).join(''))
+    return null;
+  return Object.freeze({scheduledAt,success,source:'scheduler'});
+}
+
+/**
  * SLO is derived from real scheduler receipts, never configured cron alone.
  * A missing slot is a failure, and duplicate observations cannot inflate
  * success. At least seven full days are required to certify the 99.5% goal.

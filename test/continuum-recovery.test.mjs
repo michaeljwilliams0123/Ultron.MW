@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reconcileContinuumTick, measureObservedSchedulerSlo} from '../src/continuum-recovery.mjs';
+import {reconcileContinuumTick,measureObservedSchedulerSlo,
+  schedulerSloObservationFromReceipt} from '../src/continuum-recovery.mjs';
 
 const NOW='2026-11-01T12:00:00.000Z';
 const SHA='a'.repeat(40);
@@ -117,6 +118,23 @@ test('C02 measured seven-day SLO counts missing slots as failures and ignores du
   assert.equal(result.successfulSlots,1);
   assert.equal(result.meetsTarget,false);
   assert.equal(result.evidenceComplete,false);
+});
+
+test('C02 SLO evidence adapter excludes recovery canaries and retrospective recovery receipts',()=>{
+ const canonical=schedulerSloObservationFromReceipt({taskKey:'hourly-2026110914',
+  eventType:'scheduled-hourly',details:{objective:'repo.inspect'},success:true});
+ assert.deepEqual(canonical,{scheduledAt:'2026-11-09T14:00:00.000Z',
+  success:true,source:'scheduler'});
+ for(const receipt of [
+  {taskKey:'recovery-canary-issue-184-live-01-hourly-2026110914',
+   eventType:'missed-hour-recovery-canary',details:{objective:'repo.inspect'},success:true},
+  {taskKey:'hourly-2026110914',eventType:'missed-hour-recovered',
+   details:{objective:'repo.inspect'},success:true},
+  {taskKey:'council-hourly-2026110914',eventType:'scheduled-hourly',
+   details:{objective:'council.review'},success:true},
+  {taskKey:'hourly-2026134014',eventType:'scheduled-hourly',
+   details:{objective:'repo.inspect'},success:true}
+ ])assert.equal(schedulerSloObservationFromReceipt(receipt),null);
 });
 
 test('C02 short observation window cannot certify seven-day SLO',()=>{
