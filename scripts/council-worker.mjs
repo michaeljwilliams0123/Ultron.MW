@@ -4,7 +4,7 @@
  * settle -> report. Fails closed when the ledger is unreachable. */
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {parseWorkerRequest,runWorkerOperation,toLedgerResult,sha256} from '../src/council-worker.mjs';
+import {parseWorkerRequest,runWorkerOperation,toLedgerResult,sha256,assertWorkerSourceSha} from '../src/council-worker.mjs';
 import {unwrapBrowserIssue} from '../src/browser-action.mjs';
 import {createLedgerClient,runLedgeredAction} from '../src/council-ledger-client.mjs';
 
@@ -22,6 +22,7 @@ if(process.env.GITHUB_EVENT_NAME==='issues'){
   input=unwrapBrowserIssue(event.issue.body,event.issue.number);
 }else input=process.env.WORKER_REQUEST||readFileSync('council-worker-request.json','utf8');
 const req=parseWorkerRequest(input);
+assertWorkerSourceSha(req,process.env.GITHUB_SHA);
 
 const requestUrl=process.env.ACTIONS_ID_TOKEN_REQUEST_URL,requestToken=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 if(!requestUrl||!requestToken)throw Error('github-oidc-unavailable');
