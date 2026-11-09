@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {browserActionUrl,parseBrowserAction,executeBrowserAction,unwrapBrowserIssue,BROWSER_ISSUE_MARKER}
  from '../src/browser-action.mjs';
-import {parseWorkerRequest,runWorkerOperation,toLedgerResult}
+import {parseWorkerRequest,runWorkerOperation,toLedgerResult,assertWorkerSourceSha}
  from '../src/council-worker.mjs';
 
 const SHA='a'.repeat(40),URL='https://ultron-mw-cloud.hatchable.site/execution-canary.html';
@@ -94,4 +94,10 @@ test('only owner issue format can activate browser.action and preserves issue re
   body.replace(BROWSER_ISSUE_MARKER,'OTHER_MARKER'),BROWSER_ISSUE_MARKER+'\nnot-json'])
   assert.throws(()=>unwrapBrowserIssue(invalid,345),/browser-issue-/);
  assert.throws(()=>unwrapBrowserIssue(body,0),/browser-issue-invalid/);
+});
+
+test('GitHub worker cannot execute an action prepared for another main SHA',()=>{
+ const req=parseWorkerRequest(request());
+ assert.equal(assertWorkerSourceSha(req,SHA),true);
+ assert.throws(()=>assertWorkerSourceSha(req,'b'.repeat(40)),/worker-main-source-drift/);
 });
