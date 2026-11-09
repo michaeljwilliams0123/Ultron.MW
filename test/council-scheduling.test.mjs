@@ -37,7 +37,9 @@ test('C04 hourly admission is idempotent across repeated scheduler calls',async(
   .replace("import { db,scheduler,events } from 'hatchable';",
     'const {db,scheduler,events}=globalThis.__c04TickPlatform;')
   .replace("import {notifyOwner} from 'lib/owner-live-events.js';",
-    'const notifyOwner=async()=>{globalThis.__c04TickContext.notifications++;};');
+    'const notifyOwner=async()=>{globalThis.__c04TickContext.notifications++;};')
+  .replace("import {recoverMissedHours} from 'lib/scheduler-recovery.js';",
+    'const recoverMissedHours=async()=>({recoveredCount:0,windowHours:6});');
  assert.notEqual(transformed,text);
  globalThis.__c04TickPlatform={
   db:{async query(sql,params=[]){

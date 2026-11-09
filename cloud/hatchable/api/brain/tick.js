@@ -1,5 +1,6 @@
 import { db,scheduler,events } from 'hatchable';
 import {notifyOwner} from 'lib/owner-live-events.js';
+import {recoverMissedHours} from 'lib/scheduler-recovery.js';
 export const access='scheduler';
 export const methods=['POST'];
 export default async function(req,res){
@@ -17,6 +18,9 @@ export default async function(req,res){
    SELECT id,'scheduled-hourly',jsonb_build_object('objective',objective)
    FROM admitted RETURNING task_id
  ) SELECT id,objective FROM admitted`,['hourly-'+hour,'council-hourly-'+hour,'research-slot-'+researchSlot]);
+ // Recover only the six preceding hourly slots for low-risk read/advisory
+ // tasks. The receipts mark retrospective recovery, not a forged cron fire.
+ const recovery=await recoverMissedHours({db,now,lookbackHours:6});
  // A scheduled tick has a short fire budget. Queue only: browser renders and
  // bounded multi-task processing belong to /api/brain/run, never this tick.
  // Continue once through the existing scheduler endpoint, without recursion.
@@ -50,5 +54,7 @@ export default async function(req,res){
  }
  if(admitted.rows.length)await notifyOwner(events,'task',Number(admitted.rows[0].id));
  return res.json({trigger:'hourly',processed:0,scheduled_count:admitted.rows.length,pending,mahoraga_pending,
-   continuation_scheduled,hf_pending,hf_reconciliation_scheduled,mode:'dispatch-only'});
+   continuation_scheduled,hf_pending,hf_reconciliation_scheduled,
+   recovered_count:recovery.recoveredCount,recovery_window_hours:recovery.windowHours,
+   mode:'dispatch-only'});
 }
