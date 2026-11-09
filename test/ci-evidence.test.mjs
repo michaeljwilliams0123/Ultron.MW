@@ -27,8 +27,13 @@ test('stale SHA, blocked runs, bad provenance and incomplete pages never prove s
     {...run,event:'issue_comment'},
   ])assert.equal(selectVerifiedMainCi({total_count:1,workflow_runs:[wrong]},SHA),null);
   assert.equal(selectVerifiedMainCi({total_count:101,workflow_runs:[run]},SHA),null);
+  assert.equal(selectVerifiedMainCi({total_count:2,workflow_runs:[run]},SHA),null);
+  assert.equal(selectVerifiedMainCi({total_count:100,
+    workflow_runs:Array.from({length:100},(_,i)=>({...run,id:i+1}))},SHA),null);
   assert.equal(selectVerifiedMainCi({total_count:0,workflow_runs:[]},SHA),null);
   assert.equal(selectVerifiedMainCi({total_count:1,workflow_runs:[{...run,conclusion:'action_required'}]},SHA).conclusion,'action_required');
+  assert.equal(selectVerifiedMainCi({total_count:2,workflow_runs:[run,
+    {...run,id:101,status:'in_progress',conclusion:null}]},SHA),null);
 });
 test('only attested exact-main CI removes missing-evidence weakness',()=>{
   const paths=['.github/workflows/verify.yml','test/x.test.mjs'];

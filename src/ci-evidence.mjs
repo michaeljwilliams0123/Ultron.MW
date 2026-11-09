@@ -3,13 +3,14 @@ const ROOT='/repos/'+REPO;
 const SHA=/^[a-f0-9]{40}$/;
 const CONCLUSIONS=new Set(['success','failure','cancelled','timed_out','action_required','neutral','skipped']);
 /**
- * Independently reads only completed Verify jobs on the exact current main
+ * Independently reads only completed Verify runs on the exact current main
  * source. The input list is treated as untrusted until checked against GitHub
  * workflow identity, source SHA, repository, branch, and terminal conclusion.
  */
 export function selectVerifiedMainCi(body,mainSha){
   if(!SHA.test(mainSha||'')||!Array.isArray(body?.workflow_runs)||
-     !Number.isSafeInteger(body?.total_count)||body.total_count>100)
+     !Number.isSafeInteger(body?.total_count)||body.total_count<0||
+     body.total_count!==body.workflow_runs.length||body.total_count>=100)
     return null;
   const matches=body.workflow_runs.filter(x=>
     x?.name==='Ultron core verification'&&
@@ -17,14 +18,14 @@ export function selectVerifiedMainCi(body,mainSha){
     x?.head_sha===mainSha&&x?.head_branch==='main'&&
     x?.head_repository?.full_name===REPO&&
     ['push','workflow_dispatch'].includes(x?.event)&&
-    x?.status==='completed'&&CONCLUSIONS.has(x?.conclusion)&&
     Number.isSafeInteger(x?.id)&&x.id>0&&
     Number.isSafeInteger(x?.run_attempt)&&x.run_attempt>0);
   matches.sort((a,b)=>b.id-a.id);
   const run=matches[0];
-  return run?Object.freeze({
+  return run&&run.status==='completed'&&CONCLUSIONS.has(run.conclusion)?Object.freeze({
     schema:'ultron.ci-main.v1',sha:mainSha,
     runId:run.id,runAttempt:run.run_attempt,conclusion:run.conclusion,
+    event:run.event,
     runUrl:'https://github.com/'+REPO+'/actions/runs/'+run.id,
     evidenceType:'authenticated-github-actions-run',
   }):null;
