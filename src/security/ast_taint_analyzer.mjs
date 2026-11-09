@@ -126,7 +126,6 @@ export function analyzePayloadAST(codeSnippet) {
       }
     };
     const unknown = msg => { if (!unknowns.includes(msg)) unknowns.push(msg); };
-    for (const hit of lexicalSinks) mark(hit.sink, hit.node, new Set(), true);
     if (callbacks.length) unknown('Callback analysis incomplete at lines ' + [...new Set(callbacks)].join(','));
     const isExec = name => EXEC_METHODS.has(imports.get(name)) ||
       [...moduleNames].some(mod => name?.startsWith(mod + '.') && EXEC_METHODS.has(name.slice(mod.length + 1))) ||
@@ -272,6 +271,7 @@ export function analyzePayloadAST(codeSnippet) {
     runStatements(ast.program.body, root, [], 0);
     // Scan uncalled functions for direct sinks, but do not assume unknown callers are safe.
     for (const fn of functions.values()) executeFunction(fn, [], root, 0);
+    for (const hit of lexicalSinks) mark(hit.sink, hit.node, new Set(), true);
   } catch (error) {
     unknown(error instanceof Error ? error.message : 'Analysis failed');
   }
