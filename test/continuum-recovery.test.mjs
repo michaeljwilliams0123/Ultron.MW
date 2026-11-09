@@ -122,7 +122,8 @@ test('C02 measured seven-day SLO counts missing slots as failures and ignores du
 
 test('C02 SLO evidence adapter excludes recovery canaries and retrospective recovery receipts',()=>{
  const canonical=schedulerSloObservationFromReceipt({taskKey:'hourly-2026110914',
-  eventType:'scheduled-hourly',details:{objective:'repo.inspect'},success:true});
+  eventType:'scheduled-hourly',details:{objective:'repo.inspect',trigger:'cron',
+   admittedAt:'2026-11-09T14:17:03.000Z'},success:true});
  assert.deepEqual(canonical,{scheduledAt:'2026-11-09T14:00:00.000Z',
   success:true,source:'scheduler'});
  for(const receipt of [
@@ -131,9 +132,22 @@ test('C02 SLO evidence adapter excludes recovery canaries and retrospective reco
   {taskKey:'hourly-2026110914',eventType:'missed-hour-recovered',
    details:{objective:'repo.inspect'},success:true},
   {taskKey:'council-hourly-2026110914',eventType:'scheduled-hourly',
-   details:{objective:'council.review'},success:true},
+   details:{objective:'council.review',trigger:'cron',
+    admittedAt:'2026-11-09T14:17:03.000Z'},success:true},
   {taskKey:'hourly-2026134014',eventType:'scheduled-hourly',
-   details:{objective:'repo.inspect'},success:true}
+   details:{objective:'repo.inspect',trigger:'cron',
+    admittedAt:'2026-11-09T14:17:03.000Z'},success:true},
+  {taskKey:'hourly-2026110914',eventType:'scheduled-hourly',
+   details:{objective:'repo.inspect'},success:true},
+  {taskKey:'hourly-2026110914',eventType:'scheduled-hourly',
+   details:{objective:'repo.inspect',trigger:'now',
+    admittedAt:'2026-11-09T14:17:03.000Z'},success:true},
+  {taskKey:'hourly-2026110914',eventType:'scheduled-hourly',
+   details:{objective:'repo.inspect',trigger:'cron',
+    admittedAt:'2026-11-09T15:00:00.000Z'},success:true},
+  {taskKey:'hourly-2026110914',eventType:'scheduled-hourly',
+   details:{objective:'repo.inspect',trigger:'cron',
+    admittedAt:'2026-11-09 14:17:03Z'},success:true}
  ])assert.equal(schedulerSloObservationFromReceipt(receipt),null);
 });
 

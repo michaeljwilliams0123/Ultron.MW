@@ -5,6 +5,8 @@ export const access='scheduler';
 export const methods=['POST'];
 export default async function(req,res){
  const now=new Date();
+ const invocationTrigger=typeof req.headers?.['x-hatchable-trigger']==='string'
+  ?req.headers['x-hatchable-trigger']:'unknown';
  const hour=now.toISOString().slice(0,13).replace(/[^0-9]/g,'');
  // One durable admission per 6-hour UTC slot. If the boundary tick is late
  // or missed, the next hourly tick still admits that slot exactly once.
@@ -15,9 +17,11 @@ export default async function(req,res){
    ON CONFLICT(task_key) DO NOTHING RETURNING id,objective
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type,details)
-   SELECT id,'scheduled-hourly',jsonb_build_object('objective',objective)
+   SELECT id,'scheduled-hourly',jsonb_build_object('objective',objective,
+    'trigger',$4::text,'admittedAt',$5::text)
    FROM admitted RETURNING task_id
- ) SELECT id,objective FROM admitted`,['hourly-'+hour,'council-hourly-'+hour,'research-slot-'+researchSlot]);
+ ) SELECT id,objective FROM admitted`,['hourly-'+hour,'council-hourly-'+hour,
+  'research-slot-'+researchSlot,invocationTrigger,now.toISOString()]);
  // Recover only the six preceding hourly slots for low-risk read/advisory
  // tasks. The receipts mark retrospective recovery, not a forged cron fire.
  const recovery=await recoverMissedHours({db,now,lookbackHours:6});
@@ -56,5 +60,5 @@ export default async function(req,res){
  return res.json({trigger:'hourly',processed:0,scheduled_count:admitted.rows.length,pending,mahoraga_pending,
    continuation_scheduled,hf_pending,hf_reconciliation_scheduled,
    recovered_count:recovery.recoveredCount,recovery_window_hours:recovery.windowHours,
-   mode:'dispatch-only'});
+   invocation_trigger:invocationTrigger,mode:'dispatch-only'});
 }

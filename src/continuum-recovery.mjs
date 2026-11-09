@@ -159,13 +159,18 @@ export async function reconcileContinuumTick({
  */
 export function schedulerSloObservationFromReceipt({taskKey,eventType,details,success}={}){
   if(eventType!=='scheduled-hourly'||details?.objective!=='repo.inspect'||
+     details?.trigger!=='cron'||typeof details?.admittedAt!=='string'||
      typeof success!=='boolean')return null;
   const match=/^hourly-(\d{4})(\d{2})(\d{2})(\d{2})$/.exec(taskKey||'');
   if(!match)return null;
   const scheduledAt=`${match[1]}-${match[2]}-${match[3]}T${match[4]}:00:00.000Z`;
   const parsed=new Date(scheduledAt);
+  const admitted=new Date(details.admittedAt);
   if(!Number.isFinite(parsed.getTime())||
-     parsed.toISOString().slice(0,13).replace(/[^0-9]/g,'')!==match.slice(1).join(''))
+     !Number.isFinite(admitted.getTime())||
+     admitted.toISOString()!==details.admittedAt||
+     parsed.toISOString().slice(0,13).replace(/[^0-9]/g,'')!==match.slice(1).join('')||
+     admitted.toISOString().slice(0,13)!==parsed.toISOString().slice(0,13))
     return null;
   return Object.freeze({scheduledAt,success,source:'scheduler'});
 }
