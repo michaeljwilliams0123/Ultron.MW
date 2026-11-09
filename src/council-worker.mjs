@@ -47,10 +47,10 @@ export function parseWorkerRequest(input,{allow=EGRESS_ALLOW}={}){
  if(!params||typeof params!=='object'||Array.isArray(params)||JSON.stringify(params).length>4000)throw Error('worker-params-invalid');
  if(issueNumber!==undefined&&(!Number.isSafeInteger(issueNumber)||issueNumber<1))throw Error('worker-issue-invalid');
  if(op==='browser.check'){checkEgressUrl(params.url,allow);}
- if(op==='browser.action'){parseBrowserAction(params);}
+ const browserPlan=op==='browser.action'?parseBrowserAction(params):null;
  if(op==='github.ci.status'&&!SHA40.test(params.sha||sourceSha))throw Error('worker-sha-invalid');
  return Object.freeze({objectiveId,op,role,sourceSha,params:Object.freeze({...params}),issueNumber,
-  caseDigest:sha256('council-worker/1\n'+objectiveId+(op==='browser.action'?JSON.stringify(params):''))});
+  caseDigest:sha256('council-worker/1\n'+objectiveId+(browserPlan?JSON.stringify(browserPlan):''))});
 }
 
 function withTimeout(promise,ms,label){
