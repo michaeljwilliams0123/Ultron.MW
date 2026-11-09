@@ -1,5 +1,7 @@
 # Ultron architecture
 
+**Current governance overlay (2026-11-09):** [Architecture Governance Decision](governance/ARCHITECTURE-GOVERNANCE.md) and [Retirement Register](governance/RETIREMENT-REGISTER.md) control architectural migration proposals and evidence gates. Historical deployment and console descriptions below remain dated records; see the linked issues and live runtime for current acceptance. A governance PR does not itself remove legacy clients, authorize providers, deploy code or prove production parity.
+
 ## Identity and execution authority
 
 Ultron.MW is the authoritative repository and release boundary. Ultron has one owner, one interface and one coordinator. Historical predecessor repositories confer no runtime permissions and supply no required infrastructure. New adapters must justify their scope with executable acceptance evidence.
