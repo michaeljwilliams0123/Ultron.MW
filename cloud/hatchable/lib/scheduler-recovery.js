@@ -18,7 +18,7 @@ export async function recoverMissedHours({db,now=new Date(),lookbackHours=6}={})
  ), targets AS (
    SELECT CASE WHEN obj.objective='repo.inspect'
      THEN 'hourly-' ELSE 'council-hourly-' END ||
-      to_char(slot_utc,'YYYYMMDDHH') AS task_key,obj.objective
+      to_char(slot_utc,'YYYYMMDDHH24') AS task_key,obj.objective
    FROM slots CROSS JOIN (VALUES ('repo.inspect'),('council.review')) AS obj(objective)
  ), moved AS (
    INSERT INTO brain_tasks(task_key,objective)

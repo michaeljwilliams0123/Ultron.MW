@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 import {recoverMissedHours} from '../cloud/hatchable/lib/scheduler-recovery.js';
 
-const AT='2026-11-09T13:15:00.000Z';
+const AT='2026-11-09T15:15:00.000Z';
 async function setup(){
  const db=new PGlite();
  await db.exec(`CREATE TABLE brain_tasks(
@@ -17,22 +17,23 @@ test('C02: lost hourly slots backfill read-only tasks and independent recovery r
  const db=await setup();
  try{
   await db.exec(`INSERT INTO brain_tasks(task_key,objective) VALUES
-   ('hourly-2026110912','repo.inspect'),
-   ('council-hourly-2026110912','council.review');`);
+   ('hourly-2026110914','repo.inspect'),
+   ('council-hourly-2026110914','council.review');`);
   const first=await recoverMissedHours({db,now:new Date(AT),lookbackHours:6});
   assert.equal(first.recoveredCount,10);
   assert.equal(first.windowHours,6);
-  assert.equal(first.oldestHour,'2026110907');
-  assert.equal(first.newestHour,'2026110912');
+  assert.equal(first.oldestHour,'2026110909');
+  assert.equal(first.newestHour,'2026110914');
   const tasks=(await db.query("SELECT task_key,objective FROM brain_tasks ORDER BY task_key")).rows;
   assert.equal(tasks.length,12);
-  assert.ok(tasks.some(x=>x.task_key==='hourly-2026110907'));
-  assert.ok(tasks.some(x=>x.task_key==='council-hourly-2026110911'));
+  assert.ok(tasks.some(x=>x.task_key==='hourly-2026110909'));
+  assert.ok(tasks.some(x=>x.task_key==='council-hourly-2026110913'));
+  assert.ok(!tasks.some(x=>x.task_key==='hourly-2026110901'));
   const ev=(await db.query("SELECT event_type,details FROM brain_events ORDER BY id")).rows;
   assert.equal(ev.length,10);
   assert.ok(ev.every(x=>x.event_type==='missed-hour-recovered'));
   assert.ok(ev.every(x=>x.details?.paidCents===0));
-  assert.ok(ev.every(x=>/^20261109(?:0[7-9]|1[0-2])$/.test(x.details?.scheduledHour||'')));
+  assert.ok(ev.every(x=>/^20261109(?:09|1[0-4])$/.test(x.details?.scheduledHour||'')));
   assert.equal((await recoverMissedHours({db,now:new Date(AT),lookbackHours:6})).recoveredCount,0);
   assert.equal((await db.query('SELECT count(*)::int n FROM brain_events')).rows[0].n,10);
  }finally{await db.close();}
