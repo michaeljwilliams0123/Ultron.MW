@@ -32,10 +32,15 @@ jobs:
         with:
           node-version: '22'
       - name: Install Playwright for browser objectives
-        if: contains(inputs.request, 'browser.check')
+        if: contains(inputs.request, 'browser.check') || contains(inputs.request, 'browser.action')
         run: |
           npm install --no-save --ignore-scripts --no-audit --no-fund playwright@1.65.0
           npx playwright install --with-deps chromium
+      - name: Check bounded browser and worker source
+        run: |
+          node --check src/browser-action.mjs
+          node --check src/council-worker.mjs
+          node --check scripts/council-worker.mjs
       - name: Execute objective with ledger, timeout and post-action verification
         env:
           WORKER_REQUEST: ${{ inputs.request }}
