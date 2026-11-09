@@ -1,5 +1,6 @@
 import {dataObject,providerBinding,grantRequest,authorizeProvider,
  reconcileProvider,reconcileProviderObserved} from 'lib/mcp-provider-write.js';
+import {authorizeOwnerPasskeyProvider} from 'lib/owner-passkey-authorization.js';
 
 const PROJECT_ID=87884831;
 const PROJECT_PATH='michaelj.williams0123/Ultron.MW';
@@ -107,7 +108,7 @@ async function observed({db,api,b,grantId,providerAcknowledged}){
  }),b.branch,b.request.sourceSha);
 }
 export async function gitlabBranchWrite({
- mode,request,envelope,grantId,db,config,api,transport=fetch
+ mode,request,envelope,passkey,grantId,db,config,api,transport=fetch
 }={}){
  let b;
  try{b=await bind(request);}catch{return held('invalid-request');}
@@ -119,9 +120,11 @@ export async function gitlabBranchWrite({
   if(typeof api?.call!=='function')return prior;
   return observed({db,api,b,grantId,providerAcknowledged:false});
  }
- if(mode!=='submit')return held('invalid-mode');
+ if(mode!=='submit'||(passkey&&envelope))return held('invalid-mode');
  if(typeof api?.call!=='function')return held('gitlab-write-oauth-required');
- const authority=await authorizeProvider({db,config,binding:b.binding,envelope});
+ const authority=passkey
+  ?await authorizeOwnerPasskeyProvider({db,binding:b.binding,proof:passkey})
+  :await authorizeProvider({db,config,binding:b.binding,envelope});
  if(authority.error)return publicResult(authority.error,b.branch,b.request.sourceSha);
  let pre;
  try{pre=await preflight({api,transport,branch:b.branch,sourceSha:b.request.sourceSha});}

@@ -17,8 +17,12 @@ export const graph=await import(data((await load('lib/mcp-graph-write.js'))
  .replace("'lib/mcp-provider-write.js'",JSON.stringify(provider))));
 export const github=await import(data((await load('lib/github-issue-write.js'))
  .replace("'lib/mcp-provider-write.js'",JSON.stringify(provider))));
-export const gitlabModule=data((await load('lib/gitlab-branch-write.js'))
+const passkeyAuthority=data((await load('lib/owner-passkey-authorization.js'))
+ .replace("'lib/webauthn-owner.js'",JSON.stringify(url('lib/webauthn-owner.js')))
  .replace("'lib/mcp-provider-write.js'",JSON.stringify(provider)));
+export const gitlabModule=data((await load('lib/gitlab-branch-write.js'))
+ .replace("'lib/mcp-provider-write.js'",JSON.stringify(provider))
+ .replace("'lib/owner-passkey-authorization.js'",JSON.stringify(passkeyAuthority)));
 export const gitlabWriter=await import(gitlabModule);
 export async function makeTool(file,dependency,source){
  return (await import(data((await load(file))

@@ -202,3 +202,10 @@ export async function reconcileProviderObserved({db,binding,grantId,evidence}={}
  catch{/* The update may have committed. Always use independent ledger readback. */}
  return reconcileProvider({db,binding,grantId});
 }
+
+// Shared post-claim gate for signature-backed and passkey-backed provider grants.
+export async function providerDispatchAllowed({db,binding,grantId}={}){
+ if(typeof db?.query!=='function'||!binding||typeof grantId!=='string')return false;
+ const result=await db.query(CHECK,[binding.key,binding.fingerprint,grantId]);
+ return result?.rows?.length===1&&result.rows[0].admitted===true;
+}

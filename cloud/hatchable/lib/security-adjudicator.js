@@ -6,7 +6,8 @@ const OPERATIONS=new Set([
  'repo.inspect','repo.issue.create','repo.verify.dispatch','repo.pr.review',
  'repo.pr.squash','repo.branch.update','cloud.deploy','permissions.change',
  'webhook.configure','cloud.note.create','mcp.queue.submit','mcp.task.control',
- 'graph.workbook.cell.write','github.issue.write','gitlab.branch.create'
+ 'graph.workbook.cell.write','github.issue.write','gitlab.branch.create',
+ 'owner.passkey.enroll'
 ]);
 const GRANT_SCHEMA='ultron.security-grant.v1';
 const ISSUER='ultron-owner-authority';
