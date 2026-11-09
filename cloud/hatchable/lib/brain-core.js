@@ -5,13 +5,12 @@ import { verifyPersistedAcceptanceEvidence } from 'lib/acceptance-evidence.js';
 import { verifyPersistedHeldOutEvidence } from 'lib/heldout-evidence.js';
 import { buildCouncilRoomResult } from 'lib/council-room-core.js';
 import { collectResearchIntake } from 'lib/research-intake.js';
+import { readGithubPublic as github } from 'lib/github-public-read.js';
 
-const REPO = 'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const SITE = 'https://michaeljwilliams0123.github.io/Ultron.MW/';
 const SHA = /^[0-9a-f]{40}$/;
 const REQUIRED_WORKFLOW='Ultron core verification';
 const REQUIRED_JOB='test';
-const HEADERS = {Accept:'application/vnd.github+json','User-Agent':'UltronMW-Cloud-Brain'};
 export const CAPABILITIES = [
  {id:'repo.inspect',kind:'github-native',effect:'read',description:'Verify the canonical GitHub main commit'},
  {id:'repo.prs',kind:'github-native',effect:'read',description:'Observe up to twelve open pull requests'},
@@ -22,11 +21,6 @@ export const CAPABILITIES = [
  {id:'research.intake',kind:'github-public-primary',effect:'read',description:'Read six bounded upstream releases and prioritize a zero-cost review'}
 ];
 export const ALLOWED = new Set(CAPABILITIES.map(x=>x.id));
-async function github(path){
- const response = await fetch(REPO+path,{headers:HEADERS,signal:AbortSignal.timeout(10000)});
- if(!response.ok)throw Error('github-status-'+response.status);
- return response.json();
-}
 function safeString(v,max=150){return String(v??'').slice(0,max);}
 async function currentMainSha(){
  const ref=await github('/git/ref/heads/main');

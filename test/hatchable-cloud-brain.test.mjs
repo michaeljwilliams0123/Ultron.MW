@@ -431,12 +431,16 @@ async function realGithubRunner(){
  const research='data:text/javascript;base64,'+Buffer.from(
   'export async function collectResearchIntake(){return {objective:"research.intake"}};'
  ).toString('base64');
+ const githubRead='data:text/javascript;base64,'+Buffer.from(await readFile(
+  new URL('../cloud/hatchable/lib/github-public-read.js',import.meta.url),'utf8'
+ )).toString('base64');
  const source=(await readFile(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8'))
   .replace("from 'lib/research-intake.js'","from '"+research+"'")
   .replace("from 'lib/council-evidence.js'","from '"+evidence+"'")
   .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'")
   .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'")
-  .replace("from 'lib/council-room-core.js'","from '"+room+"'");
+  .replace("from 'lib/council-room-core.js'","from '"+room+"'")
+  .replace("from 'lib/github-public-read.js'","from '"+githubRead+"'");
  const core='data:text/javascript;base64,'+Buffer.from(source).toString('base64');
  return moduleUnderTest('brain-runner.js',core);
 }
@@ -450,7 +454,7 @@ test('cloud: GitHub 403 is a lease-fenced failure with bounded retry and later s
   calls++;
   assert.match(String(url),/\/git\/ref\/heads\/main$/);
   assert.equal(options?.signal?.aborted,false);
-  if(calls===1)return {ok:false,status:403};
+  if(calls<=2)return {ok:false,status:403};
   return {ok:true,json:async()=>({object:{sha:'a'.repeat(40)}})};
  };
  try{
@@ -464,13 +468,13 @@ test('cloud: GitHub 403 is a lease-fenced failure with bounded retry and later s
   db.advance(15*60*1000-1);
   const early=await runGithub({db,browser:{}});
   assert.equal(early.status,'idle','must not re-claim during 15-minute backoff');
-  assert.equal(calls,1,'must not repeat the failed external read early');
+  assert.equal(calls,2,'must not repeat the failed external read early');
   db.advance(1);
   const recovered=await runGithub({db,browser:{}});
   assert.equal(recovered.status,'done');
   assert.equal(recovered.summary.sha,'a'.repeat(40));
   assert.equal(db.state.attempts,2);
-  assert.equal(calls,2);
+  assert.equal(calls,3);
   assert.deepEqual(db.events,['claimed','failed','claimed','observed']);
  }finally{globalThis.fetch=originalFetch;}
 });
