@@ -136,3 +136,12 @@ test('PostgreSQL replay claim is atomic and fails closed without a receipt',asyn
  const unavailable=createPostgresApprovalNonceStore({db:{query:async()=>{throw Error('down')}}});
  assert.equal(await unavailable.consume(p),false);
 });
+
+test('P-256 existing owner JWK public key is accepted without private-key exposure',async()=>{
+ const {privateKey,publicKey}=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+ const p=payload(),sig=sign('sha256',Buffer.from(JSON.stringify(p)),
+  {key:privateKey,dsaEncoding:'ieee-p1363'}).toString('base64url');
+ const jwk=publicKey.export({format:'jwk'});
+ assert.equal(await verifyCryptographicApproval(p,sig,jwk,
+  options({algorithm:'ecdsa-p256-sha256'})),true);
+});

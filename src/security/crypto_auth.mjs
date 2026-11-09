@@ -60,7 +60,9 @@ export async function verifyCryptographicApproval(payload,signature,trustedKey,{
    authenticated=got.length===expected.length&&timingSafeEqual(got,expected);
   }else if(algorithm==='ecdsa-p256-sha256'){
    if(!P256.test(signature||''))return false;
-   const publicKey=trustedKey?.type==='public'?trustedKey:createPublicKey(trustedKey);
+   const publicKey=trustedKey?.type==='public'?trustedKey:
+     trustedKey?.kty==='EC'?createPublicKey({key:trustedKey,format:'jwk'}):
+     createPublicKey(trustedKey);
    if(publicKey.asymmetricKeyType!=='ec'||
       publicKey.asymmetricKeyDetails?.namedCurve!=='prime256v1')return false;
    const raw=Buffer.from(signature,'base64url');
