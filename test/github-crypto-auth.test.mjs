@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac,generateKeyPairSync,sign} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
+let PGlite;
+try{({PGlite}=await import('@electric-sql/pglite'));}catch{}
+if(process.env.CI==='true'&&!PGlite)throw Error('pglite-ci-dependency-unavailable');
+const pgliteSkip=PGlite?false:'@electric-sql/pglite not installed';
 import {
  verifyCryptographicApproval,createScopedInstallationTokenProvider,
- createSignedGitHubAuthority,
+ createSignedGitHubAuthority,createPostgresApprovalNonceStore,
 } from '../src/security/crypto_auth.mjs';
 import {requiredTokenPermissions,ULTRON_REPOSITORY_ID}
  from '../src/github-principal-policy.mjs';
@@ -69,6 +74,25 @@ test('signed authority adapter rejects unsigned _meta and binds plan digest',asy
  await assert.rejects(missing.verify(plan,planDigest),/invalid/i);
 });
 
+test('future clock skew cannot extend signed authority beyond trusted verification time',async()=>{
+ const planDigest='a'.repeat(64),plan={operation:OP,idempotencyKey:'admin:future-001'};
+ const future=payload({timestamp:NOW+300_000});
+ const service=createSignedGitHubAuthority({
+  getEnvelope:async()=>({payload:future,signature:mac(future)}),
+  secretKey:KEY,nonceStore:replay(),expectedInstallationId:9123,clock:()=>NOW
+ });
+ const authority=await service.verify(plan,planDigest);
+ assert.equal(authority.expiresAt,new Date(NOW+300_000).toISOString());
+ assert.ok(Date.parse(authority.expiresAt)-NOW<=300_000);
+
+ const outsideSkew=payload({timestamp:NOW+300_001});
+ const rejected=createSignedGitHubAuthority({
+  getEnvelope:async()=>({payload:outsideSkew,signature:mac(outsideSkew)}),
+  secretKey:KEY,nonceStore:replay(),expectedInstallationId:9123,clock:()=>NOW
+ });
+ await assert.rejects(rejected.verify(plan,planDigest),/invalid/i);
+});
+
 test('GitHub App issuer requests one repository and exact action permissions',async()=>{
  const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});
  const seen=[];
@@ -121,16 +145,37 @@ test('refuse overbroad GitHub token readback and never return it',async()=>{
  }
 });
 
-test('PostgreSQL replay claim is atomic and fails closed without a receipt',async()=>{
- const {createPostgresApprovalNonceStore}=await import('../src/security/crypto_auth.mjs');
+test('0037 migration and PostgreSQL nonce store admit once and reject replay',{skip:pgliteSkip},async()=>{
+ const db=new PGlite();
+ try{
+  const migration=await readFile(new URL(
+   '../cloud/hatchable/migrations/0037_github_approval_nonces.sql',import.meta.url),'utf8');
+  await db.exec(migration);
+  const store=createPostgresApprovalNonceStore({db});
+  const p=payload({timestamp:Date.now()});
+  assert.equal(await store.consume(p),true);
+  assert.equal(await store.consume(p),false);
+  const stored=await db.query(`SELECT nonce,operation,target_resource,
+    approval_timestamp,expires_at,consumed_at
+    FROM brain_github_approval_nonces WHERE nonce=$1`,[p.nonce]);
+  assert.equal(stored.rows.length,1);
+  assert.equal(stored.rows[0].operation,p.toolName);
+  assert.equal(stored.rows[0].target_resource,p.targetResource);
+  assert.ok(Math.abs(Date.parse(stored.rows[0].expires_at)-p.timestamp-300_000)<1000);
+  const expired=payload({timestamp:Date.now()-300_001,
+   nonce:'crypto-expired-nonce-001abcdefghijkl'});
+  assert.equal(await store.consume(expired),false);
+ }finally{await db.close();}
+});
+
+test('PostgreSQL nonce store fails closed on unavailable database',async()=>{
  const requests=[];
  const store=createPostgresApprovalNonceStore({db:{query:async(sql,args)=>{
   requests.push({sql,args});
-  return {rows:requests.length===1?[{nonce:payload().nonce}]:[]};
+  return {rows:[{nonce:payload().nonce}]};
  }}});
  const p=payload();
  assert.equal(await store.consume(p),true);
- assert.equal(await store.consume(p),false);
  assert.match(requests[0].sql,/ON CONFLICT \(nonce\) DO NOTHING/);
  assert.match(requests[0].sql,/clock_timestamp\(\)/);
  const unavailable=createPostgresApprovalNonceStore({db:{query:async()=>{throw Error('down')}}});

@@ -29,12 +29,17 @@ IEEE-P1363 signatures encoded as 86-character unpadded base64url, matching
 Hatchable's raw-signature convention. The verifier rejects extra or missing
 claims, malformed encodings, substituted scopes, expired signatures, failed
 signature checks, and duplicate or unavailable nonce claims.
+The verifier allows at most five minutes of clock skew in either direction,
+but a future payload timestamp never extends authority: the signed grant
+expires no later than five minutes after the trusted server verification time.
 
 Migration `0037_github_approval_nonces.sql` creates the unique-key ledger.
 `createPostgresApprovalNonceStore({db})` atomically consumes a verified
 nonce; database failure and duplicate claims DENY. Do not use a process-local
 Set in production. Retain nonce records beyond possible clock-skew/replay
-windows. Every user-approved write needs a fresh signed envelope.
+windows. Its expiry is based on the signed timestamp, so a future-dated nonce
+may remain reserved for up to ten minutes from verification. Every
+user-approved write needs a fresh signed envelope.
 
 ## Trusted adapter wiring (not activated by this source change)
 

@@ -98,9 +98,10 @@ export function createSignedGitHubAuthority({
   const resource=RESOURCE_PREFIX+planDigest;
   const envelope=await getEnvelope({operation:plan.operation,planDigest});
   const payload=envelope?.payload;
+  const now=clock();
   const accepted=await verifyCryptographicApproval(payload,envelope?.signature,
     algorithm==='hmac-sha256'?secretKey:publicKey,{
-     algorithm,now:clock(),nonceStore,expectedToolName:plan.operation,
+     algorithm,now,nonceStore,expectedToolName:plan.operation,
      expectedTargetResource:resource,
     });
   if(!accepted)throw Error('invalid or replayed cryptographic approval');
@@ -111,7 +112,7 @@ export function createSignedGitHubAuthority({
    verified:true,actor:'michaeljwilliams0123',repository:ULTRON_REPOSITORY,
    operation:plan.operation,planDigest,idempotencyKey:plan.idempotencyKey,
    installationId:expectedInstallationId,grantId:'grant:'+payload.nonce,
-   expiresAt:new Date(payload.timestamp+TTL_MS).toISOString(),
+   expiresAt:new Date(Math.min(payload.timestamp+TTL_MS,now+TTL_MS)).toISOString(),
   });
  }});
 }
