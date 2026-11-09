@@ -58,7 +58,7 @@
     {
       "component": "framework-mcp-bridge",
       "decision": "modernize",
-      "issue": 346
+      "issue": 348
     },
     {
       "component": "durable-execution-ledger",
