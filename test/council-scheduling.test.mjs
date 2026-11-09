@@ -64,7 +64,7 @@ test('C04 hourly admission is idempotent across repeated scheduler calls',async(
   assert.equal(calls[0].params.length,3);
   assert.match(calls[0].params[0],/^hourly-\d{10}$/);
   assert.match(calls[0].params[1],/^council-hourly-\d{10}$/);
-  assert.match(calls[0].params[2],/^research-slot-\\d{8}-[0-3]$/);
+  assert.match(calls[0].params[2],/^research-slot-\d{8}-[0-3]$/);
   assert.equal(calls[0].params[0].slice('hourly-'.length),
    calls[0].params[1].slice('council-hourly-'.length));
  }finally{
