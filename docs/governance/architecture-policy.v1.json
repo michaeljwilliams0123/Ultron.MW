@@ -73,7 +73,7 @@
     {
       "component": "static-source-analysis",
       "decision": "modernize",
-      "issue": 173
+      "issue": 349
     },
     {
       "component": "verified-experience-learning",
