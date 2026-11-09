@@ -47,6 +47,9 @@ test('registers exact origin, RP, ES256 COSE and user-verified passkey',async()=
   Buffer.from(result.publicKeySpki,'base64url'),{name:'ECDSA',namedCurve:'P-256'},
   false,['verify']);
  assert.equal(imported.type,'public');
+ const isolated=await verifyOwnerPasskeyRegistration(f,{
+  subtle:{digest:webcrypto.subtle.digest.bind(webcrypto.subtle)}});
+ assert.equal(isolated.credentialId,f.credentialId);
 });
 test('rejects malformed, cross-origin, non-ES256 and missing user verification',async()=>{
  const cases=[

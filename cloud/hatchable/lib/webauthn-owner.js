@@ -1,3 +1,4 @@
+import {createVerify} from 'node:crypto';
 const ORIGIN='https://ultron-mw-cloud.hatchable.site';
 const RP_ID='ultron-mw-cloud.hatchable.site';
 const B64=/^[A-Za-z0-9_-]+$/;
@@ -17,6 +18,12 @@ function equal(a,b){
  let difference=0;
  for(let i=0;i<a.length;i++)difference|=a[i]^b[i];
  return difference===0;
+}
+function spkiPem(bytes){
+ const chars=String.fromCharCode(...bytes);
+ const base64=btoa(chars);
+ return '-----BEGIN PUBLIC KEY-----\n'+
+  base64.match(/.{1,64}/g).join('\n')+'\n-----END PUBLIC KEY-----';
 }
 function concat(a,b){
  const result=new Uint8Array(a.length+b.length);
@@ -77,15 +84,17 @@ export async function verifyOwnerPasskeyAssertion({
  if((flags&0x01)===0)refuse('user-presence-required');
  if((flags&0x04)===0)refuse('user-verification-required');
  const signCount=new DataView(auth.buffer,auth.byteOffset+33,4).getUint32(0,false);
- let key;
- try{key=await subtle.importKey('spki',decode(publicKeySpki,{min:80,max:1024}),
-  {name:'ECDSA',namedCurve:'P-256'},false,['verify']);}
- catch{refuse('public-key-invalid');}
+ const key=spkiPem(decode(publicKeySpki,{min:80,max:1024}));
  const clientHash=new Uint8Array(await subtle.digest('SHA-256',clientBytes));
+ let der;
+ try{der=decode(signature,{min:80,max:128});derToRaw(der);}
+ catch{refuse('signature-invalid');} // Reject malformed DER consistently.
  let verified=false;
- try{verified=await subtle.verify({name:'ECDSA',hash:'SHA-256'},key,
-  derToRaw(decode(signature,{min:80,max:128})),concat(auth,clientHash));}
- catch{refuse('signature-invalid');}
+ try{
+  const v=createVerify('SHA256');
+  v.update(concat(auth,clientHash));v.end();
+  verified=v.verify(key,der);
+ }catch{refuse('signature-invalid');}
  if(!verified)refuse('signature-invalid');
  return {credentialId,signCount};
 }
@@ -182,7 +191,10 @@ export async function verifyOwnerPasskeyRegistration({
  const prefix='3059301306072a8648ce3d020106082a8648ce3d03010703420004';
  const header=Uint8Array.from(prefix.match(/../g).map(x=>parseInt(x,16)));
  const publicKey=concat(concat(header,cose.get(-2)),cose.get(-3));
- try{await subtle.importKey('spki',publicKey,{name:'ECDSA',namedCurve:'P-256'},false,['verify']);}
+ // Hatchable V8 has SHA-256 digest but no ECDSA subtle.importKey.
+ // Its node:crypto public-key verifier parses SPKI/PEM natively.
+ try{const v=createVerify('SHA256');v.update(new Uint8Array([0]));v.end();
+  v.verify(spkiPem(publicKey),new Uint8Array([0x30,0x00]));}
  catch{refuse('unsupported-credential-key');}
  return Object.freeze({credentialId,publicKeySpki:encodeB64(publicKey),signCount});
 }

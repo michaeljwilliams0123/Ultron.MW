@@ -54,6 +54,11 @@ test('owner passkey assertion verifies exact origin, RP, challenge and user veri
  const result=await verifyOwnerPasskeyAssertion({...assertion,
   expectedCredentialId:assertion.credentialId,subtle:webcrypto.subtle});
  assert.deepEqual(result,{credentialId:assertion.credentialId,signCount:7});
+ // Hatchable isolates support SHA-256 digest but not asymmetric WebCrypto imports.
+ const isolated=await verifyOwnerPasskeyAssertion({...assertion,
+  expectedCredentialId:assertion.credentialId,
+  subtle:{digest:webcrypto.subtle.digest.bind(webcrypto.subtle)}});
+ assert.equal(isolated.signCount,7);
 });
 
 test('owner passkey assertion fails closed on target, freshness and presence drift',async()=>{
