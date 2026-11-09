@@ -40,20 +40,56 @@ if(process.env.MAHORAGA_REPOSITORY&&process.env.MAHORAGA_READ_TOKEN){
   deps.mahoragaRepo=process.env.MAHORAGA_REPOSITORY;
   deps.mahoragaGithub=gh(process.env.MAHORAGA_READ_TOKEN);
 }
-if(req.op==='browser.check'){
+if(req.op==='browser.check'||req.op==='browser.action'){
   try{
     const {chromium}=await import('playwright');
-    deps.browser={async check(url){
-      const browser=await chromium.launch();
-      try{
-        const page=await browser.newPage();
-        const resp=await page.goto(url,{timeout:30000,waitUntil:'load'});
-        const shot=await page.screenshot();
-        return{status:resp?.status()||0,title:await page.title(),
-          text:(await page.innerText('body')).slice(0,20000),screenshotSha256:sha256(shot.toString('base64'))};
-      }finally{await browser.close();}
-    }};
-  }catch{/* playwright missing -> unconfigured, reported honestly */}
+    deps.browser={
+      async check(url){
+        const browser=await chromium.launch();
+        try{
+          const context=await browser.newContext({acceptDownloads:false,serviceWorkers:'block'});
+          const page=await context.newPage();
+          const resp=await page.goto(url,{timeout:30000,waitUntil:'load'});
+          const shot=await page.screenshot();
+          return{status:resp?.status()||0,title:await page.title(),
+            text:(await page.innerText('body')).slice(0,20000),screenshotSha256:sha256(shot.toString('base64'))};
+        }finally{await browser.close();}
+      },
+      async open(url,origin){
+        // No persisted cookies, privileged site sessions or cross-origin fetches.
+        const browser=await chromium.launch();
+        try{
+          const context=await browser.newContext({
+            acceptDownloads:false,serviceWorkers:'block',permissions:[]});
+          await context.route('**/*',async route=>{
+            let allowed=false;
+            try{const u=new URL(route.request().url());
+              allowed=u.protocol==='https:'&&u.origin===origin&&
+                !u.username&&!u.password&&!u.port;
+            }catch{}
+            if(allowed)await route.continue();else await route.abort();
+          });
+          const page=await context.newPage();
+          page.on('popup',popup=>{popup.close().catch(()=>{});});
+          const response=await page.goto(url,{timeout:30000,waitUntil:'domcontentloaded'});
+          if(!response||response.status()<200||response.status()>=400)
+            throw Error('browser-navigation-unverified');
+          return {
+            read:async selector=>page.locator(selector).innerText({timeout:10000}),
+            perform:async step=>{
+              const loc=page.locator(step.selector);
+              if(await loc.count()!==1)throw Error('browser-action-selector-not-unique');
+              if(step.kind==='click')await loc.click({timeout:12000});
+              else if(step.kind==='fill')await loc.fill(step.value,{timeout:12000});
+              else throw Error('browser-action-unsupported-step');
+            },
+            url:async()=>page.url(),
+            close:async()=>browser.close()
+          };
+        }catch(error){await browser.close();throw error;}
+      }
+    };
+  }catch{/* missing Playwright -> explicitly unconfigured */}
 }
 
 const intent={role:req.role,operation:req.op,caseDigest:req.caseDigest,sourceSha:req.sourceSha,ordinal:0,
