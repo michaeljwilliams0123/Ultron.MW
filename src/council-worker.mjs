@@ -53,6 +53,12 @@ export function parseWorkerRequest(input,{allow=EGRESS_ALLOW}={}){
   caseDigest:sha256('council-worker/1\n'+objectiveId+(browserPlan?JSON.stringify(browserPlan):''))});
 }
 
+export function assertWorkerSourceSha(request,actualSha){
+ if(!request||!SHA40.test(actualSha||'')||request.sourceSha!==actualSha)
+  throw Error('worker-main-source-drift');
+ return true;
+}
+
 function withTimeout(promise,ms,label){
  let t;
  return Promise.race([promise,new Promise((_,rej)=>{t=setTimeout(()=>rej(Error(label+'-timeout')),ms);})])
