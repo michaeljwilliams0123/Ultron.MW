@@ -73,7 +73,7 @@ test('read-only inspection makes fixed GET calls and redacts token from output',
  const urls=[];
  const fetchImpl=async(url,options)=>{
    urls.push([url,options.method]);
-   assert.equal(options.headers.authorization,'Bearer unit-test-secret');
+   assert.equal(options.headers.authorization,'Bearer '+env.GITHUB_TOKEN);
    const data=url.endsWith('/git/ref/heads/main')?{object:{sha:SHA}}:
      {full_name:REPO,default_branch:'main'};
    return {ok:true,json:async()=>data};
@@ -97,17 +97,31 @@ test('source drift, absent credentials, and missing completed CI fail closed',as
  assert.equal(ciResult.verification.completedCount,0);
 });
 
-test('CI status never claims success while another exact-head workflow is pending or failed',async()=>{
+test('CI status never claims success from untrusted, incomplete, skipped, pending, or failed evidence',async()=>{
  const input=payload({op:'github.ci.status'});
- const check=async workflow_runs=>runGovernedRequest(input,{
+ const run={id:22,name:'Ultron core verification',path:'.github/workflows/verify.yml',
+   event:'workflow_dispatch',head_sha:SHA,head_branch:'main',
+   head_repository:{full_name:REPO},status:'completed',conclusion:'success',run_attempt:1};
+ const requiredJobs=[{name:'test',status:'completed',conclusion:'success'},
+   {name:'attested-receipt',status:'completed',conclusion:'skipped'},
+   {name:'fixed-comparison',status:'completed',conclusion:'skipped'}];
+ const check=async (workflow_runs,jobs=requiredJobs,totalCount=jobs.length)=>runGovernedRequest(input,{
    env:{...env,GITHUB_RUN_ID:'33'},
-   request:async()=>({ok:true,json:async()=>({workflow_runs})})
+   request:async url=>({ok:true,json:async()=>url.includes('/jobs?')
+     ?{total_count:totalCount,jobs}
+     :{total_count:workflow_runs.length,workflow_runs}})
  });
- const passed={id:22,head_sha:SHA,status:'completed',conclusion:'success'};
- const pending={id:23,head_sha:SHA,status:'in_progress',conclusion:null};
- assert.equal((await check([passed,pending])).status,'failed');
- const failing={id:24,head_sha:SHA,status:'completed',conclusion:'failure'};
- assert.equal((await check([passed,failing])).status,'failed');
- assert.equal((await check([passed])).status,'verified');
- assert.equal((await check([passed,{...pending,id:33}])).status,'verified');
+ assert.equal((await check([{...run,status:'in_progress',conclusion:null}])).status,'failed');
+ assert.equal((await check([{...run,conclusion:'skipped'}])).status,'failed');
+ assert.equal((await check([{...run,head_repository:{full_name:'untrusted/repo'}}])).status,'failed');
+ assert.equal((await check([{...run,path:'.github/workflows/untrusted.yml'}])).status,'failed');
+ assert.equal((await check([run],requiredJobs,requiredJobs.length+1)).status,'failed');
+ assert.equal((await check([run],requiredJobs.slice(1))).status,'failed');
+ assert.equal((await check([run],requiredJobs.map(job=>job.name==='test'
+   ?{...job,conclusion:'failure'}:job))).status,'failed');
+ assert.equal((await check([run])).status,'verified');
+ const pushRun={...run,event:'push'};
+ assert.equal((await check([pushRun])).status,'failed');
+ assert.equal((await check([pushRun],requiredJobs.map(job=>job.name==='attested-receipt'
+   ?{...job,conclusion:'success'}:job))).status,'verified');
 });

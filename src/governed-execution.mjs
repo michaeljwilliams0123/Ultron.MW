@@ -5,6 +5,7 @@
  */
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
+import {readVerifiedMainCi} from './ci-evidence.mjs';
 
 const REPOSITORY='michaeljwilliams0123/Ultron.MW';
 const OWNER='michaeljwilliams0123';
@@ -67,17 +68,32 @@ export async function runGovernedRequest(raw,{env=process.env,request=globalThis
      op:payload.op,sourceSha:sha,status:ok?'verified':'failed',
      verification:{method:'exact-main-double-read',ok}};
  }
- const runs=await githubGet('/actions/runs?head_sha='+sha+'&per_page=50');
- const matching=Array.isArray(runs?.workflow_runs)
-   ?runs.workflow_runs.filter(r=>r.head_sha===sha):[];
- const relevant=matching.filter(r=>String(r.id)!==String(env.GITHUB_RUN_ID||''));
- const completed=relevant.filter(r=>r.status==='completed');
- const ok=relevant.length>0&&completed.length===relevant.length&&
-   completed.every(r=>r.conclusion==='success'||r.conclusion==='skipped');
+ const evidence=await readVerifiedMainCi({get:githubGet,mainSha:sha});
+ let completedCount=0,pendingCount=1,ok=false;
+ if(evidence?.conclusion==='success'){
+   const result=await githubGet('/actions/runs/'+evidence.runId+'/jobs?per_page=100');
+   const jobs=result?.jobs;
+   const jobsComplete=Array.isArray(jobs)&&
+     Number.isSafeInteger(result?.total_count)&&result.total_count>=0&&
+     result.total_count===jobs.length&&jobs.length<100;
+   if(jobsComplete){
+     const required=evidence.event==='push'?['test','attested-receipt']:['test'];
+     const jobsTerminal=jobs.every(job=>job?.status==='completed'&&
+       ['success','skipped'].includes(job?.conclusion));
+     const requiredPassed=required.every(name=>{
+       const matches=jobs.filter(job=>job?.name===name);
+       return matches.length===1&&matches[0].status==='completed'&&
+         matches[0].conclusion==='success';
+     });
+     completedCount=jobs.filter(job=>job?.status==='completed').length;
+     pendingCount=jobs.length-completedCount;
+     ok=jobsTerminal&&requiredPassed;
+   }
+ }
  return {schema:'ultron.governed-dispatch.v1',objectiveId:payload.objectiveId,
    op:payload.op,sourceSha:sha,status:ok?'verified':'failed',
    verification:{method:'exact-source-completed-runs',ok,
-     completedCount:completed.length,pendingCount:relevant.length-completed.length}};
+     completedCount,pendingCount}};
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
