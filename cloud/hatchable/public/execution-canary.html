@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Ultron — Browser Execution Canary</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui}body{background:#0c1527;color:#e5efff;max-width:650px;margin:3rem auto;padding:1rem}
+section{padding:1.5rem;border:1px solid #475973;border-radius:1rem}
+button,input{font:inherit;padding:.65rem;border-radius:.5rem}button{background:#95bdff;border:none;cursor:pointer}
+input{background:#15253e;color:white;border:1px solid #526783}
+#result{padding:1rem;background:#263952;word-break:break-word}
+</style></head><body><main><section><h1>Browser action canary</h1>
+<p>This is a static, owner-controlled browser interaction test. No external write, session credential or paid browser service is used.</p>
+<label for="work-input">Test instruction</label>
+<input id="work-input" type="text" maxlength="160" autocomplete="off" value="">
+<button id="run-task" type="button">Execute test interaction</button>
+<p id="result" role="status" aria-live="polite">Not executed</p>
+</section></main>
+<script>
+'use strict';
+document.getElementById('run-task').addEventListener('click',()=>{
+ const input=document.getElementById('work-input').value.trim();
+ const result=document.getElementById('result');
+ result.textContent=input?'Applied: '+input:'No instruction provided';
+});
+</script></body></html>

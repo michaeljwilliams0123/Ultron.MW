@@ -120,7 +120,7 @@ export async function verifyCouncilOidc({token,rawBody,fetchJwks=fetch,now=Date.
 export async function verifyCouncilWorkerOidc({token,rawBody,fetchJwks=fetch,now=Date.now}={}){
  const identity=await verifyIdentity({token,rawBody,fetchJwks,now,
   audience:councilOidcAudience,workflowRefs:[WORKER_WORKFLOW],
-  eventNames:['workflow_dispatch']});
+  eventNames:['workflow_dispatch','issues']});
  return Object.freeze({actor:identity.actor,sha:identity.sha,event:identity.event,
   audience:identity.audience,source:'council-worker'});
 }
