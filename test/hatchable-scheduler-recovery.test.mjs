@@ -38,6 +38,29 @@ test('C02: lost hourly slots backfill read-only tasks and independent recovery r
   assert.equal((await db.query('SELECT count(*)::int n FROM brain_events')).rows[0].n,10);
  }finally{await db.close();}
 });
+test('C02: live recovery canary uses isolated tasks and receipts that cannot count toward the scheduler SLO',async()=>{
+ const db=await setup();
+ try{
+  const options={db,now:new Date(AT),lookbackHours:1,
+   keyPrefix:'recovery-canary-issue-184-live-01-'};
+  const first=await recoverMissedHours(options);
+  assert.equal(first.recoveredCount,2);
+  assert.equal(first.receiptEventType,'missed-hour-recovery-canary');
+  assert.equal(first.evidenceClass,'explicit-live-canary-not-slo');
+  const tasks=(await db.query('SELECT task_key,objective FROM brain_tasks ORDER BY task_key')).rows;
+  assert.deepEqual(tasks.map(x=>x.task_key),[
+   'recovery-canary-issue-184-live-01-council-hourly-2026110914',
+   'recovery-canary-issue-184-live-01-hourly-2026110914']);
+  const events=(await db.query('SELECT event_type,details FROM brain_events ORDER BY id')).rows;
+  assert.equal(events.length,2);
+  assert.ok(events.every(x=>x.event_type==='missed-hour-recovery-canary'));
+  assert.ok(events.every(x=>x.details?.recovery==='explicit-live-canary'));
+  assert.ok(events.every(x=>x.details?.evidenceClass==='explicit-live-canary-not-slo'));
+  assert.ok(events.every(x=>x.details?.paidCents===0));
+  assert.equal((await recoverMissedHours(options)).recoveredCount,0);
+  assert.equal((await db.query('SELECT count(*)::int n FROM brain_events')).rows[0].n,2);
+ }finally{await db.close();}
+});
 test('C02: recovery rejects over-broad windows and cannot forge scheduler fire evidence',async()=>{
  const db=await setup();
  try{
@@ -45,9 +68,21 @@ test('C02: recovery rejects over-broad windows and cannot forge scheduler fire e
    await assert.rejects(recoverMissedHours({db,now:new Date(AT),lookbackHours:hours}),/scheduler-recovery-input-invalid/);
   }
   await assert.rejects(recoverMissedHours({db,now:new Date('invalid'),lookbackHours:6}),/scheduler-recovery-input-invalid/);
+  await assert.rejects(recoverMissedHours({db,now:new Date(AT),lookbackHours:1,
+   keyPrefix:'hourly-'}),/scheduler-recovery-input-invalid/);
   assert.equal((await db.query('SELECT count(*)::int n FROM brain_events')).rows[0].n,0);
   assert.equal((await db.query('SELECT count(*)::int n FROM brain_tasks')).rows[0].n,0);
  }finally{await db.close();}
+});
+test('C02: live canary route is admin-only, bounded and explicitly excluded from SLO evidence',()=>{
+ const text=readFileSync(new URL('../cloud/hatchable/api/brain/scheduler-recovery-canary.js',import.meta.url),'utf8');
+ assert.match(text,/access='admin'/);
+ assert.match(text,/methods=\['POST'\]/);
+ assert.match(text,/lookbackHours:1/);
+ assert.match(text,/recovery-canary-/);
+ assert.match(text,/explicit-live-canary-not-slo/);
+ assert.match(text,/scheduler\.now\('\/api\/brain\/run'/);
+ assert.doesNotMatch(text,/api\.github\.com|gitlab\.com|browser\.action/);
 });
 test('C02: existing hourly tick invokes bounded read-only recovery, without extra cron or provider calls',()=>{
  const text=readFileSync(new URL('../cloud/hatchable/api/brain/tick.js',import.meta.url),'utf8');
