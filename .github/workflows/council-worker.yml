@@ -50,8 +50,7 @@ jobs:
           node --check scripts/council-worker.mjs
       - name: Execute objective with ledger, timeout and post-action verification
         env:
-          WORKER_REQUEST: ${{ inputs.request || github.event.issue.body }}
-          WORKER_ISSUE_NUMBER: ${{ github.event.issue.number || '' }}
+          WORKER_REQUEST: ${{ inputs.request }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAHORAGA_REPOSITORY: ${{ vars.MAHORAGA_REPOSITORY }}
           MAHORAGA_READ_TOKEN: ${{ secrets.MAHORAGA_READ_TOKEN }}
