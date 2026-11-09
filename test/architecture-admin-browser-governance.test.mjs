@@ -18,7 +18,7 @@ test('administrative browser blueprint extends one Hatchable authority rather th
   'No retirements authorized'
  ])assert.ok(docs.includes(invariant),'missing '+invariant);
  assert.match(docs,/not runtime enforcement or deployed capability/);
- assert.match(docs,/not a general authenticated third-party SaaS browser/);
+ assert.match(docs,/not a general authenticated third-party SaaS browser/i);
 });
 
 test('architecture addendum rejects unsafe copied blueprint patterns',async()=>{
