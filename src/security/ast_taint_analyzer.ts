@@ -13,7 +13,7 @@ export interface TaintAnalysisResult {
   flows: TaintFlow[];
   ir: {
     edges: { from: string; to: string; line: number }[];
-    callGraph: { callee: string; line: number }[];
+    callGraph: { caller: string; callee: string; line: number }[];
   };
   unknowns: string[];
   coverage: { parsed: boolean; visitedNodes: number; language: string; scope: string };
