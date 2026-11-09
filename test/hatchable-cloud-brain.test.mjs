@@ -426,7 +426,11 @@ async function realGithubRunner(){
  const room='data:text/javascript;base64,'+Buffer.from(
   'export async function buildCouncilRoomResult(){return {objective:"council.room",members:[]}};'
  ).toString('base64');
+ const research='data:text/javascript;base64,'+Buffer.from(
+  'export async function collectResearchIntake(){return {objective:"research.intake"}};'
+ ).toString('base64');
  const source=(await readFile(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8'))
+  .replace("from 'lib/research-intake.js'","from '"+research+"'")
   .replace("from 'lib/council-evidence.js'","from '"+evidence+"'")
   .replace("from 'lib/acceptance-evidence.js'","from '"+acceptance+"'")
   .replace("from 'lib/heldout-evidence.js'","from '"+heldout+"'")
