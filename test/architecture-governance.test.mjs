@@ -77,3 +77,15 @@ test('published governance docs distinguish proposal, historical evidence and gu
   assert.ok(registry.includes(phrase),phrase+' missing from retirement register');
  }
 });
+
+test('MCP governance keeps live conformance separate from local source regression',async()=>{
+ const x=await load();
+ assert.equal(x.componentDecisions.find(i=>i.component==='framework-mcp-bridge').issue,348);
+ assert.equal(x.componentDecisions.find(i=>i.component==='static-source-analysis').issue,349);
+ const decision=await readFile(new URL('ARCHITECTURE-GOVERNANCE.md',root),'utf8');
+ const matrix=await readFile(new URL('MCP-CONFORMANCE-MATRIX.md',root),'utf8');
+ assert.match(decision,/MCP-CONFORMANCE-MATRIX\.md/);
+ assert.match(matrix,/params\._meta/);
+ assert.match(matrix,/not live remote MCP certification/);
+ assert.match(matrix,/HTTP 400/);
+});
