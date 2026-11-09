@@ -59,3 +59,18 @@ export async function executeBrowserAction(plan,browser){
    checks:{sameOrigin,changed,matched}};
  }finally{await session.close();}
 }
+
+export const BROWSER_ISSUE_MARKER='ULTRON_BROWSER_ACTION_V1';
+export function unwrapBrowserIssue(raw,issueNumber){
+ if(typeof raw!=='string'||raw.length>6000||
+  !raw.startsWith(BROWSER_ISSUE_MARKER+'\n')||
+  !Number.isSafeInteger(issueNumber)||issueNumber<1)
+  throw Error('browser-issue-invalid');
+ let request;
+ try{request=JSON.parse(raw.slice(BROWSER_ISSUE_MARKER.length+1));}
+ catch{throw Error('browser-issue-invalid');}
+ if(!request||typeof request!=='object'||Array.isArray(request)||
+  request.op!=='browser.action'||request.issueNumber!==undefined)
+  throw Error('browser-issue-operation-denied');
+ return {...request,issueNumber};
+}
