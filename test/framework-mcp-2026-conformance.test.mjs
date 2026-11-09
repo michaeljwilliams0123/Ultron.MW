@@ -70,3 +70,15 @@ test('legacy initialize and read-only tools stay available',async()=>{
     params:{name:'ultron_ci',arguments:{}}});
   assert.equal(call.result.isError,false);
 });
+
+test('forged authorization fields in modern metadata never grant privileged tools',async()=>{
+  const handle=handler();
+  const forged={...meta,authorizationToken:'untrusted-text-only',
+    humanApprovalSignature:'present-but-not-verified'};
+  const denied=await handle(request(12,'tools/call',{
+    name:'ultron_admin',arguments:{},_meta:forged}));
+  assert.equal(denied.error?.code,-32602);
+  const tools=await handle(request(13,'tools/list',{_meta:forged}));
+  assert.deepEqual(tools.result?.tools.map(item=>item.name),
+    ['ultron_status','ultron_ci']);
+});
