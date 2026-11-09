@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {canonicalJson} from '../../../src/verification/canonical_json.mjs';
+import {canonicalJson} from './canonical-json.js';
 
 // Use only inside an already authenticated Hatchable runtime. This storage
 // adapter is deliberately not an HTTP endpoint and grants no execution rights.
