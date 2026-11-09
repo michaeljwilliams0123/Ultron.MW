@@ -1,6 +1,6 @@
 # MCP 2026-07-28 conformance matrix — first verified-source slice (#348)
 
-**Decision status:** source implementation + tests proposed in PR #350; not live remote MCP certification. **Source baseline:** main merge `57d5107ec4738101e4999dbb685a30432f8f37d4` from PR #347.
+**Decision status:** bounded source-conformance change tracked in PR #350; not live remote MCP certification. **Source baseline:** main merge `57d5107ec4738101e4999dbb685a30432f8f37d4` from PR #347.
 
 **Transport boundary:** `src/framework-integration-runtime.mjs` is a JSON-RPC handler consumed by a generated local **stdio** adapter. It does not receive HTTP headers and must not be represented as an authenticated remote HTTP gateway. Hatchable's native `[mcp]` feature is a distinct deployment needing independent black-box tests.
 
