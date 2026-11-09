@@ -50,7 +50,8 @@ export async function executeBrowserAction(plan,browser){
   const after=String(await session.read(plan.expect.selector)).slice(0,1200);
   const reread=String(await session.read(plan.expect.selector)).slice(0,1200);
   const finalUrl=await session.url();
-  const sameOrigin=browserActionUrl(finalUrl).origin===plan.origin;
+  let sameOrigin=false;
+  try{sameOrigin=browserActionUrl(finalUrl).origin===plan.origin;}catch{}
   const changed=after!==before;
   const matched=after.includes(plan.expect.contains)&&reread===after;
   return {ok:sameOrigin&&changed&&matched,url:plan.url,finalUrl,
