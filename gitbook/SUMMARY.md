@@ -7,6 +7,7 @@
 
 ## Operations
 * [Owner commands and recovery](operations.md)
+* [Cloud-first execution and owner passkeys](cloud-dispatch.md)
 * [Release acceptance and evidence](acceptance.md)
 * [GitHub and GitLab synchronization](sync-and-disaster-recovery.md)
 
