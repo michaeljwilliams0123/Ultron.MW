@@ -15,13 +15,13 @@ import {
 } from '../security/crypto_auth.mjs';
 import {COUNCIL_APP_ROLES} from '../council-app-bindings.mjs';
 import {
- operationProfile,requiredTokenPermissions,ULTRON_REPOSITORY,
+ requiredTokenPermissions,ULTRON_REPOSITORY,
  ULTRON_REPOSITORY_ID,parseInstant,
 } from '../github-principal-policy.mjs';
 
 const SCHEMA='ultron.github.operation.v1';
 const RESOURCE_PREFIX='ultron:github:'+ULTRON_REPOSITORY+':sha256:';
-const SHA256=/^[a-f0-9]{64}$/;
+const APPROVAL_TTL_MS=300_000;
 const PLAN_KEYS=['schema','repository','operation','activeAgentRole',
  'idempotencyKey','permittedScope','parameters'];
 const SCOPE_KEYS=['operation','repositoryId','permissions'];
@@ -100,7 +100,6 @@ function validatedPlan(input,role){
   deny('invalid approval plan or Council role');
  let permissions;
  try{
-  operationProfile(input.operation);
   permissions=requiredTokenPermissions(input.operation);
  }catch{
   deny('operation profile denied');
@@ -157,9 +156,7 @@ export async function enforceSignedApprovalAndTagPersona(
  const now=trusted.clock();
  if(!Number.isSafeInteger(now))deny('invalid trusted clock');
  if(typeof operationRequest?.nonce!=='string'||
-    operationRequest.nonce!==signedGrant.nonce||
-    !SHA256.test(createHash('sha256')
-     .update(JSON.stringify(payload)).digest('hex')))
+    operationRequest.nonce!==signedGrant.nonce)
   deny('signed approval nonce invalid');
 
  const planDigest=createHash('sha256')
@@ -179,9 +176,20 @@ export async function enforceSignedApprovalAndTagPersona(
 
  // A nonce remains consumed on provider failure; a retry needs a NEW grant.
  // Issue only this action's exact repository-ID/permission-scoped token.
- const issued=await tokenFactory.getTokenForScope(scopedRequest);
+ let issued;
+ try{
+  issued=await tokenFactory.getTokenForScope(scopedRequest);
+ }catch{
+  // Provider exceptions may embed authorization headers or credential text.
+  deny('scoped token issuance unavailable');
+ }
+ const completedAt=trusted.clock();
+ if(!Number.isSafeInteger(completedAt)||completedAt<now||
+    completedAt>=Math.min(signedGrant.timestamp+APPROVAL_TTL_MS,
+                          now+APPROVAL_TTL_MS))
+  deny('signed approval expired before token issuance completed');
  const token=validateToken(
-  issued,scopedRequest,trusted.expectedInstallationId,now);
+  issued,scopedRequest,trusted.expectedInstallationId,completedAt);
  const slug=role.toLowerCase();
  const persona=Object.freeze({
   role,authorName:'Ultron.MW ['+role+']',
@@ -194,8 +202,12 @@ export async function enforceSignedApprovalAndTagPersona(
   messagePrefix:persona.commitMessagePrefix,
   trailers:{'Ultron-Role':role,'Ultron-App-Principal':'ultron-github-app'}
  });
- return Object.freeze({
-  authorized:true,token,persona,commitHeaders,
+ // Keep the token retrievable by the trusted executor, but never included
+ // in normal JSON serialization, object spreading or console inspection.
+ const result={
+  authorized:true,persona,commitHeaders,
   executionPayload:deepFreeze(payload)
- });
+ };
+ Object.defineProperty(result,'token',{value:token,enumerable:false});
+ return Object.freeze(result);
 }
