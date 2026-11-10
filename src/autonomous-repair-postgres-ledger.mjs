@@ -41,10 +41,12 @@ export function createPostgresAutonomousRepairLedger({db}={}){
  };
  const claim=async plan=>{
   if(!ID.test(plan?.id||'')||!DIGEST.test(plan?.fingerprint||'')||
-     !SHA.test(plan?.baseSha||'')||plan?.schema!=='ultron.autonomous-repair.v1')
+     !SHA.test(plan?.baseSha||'')||plan?.schema!=='ultron.autonomous-repair.v1'||
+     !Number.isInteger(plan?.maxAttempts)||plan.maxAttempts<1||plan.maxAttempts>3)
    throw Error('autonomous-repair-claim-invalid');
   const record={id:plan.id,fingerprint:plan.fingerprint,phase:'ready',
-   attempt:0,headSha:plan.baseSha,manifest:null,patchDigest:null,
+   attempt:0,maxAttempts:plan.maxAttempts,headSha:plan.baseSha,
+   manifest:null,patchDigest:null,
    errorTrace:'',prNumber:null,version:0};
   const inserted=await db.query(`INSERT INTO brain_autonomous_repairs
    (repair_id,fingerprint,phase,version,record_json)
