@@ -8,7 +8,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {parseCodexCall,codexRecordPaths} from '../src/codex-call.mjs';
 import {assessCodexTrigger} from '../src/codex-trigger-gate.mjs';
-import {resolveCodexAuthor} from '../docs/core/codex-authors.mjs';
+import {resolveCodexAuthor,isCodexRunCommand} from '../docs/core/codex-authors.mjs';
 const exec=promisify(execFile);
 const ROOT='repos/michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
@@ -54,9 +54,9 @@ async function observe(){
     event,pr,issue:sourceIssue,mainSha:main.object.sha,proposalText:proposal,
     bindingFingerprint,
     ownerTriggerCount:comments.filter(c=>c?.user?.login==='michaeljwilliams0123'&&
-      c.body==='/codex run '+call.authorId).length,
+      isCodexRunCommand(c.body,call.authorId)).length,
     ownerTriggerIds:comments.filter(c=>c?.user?.login==='michaeljwilliams0123'&&
-      c.body==='/codex run '+call.authorId).map(c=>c.id),
+      isCodexRunCommand(c.body,call.authorId)).map(c=>c.id),
     claimState:claim===null?'missing':'present',
     receiptState:receipt===null?'missing':'present',
   });
