@@ -48,3 +48,18 @@ test('unregistered member blueprints require a separately trusted expected App I
   role:'Builder',appId:44,appSlug:'ultron-mw-builder',expectedAppId:45
  }),/identity-mismatch/);
 });
+
+test('all seven role labels resolve to ONE Coordinator App, never independent reviewers',()=>{
+ for(const role of ['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion']){
+  const principal=resolveCouncilAppIdentity({role,appId:5633654,appSlug:'ultron-coordinator'});
+  assert.equal(principal.botLogin,'ultron-coordinator[bot]');
+  assert.equal(principal.kind,'coordinator');
+  assert.equal(principal.independentReview,false);
+  assert.equal(resolveReceiptAppIdentity({role,appId:5633654,
+   appSlug:'ultron-coordinator'}).independentReview,false);
+  assert.throws(()=>resolveCouncilAppIdentity({role,appId:5633654,
+   appSlug:'ultron-mw-'+role.toLowerCase()}),/identity-mismatch/);
+ }
+ assert.throws(()=>resolveCouncilAppIdentity({role:'Skeptic',appId:5633654,
+  appSlug:'ultron-mw-builder-v2'}),/identity-mismatch/);
+});

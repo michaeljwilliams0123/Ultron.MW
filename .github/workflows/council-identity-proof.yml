@@ -1,11 +1,11 @@
 name: Council identity proof
-# Phase 3: mint ONE role's GitHub App installation token and prove (by GitHub readback)
-# that the App - not github-actions - authored a comment. Owner-dispatched only.
+# A single short-lived Coordinator App token proves each role's attributed comment.
+# A role label is never an independent GitHub principal or an approval. Owner only.
 on:
   workflow_dispatch:
     inputs:
       role:
-        description: Council role to prove (each has its own variable and secret)
+        description: Logical Council role attributed to the one verified Coordinator App
         required: true
         type: choice
         options: [BUILDER, SKEPTIC, STEWARD, PREDICTOR, GENERATOR, SENTINEL, COMPANION]
@@ -25,6 +25,8 @@ jobs:
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.triggering_actor == 'michaeljwilliams0123' &&
+      github.repository_id == 1424939667 &&
+      github.repository_owner_id == 308995719 &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -41,12 +43,17 @@ jobs:
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          client-id: ${{ vars[format('ULTRON_{0}_CLIENT_ID', inputs.role)] }}
-          private-key: ${{ secrets[format('ULTRON_{0}_PRIVATE_KEY', inputs.role)] }}
+          client-id: ${{ vars.ULTRON_BUILDER_CLIENT_ID }}
+          private-key: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
           repositories: Ultron.MW
           permission-issues: write
-          permission-pull-requests: write
           permission-contents: read
+      - name: Verify minted App provenance before any write
+        env:
+          ACTUAL_APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          test "$ACTUAL_APP_SLUG" = "ultron-coordinator" ||
+            { echo 'Coordinator App slug mismatch'; exit 1; }
       - name: Post proof comment as the App and verify authorship by readback
         env:
           APP_TOKEN: ${{ steps.app.outputs.token }}
