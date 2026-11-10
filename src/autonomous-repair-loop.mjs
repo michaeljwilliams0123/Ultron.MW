@@ -207,7 +207,14 @@ export async function runAutonomousRepair({plan,ledger,repairer,patcher,
    row=applied;
   }
   if(row.phase==='applied'){
+   if(now()>=Date.parse(plan.expiresAt)||
+      !await isAuthorized(authorize,plan,'repair.ci.dispatch',row))
+    return output('held',row,'ci-dispatch-not-authorized');
    const claimed=await stepLedger(plan,ledger,row,'verifying');
+   // A fresh operation grant is needed after the durable dispatch fence.
+   if(now()>=Date.parse(plan.expiresAt)||
+      !await isAuthorized(authorize,plan,'repair.ci.dispatch',claimed))
+    return output('reconcile-required',claimed,'reserved-ci-dispatch-held');
    try{await verifier.start({plan,attempt:claimed.attempt,headSha:claimed.headSha});}
    catch{/* The CI dispatch may have succeeded; observe before proceeding. */}
    row=claimed;
