@@ -1,0 +1,112 @@
+name: Owner canary acceptance matrix
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Read-only inspect/verify or one separately approved marker
+        type: choice
+        options:
+          - inspect
+          - verify
+          - marker
+        default: inspect
+        required: true
+      target_run_id:
+        description: Original isolated canary branch run ID
+        type: string
+        required: true
+      expected_sha:
+        description: Original 40-hex base SHA of the isolated canary branch
+        type: string
+        required: true
+      marker_run_id:
+        description: Marker workflow run ID (verify mode)
+        type: string
+        required: false
+      approval_phrase:
+        description: Marker mode requires APPROVE_ONE_CANARY_MARKER_COMMIT
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: owner-canary-matrix-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  inspect-or-verify:
+    if: >-
+      github.repository == 'Ultron-MW/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.mode == 'inspect' || inputs.mode == 'verify')
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Inspect canary branch or independently verify marker provenance
+        env:
+          OWNER_MATRIX_MODE: ${{ inputs.mode }}
+          OWNER_MATRIX_TARGET_RUN_ID: ${{ inputs.target_run_id }}
+          OWNER_MATRIX_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          OWNER_MATRIX_MARKER_RUN_ID: ${{ inputs.marker_run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/owner-canary-matrix.mjs
+      - name: Upload sanitized independent readback receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: owner-canary-read-${{ github.run_id }}
+          path: artifacts/owner-canary-matrix-*.json
+          if-no-files-found: warn
+          retention-days: 7
+  marker-write:
+    if: >-
+      github.repository == 'Ultron-MW/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'marker' &&
+      inputs.approval_phrase == 'APPROVE_ONE_CANARY_MARKER_COMMIT'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: write
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Perform one separately approved non-forced ref update
+        env:
+          OWNER_MATRIX_MODE: marker
+          OWNER_MATRIX_TARGET_RUN_ID: ${{ inputs.target_run_id }}
+          OWNER_MATRIX_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          OWNER_MATRIX_MARKER_RUN_ID: ${{ github.run_id }}
+          OWNER_MATRIX_APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          OWNER_CANARY_STOP: ${{ vars.ULTRON_OWNER_CANARY_STOP }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/owner-canary-matrix.mjs
+      - name: Upload sanitized marker or uncertain-state receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: owner-canary-marker-${{ github.run_id }}
+          path: artifacts/owner-canary-matrix-*.json
+          if-no-files-found: warn
+          retention-days: 7
