@@ -8,6 +8,8 @@ import {
 import { buildGitHubVerificationReceipt } from '../scripts/write-github-verification-receipt.mjs';
 
 const REPO = 'michaeljwilliams0123/Ultron.MW';
+// Current identity is canonical; retired organization aliases must fail closed.
+const ATTESTATION_REPO = 'michaeljwilliams0123/Ultron.MW';
 const SHA = 'b'.repeat(40);
 const ACTORS = [
   { login: 'michaeljwilliams0123', id: 308995719 },
@@ -124,10 +126,10 @@ test('No receipt database write occurs for invalid delivery or payload hash', as
 
 const receiptEnv = (changes = {}) => ({
   GITHUB_ACTIONS: 'true',
-  GITHUB_REPOSITORY: REPO,
+  GITHUB_REPOSITORY: ATTESTATION_REPO,
   GITHUB_EVENT_NAME: 'pull_request',
   GITHUB_WORKFLOW: 'Ultron core verification',
-  GITHUB_WORKFLOW_REF: REPO + '/.github/workflows/verify.yml@refs/pull/372/merge',
+  GITHUB_WORKFLOW_REF: ATTESTATION_REPO + '/.github/workflows/verify.yml@refs/pull/372/merge',
   GITHUB_RUN_ID: '42816723356',
   GITHUB_RUN_ATTEMPT: '1',
   GITHUB_JOB: 'attested-receipt',
@@ -136,23 +138,24 @@ const receiptEnv = (changes = {}) => ({
 });
 test('Attested receipt pins canonical source and $0 incremental spend', () => {
   const receipt = buildGitHubVerificationReceipt({ env: receiptEnv(), observedSha: SHA });
-  assert.equal(receipt.repository, REPO);
+  assert.equal(receipt.repository, ATTESTATION_REPO);
   assert.equal(receipt.sourceSha, SHA);
   assert.equal(receipt.paidSpendAuthorizedUsd, 0);
-  assert.equal(receipt.workflowRunUrl, 'https://github.com/' + REPO + '/actions/runs/42816723356');
+  assert.equal(receipt.workflowRunUrl, 'https://github.com/' + ATTESTATION_REPO + '/actions/runs/42816723356');
 });
 const badEnvs = [
   ['retired repository', { GITHUB_REPOSITORY: 'Ultron-MW/Ultron.MW' }],
+  ['bot owner alias', { GITHUB_REPOSITORY: 'michaeljwilliams0123ultron/Ultron.MW' }],
   ['untrusted workflow', { GITHUB_WORKFLOW: 'Unapproved Test' }],
   ['missing job', { GITHUB_JOB: 'test' }],
   ['wrong event', { GITHUB_EVENT_NAME: 'pull_request_target' }],
   ['untrusted workflow repository', { GITHUB_WORKFLOW_REF: 'attacker/Ultron.MW/.github/workflows/verify.yml@refs/pull/372/merge' }],
-  ['untrusted workflow path', { GITHUB_WORKFLOW_REF: REPO + '/.github/workflows/unknown.yml@refs/pull/372/merge' }],
-  ['unauthorized feature ref', { GITHUB_WORKFLOW_REF: REPO + '/.github/workflows/verify.yml@refs/heads/feature' }],
-  ['pull request impersonating a main push', { GITHUB_WORKFLOW_REF: REPO + '/.github/workflows/verify.yml@refs/heads/main' }],
-  ['pull request using an invalid zero PR number', { GITHUB_WORKFLOW_REF: REPO + '/.github/workflows/verify.yml@refs/pull/0/merge' }],
-  ['workflow ref with appended untrusted suffix', { GITHUB_WORKFLOW_REF: REPO + '/.github/workflows/verify.yml@refs/pull/372/merge/extra' }],
-  ['arbitrary forged workflow suffix', { GITHUB_WORKFLOW_REF: REPO + '/.github/workflows/verify.yml@evil-ref' }],
+  ['untrusted workflow path', { GITHUB_WORKFLOW_REF: ATTESTATION_REPO + '/.github/workflows/unknown.yml@refs/pull/372/merge' }],
+  ['unauthorized feature ref', { GITHUB_WORKFLOW_REF: ATTESTATION_REPO + '/.github/workflows/verify.yml@refs/heads/feature' }],
+  ['pull request impersonating a main push', { GITHUB_WORKFLOW_REF: ATTESTATION_REPO + '/.github/workflows/verify.yml@refs/heads/main' }],
+  ['pull request using an invalid zero PR number', { GITHUB_WORKFLOW_REF: ATTESTATION_REPO + '/.github/workflows/verify.yml@refs/pull/0/merge' }],
+  ['workflow ref with appended untrusted suffix', { GITHUB_WORKFLOW_REF: ATTESTATION_REPO + '/.github/workflows/verify.yml@refs/pull/372/merge/extra' }],
+  ['arbitrary forged workflow suffix', { GITHUB_WORKFLOW_REF: ATTESTATION_REPO + '/.github/workflows/verify.yml@evil-ref' }],
   ['invalid run number', { GITHUB_RUN_ID: '0' }],
   ['invalid attempt number', { GITHUB_RUN_ATTEMPT: '-1' }],
   ['invalid source SHA', { SOURCE_SHA: 'main' }],
@@ -169,7 +172,7 @@ test('Attested receipt accepts exact main ref on push, not a pull request ref on
   const result = buildGitHubVerificationReceipt({
     env: receiptEnv({
       GITHUB_EVENT_NAME: 'push',
-      GITHUB_WORKFLOW_REF: REPO + '/.github/workflows/verify.yml@refs/heads/main'
+      GITHUB_WORKFLOW_REF: ATTESTATION_REPO + '/.github/workflows/verify.yml@refs/heads/main'
     }),
     observedSha: SHA
   });

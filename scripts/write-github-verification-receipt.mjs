@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// Current personal repository after transfer-back; contributor identity is separate.
+// The repository currently resolves canonically to the primary human owner's account.\n// The former organization alias is historical and may not authorize an attestation.
 const REPOSITORY = 'michaeljwilliams0123/Ultron.MW';
 const WORKFLOW = 'Ultron core verification';
 const WORKFLOW_PATH = `${REPOSITORY}/.github/workflows/verify.yml@`;
