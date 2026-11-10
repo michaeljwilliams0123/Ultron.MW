@@ -6,8 +6,9 @@ const validCorrelation=value=>value===undefined||CORRELATION.test(value);
 const RESULTS=new Set(['success','failure','cancelled','timed_out','action_required','neutral','skipped']);
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function observedRun(r,ref,sha,lower=0,correlation){
-  return r?.id>lower&&r?.name==='Ultron core verification'&&
-    r?.path==='.github/workflows/verify.yml'&&r?.event==='workflow_dispatch'&&
+  // GitHub run-name changes REST name/display_title; workflow path stays stable.
+  return r?.id>lower&&r?.path==='.github/workflows/verify.yml'&&
+    r?.event==='workflow_dispatch'&&
     r?.head_branch===ref&&r?.head_sha===sha&&r?.head_repository?.full_name===REPO&&
     (correlation===undefined||r?.display_title==='Ultron repair '+correlation);
 }
