@@ -245,3 +245,81 @@ test('every Council role receives signed, accurate attribution with one App',asy
   assert.equal(result.persona.attributionOnly,true);
  }
 });
+
+test('debug inspection cannot disclose installation credential',async()=>{
+ const {inspect}=await import('node:util');
+ const result=await enforceSignedApprovalAndTagPersona(
+  request(),fakeFactory(),trusted());
+ assert.doesNotMatch(inspect(result,{showHidden:true,depth:6}),
+  /test-only-scoped-token/);
+ assert.equal(result.token,'test-only-scoped-token');
+});
+
+test('nonce stays consumed when token factory fails; no second issuance',async()=>{
+ const db=fakeDb(),opts=trusted({db}),input=request();
+ let count=0;
+ const factory={getTokenForScope:async scope=>{
+  count++;
+  if(count===1)throw Error('temporary-token-provider-failure');
+  return {token:'test-only-scoped-token',...scope,installationId:42,
+   expiresAt:new Date(NOW+1800000).toISOString()};
+ }};
+ await assert.rejects(
+  enforceSignedApprovalAndTagPersona(input,factory,opts),/unavailable/i);
+ await assert.rejects(
+  enforceSignedApprovalAndTagPersona(input,factory,opts),/invalid|replay/i);
+ assert.equal(count,1,'nonce replay must reject BEFORE requesting another token');
+});
+
+test('mutable caller request cannot alter signed execution payload across await',async()=>{
+ const req=request(),originalBranch=req.payload.parameters.branch;
+ const factory={getTokenForScope:async scope=>{
+  req.payload.parameters.branch='ultron/attacker';
+  req.activeAgentRole='Companion';
+  req.signedGrant.targetResource='ultron:github:attacker/repo:sha256:'+'f'.repeat(64);
+  return {token:'test-only-scoped-token',...scope,installationId:42,
+   expiresAt:new Date(NOW+1800000).toISOString()};
+ }};
+ const result=await enforceSignedApprovalAndTagPersona(req,factory,trusted());
+ assert.equal(result.executionPayload.parameters.branch,originalBranch);
+ assert.equal(result.persona.role,'Builder');
+ assert.equal(Object.isFrozen(result.executionPayload.parameters),true);
+});
+
+test('reject alternative HMAC field ordering and untrusted metadata',async()=>{
+ const r=request();
+ const reversed={nonce:r.signedGrant.nonce,timestamp:r.signedGrant.timestamp,
+  targetResource:r.signedGrant.targetResource,toolName:r.signedGrant.toolName};
+ r.signature=createHmac('sha256',KEY).update(JSON.stringify(reversed)).digest('hex');
+ await assert.rejects(enforceSignedApprovalAndTagPersona(r,fakeFactory(),trusted()),
+  /invalid|denied|replay/i);
+});
+
+test('PGlite migration 0037 denies concurrent replay by a global unique nonce',async t=>{
+ let PGlite;try{({PGlite}=await import('@electric-sql/pglite'));}catch{}
+ if(!PGlite){if(process.env.CI==='true')throw Error('PGlite required in CI');
+  t.skip('PGlite not installed');return;}
+ const db=new PGlite();
+ try{
+  await db.exec(await readFile(new URL(
+   '../cloud/hatchable/migrations/0037_github_approval_nonces.sql',import.meta.url),'utf8'));
+  const p=plan(),r=request(p,'persona-concurrent-db-0005abcdefgh');
+  const now=Date.now();
+  r.signedGrant.timestamp=now;
+  r.signature=createHmac('sha256',KEY)
+   .update(JSON.stringify(r.signedGrant)).digest('hex');
+  const opts=trusted({db,clock:()=>now});
+  let issued=0;
+  const factory={getTokenForScope:async scope=>{
+   issued++;return {token:'test-only-scoped-token',...scope,installationId:42,
+    expiresAt:new Date(now+1800000).toISOString()};
+  }};
+  const outcomes=await Promise.allSettled(
+   Array.from({length:24},()=>enforceSignedApprovalAndTagPersona(r,factory,opts)));
+  assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
+  assert.equal(outcomes.filter(x=>x.status==='rejected').length,23);
+  assert.equal(issued,1);
+  const readback=await db.query('SELECT COUNT(*)::int AS n FROM brain_github_approval_nonces');
+  assert.equal(readback.rows[0].n,1);
+ }finally{await db.close();}
+});
