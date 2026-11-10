@@ -333,3 +333,39 @@ test('PGlite: crashed pre-dispatch reservation can resume once under concurrent 
  assert.equal(stored.rows[0].state,'completed');
  await db.close();
 });
+
+
+test('lost CAS acknowledgment never triggers a write or corrupts in-flight claim',async()=>{
+ class LostDispatchAckDb extends MemoryDb{
+  async query(sql,params){
+   if(sql.includes("SET state='in_flight'")){
+    await super.query(sql,params);
+    throw Error('dispatch claim committed, acknowledgement lost');
+   }
+   return super.query(sql,params);
+  }
+ }
+ const h=setup({db:new LostDispatchAckDb()});
+ const result=await execute(h);
+ assert.equal(result.status,'reconcile_required');
+ assert.equal(h.writes,0);
+ assert.equal(h.db.rows.get(result.idempotencyKey).state,'in_flight');
+ const again=await execute(h);
+ assert.equal(again.status,'reconcile_required');
+ assert.equal(h.writes,0);
+});
+
+test('expiry while committing dispatch claim prevents external mutation',async()=>{
+ const h=setup();
+ let clock=Date.parse('2026-11-09T23:00:00Z');
+ h.services.clock=()=>clock;
+ const q=h.db.query.bind(h.db);
+ h.db.query=async (sql,params)=>{
+  const result=await q(sql,params);
+  if(sql.includes("SET state='in_flight'"))clock=Date.parse('2026-11-10T00:00:01Z');
+  return result;
+ };
+ await assert.rejects(execute(h),/authorization-rejected/);
+ assert.equal(h.writes,0);
+ assert.equal(h.db.rows.get('ultron-task-canary-001').state,'in_flight');
+});
