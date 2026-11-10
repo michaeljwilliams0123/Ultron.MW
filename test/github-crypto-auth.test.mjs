@@ -190,3 +190,30 @@ test('P-256 existing owner JWK public key is accepted without private-key exposu
  assert.equal(await verifyCryptographicApproval(p,sig,jwk,
   options({algorithm:'ecdsa-p256-sha256'})),true);
 });
+
+test('issuer preserves operation label across async exchange even for matching permission profiles',async()=>{
+ const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+ let release;
+ const barrier=new Promise(resolve=>{release=resolve;});
+ const observed=[];
+ const getToken=createScopedInstallationTokenProvider({
+  appId:12345,installationId:9123,privateKey,clock:()=>NOW,
+  fetchImpl:async(url,options)=>{
+   observed.push(JSON.parse(options.body));
+   await barrier;
+   return {ok:true,status:201,json:async()=>({
+    token:'fixture-token',expires_at:'2026-11-09T20:45:00Z',
+    permissions:requiredTokenPermissions(OP),
+    repositories:[{id:ULTRON_REPOSITORY_ID,full_name:REPO}]
+   })};
+  },
+ });
+ const request={operation:OP,repositoryId:ULTRON_REPOSITORY_ID,
+  permissions:requiredTokenPermissions(OP)};
+ const pending=getToken(request);
+ request.operation='actions.rerun_failed'; // same permissions as actions.cancel
+ release();
+ const grant=await pending;
+ assert.deepEqual(observed[0].permissions,requiredTokenPermissions(OP));
+ assert.equal(grant.operation,OP);
+});
