@@ -21,7 +21,16 @@ function hold(task,reason,turns=[]){
   identityEvidence:'not-proven',authorized:false,githubWritePerformed:false,
   autoCommitEligible:false});
 }
-export async function executeCouncilDebateLoop(taskContext,{runPersona}={}){
+async function withDeadline(action,milliseconds){
+ let timeout;
+ try{return await Promise.race([
+  Promise.resolve().then(action),
+  new Promise((_,reject)=>{timeout=setTimeout(()=>reject(Error('council-role-timeout')),milliseconds);})
+ ]);}finally{clearTimeout(timeout);}
+}
+export async function executeCouncilDebateLoop(taskContext,{runPersona,roleTimeoutMs=5000}={}){
+ if(!Number.isSafeInteger(roleTimeoutMs)||roleTimeoutMs<10||roleTimeoutMs>20000)
+  throw Error('council-debate-timeout-invalid');
  if(!taskContext||typeof taskContext!=='object'||
    !CONTEXT_ID.test(taskContext.taskId||'')||
    !SHA.test(taskContext.sourceSha||'')||
@@ -40,9 +49,9 @@ export async function executeCouncilDebateLoop(taskContext,{runPersona}={}){
     unknowns:[...x.unknowns],dissentTags:[...x.dissentTags]
    })));
    entries=await Promise.all(phase.roles.map(async roleId=>{
-    const result=await runPersona(Object.freeze({roleId,phase:phase.name,
+    const result=await withDeadline(()=>runPersona(Object.freeze({roleId,phase:phase.name,
      taskId:taskContext.taskId,sourceSha:taskContext.sourceSha,
-     objective:taskContext.objective,prior}));
+     objective:taskContext.objective,prior})),roleTimeoutMs);
     if(result?.roleId!==roleId||result?.sourceSha!==taskContext.sourceSha||
        !result.position||result.position.evidenceRefs?.length<1)
      throw Error('unverified-role-result');
