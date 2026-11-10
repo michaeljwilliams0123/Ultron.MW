@@ -229,3 +229,30 @@ test('CI dispatch requires its own fresh grant even if source patching was autho
  assert.equal(f.counts.startVerify,0);
  assert.equal(f.records.get('repair-case-0001').phase,'applied');
 });
+
+
+test('revocation after CI intent reservation blocks a first CI dispatch',async()=>{
+ const f=fixture();let ciChecks=0;
+ f.authorize=async({operation})=>operation==='repair.ci.dispatch'?
+  ++ciChecks===1:true;
+ f.verifier.observe=async()=>({state:'pending'});
+ const outcome=await runAutonomousRepair(context(f));
+ assert.equal(outcome.status,'reconcile-required');
+ assert.equal(f.counts.startVerify,0);
+ assert.equal(f.records.get('repair-case-0001').phase,'verifying');
+ const resumed=await runAutonomousRepair(context(f));
+ assert.equal(resumed.status,'verifying');
+ assert.equal(f.counts.startVerify,0);
+});
+test('revocation after PR intent reservation never calls the PR write adapter',async()=>{
+ const f=fixture();let createChecks=0;
+ f.authorize=async({operation})=>operation==='repair.pr.create'?
+  ++createChecks===1:true;
+ const outcome=await runAutonomousRepair(context(f));
+ assert.equal(outcome.status,'reconcile-required');
+ assert.equal(f.counts.startPublish,0);
+ assert.equal(f.records.get('repair-case-0001').phase,'publication-dispatched');
+ const resumed=await runAutonomousRepair(context(f));
+ assert.equal(resumed.status,'reconcile-required');
+ assert.equal(f.counts.startPublish,0);
+});
