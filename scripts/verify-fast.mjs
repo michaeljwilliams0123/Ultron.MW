@@ -5,11 +5,17 @@ import {fileURLToPath} from 'node:url';
 const source=['src/autonomous-repair-loop.mjs',
  'src/autonomous-repair-postgres-ledger.mjs',
  'src/autonomous-repair-github-adapter.mjs',
- 'src/autonomous-repair-model-adapter.mjs'];
+ 'src/autonomous-repair-model-adapter.mjs',
+ 'cloud/hatchable/lib/autonomous-repair-status.js',
+ 'cloud/hatchable/public/repair-operations.js',
+ 'cloud/hatchable/api/brain/autonomous-repairs.js',
+ 'scripts/autonomous-repair-canary.mjs'];
 const tests=['test/autonomous-repair-loop.test.mjs',
  'test/autonomous-repair-postgres-ledger.test.mjs',
  'test/autonomous-repair-github-adapter.test.mjs',
- 'test/autonomous-repair-model-adapter.test.mjs'];
+ 'test/autonomous-repair-model-adapter.test.mjs',
+ 'test/autonomous-repair-console.test.mjs',
+ 'test/autonomous-repair-canary.test.mjs'];
 function run(args,timeout){
  const result=spawnSync(process.execPath,args,{
   cwd:fileURLToPath(new URL('../',import.meta.url)),encoding:'utf8',
