@@ -14,7 +14,7 @@ const OWNER='michaeljwilliams0123';
 const SHA=/^[a-f0-9]{40}$/;
 const KEY=/^[a-z][a-z0-9-]{7,79}$/;
 const BRANCH=/^ultron\/repair-[a-z0-9][a-z0-9-]{2,63}$/;
-const PATH=/^(?:src|test)\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*\.(?:mjs|js|ts|json)$/;
+const PATH=/^(?:src|test)\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*\.(?:mjs|js|json)$/;
 const PHASES=new Set(['ready','patch-dispatched','applied','verifying','verified',
  'publication-dispatched','complete','exhausted']);
 const fingerprint=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -43,7 +43,8 @@ export function createAutonomousRepairPlan(raw,at=Date.now()){
   !Array.isArray(raw.allowedPaths)||raw.allowedPaths.length<1||
   raw.allowedPaths.length>6||new Set(raw.allowedPaths).size!==raw.allowedPaths.length||
   raw.allowedPaths.some(path=>typeof path!=='string'||!PATH.test(path)||
-   path.includes('..')||path.includes('//'))||
+   path.includes('..')||path.includes('//')||
+   path.split('/').some(segment=>segment.startsWith('.')))||
   !Number.isInteger(raw.maxAttempts)||raw.maxAttempts<1||raw.maxAttempts>3||
   raw.maxPaidCents!==0||raw.paidFallback!==false||
   !Number.isFinite(at)||!Number.isFinite(expires)||
