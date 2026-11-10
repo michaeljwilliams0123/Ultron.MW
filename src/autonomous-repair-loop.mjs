@@ -25,8 +25,10 @@ const output=(status,row,reason)=>Object.freeze({
 const ownKeys=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&
  Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 const safeTrace=value=>String(value??'').slice(0,10000)
- .replace(/\bgh[pousr]_[a-z0-9_]{16,}\b/gi,'[redacted]')
- .replace(/\b(?:password|passcode|secret|token|api[_ -]?key)\s*[:=]\s*\S+/gi,'[redacted]')
+ .replace(/(\bAuthorization\s*:\s*Bearer\s+)[^\s;]+/gi,'$1[redacted]')
+ .replace(/\b(?:gh[pousr]_[a-z0-9_]{16,}|github_pat_[a-z0-9_]{16,}|sk-[a-z0-9_-]{20,})\b/gi,'[redacted]')
+ .replace(/\b(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|GOOGLE_API_KEY|OPENAI_API_KEY)\s*[:=]\s*[^\s;]+/gi,'[redacted]')
+ .replace(/\b(?:password|passcode|secret|token|api[_ -]?key)\s*[:=]\s*[^\s;]+/gi,'[redacted]')
  .replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,1500);
 
 /** Immutable task identity. Caller-supplied instructions do NOT authorize a write. */
@@ -154,9 +156,15 @@ export async function runAutonomousRepair({plan,ledger,repairer,patcher,
   throw Error('autonomous-repair-adapter-invalid');
  // Revalidate original immutable plan, not merely its schema marker.
  const {schema,fingerprint:hash,...source}=plan;
- const checked=createAutonomousRepairPlan(source,now());
+ const nowMs=now(),expires=Date.parse(source.expiresAt);
+ // Expiry blocks NEW mutations, not read-only recovery of dispatched writes.
+ // Validate the original immutable plan against its last eligible instant.
+ const checked=createAutonomousRepairPlan(source,Math.min(nowMs,expires-1));
  if(hash!==checked.fingerprint)throw Error('autonomous-repair-plan-fingerprint-invalid');
- let row=assertRecord(plan,await ledger.claim(plan));
+ // Never create a new durable attempt using an already-expired grant.
+ const existing=nowMs>=expires?await ledger.read(plan.id):await ledger.claim(plan);
+ if(!existing)return output('held',null,'plan-expired-no-checkpoint');
+ let row=assertRecord(plan,existing);
  for(let step=0;step<maxSteps;step++){
   row=assertRecord(plan,await ledger.read(plan.id));
   if(row.phase==='complete'){
