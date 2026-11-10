@@ -59,3 +59,9 @@ A proposed architecture change is **not** runtime authority. Record a linked iss
 **Operational readiness states** must be reported separately: `proposed`, `sandbox`, `authorized`, `canary`, `active`, `revoked`, plus `blocked` and `reconcile-required` for outcomes. Never infer `active` from present config, an advisory Council vote, a PR merge or a one-off mocked test.
 
 **Source provenance:** The November 9 user-provided Gemini architectural blueprint motivated this governance policy. Its unrelated claim about a developer's astrophysics profile is not supported by the connected repository and is excluded. This document reconciles that *proposal* with observable Ultron code and primary MCP/A2A specifications.
+
+## 7. Owner-authorized admin and browser implementation boundary (2026-11-09)
+
+The additional [owner-admin/browser execution governance addendum](OWNER-ADMIN-BROWSER-EXECUTION.md) translates the latest user-supplied administrative MCP/Playwright blueprint into the existing Hatchable/PostgreSQL authority, GitHub worker, owner P-256 grant and browser adapters. It identifies shell-injection hazards in proposed workflow inputs, insufficient signature-presence tests, unsafe global cookie restoration, regex-only "taint" claims, unverified `_meta` authorization, and DOM-only completion claims. It is **not** a second executor or a production activation.
+
+Adopt the existing #169/#187/#192/#204/#225 contracts, require provider-side independent write readback and preserve #351's protected workflow failure gate. No mass code replacement, permissions widening, new secret, second required human approval, or paid provider activation is justified by example code alone.
