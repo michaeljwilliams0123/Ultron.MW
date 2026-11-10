@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path';
 
 const KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$/;
 const SHA = /^[0-9a-f]{40}$/;
+const FAILURE = new Set(['failed', 'failure', 'error', 'rejected', 'blocked', 'cancelled', 'canceled']);
 const SUCCESS = new Set(['completed', 'success', 'succeeded', 'executed', 'applied',
   'reconciled_success', 'recovered_success']);
 const SCHEMA = 'ultron.task5.local-audit.v1';
@@ -166,7 +167,8 @@ export async function verifyPostConditionsAndStoreReceipt(executionReceipt, {
     ? receipt.details : Object.create(null);
   const baseSha = consistentSha('baseSha', receipt.baseSha, details.baseSha);
   const headSha = consistentSha('headSha', receipt.headSha, details.headSha, details.commitSha);
-  let statusResult = 'EXECUTION_NOT_SUCCEEDED';
+  // Uncertain remote outcomes must remain pending reconciliation, not terminal failures.
+  let statusResult = FAILURE.has(status.toLowerCase()) ? 'EXECUTION_NOT_SUCCEEDED' : 'RECONCILE_REQUIRED';
   let gitDiffSummary = null;
   let changedFiles = [];
   if (SUCCESS.has(status.toLowerCase())) {
