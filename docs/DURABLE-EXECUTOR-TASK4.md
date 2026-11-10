@@ -17,6 +17,9 @@ returning `{ verified, operationDigest, repository, targetBranch, personaRole,
 expiresAt }`. It must be repeatable without consuming a one-time grant twice,
 and must reject expired/revoked grants; the executor rechecks immediately before
 dispatch. Never forward caller-provided `authorized:true` as the verifier.
+The executor constructs the immutable persona attribution from the
+verified Council role; caller-provided `authorName` and extra persona fields
+are not forwarded to the mutation.
 
 `services.db` is a PostgreSQL client implementing `query(sql, params)`. Use the
 existing Hatchable PostgreSQL connection and apply migration 0039 before
@@ -57,7 +60,10 @@ same key is a hard conflict.
 
 A branch existing by itself is **not** success. The exact HEAD commit must have
 `Ultron-Operation-Digest: <operationDigest>` as its own line. If the branch
-exists with a different marker, hold for reconciliation. A 401/403, rate
+exists with a different marker, hold for reconciliation.
+The GitHub reference is fetched again after the commit object to reject a
+branch that moved during readback; even this is point-in-time verification,
+not a claim that the branch can never change again. A 401/403, rate
 limit, 5xx, or network error is *not* proof that the branch is absent. A
 worker that loses an API acknowledgment does not reissue the mutation: it
 rechecks remote state and durable state. A concurrent duplicate never takes
