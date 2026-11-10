@@ -9,7 +9,7 @@ const SHA=/^[a-f0-9]{40}$/;
 const DIGEST=/^[a-f0-9]{64}$/;
 const PHASES=Object.freeze({
  ready:{recoveryMode:'authorized-repair',nextAction:'Ready for an authorized bounded repair attempt',progressPercent:10},
- 'patch-dispatched':{recoveryMode:'readback-only',nextAction:'Check the GitHub patch effect; never blindly replay the write',progressPercent:30},
+ 'patch-dispatched':{recoveryMode:'readback-only',nextAction:'Inspect the GitHub patch effect; do not send a second write',progressPercent:30},
  applied:{recoveryMode:'verify',nextAction:'Run or observe the exact-head verification workflow',progressPercent:50},
  verifying:{recoveryMode:'readback-only',nextAction:'Observe the existing exact-head CI run without redispatch',progressPercent:65},
  verified:{recoveryMode:'authorized-publication',nextAction:'Obtain publication authorization and create a reviewable PR',progressPercent:80},
