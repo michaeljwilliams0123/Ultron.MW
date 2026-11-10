@@ -63,3 +63,22 @@ test('fails closed on invalid adapters and rejected transitions',async()=>{
   assert.equal((await a.read(p.id)).phase,'ready');
  }finally{await db.close();}
 });
+
+
+test('per-task retry limit survives PostgreSQL claim and feeds the owner status projection',async()=>{
+ const {PGlite}=await import('@electric-sql/pglite');
+ const {normalizeRepairStatus}=await import('../cloud/hatchable/lib/autonomous-repair-status.js');
+ const db=new PGlite();
+ try{
+  await db.exec(readFileSync(new URL('../cloud/hatchable/migrations/0039_autonomous_repair_checkpoints.sql',import.meta.url),'utf8'));
+  const {schema,fingerprint,...source}=plan();
+  const oneAttempt=createAutonomousRepairPlan({...source,maxAttempts:1},moment);
+  const ledger=createPostgresAutonomousRepairLedger({db});
+  const claimed=await ledger.claim(oneAttempt);
+  assert.equal(claimed.maxAttempts,1);
+  assert.equal((await ledger.read(oneAttempt.id)).maxAttempts,1);
+  const status=normalizeRepairStatus(await ledger.read(oneAttempt.id));
+  assert.equal(status.maxAttempts,1);
+  await assert.rejects(ledger.claim({...oneAttempt,maxAttempts:0}),/claim-invalid/);
+ }finally{await db.close();}
+});
