@@ -12,6 +12,7 @@ import {
 const ROOT='/repos/'+ULTRON_REPOSITORY;
 const BRANCH='ultron/[a-z0-9][a-z0-9-]{2,63}';
 const ROUTES=Object.freeze({
+ 'identity.read':[['GET',new RegExp('^'+ROOT+'$')]],
  'actions.verify.dispatch':[
   ['GET',new RegExp('^'+ROOT+'/actions/workflows/verify\\.yml$')],
   ['GET',new RegExp('^'+ROOT+'/git/ref/heads/'+BRANCH+'$')],
