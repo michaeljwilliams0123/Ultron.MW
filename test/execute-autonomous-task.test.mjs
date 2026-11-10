@@ -91,7 +91,7 @@ test('prepare-only handoff rejects missing or unsafe task metadata before graph'
   {enforceSignedApproval:false},{requiresResponse:false}
  ]){
   await assert.rejects(dispatchHeadlessTask('Verify', {...good,...patch}),
-   /headless-(prepare|context|scope)/i);
+   /headless-(preparation|context|scope)/i);
  }
  assert.equal(invoked,0);
 });
