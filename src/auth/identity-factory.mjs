@@ -75,19 +75,22 @@ export async function createVerifiedGitHubClient({
   ...credentials,fetchImpl,clock,
  });
  const getTokenForScope=async(scope)=>{
-  // Accept either an operation name (Tasks 2/4) or the canonical scoped
-  // request supplied by createUnifiedGitHubTransport. The issuer validates
-  // every object field, rejecting changed repositories or extra permissions.
-  const operation=typeof scope==='string'?scope:scope?.operation;
+  // Snapshot canonical request data before the async exchange: callers must
+  // not be able to retag the resulting token by mutating the input.
+  let request;
+  try{
+   request=typeof scope==='string'?{
+    operation:scope,repositoryId:ULTRON_REPOSITORY_ID,
+    permissions:requiredTokenPermissions(scope),
+   }:structuredClone(scope);
+  }catch{throw Error('GitHub App token scope denied');}
   let profile;
-  try{profile=operationProfile(operation);}
+  try{profile=operationProfile(request?.operation);}
   catch{throw Error('GitHub App token scope denied');}
   if(profile.authorization!=='standing')
    throw Error('GitHub App elevated token scope denied');
-  return issueToken(typeof scope==='string'?{
-   operation,repositoryId:ULTRON_REPOSITORY_ID,
-   permissions:requiredTokenPermissions(operation),
-  }:scope);
+  // The issuer checks exact keys, repository ID, and exact permissions.
+  return issueToken(request);
  };
 
  // ID proof is a GET only. The write-capability check is a scoped token
