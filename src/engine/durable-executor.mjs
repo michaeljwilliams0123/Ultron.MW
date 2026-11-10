@@ -27,6 +27,7 @@ function validateContext(context,persona){
  const taskId=dataField(context,'taskId');
  const targetBranch=dataField(context,'targetBranch');
  const operationDigest=dataField(context,'operationDigest');
+ const sourceSha=Object.hasOwn(context||{},'sourceSha')?dataField(context,'sourceSha'):null;
  const repository=Object.hasOwn(context||{},'repository')?dataField(context,'repository'):ULTRON_REPOSITORY;
  const personaRole=dataField(persona,'role');
  if(typeof taskId!=='string'||!TASK_ID.test(taskId)||
@@ -34,10 +35,14 @@ function validateContext(context,persona){
   !/^(?:canary|ultron|feature)\/[a-z0-9][a-z0-9._/-]+$/i.test(targetBranch)||
   targetBranch.includes('..')||targetBranch.includes('//')||targetBranch.endsWith('/')||
   targetBranch.endsWith('.')||targetBranch.endsWith('.lock')||
-  !SHA64.test(operationDigest)||repository!==ULTRON_REPOSITORY||
+  !SHA64.test(operationDigest)||
+  (sourceSha!==null&&!SHA40.test(sourceSha))||
+  (targetBranch.startsWith('ultron/canary-')&&!sourceSha)||
+  repository!==ULTRON_REPOSITORY||
   !ROLES.has(personaRole))fail('invalid-context');
  return Object.freeze({idempotencyKey:`ultron-task-${taskId}`,taskId,
-  repository,targetBranch,operationDigest,personaRole});
+  repository,targetBranch,operationDigest,personaRole,
+  ...(sourceSha?{sourceSha}:{})});
 }
 function matches(row,intent){
  return row&&row.idempotencyKey===intent.idempotencyKey&&
@@ -157,6 +162,15 @@ export async function inspectGitHubBranch(token,intent,{fetchImpl=globalThis.fet
  if(!commit||typeof commit.message!=='string')fail('github-readback-unavailable');
  const matching=commit.message.split(/\r?\n/).some(line=>line===trailer(intent.operationDigest));
  if(!matching)return {state:'conflict',sha};
+ // Canary receipts must prove ancestry and identical content before becoming
+ // immutable in PostgreSQL; a digest marker alone is insufficient.
+ if(intent.sourceSha){
+  if(commit.parents?.length!==1||commit.parents[0]?.sha!==intent.sourceSha||
+     !SHA40.test(commit.tree?.sha||''))return {state:'conflict',sha};
+  const parent=await get('/git/commits/'+intent.sourceSha);
+  if(parent?.sha!==intent.sourceSha||parent.tree?.sha!==commit.tree.sha)
+   return {state:'conflict',sha};
+ }
  // The branch can advance during the commit lookup. Never attest a stale HEAD.
  const freshRef=await get(path);
  if(freshRef?.object?.type!=='commit'||freshRef.object.sha!==sha)
