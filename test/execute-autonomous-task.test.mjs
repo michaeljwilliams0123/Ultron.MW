@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dispatchHeadlessTask } from '../scripts/execute-autonomous-task.mjs';
 
-test('calls the real graph boundary with an active, signed-approval-required context', async () => {
+test('passes signed-approval and response flags to the graph runner', async () => {
   let observed;
   const graphResult = {status: 'held', reason: 'owner-grant-required'};
   const result = await dispatchHeadlessTask('Verify source and CI', {
@@ -12,11 +12,11 @@ test('calls the real graph boundary with an active, signed-approval-required con
   });
   assert.equal(result, graphResult);
   assert.deepEqual(observed, {
-    taskId: 'canary-exec-1794286320000-12345678',
+    taskId: 'canary-exec-1794286320000-12345678-1234-4234-8234-123456789abc',
     objective: 'Verify source and CI',
     requiresResponse: true,
     enforceSignedApproval: true,
-    targetBranch: 'canary/autonomous-run-1794286320000-12345678',
+    targetBranch: 'canary/autonomous-run-1794286320000-12345678-1234-4234-8234-123456789abc',
   });
   assert.equal(Object.isFrozen(observed), true);
   assert.equal(Object.hasOwn(observed,'authorized'), false);

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const DEFAULT_OBJECTIVE = 'Default autonomous infrastructure validation canary';
 const MAX_OBJECTIVE_CHARS = 800;
-const SUCCESS_STATUSES = new Set(['succeeded','verified','completed','verified-plan']);
+const SUCCESS_STATUSES = new Set(['succeeded', 'verified', 'completed']);
 
 async function invokeGraph(context) {
   let orchestrator;
@@ -48,9 +48,9 @@ export async function dispatchHeadlessTask(objectiveString, {
     throw new Error('headless-graph-unavailable');
   }
   const timestamp = now();
-  const suffix = newId().slice(0,8);
+  const suffix = newId();
   if (!Number.isSafeInteger(timestamp) || timestamp < 0 ||
-      !/^[a-f0-9]{8}$/.test(suffix)) {
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(suffix)) {
     throw new Error('headless-dispatch-identity-invalid');
   }
   const context = Object.freeze({
@@ -67,7 +67,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const result = await dispatchHeadlessTask(process.argv[2]);
     console.log(JSON.stringify(result));
-    if (!SUCCESS_STATUSES.has(result?.status)) process.exitCode = 1;
+    if (!SUCCESS_STATUSES.has(result?.status) || result?.productionAccepted === false) {
+      process.exitCode = 1;
+    }
   } catch (error) {
     const code = String(error?.message || '').startsWith('headless-')
       ? error.message : 'headless-execution-failed';
