@@ -43,3 +43,27 @@ node scripts/verify.mjs
 The regression suite additionally covers concurrent same-key writers, conflicting writers, symlinked or group/world-writable audit directories, oversized inputs, recovered statuses, and unknown write outcomes.
 
 Task 4's executor path is not on the baseline `main` at creation time; the integration call must be wired once its output shape and authorization boundary are available. This PR intentionally does not create a competing executor.
+
+## Task 5 source-acceptance criteria (owner review / squash-merge handoff)
+
+**Scope:** This PR adds a deterministic local post-condition **audit hook**, its tests, this verification contract and a `.gitignore` rule. It does not activate Task 4, grant GitHub permissions, prove a remote effect, merge a PR, or deploy Ultron MW Cloud Brain.
+
+### Accepted implementation requirements — demonstrated in source and focused tests
+
+- [x] **Task 4 shape:** Export `verifyPostConditionsAndStoreReceipt(executionReceipt)`; accept a bounded JSON receipt with an idempotency key, execution status and optional exact base/head SHAs, and write `receipts/{idempotencyKey}.json`.
+- [x] **Provenance:** When both commit SHAs are supplied with a successful status, inspect the *specified* range only; require current HEAD to match the supplied head SHA, base to be an ancestor, and a nonempty changed-file set. Do not substitute `HEAD~1` or a fabricated remote-dispatch diff.
+- [x] **Status fidelity:** Successful/reconciled/recovered outcomes without both local SHAs are `REMOTE_READBACK_REQUIRED`; an exact local diff is only `LOCAL_DIFF_VERIFIED_REMOTE_UNVERIFIED`; known terminal failures are `EXECUTION_NOT_SUCCEEDED`; unknown/pending/ambiguous outcomes are `RECONCILE_REQUIRED`. In every case, `remoteReadbackVerified` remains `false`.
+- [x] **Replay and integrity:** Canonically hash the bounded, inert receipt; exclude raw `details` from the artifact; create once without clobbering; replay identical input without changing timestamp or digest; reject conflicting same-key input and modified on-disk artifacts. SHA-256 is an *integrity checksum*, not an independently trusted signature.
+- [x] **Filesystem hardening:** Validate key/path shape, reject symlinked audit files and directories, reject group/world-writable audit directories on POSIX, use owner-read-only receipt files, clean temporary files on publish failure, and avoid leaking credentials into JSON. A directory owner can still replace files; do not claim OS-level immutability.
+- [x] **Safe Git parsing:** Use fixed Git arguments (no interpolated shell), disable external diff/textconv, and parse NUL-delimited filenames, including names with newlines.
+- [x] **Concurrent behavior:** Eight independent writers with identical input converge on a single complete artifact; two writers with different inputs sharing a key result in one accepted writer and one rejected conflict; no temporary files remain in the tested fixture.
+- [x] **Regression suite:** Run all 21 Task 5 tests, repository-wide verification and existing PostgreSQL acceptance checks with zero failures on the exact reviewed PR head; record CI URLs and final SHA in the PR, not as a mutable claim about `main`.
+
+### Explicitly deferred — NOT prerequisites for merging this source-only PR
+
+- [ ] **Task 4→5 runtime wiring:** Compose this hook behind the approved Task 4 executor, once its final receipt shape and trusted caller are installed. This PR must not invent a competing Task 4 or bypass owner grants.
+- [ ] **Durable external evidence:** Store a corresponding immutable / append-only execution record in authoritative Hatchable PostgreSQL; independently query GitHub for exact remote branch/commit/PR/postcondition and reconcile unknown writes before retries.
+- [ ] **Production acceptance:** Verify an owner-authorized end-to-end operation, exact-head CI and provider readback with $0 paid spend; assess under [#204](https://github.com/michaeljwilliams0123/Ultron.MW/issues/204) and [#285](https://github.com/michaeljwilliams0123/Ultron.MW/issues/285). Neither should be closed by merging this hook alone.
+- [ ] **Integration canary:** [PR #367](https://github.com/michaeljwilliams0123/Ultron.MW/pull/367) is explicitly TEST ONLY / DO NOT MERGE; it is synthetic-provider evidence, not a release dependency or proof of live provider acceptance.
+
+**Owner closeout:** Keep this PR open for the owner's review and squash merge to `main` after checking the **final head** and required passing CI. No second human reviewer is required by the current sole-owner policy in #204; preserve authorization, security checks and post-condition evidence. The local audit's success status must never be upgraded to a live external-effect claim by this source merge.
