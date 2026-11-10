@@ -174,8 +174,14 @@ export async function executeIdempotentGitHubWrite(taskContext,token,persona,git
   fail('invalid-operation');
  const intent=validateContext(taskContext,persona);
  // A mutable caller-supplied authorName must not impersonate another role.
- const safePersona=Object.freeze({role:intent.personaRole,
-  authorName:`Ultron ${intent.personaRole[0].toUpperCase()}${intent.personaRole.slice(1)}`});
+ const label=intent.personaRole[0].toUpperCase()+intent.personaRole.slice(1);
+ const safePersona=Object.freeze({
+  role:intent.personaRole,
+  authorName:`Ultron.MW [${label}]`,
+  // Derive a fixed attribution address; never propagate caller-controlled
+  // authorEmail, even if the supplied persona claims a privileged identity.
+  authorEmail:`ultron-mw-${intent.personaRole}@system.local`
+ });
  const db=services.db;
  const inspect=()=>services.remote?.inspect
   ?services.remote.inspect({token,intent})
