@@ -73,14 +73,12 @@ export function routeCodexObjective(text, selectedAuthor, {authors=CODEX_AUTHORS
   return normalized;
 }
 
-/** Exact owner PR call syntax; surrounding prose never authorizes execution. */
+/** Only a deliberate, exact owner /codex run command admits the PR C03 lane.
+ * GitHub @mentions are collaborator notifications, not Codex dispatches.
+ */
 export function isCodexRunCommand(text, authorId, {authors = CODEX_AUTHORS} = {}) {
   if (typeof text !== 'string' || text !== text.trim()) return false;
-  // Only the three documented bare tags count as owner PR triggers.
-  // Keep short aliases available to /codex run without double-counting them.
-  if (text.startsWith('@') &&
-      !/^@(?:michaeljwilliams0123ultron|ultron-codex|destiny-codex)$/i.test(text)) return false;
-  const match = /^(?:\/codex run |@)([a-z][a-z0-9-]{2,63})$/i.exec(text);
+  const match = /^\/codex run ([a-z][a-z0-9-]{2,63})$/i.exec(text);
   if (!match) return false;
   try {
     return resolveCodexAuthor(match[1], {requireBinding: true, authors}).id === authorId;
