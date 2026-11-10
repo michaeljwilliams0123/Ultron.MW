@@ -246,6 +246,9 @@ test('revocation after CI intent reservation blocks a first CI dispatch',async()
 });
 test('revocation after PR intent reservation never calls the PR write adapter',async()=>{
  const f=fixture();let createChecks=0;
+ // Simulate a genuinely absent PR; a remote object that already matches
+ // the recorded intent may legitimately be reconciled after revocation.
+ f.publisher.observe=async()=>null;
  f.authorize=async({operation})=>operation==='repair.pr.create'?
   ++createChecks===1:true;
  const outcome=await runAutonomousRepair(context(f));
