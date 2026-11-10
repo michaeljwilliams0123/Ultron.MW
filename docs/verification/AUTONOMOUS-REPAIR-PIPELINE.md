@@ -46,8 +46,11 @@ const outcome=await runAutonomousRepair({
 ## Tests and acceptance
 
 Focused tests:
+- `npm run verify:fast` (fixed-command no-shell smoke runner, scrubbed child environment; not a release gate)
 - `node --test test/autonomous-repair-*.test.mjs`
 - Full syntax, regression and workflow checks: `node scripts/verify.mjs`
+
+The existing read-only GitHub Verify workflow now runs the fast smoke before its full regression suite. The automated repair coordinator still treats only the independently observed full exact-head GitHub run as authority to publish.
 
 Tests cover a fully successful attempt, failing-test self-correction, three-attempt exhaustion, response-loss recovery without duplicate patch/PR creation, strict source SHA, invalid proposals, owner-denied writes, pending CI, loss of persistence, secret-redacted diagnostics, and real PostgreSQL CAS/event immutability via PGlite.
 
