@@ -4,10 +4,10 @@ import {readFile} from 'node:fs/promises';
 import {runOwnerActionsCanary} from '../scripts/owner-actions-canary.mjs';
 
 const SHA='a'.repeat(40),OTHER='b'.repeat(40);
-const ROOT='https://api.github.com/repos/Ultron-MW/Ultron.MW';
+const ROOT='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const env={
  GITHUB_ACTIONS:'true',GITHUB_EVENT_NAME:'workflow_dispatch',
- GITHUB_REPOSITORY:'Ultron-MW/Ultron.MW',
+ GITHUB_REPOSITORY:'michaeljwilliams0123/Ultron.MW',
  GITHUB_ACTOR:'michaeljwilliams0123',GITHUB_TRIGGERING_ACTOR:'michaeljwilliams0123',
  GITHUB_REF:'refs/heads/main',GITHUB_SHA:SHA,
  GITHUB_RUN_ID:'42818000001',GITHUB_RUN_ATTEMPT:'1',GITHUB_TOKEN:'SECRET_TOKEN_NEVER_PRINT'
@@ -26,7 +26,7 @@ function harness({preexisting=false,postReadbackSha=SHA,postStatus=201,
   assert.equal(opts.redirect,'error');
   assert.equal(opts.headers.Authorization,'Bearer '+env.GITHUB_TOKEN);
   if(url===ROOT&&opts.method==='GET')
-   return json(200,{id:wrongRepo?1:1424939667,full_name:'Ultron-MW/Ultron.MW',
+   return json(200,{id:wrongRepo?1:1424939667,full_name:'michaeljwilliams0123/Ultron.MW',
      default_branch:'main'});
   if(url===ROOT+'/git/ref/heads/main'&&opts.method==='GET')
    return json(200,{ref:'refs/heads/main',object:{type:'commit',sha:mainSha}});
@@ -79,7 +79,7 @@ test('denies non-owner actors, reruns, wrong repository, wrong branch, or missin
  const patches=[
   {GITHUB_ACTOR:'attacker'},
   {GITHUB_TRIGGERING_ACTOR:'attacker'},
-  {GITHUB_REPOSITORY:'michaeljwilliams0123/Ultron.MW'},
+  {GITHUB_REPOSITORY:'Ultron-MW/Ultron.MW'},
   {GITHUB_REF:'refs/heads/feature'},
   {GITHUB_EVENT_NAME:'push'},
   {GITHUB_ACTIONS:'false'},
@@ -131,7 +131,7 @@ test('read errors and uncertain writes cannot be counted as verified',async()=>{
  assert.equal(lost.externalWritePerformed,false);
  assert.equal(JSON.stringify(lost).includes('SECRET_INTERNAL_API_ERROR'),false);
  function harnessResponse(url,opts){
-  if(url===ROOT)return json(200,{id:1424939667,full_name:'Ultron-MW/Ultron.MW',default_branch:'main'});
+  if(url===ROOT)return json(200,{id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW',default_branch:'main'});
   if(url===ROOT+'/git/ref/heads/main')return json(200,{ref:'refs/heads/main',object:{type:'commit',sha:SHA}});
   if(url===ROOT+'/git/ref/heads/'+branch)return json(404,{message:'Not Found'});
   throw Error('unexpected call');
@@ -143,7 +143,7 @@ test('workflow keeps a separate owner-gated, contents:write job and a read-only 
  assert.match(yml,/workflow_dispatch:/);
  assert.match(yml,/default: read/);
  assert.match(yml,/APPROVE_ONE_OWNER_ACTIONS_CANARY/);
- assert.match(yml,/github\.repository == 'Ultron-MW\/Ultron\.MW'/);
+ assert.match(yml,/github\.repository == 'michaeljwilliams0123\/Ultron\.MW'/);
  assert.match(yml,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(yml,/github\.triggering_actor == 'michaeljwilliams0123'/);
  assert.match(yml,/github\.ref == 'refs\/heads\/main'/);

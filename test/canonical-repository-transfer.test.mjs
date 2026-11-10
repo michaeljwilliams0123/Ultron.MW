@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {ULTRON_REPOSITORY,ULTRON_REPOSITORY_ID} from '../src/github-principal-policy.mjs';
 
-const canonical='Ultron-MW/Ultron.MW';
-const old='michaeljwilliams0123/Ultron.MW';
+const canonical='michaeljwilliams0123/Ultron.MW';
+const old='Ultron-MW/Ultron.MW';
 
-test('signed Task 1–5 operation authority follows the verified transferred repository ID',()=>{
+test('signed Task 1–5 operation authority follows the verified current repository ID',()=>{
  assert.equal(ULTRON_REPOSITORY,canonical);
  assert.equal(ULTRON_REPOSITORY_ID,1424939667);
 });
@@ -37,6 +37,7 @@ test('forward migration retains legacy receipt and admits canonical writes',asyn
   const receipt={idempotencyKey:legacyKey,status:'success',details:{
    operationDigest:'a'.repeat(64),repository:old,branch:legacyBranch,
    personaRole:'builder',remoteVerified:true,sha:'b'.repeat(40)}};
+  await db.exec(forward);
   await db.query(
    "INSERT INTO github_idempotent_executions "+
    "(idempotency_key,operation_digest,repository,target_branch,persona_role,state,receipt) "+

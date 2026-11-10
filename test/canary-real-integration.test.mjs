@@ -13,7 +13,7 @@ import {verifyPostConditionsAndStoreReceipt} from '../scripts/verify-post-condit
 import {runMasterPipeline,createCanaryCommitOperation,createCanaryLineageVerifier} from '../scripts/run-canary-pipeline.mjs';
 import {requiredTokenPermissions,ULTRON_REPOSITORY_ID} from '../src/github-principal-policy.mjs';
 
-const REPO='Ultron-MW/Ultron.MW';
+const REPO='michaeljwilliams0123/Ultron.MW';
 const API='https://api.github.com/repos/'+REPO;
 const BASE='1'.repeat(40),TREE='2'.repeat(40),COMMIT='3'.repeat(40),FOREIGN='4'.repeat(40);
 const BRANCH='ultron/canary-integration-001';

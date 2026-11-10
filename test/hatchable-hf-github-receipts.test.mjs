@@ -11,10 +11,10 @@ const run=(overrides={})=>({
  id:RUN,run_attempt:1,path:'.github/workflows/c06-owner-model-release.yml',
  event:'workflow_dispatch',status:'completed',conclusion:'failure',
  head_sha:SHA,head_branch:'main',actor:{login:OWNER,id:308995719},
- repository:{full_name:'Ultron-MW/Ultron.MW',private:false},
+ repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:false},
  ...overrides
 });
-const payload=(overrides={})=>({action:'completed',repository:{full_name:'Ultron-MW/Ultron.MW',private:false},
+const payload=(overrides={})=>({action:'completed',repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:false},
  workflow_run:run(),...overrides});
 test('GH-HF-01: only signed-intended owner, public main, completed and allowlisted workflow events qualify',()=>{
  const x=validateGithubWorkflowPayload(payload());
@@ -37,12 +37,12 @@ test('GH-HF-02: reject forged repository, actor, paths, paid/private branch, and
  payload({workflow_run:run({actor:{login:'attacker',id:308995719}})}),
  payload({workflow_run:run({actor:{login:OWNER,id:354634860}})}),
  payload({workflow_run:run({actor:{login:OWNER}})}),
- payload({repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:false}}),
+ payload({repository:{full_name:'Ultron-MW/Ultron.MW',private:false}}),
  payload({workflow_run:run({head_branch:'experimental'})}),
  payload({workflow_run:run({status:'in_progress',conclusion:null})}),
  payload({workflow_run:run({head_sha:'main'})}),
  payload({workflow_run:run({event:'push'})}),
- payload({repository:{full_name:'Ultron-MW/Ultron.MW',private:true}}),
+ payload({repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:true}}),
  payload({action:'requested'})
  ];
  for(const bad of invalid)assert.throws(()=>validateGithubWorkflowPayload(bad));

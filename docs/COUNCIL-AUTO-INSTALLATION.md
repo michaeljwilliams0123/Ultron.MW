@@ -1,5 +1,7 @@
 # Automatic GitHub App installation proof
 
+> Historical transfer-era record. Superseded for current configuration on 2026-11-10: the canonical repository is `michaeljwilliams0123/Ultron.MW` (ID `1424939667`), owned by `michaeljwilliams0123` (ID `308995719`). Organization paths below describe historical observations, not current authorization. See [current identity contract](CANONICAL-GITHUB-IDENTITY.md).
+
 The source repository is now `Ultron-MW/Ultron.MW` (repository ID `1424939667`), transferred from the original personal namespace. This is a repository rename/transfer, not a second repository.
 
 The `Council GitHub App identity proof (read-only)` workflow reuses the existing `ULTRON_BUILDER_CLIENT_ID` variable and protected `ULTRON_BUILDER_PRIVATE_KEY` secret, which are associated with the Ultron Coordinator App (numeric App ID `5633654` on `ULTRON_GITHUB_APP_ID`). The pinned official `actions/create-github-app-token` action dynamically discovers the installation on the *current repository owner* and scopes an ephemeral token to the current repository, requesting only metadata:read. It validates the returned `app-slug` before running the existing read-only installation-token and repository-ID proof. The action revokes its temporary token at job completion. No manual installation ID variable and no new private-key secret are needed.

@@ -1,7 +1,7 @@
 /** GitHub workflow_run admission: no LLM output, no external writes, no paid work.
  * Caller MUST authenticate raw bytes with GitHub's HMAC-SHA256 before validation.
  */
-const REPO='Ultron-MW/Ultron.MW';
+const REPO='michaeljwilliams0123/Ultron.MW';
 const ACTOR_IDS=Object.freeze({
  'michaeljwilliams0123':308995719,
  'michaeljwilliams0123ultron':354634860

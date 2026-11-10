@@ -8,8 +8,9 @@ Ultron is an independent, single-owner execution platform with one shared interf
 
 **Primary owner UI:** https://ultron-mw-cloud.hatchable.site/ (Hatchable production, with live owner-only Mission Control). The [Brain / Learning / Systems workspace](https://ultron-mw-cloud.hatchable.site/workspace.html) and cloud controls now share one origin. The previous [GitHub Pages console](https://michaeljwilliams0123.github.io/Ultron.MW/) remains available for rollback while the separately tracked authenticated full-lifecycle/PR reconciliation and retirement tests in [#170](https://github.com/michaeljwilliams0123/Ultron.MW/issues/170) are completed. See [v35 deployment evidence](docs/verification/HATCHABLE-SINGLE-UI-V35-2026-11-03.md).
 
-**Named Codex authors:** The console displays **Mike's Codex** and **Destiny's
-Codex**, stable author fingerprints and separate route status. Use
+**Canonical GitHub identity:** Source and ownership remain `michaeljwilliams0123/Ultron.MW` (repository ID `1424939667`). The dedicated contributor `michaeljwilliams0123ultron` is a separate GitHub user, not the repository owner. See [identity and enrollment contract](docs/CANONICAL-GITHUB-IDENTITY.md).
+
+**Named Codex authors:** The console registers **Mike's Codex** and **Ultron's Codex** (formerly **Destiny's Codex**), with stable author fingerprints and separate route status. `ultron-codex` and `destiny-codex` resolve to the same enrolled event route using the dedicated contributor account; a fresh task receipt is required to verify live execution. Use
 `/codex destiny-codex <public task>` to request the enrolled Work lane through
 an owner-confirmed Issue and task PR. Mike's route remains explicitly unbound
 until enrolled from his account. Registration is not account attestation or

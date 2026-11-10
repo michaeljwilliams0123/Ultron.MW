@@ -5,11 +5,11 @@ import {runOwnerCanaryMatrix,markerDocument} from '../scripts/owner-canary-matri
 
 const BASE='a'.repeat(40),TREE='b'.repeat(40);
 const MARKER_TREE='c'.repeat(40),MARKER_COMMIT='d'.repeat(40);
-const TARGET='42827178057',RUN='42830123456',ROOT='https://api.github.com/repos/Ultron-MW/Ultron.MW';
+const TARGET='42827178057',RUN='42830123456',ROOT='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const BRANCH='ultron/canary-owner-actions-'+TARGET;
 const PATH='docs/canary/owner-actions-'+TARGET+'.json';
 const env={GITHUB_ACTIONS:'true',GITHUB_EVENT_NAME:'workflow_dispatch',
- GITHUB_REPOSITORY:'Ultron-MW/Ultron.MW',GITHUB_ACTOR:'michaeljwilliams0123',
+ GITHUB_REPOSITORY:'michaeljwilliams0123/Ultron.MW',GITHUB_ACTOR:'michaeljwilliams0123',
  GITHUB_TRIGGERING_ACTOR:'michaeljwilliams0123',GITHUB_REF:'refs/heads/main',
  GITHUB_SHA:BASE,GITHUB_RUN_ID:RUN,GITHUB_RUN_ATTEMPT:'1',
  GITHUB_TOKEN:'FAKE_TOKEN_NEVER_LEAK',OWNER_CANARY_STOP:'false'};
@@ -25,7 +25,7 @@ function mock({initialSha=BASE,mainSha=BASE,repoId=1424939667,
   assert.equal(opts.redirect,'error');
   const path=url.slice(ROOT.length);
   calls.push({path,method:opts.method,body:opts.body});
-  if(opts.method==='GET'&&path==='')return response(200,{id:repoId,full_name:'Ultron-MW/Ultron.MW',default_branch:'main'});
+  if(opts.method==='GET'&&path==='')return response(200,{id:repoId,full_name:'michaeljwilliams0123/Ultron.MW',default_branch:'main'});
   if(opts.method==='GET'&&path==='/git/ref/heads/main')
    return response(200,{ref:'refs/heads/main',object:{type:'commit',sha:mainSha}});
   if(opts.method==='GET'&&path==='/git/ref/heads/'+BRANCH)
@@ -113,7 +113,7 @@ test('wrong actors, wrong source, reruns, missing approval, stop flag and invali
  const invalid=[
   {env:{...env,GITHUB_ACTOR:'attacker'},mode:'marker'},
   {env:{...env,GITHUB_TRIGGERING_ACTOR:'attacker'},mode:'marker'},
-  {env:{...env,GITHUB_REPOSITORY:'michaeljwilliams0123/Ultron.MW'},mode:'marker'},
+  {env:{...env,GITHUB_REPOSITORY:'Ultron-MW/Ultron.MW'},mode:'marker'},
   {env:{...env,GITHUB_REF:'refs/heads/release'},mode:'marker'},
   {env:{...env,GITHUB_RUN_ATTEMPT:'2'},mode:'marker'},
   {env:{...env,OWNER_CANARY_STOP:'true'},mode:'marker'},
@@ -156,7 +156,7 @@ test('matrix workflow uses owner-gated separate read and write job, pinned actio
  assert.match(yaml,/contents: write/);
  assert.match(yaml,/APPROVE_ONE_CANARY_MARKER_COMMIT/);
  assert.match(yaml,/inputs\.mode == 'marker'/);
- assert.match(yaml,/github\.repository == 'Ultron-MW\/Ultron\.MW'/);
+ assert.match(yaml,/github\.repository == 'michaeljwilliams0123\/Ultron\.MW'/);
  assert.match(yaml,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(yaml,/github\.triggering_actor == 'michaeljwilliams0123'/);
  assert.match(yaml,/github\.ref == 'refs\/heads\/main'/);

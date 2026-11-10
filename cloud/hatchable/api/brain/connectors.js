@@ -4,7 +4,7 @@ import {probeGithubOperator} from 'lib/github-operator-probe.js';
 export const access='admin';
 export const methods=['GET'];
 const OWNER='michaeljwilliams0123';
-const REPO='Ultron-MW/Ultron.MW';
+const REPO='michaeljwilliams0123/Ultron.MW';
 const REPO_ID=1424939667;
 
 // Never serialize credential values or provider tokens to the browser.

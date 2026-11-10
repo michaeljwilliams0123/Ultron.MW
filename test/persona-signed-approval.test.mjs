@@ -7,7 +7,7 @@ import {enforceSignedApprovalAndTagPersona}
 import {requiredTokenPermissions,ULTRON_REPOSITORY_ID}
  from '../src/github-principal-policy.mjs';
 
-const REPO='Ultron-MW/Ultron.MW';
+const REPO='michaeljwilliams0123/Ultron.MW';
 const NOW=Date.parse('2026-11-09T23:45:00Z');
 const KEY='test-only-long-cryptographic-approval-secret-123456789';
 const OP='repair.branch.create';

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {probeGithubOperator} from '../cloud/hatchable/lib/github-operator-probe.js';
 
-const REPO='Ultron-MW/Ultron.MW', SHA='a'.repeat(40);
+const REPO='michaeljwilliams0123/Ultron.MW', SHA='a'.repeat(40);
 const ROOT='/repos/'+REPO;
 const ALLOWED=new Set(['/user',ROOT,ROOT+'/git/ref/heads/main',
  ROOT+'/issues?state=open&per_page=1',
@@ -44,13 +44,13 @@ function fakeProvider(scenario){
   }
   if(target==='repository'){
    const body={id:1424939667,full_name:REPO,
-    owner:{id:354776009,login:'Ultron-MW'},
+    owner:{id:308995719,login:'michaeljwilliams0123'},
     permissions:{push:true}};
    if(effect==='wrong-id')body.id=1;
    if(effect==='string-id')body.id='1424939667';
-   if(effect==='wrong-full-name')body.full_name='michaeljwilliams0123/Ultron.MW';
+   if(effect==='wrong-full-name')body.full_name='Ultron-MW/Ultron.MW';
    if(effect==='wrong-org-id')body.owner.id=3;
-   if(effect==='string-org-id')body.owner.id='354776009';
+   if(effect==='string-org-id')body.owner.id='308995719';
    if(effect==='wrong-org-login')body.owner.login='other-org';
    if(effect==='missing-owner')delete body.owner;
    if(effect==='no-push')body.permissions.push=false;

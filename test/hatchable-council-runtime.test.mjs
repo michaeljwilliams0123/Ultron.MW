@@ -39,14 +39,14 @@ test('OIDC accepts only signed owner workflow identity and body on main', async 
   const claims = {
     iss: 'https://token.actions.githubusercontent.com',
     aud: councilOidcAudience(rawBody),
-    repository: 'Ultron-MW/Ultron.MW',
+    repository: 'michaeljwilliams0123/Ultron.MW',
     repository_id: '1424939667',
-    repository_owner: 'Ultron-MW',
-    repository_owner_id: '354776009',
+    repository_owner: 'michaeljwilliams0123',
+    repository_owner_id: '308995719',
     repository_visibility: 'public',
-    sub: 'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:refs/heads/main',
+    sub: 'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
     actor: 'michaeljwilliams0123',actor_id: '308995719',
-    workflow_ref: 'Ultron-MW/Ultron.MW/.github/workflows/council-debate.yml@refs/heads/main',
+    workflow_ref: 'michaeljwilliams0123/Ultron.MW/.github/workflows/council-debate.yml@refs/heads/main',
     ref: 'refs/heads/main',
     event_name: 'issues',
     sha,
@@ -88,13 +88,13 @@ test('execution receipt OIDC accepts only the issue-comment router and reusable 
  const claims={
   iss:'https://token.actions.githubusercontent.com',
   aud:councilRoomExecutionOidcAudience(rawBody),
-  repository:'Ultron-MW/Ultron.MW',repository_id:'1424939667',
-  repository_owner:'Ultron-MW',repository_owner_id:'354776009',
+  repository:'michaeljwilliams0123/Ultron.MW',repository_id:'1424939667',
+  repository_owner:'michaeljwilliams0123',repository_owner_id:'308995719',
   repository_visibility:'public',
-  sub:'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:refs/heads/main',
+  sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
   actor:'michaeljwilliams0123',actor_id:'308995719',
-  workflow_ref:'Ultron-MW/Ultron.MW/.github/workflows/owner-comment-router.yml@refs/heads/main',
-  job_workflow_ref:'Ultron-MW/Ultron.MW/.github/workflows/cloud-pr.yml@refs/heads/main',
+  workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/owner-comment-router.yml@refs/heads/main',
+  job_workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/cloud-pr.yml@refs/heads/main',
   ref:'refs/heads/main',event_name:'issue_comment',sha,iat:now-20,exp:now+280
  };
  const header=encode({alg:'RS256',typ:'JWT',kid:'execution-key'});
@@ -109,7 +109,7 @@ test('execution receipt OIDC accepts only the issue-comment router and reusable 
  assert.equal((await verifyCouncilRoomExecutionOidc({token,rawBody,fetchJwks,
   now:()=>now*1000})).event,'issue_comment');
  const wrongWorkflow={...claims,workflow_ref:
-  'Ultron-MW/Ultron.MW/.github/workflows/cloud-pr.yml@refs/heads/main'};
+  'michaeljwilliams0123/Ultron.MW/.github/workflows/cloud-pr.yml@refs/heads/main'};
  const wrongPayload=encode(wrongWorkflow);
  const wrongSigner=createSign('RSA-SHA256');
  wrongSigner.update(header+'.'+wrongPayload);
@@ -138,7 +138,7 @@ test('proposal-only execution endpoint cannot accept an authenticated verified r
   schema:'ultron.council-room.execution.v1',phase:'verified',
   issueNumber:285,commentId:12345,
   commentBody:'@ultron implement Inspect the latest repository state',
-  verification:{runId:'42',url:'https://github.com/Ultron-MW/Ultron.MW/actions/runs/42',
+  verification:{runId:'42',url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42',
    sha:'a'.repeat(40),conclusion:'success'}
  };
  const res={code:200,setHeader(){},status(n){this.code=n;return this;},
@@ -159,7 +159,7 @@ test('needs-owner receipt persists exact completed verification beside the propo
  const source=await readFile(new URL('../cloud/hatchable/api/brain/council-room-execution.js',import.meta.url),'utf8');
  const sha='a'.repeat(40);
  const verification={runId:'42',
-  url:'https://github.com/Ultron-MW/Ultron.MW/actions/runs/42',
+  url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42',
   sha,conclusion:'success'};
  const reason='proposal-only-no-execution';
  const expected={...verification,reason};
@@ -167,7 +167,7 @@ test('needs-owner receipt persists exact completed verification beside the propo
  const row={id:41,message_id:7,execution_state:'needs-owner',
   idempotency_key:'room:issue:285:'+'b'.repeat(40),request_digest:'b'.repeat(64),
   external_id:'291',external_kind:'pull_request',
-  external_url:'https://github.com/Ultron-MW/Ultron.MW/pull/291',
+  external_url:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/291',
   execution_result:{headSha:sha,...expected}};
  const platform={db:{async query(sql,params){
   assert.match(sql,/UPDATE council_room_jobs SET execution_state=\$3/);

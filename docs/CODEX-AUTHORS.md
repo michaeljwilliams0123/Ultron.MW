@@ -6,7 +6,11 @@ GitHub accounts or claims that two separate OpenAI accounts were authenticated.
 | Author | Callable name | Current binding |
 |---|---|---|
 | Mike's Codex | `mike-codex` (alias `mike`) | Not enrolled; no fallback |
-| Destiny's Codex | `destiny-codex` (alias `destiny`) | Work GitHub event lane enrolled |
+| Ultron's Codex (formerly Destiny's Codex) | `destiny-codex` (aliases `ultron-codex`, `ultron`, `destiny`) | Existing Work GitHub event binding verified and enabled on 2026-11-10; bounded execution receipt verified on PR #381; scheduler health and automatic delivery remain separate |
+
+## GitHub identity separation
+
+The canonical repository is `michaeljwilliams0123/Ultron.MW`; Mike remains its owner. This Codex uses the connected contributor `michaeljwilliams0123ultron` (GitHub user ID `354634860`). Ultron and Destiny name the same executor; the stable `destiny-codex` ID and route fingerprint are retained so existing triggers and receipts remain valid. This does not change owner-only Issue admission, merge/release authority, commit author configuration, or the existing Destiny binding. See [identity and enrollment contract](CANONICAL-GITHUB-IDENTITY.md).
 
 ## Call from the console
 

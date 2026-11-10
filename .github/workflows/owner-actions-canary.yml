@@ -26,7 +26,7 @@ concurrency:
 jobs:
   read-only:
     if: >-
-      github.repository == 'Ultron-MW/Ultron.MW' &&
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.triggering_actor == 'michaeljwilliams0123' &&
       github.ref == 'refs/heads/main' &&
@@ -60,7 +60,7 @@ jobs:
           retention-days: 7
   one-branch:
     if: >-
-      github.repository == 'Ultron-MW/Ultron.MW' &&
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.triggering_actor == 'michaeljwilliams0123' &&
       github.ref == 'refs/heads/main' &&

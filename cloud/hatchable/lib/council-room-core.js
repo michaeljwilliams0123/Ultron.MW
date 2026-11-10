@@ -46,7 +46,7 @@ function issuePlanRequest(body){
  if(line.length>2000)throw Error('issue-remediation-request-invalid');
  let data;
  try{data=JSON.parse(line)}catch{throw Error('issue-remediation-request-invalid')}
- const url='https://github.com/Ultron-MW/Ultron.MW/issues/'+data?.number;
+ const url='https://github.com/michaeljwilliams0123/Ultron.MW/issues/'+data?.number;
  if(!Number.isSafeInteger(data?.number)||data.number<1||data.url!==url)
   throw Error('issue-remediation-request-invalid');
  return {number:data.number,url};
@@ -57,12 +57,12 @@ export async function buildCouncilRoomResult({message}){
  const mentions=Array.isArray(message.mentions)?message.mentions:[];
  const issueRequest=issuePlanRequest(String(message.body||''));
  const [ultronResult,mahoragaResult,issueResult]=await Promise.allSettled([
-  repoSnapshot('Ultron-MW/Ultron.MW'),
+  repoSnapshot('michaeljwilliams0123/Ultron.MW'),
   observeMahoragaMain({config}),
   issueRequest?inspectOpenIssue(issueRequest.number):Promise.resolve(null)
  ]);
  const ultron=ultronResult.status==='fulfilled'?ultronResult.value:
-  {repository:'Ultron-MW/Ultron.MW',status:'unavailable',sha:null};
+  {repository:'michaeljwilliams0123/Ultron.MW',status:'unavailable',sha:null};
  const mahoraga=mahoragaResult.status==='fulfilled'?mahoragaResult.value:
   {repository:'michaeljwilliams0123/mahoraga',status:'unavailable',sha:null,
    error:clean(mahoragaResult.reason?.message||'private-repository-unavailable',80)};

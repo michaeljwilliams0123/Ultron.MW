@@ -9,7 +9,7 @@ test('issue adapter uses a fixed endpoint, read method and strict projection',as
   return new Response(JSON.stringify({number:42,title:'Issue',state:'open',
    updated_at:'2026-01-01T00:00:00Z',body:'private data not returned'}));
  }});
- assert.equal(observed.url,'https://api.github.com/repos/Ultron-MW/Ultron.MW/issues/42');
+ assert.equal(observed.url,'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/issues/42');
  assert.equal(observed.options.method,'GET');
  assert.equal(observed.options.redirect,'error');
  assert.ok(observed.options.signal instanceof AbortSignal);

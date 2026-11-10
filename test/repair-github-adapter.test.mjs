@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRepairGitHubAdapter } from '../src/repair-github-adapter.mjs';
 
-const REPO='Ultron-MW/Ultron.MW', ID=1424939667;
+const REPO='michaeljwilliams0123/Ultron.MW', ID=1424939667;
 const BRANCH='ultron/repair-seeded-case', SHA='a'.repeat(40);
 const repo={id:ID,full_name:REPO};
 function pr(overrides={}){

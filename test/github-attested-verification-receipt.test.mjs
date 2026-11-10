@@ -96,6 +96,9 @@ test('core verification attests only a successful same-repository receipt with m
   assert.match(yml, /needs\.test\.result == 'success'/);
   assert.match(yml, /pull_request\.head\.repo\.full_name == github\.repository/);
   assert.match(yml, /pull_request\.user\.login == 'michaeljwilliams0123'/);
+  assert.match(yml, /pull_request\.user\.login == 'michaeljwilliams0123ultron'/);
+  assert.match(yml, /pull_request\.user\.id == 354634860/);
+  assert.match(yml, /pull_request\.user\.id == 308995719/);
   assert.match(yml, /id-token: write/);
   assert.match(yml, /attestations: write/);
   assert.match(yml, /artifact-metadata: write/);

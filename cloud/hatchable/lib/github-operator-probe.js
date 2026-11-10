@@ -1,7 +1,7 @@
 // GitHub OAuth probe: GET only. Passing does not authorize a mutation.
-const REPO='Ultron-MW/Ultron.MW';
+const REPO='michaeljwilliams0123/Ultron.MW';
 const REPO_ID=1424939667;
-const OWNER_ID=354776009;
+const OWNER_ID=308995719;
 const OPERATOR_ID=354634860;
 const OPERATOR='michaeljwilliams0123ultron';
 const API='/repos/'+REPO;
@@ -27,7 +27,7 @@ export async function probeGithubOperator(call){
   if(repo?.status!==200||repo.body?.id!==REPO_ID||
      repo.body?.full_name!==REPO||
      repo.body?.owner?.id!==OWNER_ID||
-     repo.body?.owner?.login!=='Ultron-MW'||
+     repo.body?.owner?.login!=='michaeljwilliams0123'||
      ref?.status!==200||
      ref.body?.ref!=='refs/heads/main'||
      ref.body?.object?.type!=='commit'||

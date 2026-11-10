@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {verifyCouncilFleet, normalizeAppPrivateKey} from '../src/security/council-fleet-verification.mjs';
-const repo={id:1424939667,full_name:'Ultron-MW/Ultron.MW'};
+const repo={id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'};
 const env={GITHUB_APP_ID:'321',GITHUB_INSTALLATION_ID:'654',GITHUB_PRIVATE_KEY:'-----BEGIN FAKE KEY-----\\nabc\\n-----END FAKE KEY-----'};
 const clock=()=>Date.parse('2026-11-10T02:00:00Z');
 const issuer=async args=>{
