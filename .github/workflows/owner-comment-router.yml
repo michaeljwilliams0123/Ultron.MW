@@ -28,7 +28,10 @@ jobs:
       github.event.issue.state == 'open' &&
       !startsWith(github.event.comment.body, '@coderabbitai') &&
       !startsWith(github.event.comment.body, '/council') &&
-      !startsWith(github.event.comment.body, '/codex run ')
+      !startsWith(github.event.comment.body, '/codex run ') &&
+      github.event.comment.body != '@michaeljwilliams0123ultron' &&
+      github.event.comment.body != '@ultron-codex' &&
+      github.event.comment.body != '@destiny-codex'
     permissions:
       contents: write
       pull-requests: write

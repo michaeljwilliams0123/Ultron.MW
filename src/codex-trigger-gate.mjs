@@ -6,6 +6,8 @@
 import { parseCodexCall, validateCodexAdmission, CODEX_OWNER,
   CODEX_REPOSITORY } from './codex-call.mjs';
 
+import { isCodexRunCommand } from '../docs/core/codex-authors.mjs';
+
 const SHA=/^[a-f0-9]{40}$/;
 const evidence=(state,reason,extra={})=>Object.freeze({
   state,reason,externalExecutionVerified:false,
@@ -29,7 +31,7 @@ export function assessCodexTrigger({
   try { call=parseCodexCall(pr?.body); }
   catch { return evidence('held','invalid-task-envelope'); }
 
-  if(event.comment.body!=='/codex run '+call.authorId)
+  if(!isCodexRunCommand(event.comment.body,call.authorId))
     return evidence('held','command-does-not-match-author');
   if(!SHA.test(mainSha||'')||mainSha!==call.sourceSha)
     return evidence('held','stale-or-unverified-main');

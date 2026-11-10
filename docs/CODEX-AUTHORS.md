@@ -6,11 +6,28 @@ GitHub accounts or claims that two separate OpenAI accounts were authenticated.
 | Author | Callable name | Current binding |
 |---|---|---|
 | Mike's Codex | `mike-codex` (alias `mike`) | Not enrolled; no fallback |
-| Ultron's Codex (formerly Destiny's Codex) | `destiny-codex` (aliases `ultron-codex`, `ultron`, `destiny`) | Existing Work GitHub event binding verified and enabled on 2026-11-10; bounded execution receipt verified on PR #381; scheduler health and automatic delivery remain separate |
+| Ultron's Codex (formerly Destiny's Codex) | `destiny-codex` (aliases `michaeljwilliams0123ultron`, `ultron-codex`, `ultron`, `destiny`) | Existing Work GitHub event binding verified and enabled on 2026-11-10; bounded execution receipt verified on PR #381; scheduler health and automatic delivery remain separate |
 
 ## GitHub identity separation
 
 The canonical repository is `michaeljwilliams0123/Ultron.MW`; Mike remains its owner. This Codex uses the connected contributor `michaeljwilliams0123ultron` (GitHub user ID `354634860`). Ultron and Destiny name the same executor; the stable `destiny-codex` ID and route fingerprint are retained so existing triggers and receipts remain valid. This does not change owner-only Issue admission, merge/release authority, commit author configuration, or the existing Destiny binding. See [identity and enrollment contract](CANONICAL-GITHUB-IDENTITY.md).
+
+## On-demand calls only
+
+No periodic Work schedule or polling is used for this executor. The enabled event task is unscheduled (`X-UNSCHEDULED:1`); it admits only explicit owner-confirmed calls. Do not enable a recurring scheduler as a delivery fallback.
+
+In the Ultron console task field, these calls select the same executor:
+
+```text
+@michaeljwilliams0123ultron Inspect README.md and report the project name.
+@ultron-codex Inspect README.md and report the project name.
+@destiny-codex Inspect README.md and report the project name.
+/codex michaeljwilliams0123ultron Inspect README.md and report the project name.
+```
+
+Each console call opens the existing GitHub confirmation Issue before the task PR; all owner, scope, binding, source and replay checks remain required. Tags inside ordinary prose do not dispatch. On an existing validated named task PR, Mike can post exactly `@michaeljwilliams0123ultron`, `@ultron-codex`, or `@destiny-codex` to call its already-bound task. `/codex run destiny-codex` and `/codex run michaeljwilliams0123ultron` remain explicit forms. Extra task text in a PR trigger is rejected; a changed objective needs a fresh owner-confirmed task. An arbitrary Issue/PR without the matching owner Issue and call envelope cannot execute. Repository admission recognizes these tags, but the external Work comment subscription must also deliver them; its filter configuration is not exposed to this setup session, so new @mention delivery remains unverified. A claim/receipt proves execution; a tag, notification or successful transport audit does not.
+
+In this Codex chat, a tag plus a task is a direct request to the current assistant using the dedicated GitHub connection. It does not start a timer or make this chat an unattended listener.
 
 ## Call from the console
 
