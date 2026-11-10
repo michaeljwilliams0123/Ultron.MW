@@ -165,3 +165,19 @@ test('rejects contradictory top-level and nested commit provenance', async t => 
   );
   assert.equal(existsSync(join(cwd, 'receipts', 'task-conflicting-shas-1.json')), false);
 });
+
+test('Task 4 reconciled and recovered success statuses remain eligible for Task 5 audit',async t=>{
+ const cwd=sandbox(t);
+ for(const status of ['reconciled_success','recovered_success']){
+  const idempotencyKey='task-'+status.replace('_','-')+'-01';
+  const audit=await verifyPostConditionsAndStoreReceipt({
+   idempotencyKey,status,details:{
+    repository:'michaeljwilliams0123/Ultron.MW',
+    remoteVerified:true,operationDigest:'a'.repeat(64),sha:'b'.repeat(40)
+   }
+  },{cwd});
+  assert.equal(audit.executionStatus,status);
+  assert.equal(audit.status,'REMOTE_READBACK_REQUIRED');
+  assert.equal(audit.remoteReadbackVerified,false);
+ }
+});
