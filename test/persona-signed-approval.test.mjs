@@ -192,3 +192,56 @@ test('migration 0037 has global primary-key nonce ledger (PGlite integration)',a
   assert.equal(receipt.rows.length,1);
  }finally{await db.close();}
 });
+
+test('authorization response must not serialize an installation token',async()=>{
+ const result=await enforceSignedApprovalAndTagPersona(request(),fakeFactory(),trusted());
+ assert.equal(result.token,'test-only-scoped-token');
+ assert.equal(Object.keys(result).includes('token'),false);
+ assert.equal(JSON.stringify(result).includes('test-only-scoped-token'),false);
+ assert.equal(JSON.stringify({...result}).includes('test-only-scoped-token'),false);
+});
+
+test('approval expiration after slow token issuance denies before executor handoff',async()=>{
+ let current=NOW;
+ const opts=trusted({clock:()=>current});
+ const factory={getTokenForScope:async(s)=>{
+  current=NOW+300_001;
+  return {token:'test-only-scoped-token',...s,installationId:42,
+   expiresAt:new Date(NOW+45*60_000).toISOString()};
+ }};
+ await assert.rejects(enforceSignedApprovalAndTagPersona(request(),factory,opts),
+  /expired|invalid|denied/i);
+});
+
+test('expired token after asynchronous issuance denies executor handoff',async()=>{
+ let current=NOW;
+ const opts=trusted({clock:()=>current});
+ const factory={getTokenForScope:async(s)=>{
+  current=NOW+60_000;
+  return {token:'test-only-scoped-token',...s,installationId:42,
+   expiresAt:new Date(NOW+30_000).toISOString()};
+ }};
+ await assert.rejects(enforceSignedApprovalAndTagPersona(request(),factory,opts),
+  /expired|invalid|denied/i);
+});
+
+test('token-provider exceptions do not disclose credential text',async()=>{
+ const factory={getTokenForScope:async()=>{throw Error(
+  'token exchange failure: SECRET-credential-never-to-expose');}};
+ await assert.rejects(enforceSignedApprovalAndTagPersona(request(),factory,trusted()),
+  error=>!/SECRET-credential-never-to-expose/.test(error.message) &&
+   /unavailable|denied|token/i.test(error.message));
+});
+
+test('every Council role receives signed, accurate attribution with one App',async()=>{
+ for(const role of ['Builder','Skeptic','Steward','Predictor',
+   'Generator','Sentinel','Companion']){
+  const p=plan({activeAgentRole:role});
+  const result=await enforceSignedApprovalAndTagPersona(
+   request(p),fakeFactory(),trusted());
+  assert.equal(result.persona.role,role);
+  assert.equal(result.commitHeaders.trailers['Ultron-Role'],role);
+  assert.equal(result.commitHeaders.trailers['Ultron-App-Principal'],'ultron-github-app');
+  assert.equal(result.persona.attributionOnly,true);
+ }
+});
