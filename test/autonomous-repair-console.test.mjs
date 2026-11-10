@@ -12,7 +12,7 @@ import {
 const SHA='a'.repeat(40),ID='repair-console-0001';
 function record(overrides={}){
  return {id:ID,fingerprint:createHash('sha256').update(ID).digest('hex'),
-  phase:'patch-dispatched',attempt:2,headSha:SHA,
+  phase:'patch-dispatched',attempt:2,maxAttempts:3,headSha:SHA,
   version:7,manifest:{changes:[{after:'PRIVATE-PATCH-CONTENT',path:'src/one.mjs'}]},
   errorTrace:'password=SECRET-DO-NOT-RENDER',patchDigest:'b'.repeat(64),
   prNumber:null,...overrides};
