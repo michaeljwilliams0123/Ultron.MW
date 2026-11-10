@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Fast, fixed-command source smoke checks. Never used as release approval. */
 import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 const source=['src/autonomous-repair-loop.mjs',
  'src/autonomous-repair-postgres-ledger.mjs',
  'src/autonomous-repair-github-adapter.mjs',
@@ -11,7 +12,7 @@ const tests=['test/autonomous-repair-loop.test.mjs',
  'test/autonomous-repair-model-adapter.test.mjs'];
 function run(args,timeout){
  const result=spawnSync(process.execPath,args,{
-  cwd:new URL('../',import.meta.url).pathname,encoding:'utf8',
+  cwd:fileURLToPath(new URL('../',import.meta.url)),encoding:'utf8',
   timeout,maxBuffer:1048576,windowsHide:true,shell:false,
   env:{PATH:process.env.PATH,HOME:process.env.HOME,
    NODE_ENV:'test',CI:process.env.CI||'false'}
