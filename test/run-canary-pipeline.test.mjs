@@ -46,6 +46,9 @@ function stages(overrides={}){
       idempotencyKey:receipt.idempotencyKey,executionStatus:receipt.status,
       status:'REMOTE_READBACK_REQUIRED',remoteReadbackVerified:false,
       auditSha256:'a'.repeat(64),executionReceiptDigest:'b'.repeat(64)}),
+    verifyRemoteLineage:async ({branch,sourceSha,commitSha,operationDigest})=>({
+      verified:true,branch,sourceSha,commitSha,operationDigest,
+    }),
     gitOperation:async ({targetBranch,operationDigest})=>({
       branch:targetBranch,sha:COMMIT,operationDigest,
     }),durableServices,
@@ -188,4 +191,18 @@ test('digest marker and persona are required before network calls',async()=>{
   await assert.rejects(createCanaryCommitOperation({fetchImpl:h.fetchImpl})(
     {...opInput,persona:{authorName:'Builder'}}),/canary-persona-required/);
   assert.equal(h.calls.length,0);
+});
+
+
+test('independent signed-source lineage failure blocks Task 5 audit',async()=>{
+  let audited=false;
+  const deps=stages({
+    verifyRemoteLineage:async({branch,commitSha,operationDigest})=>({
+      verified:true,branch,commitSha,operationDigest,
+      sourceSha:'f'.repeat(40),
+    }),
+    verifyPostConditionsAndStoreReceipt:async()=>{audited=true;},
+  });
+  await assert.rejects(runMasterPipeline(request,deps),/canary-remote-lineage-invalid/);
+  assert.equal(audited,false);
 });
