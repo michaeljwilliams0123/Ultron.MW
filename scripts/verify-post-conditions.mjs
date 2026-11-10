@@ -10,7 +10,8 @@ import { join, resolve } from 'node:path';
 
 const KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$/;
 const SHA = /^[0-9a-f]{40}$/;
-const SUCCESS = new Set(['completed', 'success', 'succeeded', 'executed', 'applied']);
+const SUCCESS = new Set(['completed', 'success', 'succeeded', 'executed', 'applied',
+  'reconciled_success', 'recovered_success']);
 const SCHEMA = 'ultron.task5.local-audit.v1';
 const MAX_RECEIPT_BYTES = 65536;
 const sha256 = value => createHash('sha256').update(value).digest('hex');
