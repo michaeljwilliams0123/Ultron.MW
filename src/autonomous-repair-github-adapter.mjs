@@ -11,6 +11,12 @@ import {dispatchAndObserveVerify,observeVerifyRun} from './pr-brain-verify.mjs';
 const REPO='michaeljwilliams0123/Ultron.MW',ROOT='/repos/'+REPO;
 const SHA=/^[a-f0-9]{40}$/;
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+function repairCorrelation(plan,attempt){
+ if(!/^[a-f0-9]{64}$/.test(plan?.fingerprint||'')||
+    !Number.isInteger(attempt)||attempt<1||attempt>3)
+  throw Error('autonomous-repair-correlation-invalid');
+ return 'repair-'+plan.fingerprint+'-'+attempt;
+}
 function content(file){
  if(file?.encoding!=='base64'||typeof file?.content!=='string')
   throw Error('autonomous-repair-source-unavailable');
@@ -84,12 +90,13 @@ export function createAutonomousRepairGitHubAdapters({get,post,updateRef,
   }
  });
  const verifier=Object.freeze({
-  async start({plan,headSha}){
+  async start({plan,headSha,attempt}){
    return dispatchAndObserveVerify({get,post,branch:plan.branch,headSha,
-    maxPolls:1,intervalMs:0});
+    correlation:repairCorrelation(plan,attempt),maxPolls:1,intervalMs:0});
   },
-  async observe({plan,headSha}){
-   const run=await observeVerifyRun({get,branch:plan.branch,headSha});
+  async observe({plan,headSha,attempt}){
+   const run=await observeVerifyRun({get,branch:plan.branch,headSha,
+    correlation:repairCorrelation(plan,attempt)});
    if(run.state!=='completed')return {state:'pending',headSha};
    let trace='FAIL: exact-head core verification '+run.conclusion+
     ' run #'+run.runId;
