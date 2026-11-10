@@ -67,3 +67,9 @@ test('invalid task IDs and SHAs are rejected before model/provider work',async()
   await assert.rejects(executeCouncilDebateLoop(data,{runPersona:good}),/council-debate-context-invalid/);
  }
 });
+
+test('a stalled role cannot suspend an advisory Council invocation indefinitely',async()=>{
+ const r=await executeCouncilDebateLoop(taskContext,{runPersona:()=>new Promise(()=>{}),roleTimeoutMs:20});
+ assert.equal(r.status,'held');assert.equal(r.roleTurns.length,0);
+ assert.equal(r.reason,'role-execution-or-evidence-unavailable');
+});
