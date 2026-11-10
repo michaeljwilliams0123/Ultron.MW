@@ -73,6 +73,11 @@ intent is safe for another authorized worker to resume: an atomic PostgreSQL
 branch is absent. A duplicate observer does not mutate an active `in_flight`
 record, and an INSERT acknowledgment loss is reconciled via independent SELECT.
 Every GitHub readback request has a 10-second abort deadline.
+If the dispatch CAS acknowledgement is lost, Task 4 returns a non-success
+reconciliation outcome and independently rereads the record; it never assumes
+CAS ownership or invokes the provider write. An expiring/revoked approval is
+rechecked **after** the CAS and immediately before dispatch. Unknown in-flight
+outcomes remain fenced rather than blindly replayed.
 
 Receipt status proves **only the authorized branch/commit effect**, not PR
 creation, CI completion, independent review, a merge, or deployment. Those
