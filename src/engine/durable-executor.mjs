@@ -207,19 +207,27 @@ export async function executeIdempotentGitHubWrite(taskContext,token,persona,git
  if(remote?.state!=='absent')return hold(db,intent,'remote-readback-unavailable');
  // A durable RESERVED row is provably pre-dispatch. The CAS below arbitrates
  // all active workers, including recovery from a crashed reserver.
- if(claim.row.state!=='reserved')return {idempotencyKey:intent.idempotencyKey,
+ const unresolved=reason=>({idempotencyKey:intent.idempotencyKey,
   status:'reconcile_required',details:{branch:intent.targetBranch,
-   reason:'prior-attempt-in-progress',remoteVerified:false}};
+   reason,remoteVerified:false}});
+ if(claim.row.state!=='reserved')return unresolved('prior-attempt-in-progress');
+ let dispatch;
+ try{
+  dispatch=await db.query(`UPDATE github_idempotent_executions
+   SET state='in_flight',updated_at=now()
+   WHERE idempotency_key=$1 AND operation_digest=$2 AND state='reserved'
+   RETURNING idempotency_key`,[intent.idempotencyKey,intent.operationDigest]);
+ }catch{
+  // The CAS may have committed, but no remote callback has started.
+  // Verify durable identity without assuming we won a lost acknowledgment.
+  const row=await read(db,intent.idempotencyKey).catch(()=>fail('dispatch-readback-unavailable'));
+  if(!matches(row,intent))fail('intent-conflict');
+  return unresolved('dispatch-claim-uncertain');
+ }
+ if(dispatch?.rows?.length!==1)return unresolved('dispatch-claim-uncertain');
+ // Revalidate the signed authorization after the asynchronous CAS, right
+ // before initiating the external mutation (expiry/revocation may change).
  await verifyAuthorization(services,intent);
- const dispatch=await db.query(`UPDATE github_idempotent_executions
-  SET state='in_flight',updated_at=now()
-  WHERE idempotency_key=$1 AND operation_digest=$2 AND state='reserved'
-  RETURNING idempotency_key`,[intent.idempotencyKey,intent.operationDigest]);
- // A lost CAS (or lost acknowledgment) is not permission to dispatch.
- // Never mutate another worker's in-flight claim.
- if(dispatch?.rows?.length!==1)return {idempotencyKey:intent.idempotencyKey,
-  status:'reconcile_required',details:{branch:intent.targetBranch,
-   reason:'dispatch-claim-uncertain',remoteVerified:false}};
  try{
   await gitOperation({token,persona:safePersona,targetBranch:intent.targetBranch,
    idempotencyKey:intent.idempotencyKey,operationDigest:intent.operationDigest,
