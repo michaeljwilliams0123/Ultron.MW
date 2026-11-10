@@ -169,14 +169,9 @@ export async function runMasterPipeline(operationRequest,{
   check(identity&&typeof identity.getTokenForScope==='function'&&
     Number.isSafeInteger(identity.installationId),
     'identity-factory-invalid');
-  // Task 1 accepts an operation string; Task 2 passes a scoped object.
-  const factory={getTokenForScope:async scope=>{
-    check(plainObject(scope)&&scope.operation==='repair.branch.create',
-      'token-scope-mismatch');
-    return identity.getTokenForScope(scope.operation);
-  }};
+  // Task 1 now validates Task 2's canonical scoped request directly.
   const approved=await enforceSignedApprovalAndTagPersona(
-    operationRequest,factory,trustedApproval);
+    operationRequest,identity,trustedApproval);
   check(approved?.authorized===true&&
     typeof approved.token==='string'&&approved.token.length>=8&&
     plainObject(approved.executionPayload)&&plainObject(approved.persona),
