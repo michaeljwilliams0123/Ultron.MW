@@ -61,3 +61,37 @@ test('generates unique branch/task ids even if invoked during the same milliseco
 test('a missing or non-function graph runner fails closed', async () => {
   await assert.rejects(dispatchHeadlessTask('Canary',{runGraph:null}),/headless-graph-unavailable/);
 });
+
+test('conductor prepare-only handoff never invokes the graph and preserves signed task context',async()=>{
+ let graphCalls=0;
+ const sourceSha='a'.repeat(40),operationDigest='b'.repeat(64);
+ const result=await dispatchHeadlessTask('Verify bounded canary',{
+  prepareOnly:true,taskId:'smoke-test-01',targetBranch:'ultron/canary-smoke-test',
+  sourceSha,operationDigest,requiresResponse:true,enforceSignedApproval:true,
+  runGraph:async()=>{graphCalls++;throw Error('graph MUST NOT execute during preparation');}
+ });
+ assert.equal(dispatchHeadlessTask.supportsPrepareOnly,true);
+ assert.deepEqual(result,{
+  stage:'prepared',taskId:'smoke-test-01',targetBranch:'ultron/canary-smoke-test',
+  sourceSha,operationDigest
+ });
+ assert.equal(graphCalls,0);
+ assert.equal(Object.isFrozen(result),true);
+});
+
+test('prepare-only handoff rejects missing or unsafe task metadata before graph',async()=>{
+ let invoked=0;
+ const good={prepareOnly:true,taskId:'smoke-test-01',
+  targetBranch:'ultron/canary-smoke-test',sourceSha:'a'.repeat(40),
+  operationDigest:'b'.repeat(64),requiresResponse:true,enforceSignedApproval:true,
+  runGraph:async()=>{invoked++;throw Error('graph-called');}};
+ for(const patch of [
+  {targetBranch:'main'},{taskId:'bad'},{sourceSha:'f'},
+  {operationDigest:'g'.repeat(64)},
+  {enforceSignedApproval:false},{requiresResponse:false}
+ ]){
+  await assert.rejects(dispatchHeadlessTask('Verify', {...good,...patch}),
+   /headless-(prepare|context|scope)/i);
+ }
+ assert.equal(invoked,0);
+});
