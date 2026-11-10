@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {dispatchAndObserveVerify} from '../src/pr-brain-verify.mjs';
 
-const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
+const ROOT='/repos/Ultron-MW/Ultron.MW';
 const BRANCH='ultron/self-scan-abc',SHA='a'.repeat(40);
 const URL=ROOT+'/actions/runs?branch='+encodeURIComponent(BRANCH)+'&per_page=30';
 const run={id:105,name:'Ultron core verification',path:'.github/workflows/verify.yml',
   event:'workflow_dispatch',head_branch:BRANCH,head_sha:SHA,
-  head_repository:{full_name:'michaeljwilliams0123/Ultron.MW'},
+  head_repository:{full_name:'Ultron-MW/Ultron.MW'},
   status:'completed',conclusion:'success',run_attempt:1};
 test('original PR-comment job independently detects new successful exact-head Verify',async()=>{
   let calls=0;const posts=[];let count=0;
