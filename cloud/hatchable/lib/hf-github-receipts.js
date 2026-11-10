@@ -30,6 +30,7 @@ function shape(r){
   nope();
  return {workflowKey:FIXED[file],path:r.path,
   runId:r.id,runAttempt:r.run_attempt,sourceSha:r.head_sha,
+  actorLogin:r.actor.login,actorId:r.actor.id,
   conclusion:r.conclusion};
 }
 export function validateGithubWorkflowPayload(data){
@@ -42,7 +43,8 @@ export function compareGithubRun(event,run){
   const observed=shape(run);
   const verified=observed.workflowKey===event.workflowKey&&
    observed.runId===event.runId&&observed.runAttempt===event.runAttempt&&
-   observed.sourceSha===event.sourceSha&&observed.conclusion===event.conclusion;
+   observed.sourceSha===event.sourceSha&&observed.conclusion===event.conclusion&&
+   observed.actorLogin===event.actorLogin&&observed.actorId===event.actorId;
   return {verified,reason:verified?null:'readback-mismatch'};
  }catch{return {verified:false,reason:'readback-mismatch'};}
 }

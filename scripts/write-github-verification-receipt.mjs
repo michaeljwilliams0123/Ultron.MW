@@ -38,7 +38,14 @@ export function buildGitHubVerificationReceipt({ env = process.env, observedSha 
     throw new Error('unexpected GitHub workflow');
   }
   const workflowRef = required(env, 'GITHUB_WORKFLOW_REF');
-  if (!workflowRef.startsWith(WORKFLOW_PATH)) throw new Error('unexpected GitHub workflow ref');
+  const scopedRef = workflowRef.startsWith(WORKFLOW_PATH)
+    ? workflowRef.slice(WORKFLOW_PATH.length) : '';
+  // A prefix check alone accepts arbitrary ref strings and incorrect branch
+  // provenance; pin the ref format to the triggering GitHub event.
+  if (!(event === 'push' && scopedRef === 'refs/heads/main') &&
+      !(event === 'pull_request' && /^refs\/pull\/[1-9][0-9]*\/merge$/.test(scopedRef))) {
+    throw new Error('unexpected GitHub workflow ref');
+  }
   if (required(env, 'GITHUB_JOB') !== 'attested-receipt') {
     throw new Error('unexpected GitHub job');
   }
