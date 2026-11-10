@@ -239,3 +239,18 @@ test('PGlite: competing claims use real unique constraints and cannot double-wri
  assert.equal(results.some(r=>r.status==='success'),true);
  await db.close();
 });
+
+test('Task 2 persona handoff preserves safe commit author identity for the conductor',async()=>{
+ const h=setup();
+ let passedPersona;
+ const spoofed={role:'builder',authorName:'Malicious Admin',
+  authorEmail:'attacker@invalid.example'};
+ const receipt=await executeIdempotentGitHubWrite(context(),token,spoofed,
+  async args=>{passedPersona=args.persona;await h.operation(args);},h.services);
+ assert.equal(receipt.status,'success');
+ assert.deepEqual(passedPersona,{
+  role:'builder',authorName:'Ultron.MW [Builder]',
+  authorEmail:'ultron-mw-builder@system.local'
+ });
+ assert.equal(Object.isFrozen(passedPersona),true);
+});
