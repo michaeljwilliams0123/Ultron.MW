@@ -151,3 +151,17 @@ test('publishes a read-only local audit file to discourage accidental mutation',
   const filename = join(cwd, 'receipts', result.idempotencyKey + '.json');
   assert.equal(statSync(filename).mode & 0o222, 0);
 });
+
+test('rejects contradictory top-level and nested commit provenance', async t => {
+  const { cwd, baseSha, headSha } = gitFixture(t);
+  const contradictory = {
+    idempotencyKey: 'task-conflicting-shas-1', status: 'completed',
+    baseSha, headSha: 'f'.repeat(40),
+    details: { baseSha, headSha },
+  };
+  await assert.rejects(
+    () => verifyPostConditionsAndStoreReceipt(contradictory, { cwd }),
+    /conflicting headSha/,
+  );
+  assert.equal(existsSync(join(cwd, 'receipts', 'task-conflicting-shas-1.json')), false);
+});
