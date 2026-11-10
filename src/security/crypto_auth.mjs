@@ -139,8 +139,11 @@ export function createScopedInstallationTokenProvider({
   if(!exact(request,['operation','repositoryId','permissions'])||
      request.repositoryId!==ULTRON_REPOSITORY_ID)
    throw Error('GitHub installation token scope denied');
+  // Bind the signed operation label before asynchronous token exchange.
+  // The caller may mutate the original request while the provider responds.
+  const operation=request.operation;
   let permissions;
-  try{permissions=requiredTokenPermissions(request.operation);}
+  try{permissions=requiredTokenPermissions(operation);}
   catch{throw Error('GitHub installation token scope denied');}
   if(!exactPermissions(request.permissions,permissions))
    throw Error('GitHub installation token scope denied');
@@ -180,7 +183,7 @@ export function createScopedInstallationTokenProvider({
      !(expiry>now&&expiry<=now+3600_000))
    throw Error('GitHub App token response scope or profile invalid');
   return Object.freeze({token:body.token,repositoryId:ULTRON_REPOSITORY_ID,
-   operation:request.operation,installationId,permissions,
+   operation,installationId,permissions,
    expiresAt:new Date(expiry).toISOString()});
  };
 }
