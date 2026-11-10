@@ -1,7 +1,7 @@
 (async () => {
   const { createCloudTaskUrl } = await import('./core/cloud-submit.mjs');
   const { createCloudPrUrl } = await import('./core/cloud-pr-submit.mjs');
-  const { CODEX_AUTHORS } = await import('./core/codex-authors.mjs');
+  const { CODEX_AUTHORS, parseCodexObjective, routeCodexObjective } = await import('./core/codex-authors.mjs');
   const { fetchCloudStatus } = await import('./core/cloud-status.mjs');
   let cloudStatusLoaded = false;
   async function refreshHostedCloud() {
@@ -373,9 +373,10 @@
   function routePrToGitHub(objective) {
     try {
       const url = createCloudPrUrl(objective);
+      const namedCodex = !objective.trim().startsWith('{') && Boolean(parseCodexObjective(objective));
       window.open(url, '_blank', 'noopener,noreferrer');
-      line(/^\/codex(?:\s|$)/i.test(objective) ? 'Ultron · named Codex call' : 'Ultron · Create PR to main',
-        /^\/codex(?:\s|$)/i.test(objective) ?
+      line(namedCodex ? 'Ultron · named Codex call' : 'Ultron · Create PR to main',
+        namedCodex ?
         'Confirm the public Issue in GitHub. Ultron will create a PR addressed to the named Work executor. Inspect its completion receipt to verify execution. An enrolled route alone is not proof that a task ran.' :
         'Confirm the prefilled Issue in GitHub. A plain objective creates a documentation proposal; a JSON code-change manifest with baseSha and exact source edits creates a real implementation commit and PR targeting main. Both use the same owner-only hosted routing and return a verified PR link. No auto-merge or local PC is required.');
     } catch (error) {
@@ -388,8 +389,8 @@
   $('codex-call').addEventListener('click', () => {
     const objective = $('message').value.trim();
     if (!objective) { line('Ultron · Codex call', 'Enter a public task first.'); return; }
-    routePrToGitHub(/^\/codex(?:\s|$)/i.test(objective) ? objective :
-      '/codex ' + $('codex-author').value + ' ' + objective);
+    try { routePrToGitHub(routeCodexObjective(objective, $('codex-author').value)); }
+    catch (error) { line('Ultron · Codex call rejected', error.message); }
   });
   $('self-scan').addEventListener('click', () => {
     try {
@@ -790,7 +791,10 @@
     const input = $('message');
     const text = input.value.trim();
     if (!text) return;
-    if (/^\/codex(?:\s|$)/i.test(text)) { routePrToGitHub(text); return; }
+    if (/^\/codex(?:\s|$)/i.test(text) ||
+        /^@(?:michaeljwilliams0123ultron|ultron-codex|destiny-codex)(?:\s|$)/i.test(text)) {
+      routePrToGitHub(text); return;
+    }
     // Owner-intended PR requests route to GitHub Actions rather than a
     // browser LLM that cannot execute repository tools.
     if (/^(?:please\s+)?(?:create|open|launch|draft|make)\b.*\b(?:pr|pull request)\b/i.test(text)) {

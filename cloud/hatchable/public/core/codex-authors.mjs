@@ -49,9 +49,37 @@ export function parseCodexObjective(text, { authors = CODEX_AUTHORS } = {}) {
   return Object.freeze({ author, objective: match[2] });
 }
 
+/**
+ * Route a console Codex call to its registered author without rewriting an
+ * explicit leading tag under the dropdown's unrelated selected author.
+ * Invalid or unbound explicit tags fail closed instead of becoming proposals.
+ */
+export function routeCodexObjective(text, selectedAuthor, {authors=CODEX_AUTHORS}={}) {
+  if (typeof text!=='string' || !text || text!==text.trim())
+    throw Error('Enter one public Codex task.');
+  if (/^\/codex(?:\s|$)/i.test(text)) {
+    parseCodexObjective(text,{authors});
+    return text;
+  }
+  const tag=/^@([a-z][a-z0-9-]{2,63})(?:\s|$)/i.exec(text);
+  if (tag) {
+    resolveCodexAuthor(tag[1],{authors,requireBinding:true});
+    if (!parseCodexObjective(text,{authors})) throw Error('Invalid Codex tag');
+    return text;
+  }
+  const author=resolveCodexAuthor(selectedAuthor,{authors,requireBinding:true});
+  const normalized='/codex '+author.id+' '+text;
+  parseCodexObjective(normalized,{authors});
+  return normalized;
+}
+
 /** Exact owner PR call syntax; surrounding prose never authorizes execution. */
 export function isCodexRunCommand(text, authorId, {authors = CODEX_AUTHORS} = {}) {
   if (typeof text !== 'string' || text !== text.trim()) return false;
+  // Only the three documented bare tags count as owner PR triggers.
+  // Keep short aliases available to /codex run without double-counting them.
+  if (text.startsWith('@') &&
+      !/^@(?:michaeljwilliams0123ultron|ultron-codex|destiny-codex)$/i.test(text)) return false;
   const match = /^(?:\/codex run |@)([a-z][a-z0-9-]{2,63})$/i.exec(text);
   if (!match) return false;
   try {

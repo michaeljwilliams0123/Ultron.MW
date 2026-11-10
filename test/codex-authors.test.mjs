@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCloudPrUrl } from '../docs/core/cloud-pr-submit.mjs';
 import { parsePrRequest, PR_OWNER, PR_REPOSITORY, PR_MARKER, PR_ISSUE_TITLE } from '../src/cloud-pr.mjs';
-import { CODEX_AUTHORS, resolveCodexAuthor, parseCodexObjective } from '../docs/core/codex-authors.mjs';
+import { CODEX_AUTHORS, resolveCodexAuthor, parseCodexObjective,
+  isCodexRunCommand, routeCodexObjective } from '../docs/core/codex-authors.mjs';
 import { buildCodexCall, formatCodexCall, parseCodexCall, validateCodexAdmission,
   buildCodexClaim, buildCodexReceipt, validateCodexReceipt, codexReplayDisposition,
   codexRecordPaths } from '../src/codex-call.mjs';
@@ -142,6 +143,46 @@ test('explicit leading tags build the existing owner-confirmed call envelope', (
   }
   assert.equal(parseCodexObjective('Please ask @ultron-codex Inspect README.md'), null);
   assert.equal(parseCodexObjective('@unregistered Inspect README.md'), null);
+  assert.throws(()=>parseCodexObjective('@mike-codex Inspect README.md'),/not bound/i);
+  assert.throws(()=>createCloudPrUrl('@mike-codex Inspect README.md'),/not bound/i);
   for (const text of ['@ultron-codex', '@ultron-codex  task', '@ultron-codex task\nmore', '@ultron-codex task '])
     assert.throws(() => parseCodexObjective(text));
+});
+
+test('only documented exact bare tags count as owner PR triggers, never short aliases',()=>{
+  for(const tag of ['@michaeljwilliams0123ultron','@ultron-codex','@destiny-codex'])
+    assert.equal(isCodexRunCommand(tag,'destiny-codex'),true,tag);
+  for(const tag of ['@ultron','@destiny','@mike-codex','@unregistered',
+    '@ultron-codex do something','@ultron-codex ','@destiny-codex\n'])
+    assert.equal(isCodexRunCommand(tag,'destiny-codex'),false,tag);
+  assert.equal(isCodexRunCommand('/codex run ultron','destiny-codex'),true);
+  assert.equal(isCodexRunCommand('/codex run mike-codex','destiny-codex'),false);
+});
+
+test('console Codex router preserves explicit registered tags and rejects unbound substitution',()=>{
+  for(const tag of ['@michaeljwilliams0123ultron','@ultron-codex','@destiny-codex']){
+    const objective=tag+' Inspect README.md';
+    assert.equal(routeCodexObjective(objective,'mike-codex'),objective);
+    assert.equal(routeCodexObjective(objective,'destiny-codex'),objective);
+  }
+  assert.equal(routeCodexObjective('/codex destiny-codex Inspect README.md','mike-codex'),
+    '/codex destiny-codex Inspect README.md');
+  assert.equal(routeCodexObjective('Inspect README.md','destiny-codex'),
+    '/codex destiny-codex Inspect README.md');
+  for(const input of ['@mike-codex Inspect README.md','@unknown Inspect README.md'])
+    assert.throws(()=>routeCodexObjective(input,'destiny-codex'),/not bound|Unknown/i);
+  assert.throws(()=>routeCodexObjective('Inspect README.md','mike-codex'),/not bound/i);
+  assert.throws(()=>routeCodexObjective('@ultron-codex  Inspect README.md','destiny-codex'));
+});
+
+test('both mirrored consoles show named-call receipts and route explicit tags without selected-author prefix',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
+  const docs=read('docs/app.js');
+  const mirror=read('cloud/hatchable/public/app.js');
+  assert.equal(docs,mirror);
+  assert.match(docs,/routeCodexObjective\(objective, \$\('codex-author'\)\.value\)/);
+  assert.match(docs,/Boolean\(parseCodexObjective\(objective\)\)/);
+  assert.match(docs,/\^@\(\?:michaeljwilliams0123ultron\|ultron-codex\|destiny-codex\)/);
+  assert.doesNotMatch(docs,/routePrToGitHub\(\^\/codex\(\?:/);
 });
