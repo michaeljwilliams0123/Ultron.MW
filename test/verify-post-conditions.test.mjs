@@ -261,3 +261,15 @@ test('competing concurrent writers cannot replace one another’s audit for a sh
   assert.match(results.find(x => x.code === 2).error, /conflicting audit receipt/);
   assert.deepEqual(readdirSync(join(cwd, 'receipts')), ['task-race-conflict-1.json']);
 });
+
+test('rejects an existing group/world-writable audit directory before storing evidence', async t => {
+  const cwd = sandbox(t);
+  const receipts = join(cwd, 'receipts');
+  mkdirSync(receipts);
+  chmodSync(receipts, 0o777);
+  await assert.rejects(
+    () => verifyPostConditionsAndStoreReceipt({ idempotencyKey: 'task-public-audit-1', status: 'success' }, {cwd}),
+    /audit directory.*writable/,
+  );
+  assert.deepEqual(readdirSync(receipts), []);
+});
