@@ -198,3 +198,23 @@ test('expired plan reconciles an in-flight GitHub write but cannot start a new w
  assert.equal(untouched.counts.apply,0);
  assert.equal(untouched.records.size,0);
 });
+
+
+test('repair diagnostics redact GitHub fine-grained tokens and authorization headers',async()=>{
+ const f=fixture({outcomes:['failure','success']});
+ let seen='';
+ f.verifier.observe=async({attempt,headSha})=>({
+  state:'completed',verified:true,headSha,runId:500+attempt,
+  conclusion:attempt===1?'failure':'success',
+  errorTrace:'FAIL expected two; Authorization: Bearer github_pat_'+
+    'x'.repeat(50)+'; AWS_SECRET_ACCESS_KEY=topsecret; sk-'+ 'z'.repeat(36)
+ });
+ f.generator.propose=async({headSha,attempt,previousFailure})=>{
+  if(attempt===2)seen=previousFailure;
+  return {objective:'Fix source',baseSha:headSha,
+   changes:[{path:'src/example.mjs',before:'old',after:'new-'+attempt}]};
+ };
+ assert.equal((await runAutonomousRepair(context(f))).status,'completed');
+ assert.match(seen,/FAIL/);
+ assert.doesNotMatch(seen,/github_pat_|topsecret|sk-z+|Bearer\s+github_pat_/);
+});
