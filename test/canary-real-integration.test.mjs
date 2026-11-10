@@ -94,7 +94,10 @@ function signedInput({nonce=randomUUID().replaceAll('-',''),planPatch={}}={}){
 }
 async function harness(t,{fault=null}={}){
   const db=new PGlite();
-  const migrations=['0037_github_approval_nonces.sql','0039_github_idempotent_executions.sql'];
+  await db.exec('CREATE TABLE IF NOT EXISTS brain_tasks(id bigint PRIMARY KEY)');
+  const migrations=['0013_continuum_outbox.sql',
+    '0037_github_approval_nonces.sql','0039_github_idempotent_executions.sql',
+    '0040_ultron_org_transfer.sql'];
   for(const name of migrations)
     await db.exec(await readFile(new URL('../cloud/hatchable/migrations/'+name,import.meta.url),'utf8'));
   const cwd=await mkdtemp(join(tmpdir(),'ultron-integrated-canary-'));
