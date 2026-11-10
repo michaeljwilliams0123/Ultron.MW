@@ -17,7 +17,7 @@ This addendum reconciles the user-supplied November 9 write/admin MCP + Playwrig
 
 ### What the user blueprint gets right
 
-New remote MCP requests in protocol `2026-07-28` carry self-describing version/client metadata inside `params._meta`. GitHub administration generally requires an identity with the actual provider-supported granular permissions rather than simply expanding the default workflow `GITHUB_TOKEN`. Short-lived installation tokens and fail-closed worker admission are appropriate **after** owner, installation, operation and scope are verified. Real browser login/session state is distinct from MCP transport state. See the [MCP conformance matrix proposed in PR #350](https://github.com/michaeljwilliams0123/Ultron.MW/pull/350) in PR #350 and official references below.
+New remote MCP requests in protocol `2026-07-28` carry self-describing version/client metadata inside `params._meta`. GitHub administration generally requires an identity with the actual provider-supported granular permissions rather than simply expanding the default workflow `GITHUB_TOKEN`. Short-lived installation tokens and fail-closed worker admission are appropriate **after** owner, installation, operation and scope are verified. Real browser login/session state is distinct from MCP transport state. See the [MCP conformance matrix from PR #350](MCP-CONFORMANCE-MATRIX.md) and official references below.
 
 ## 2. Do NOT copy the example workflow or runner verbatim
 
@@ -58,7 +58,7 @@ This lifecycle is a **contract** for existing #169, #187, #192, #225, #285 and #
 | GB-09 protocol | Genuine 2026 SDK request `params._meta` accepted and older clients retained; HTTP header/identity denial verified in live service | #348 |
 | GB-10 protected release | Exact-head `test`, comparison, Council/Reef gating and attestation proven, without missing jobs/aggregate failures | #351 / #204 |
 
-**Implementation priority:** resolve #351's missing-job CI before promoting PR #350; finish #348 modern local/remote client tests; then #169/#187 admin authorization and #192 provider browser account flow. #349 AST/IR pilot is independent and must not be made a prerequisite for every current deterministic operation. Keep `main` protection and all verified Cloud Brain capabilities intact.
+**Implementation priority:** keep #351's missing-job CI fixed for subsequent releases; finish #348 modern remote-client and live-service tests beyond PR #350's source regression; then #169/#187 admin authorization and #192 provider browser account flow. #349 AST/IR pilot is independent and must not be made a prerequisite for every current deterministic operation. Keep `main` protection and all verified Cloud Brain capabilities intact.
 
 ## 5. Retirement decision
 
