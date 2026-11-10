@@ -9,7 +9,8 @@ const pem=privateKey.export({type:'pkcs1',format:'pem'});
 const now=()=>Date.parse('2026-11-10T12:00:00Z');
 const appId=5633654;
 const appResponse={id:appId,slug:'ultron-coordinator'};
-const installation={id:778899,app_id:appId,account:{login:'michaeljwilliams0123'}};
+const installation={id:778899,app_id:appId,
+ account:{login:'michaeljwilliams0123',id:308995719},suspended_at:null};
 
 function response(status,data){
  return {ok:status>=200&&status<300,status,
@@ -91,6 +92,8 @@ test('retired organization installation or wrong app id never passes',async()=>{
   {...installation,app_id:12},
   {...installation,account:{login:'Ultron-MW'}},
   {...installation,account:{login:'Attacker'}},
+  {...installation,account:{login:'michaeljwilliams0123',id:354634860}},
+  {...installation,suspended_at:'2026-11-10T18:00:00Z'},
  ]){
   const r=await diagnoseCouncilAppInstallation({appId,privateKey:pem,now,
    request:requestFor(response(200,appResponse),response(200,candidate),[])});

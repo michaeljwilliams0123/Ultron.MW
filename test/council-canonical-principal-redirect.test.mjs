@@ -114,6 +114,16 @@ test('former organization alias with same immutable repository ID is rejected',a
  assert.equal(observed.reason,'github-repository-scope-invalid');
  assert.equal(observed.verifiedPrincipalCount,0);
 });
+test('suspended Coordinator installation is held despite valid signer and matching primary owner',async()=>{
+ const got=await diagnoseCouncilAppInstallation({appId:APP_ID,privateKey:pem,now,
+  request:async url=>url.endsWith('/app')?
+   response(200,{id:APP_ID,slug:'ultron-coordinator'}):
+   response(200,{id:778899,app_id:APP_ID,
+    account:{login:OWNER,id:OWNER_ID},
+    suspended_at:'2026-11-10T19:01:00Z'})});
+ assert.equal(got.status,'held');
+ assert.equal(got.installationVisible,false);
+});
 test('missing key, expired installation token, or unavailable provider never fabricates role authentication',async()=>{
  const result=await verifyCouncilFleet({env:{},now,request:async()=>{
   throw Error('never hit provider');

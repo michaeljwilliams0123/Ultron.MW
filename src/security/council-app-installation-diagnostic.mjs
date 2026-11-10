@@ -10,6 +10,7 @@ const APP_ID=5633654;
 const APP_SLUG='ultron-coordinator';
 const REPOSITORY='michaeljwilliams0123/Ultron.MW';
 const REPOSITORY_ID=1424939667;
+const OWNER_ID=308995719;
 const API='https://api.github.com';
 const b64=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
 
@@ -74,7 +75,9 @@ export async function diagnoseCouncilAppInstallation({
  }
  if(!Number.isSafeInteger(installation?.id)||installation.id<=0||
     installation.app_id!==APP_ID||
-    installation.account?.login!=='michaeljwilliams0123')
+    installation.account?.login!=='michaeljwilliams0123'||
+    installation.account?.id!==OWNER_ID||
+    installation.suspended_at!=null)
   return held('coordinator-installation-identity-mismatch',authenticated);
  return receipt('installation-observed','app-jwt-and-repository-installation-readback',
   observedAt,{appIdentityVerified:true,installationVisible:true,
