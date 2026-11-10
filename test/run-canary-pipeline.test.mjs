@@ -22,10 +22,11 @@ const marker=d=>'Ultron-Operation-Digest: '+d;
 function stages(overrides={}){
   const deps={
     createVerifiedGitHubClient:async()=>({installationId:42,
-      getTokenForScope:async operation=>({token:'ephemeral-token',operation})}),
+      getTokenForScope:async scope=>({token:'ephemeral-token',...scope})}),
     enforceSignedApprovalAndTagPersona:async(_request,factory)=>{
-      const issued=await factory.getTokenForScope({operation:'repair.branch.create'});
-      assert.equal(issued.operation,'repair.branch.create');
+      const issued=await factory.getTokenForScope(plan.permittedScope);
+      assert.deepEqual({operation:issued.operation,repositoryId:issued.repositoryId,
+        permissions:issued.permissions},plan.permittedScope);
       return {authorized:true,token:'ephemeral-token',
         persona:{role:'Builder',authorName:'Ultron Builder',authorEmail:'builder@example.invalid'},
         executionPayload:{...plan,parameters:{...params}}};
