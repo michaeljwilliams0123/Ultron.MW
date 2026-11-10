@@ -18,7 +18,7 @@ repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main
 
 OIDC configuration on GitHub must independently match this subject template. A source change does not configure GitHub's OIDC settings or update a deployed Hatchable service. Existing owner-only dispatch guards stay owner-only; allowlisted contributor login/ID pairs in receipt verifiers do not grant release or administrative authority.
 
-## Observed connection and remaining enrollment
+## Observed connection and binding
 
 The connected GitHub API authenticated `michaeljwilliams0123ultron` and reported read/push access, with no admin access, to Mike's repository. Organization memberships returned empty. This proves this connection's GitHub identity and repository access; it does not attest a separate OpenAI account, Hatchable OAuth connection, background delivery or production execution.
 
@@ -28,10 +28,23 @@ On 2026-11-10 the existing automation was renamed Ultron's Codex, enabled, and i
 
 To verify live delivery, submit one bounded owner-authored read-only task through the real Issue-to-PR route, using `/codex destiny-codex ...` (or the Ultron alias after this update merges). Observe the independent event run, create-only claim and completion receipt, contributor GitHub actor, exact source/head lineage and required CI. The existing exact owner-authored `/codex run destiny-codex` comment remains the explicit trigger when needed. Do not create a second automation or replace delivery with polling.
 
-Mark live execution verified only in a subsequent reviewed evidence update citing the actual run. Failed or unknown delivery remains blocked or reconcile-required; this interactive setup must not write its own webhook receipt. This session can update and enable the existing event automation, but exposes no interface to create or inspect its event-filter configuration. Successful delivery must therefore be verified with a real task.
+Mark live execution verified only in a reviewed evidence update citing the actual run. Failed or unknown delivery remains blocked or reconcile-required; this interactive setup must not write its own webhook receipt. This session can update and enable the existing event automation, but exposes no interface to create or inspect its event-filter configuration. Successful delivery must therefore be verified with a real task.
 
 ## Audit, migration and rollout
 
 The correction covers current source, Actions guards, Hatchable API targets and public UI, receipt policy, App installation lookup, OIDC identity checks and regression fixtures. Historical transfer reports are labeled superseded. Migration `0040_ultron_org_transfer.sql` remains unchanged: it already permits both historical and current repository names while preserving immutable rows. New runtime operations accept only the canonical personal repository; historical organization grants and receipts are not rewritten into current authorization.
 
 No production database rewrite is required for the repository-name constraint. Reconcile queued organization-scoped operations explicitly rather than replaying them under the new name. Deploy Hatchable source through the existing owner-authorized release process, then independently verify identity, repository, OIDC and provider readbacks. Rollback is a normal reviewed source revert; do not erase historical receipts or broaden both namespaces into active authorization.
+
+## Independently verified execution canary
+
+Owner Issue [#380](https://github.com/michaeljwilliams0123/Ultron.MW/issues/380) produced task PR [#381](https://github.com/michaeljwilliams0123/Ultron.MW/pull/381). GitHub owner-trigger provenance passed in [run 42883234926](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42883234926). Source SHA: `ace724fde5f08f853d10e42c8ff3cfbdc949361c`.
+
+- Claim commit: `4053893837a65ab3690280ffe27fd3cfde0e0e2e`.
+- Completion commit: `140796c5b5e70be5d49c25051612cbeaa7eda0a7`.
+- [Immutable completion receipt](https://github.com/michaeljwilliams0123/Ultron.MW/blob/140796c5b5e70be5d49c25051612cbeaa7eda0a7/docs/codex/receipts/ucc-099bf2c107e7a2bcfa3fd7cd.json).
+- Both commits have GitHub author and committer `michaeljwilliams0123ultron`; author ID is `354634860`. Each adds only its own claim or receipt file, with the direct proposal → claim → receipt parent chain.
+- Trusted source `validateCodexAdmission`, `validateCodexReceipt` and `codexReplayDisposition` independently passed; replay disposition is `already-completed`.
+- Independently recomputed README SHA-256: `51de859a943bfee0b7e080fb71d327f22201a4dabb91d4508a363f0da41d947a`.
+
+This proves bounded execution using the selected GitHub identity and enrolled binding, not a distinct OpenAI account. The automation service recorded the attempt as failed despite returning a matching completion result and the independently verified GitHub receipt. Its delivery status remains unknown. A manual-start API attempt returned `Action not found`, so that response is not successful-start evidence. A separate automatic-only canary (#383 / #384), without any manual-start request, tests PR-open delivery independently. An attempted additional owner-trigger comment was rejected before posting by automatic approval review, so no comment event is asserted for that second canary. No failed/unknown scheduler state is promoted to a healthy unattended workflow.

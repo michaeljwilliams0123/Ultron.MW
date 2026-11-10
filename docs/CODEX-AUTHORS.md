@@ -6,7 +6,7 @@ GitHub accounts or claims that two separate OpenAI accounts were authenticated.
 | Author | Callable name | Current binding |
 |---|---|---|
 | Mike's Codex | `mike-codex` (alias `mike`) | Not enrolled; no fallback |
-| Ultron's Codex (formerly Destiny's Codex) | `destiny-codex` (aliases `ultron-codex`, `ultron`, `destiny`) | Existing Work GitHub event binding verified and enabled on 2026-11-10; live execution requires a fresh task receipt |
+| Ultron's Codex (formerly Destiny's Codex) | `destiny-codex` (aliases `ultron-codex`, `ultron`, `destiny`) | Existing Work GitHub event binding verified and enabled on 2026-11-10; bounded execution receipt verified on PR #381; scheduler health and automatic delivery remain separate |
 
 ## GitHub identity separation
 

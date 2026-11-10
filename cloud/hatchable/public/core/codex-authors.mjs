@@ -7,7 +7,7 @@ export const CODEX_AUTHORS = Object.freeze([
     fingerprint: '550e01b316cfbd16729dd73a635cf6fc3343dcf682708b342d269e115fad14d9',
     binding: { kind: 'work-github-event',
       fingerprint: '1278bdf842ec4108ae053fa3656cc38fde798c7eabb10f19834ee74969ebdfbd',
-      status: 'enrolled', enrolledAt: '2026-10-22T18:03:41.490Z', liveExecution: 'not-verified' },
+      status: 'enrolled', enrolledAt: '2026-10-22T18:03:41.490Z', liveExecution: 'receipt-verified' },
     sessionObservation: { kind: 'work-session-observation', observedAt: '2026-10-22',
       environmentFingerprint: 'e3d831ecade612b04c554d9bc598625ef5717355b027702890bc12a2747308d6',
       threadFingerprint: '42fb2a1e66dcdd5eceaf89713554608c27fbfcc1e9a10ffda5a633dc87f685c5',
