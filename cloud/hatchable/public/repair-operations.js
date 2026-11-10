@@ -118,6 +118,10 @@ export function renderRepairConsole({doc,root,model,filter='all'}){
   article.append(el(doc,'p',item.nextAction,'repair-next'));
   if(item.updatedAt)article.append(el(doc,'p','Checkpoint observed: '+item.updatedAt,'repair-meta'));
   const actions=el(doc,'div',undefined,'repair-actions');
+  const commit=el(doc,'a','Inspect exact commit');
+  commit.href='https://github.com/michaeljwilliams0123/Ultron.MW/commit/'+item.headSha;
+  commit.target='_blank';commit.rel='noopener noreferrer';
+  actions.append(commit);
   if(item.prUrl){
    const link=el(doc,'a','Open verified PR');
    link.href=item.prUrl;link.target='_blank';link.rel='noopener noreferrer';
@@ -132,6 +136,19 @@ export function renderRepairConsole({doc,root,model,filter='all'}){
    catch{button.textContent='Copy unavailable';}
   });
   actions.append(button);
+  const summary=el(doc,'button','Copy status summary');
+  summary.type='button';
+  summary.addEventListener('click',async()=>{
+   const clipboard=doc.defaultView?.navigator?.clipboard;
+   if(!clipboard?.writeText){summary.textContent='Copy unavailable';return;}
+   const text=['Ultron repair checkpoint',item.id,item.phaseLabel,
+    'Attempt '+item.attempt+' / '+item.maxAttempts,
+    'Checkpoint v'+item.version,'Source commit '+item.headSha,
+    item.nextAction].join('\n');
+   try{await clipboard.writeText(text);summary.textContent='Status copied';}
+   catch{summary.textContent='Copy unavailable';}
+  });
+  actions.append(summary);
   article.append(actions);
   root.append(article);
  }
