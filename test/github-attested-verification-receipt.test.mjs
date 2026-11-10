@@ -74,6 +74,20 @@ test('verification receipt fails closed on source drift and incomplete workflow 
   );
 });
 
+test('former organization alias, bot-owner alias and workflow redirect fail closed',()=>{
+ const base={GITHUB_ACTIONS:'true',GITHUB_REPOSITORY:'michaeljwilliams0123/Ultron.MW',
+  GITHUB_EVENT_NAME:'pull_request',GITHUB_WORKFLOW:'Ultron core verification',
+  GITHUB_WORKFLOW_REF:'michaeljwilliams0123/Ultron.MW/.github/workflows/verify.yml@refs/pull/360/merge',
+  GITHUB_RUN_ID:'123',GITHUB_RUN_ATTEMPT:'1',GITHUB_JOB:'attested-receipt',SOURCE_SHA:SHA};
+ for(const repository of ['Ultron-MW/Ultron.MW','michaeljwilliams0123ultron/Ultron.MW']){
+  assert.throws(()=>buildGitHubVerificationReceipt({env:{...base,GITHUB_REPOSITORY:repository},observedSha:SHA}),
+   /unexpected GitHub repository/);
+ }
+ assert.throws(()=>buildGitHubVerificationReceipt({env:{...base,
+  GITHUB_WORKFLOW_REF:'Ultron-MW/Ultron.MW/.github/workflows/verify.yml@refs/pull/360/merge'},observedSha:SHA}),
+  /unexpected GitHub workflow ref/);
+});
+
 test('core verification attests only a successful same-repository receipt with minimum write scope', async () => {
   const yml = await readFile(resolve(import.meta.dirname, '../.github/workflows/verify.yml'), 'utf8');
 
