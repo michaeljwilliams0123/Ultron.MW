@@ -175,3 +175,26 @@ test('previously completed PR is not trusted when independent provider readback 
  assert.equal(f.counts.apply,1);
  assert.equal(f.counts.startPublish,1);
 });
+
+
+test('expired plan reconciles an in-flight GitHub write but cannot start a new write',async()=>{
+ const p=plan(),f=fixture(),original=f.patcher.observe;
+ let reads=0;
+ f.patcher.observe=async args=>{
+  if(++reads===1)return null;
+  return original(args);
+ };
+ assert.equal((await runAutonomousRepair(context(f,p))).status,'reconcile-required');
+ assert.equal(f.counts.apply,1);
+ const later=()=>Date.parse('2026-11-11T21:00:00Z');
+ const resumed=await runAutonomousRepair(context(f,p,{now:later}));
+ assert.equal(resumed.status,'held');
+ assert.equal(f.records.get(p.id).phase,'verified');
+ assert.equal(f.counts.apply,1);
+ assert.equal(f.counts.startPublish,0);
+ const untouched=fixture();
+ const notStarted=await runAutonomousRepair(context(untouched,p,{now:later}));
+ assert.equal(notStarted.status,'held');
+ assert.equal(untouched.counts.apply,0);
+ assert.equal(untouched.records.size,0);
+});
