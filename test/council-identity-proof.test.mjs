@@ -43,12 +43,34 @@ test('proveIdentity posts then reads back; http failure throws',async()=>{
  await assert.rejects(proveIdentity({role:'Builder',token:'t',issueNumber:1,runUrl:'u',sha:'s',fetchImpl:async()=>({ok:false,status:403})}),/github-403/);
  await assert.rejects(proveIdentity({role:'Builder',issueNumber:1}),/input-invalid/);
 });
-test('workflow is owner-gated, SHA-pinned, uses create-github-app-token v3 with per-role secrets',()=>{
+test('workflow is owner-gated and SHA-pinned, shares only the Coordinator App identity',()=>{
  const y=readFileSync(new URL('../.github/workflows/council-identity-proof.yml',import.meta.url),'utf8');
  assert.match(y,/create-github-app-token@[0-9a-f]{40}/);
  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
- assert.match(y,/ULTRON_\{0\}_PRIVATE_KEY/);
+ assert.match(y,/vars\.ULTRON_BUILDER_CLIENT_ID/);
+ assert.match(y,/secrets\.ULTRON_BUILDER_PRIVATE_KEY/);
+ assert.doesNotMatch(y,/ULTRON_\{0\}_PRIVATE_KEY|permission-pull-requests: write/);
+ assert.match(y,/github\.repository_id == 1424939667/);
+ assert.match(y,/github\.repository_owner_id == 308995719/);
+ assert.match(y,/github\.triggering_actor == 'michaeljwilliams0123'/);
+ assert.match(y,/cancel-in-progress: false/);
+ assert.match(y,/ACTUAL_APP_SLUG.*steps\.app\.outputs\.app-slug/);
+ assert.match(y,/permission-issues: write/);
  assert.doesNotMatch(y,/COUNCIL_APP_SLUG/);
  assert.doesNotMatch(y,/echo .*token/i);
  for(const m of y.matchAll(/uses: (\S+)@(\S+)/g))assert.match(m[2],/^[0-9a-f]{40}$/);
+});
+
+test('role proof readback from shared Coordinator attributes distinct logical roles but never independent approval',()=>{
+ const readback={...good,user:{login:'ultron-coordinator[bot]',type:'Bot',id:353078104},
+  performed_via_github_app:{slug:'ultron-coordinator',id:5633654}};
+ for(const role of ['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion']){
+  const result=judgeIdentityProof({role,posted:{id:7},readback,marker});
+  assert.equal(result.authenticated,true);
+  assert.equal(result.evidence.appId,5633654);
+  assert.equal(result.independentReview,false);
+ }
+ const forged={...readback,performed_via_github_app:{slug:'ultron-coordinator',id:5633655}};
+ assert.equal(judgeIdentityProof({role:'Sentinel',posted:{id:7},
+  readback:forged,marker}).authenticated,false);
 });

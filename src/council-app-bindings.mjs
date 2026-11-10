@@ -14,17 +14,18 @@ const member=role=>Object.freeze({
  appSlugs:Object.freeze(['ultron-mw-'+role.toLowerCase()]),
  independentReview:false
 });
-const coordinator=Object.freeze({
- bindingKey:'coordinator-v2',kind:'coordinator',role:'Builder',
- appId:COUNCIL_COORDINATOR_APP_ID,
- appSlug:'ultron-mw-builder-v2',
- // The first slug is live. The second is the owner-authorized rename target.
- // Both remain bound to the same immutable App ID during the transition.
- appSlugs:Object.freeze(['ultron-mw-builder-v2','ultron-coordinator']),
+// One verified GitHub App is shared across seven logical, attributed Council
+// roles. Role attribution is NOT an independent identity or approval.
+const coordinatorFor=role=>Object.freeze({
+ bindingKey:'coordinator-v2',kind:'coordinator',role,
+ appId:COUNCIL_COORDINATOR_APP_ID,appSlug:'ultron-coordinator',
+ // Builder's historical slug is allowed only for its pre-rename receipts.
+ appSlugs:Object.freeze(role==='Builder'
+  ?['ultron-coordinator','ultron-mw-builder-v2']:['ultron-coordinator']),
  independentReview:false
 });
 const BINDINGS=Object.freeze(Object.fromEntries(COUNCIL_APP_ROLES.map(role=>[
- role,Object.freeze(role==='Builder'?[member(role),coordinator]:[member(role)])
+ role,Object.freeze([member(role),coordinatorFor(role)])
 ])));
 const REGISTERED_BINDINGS=Object.freeze(Object.values(BINDINGS).flat()
  .filter(binding=>binding.appId!==null));
@@ -54,8 +55,9 @@ export function resolveCouncilAppIdentity({role,appId,appSlug,expectedAppId}={})
   appIdCheck(expectedAppId);
   if(appId!==expectedAppId)throw Error('council-identity-mismatch');
  }
- const registered=REGISTERED_BINDINGS.find(candidate=>candidate.appId===appId);
- if(registered&&(registered.role!==role||!registered.appSlugs.includes(appSlug)))
+ const registered=REGISTERED_BINDINGS.some(candidate=>candidate.appId===appId);
+ if(registered&&!REGISTERED_BINDINGS.some(candidate=>candidate.appId===appId&&
+  candidate.role===role&&candidate.appSlugs.includes(appSlug)))
   throw Error('council-identity-mismatch');
  const binding=BINDINGS[role].find(candidate=>
   candidate.appSlugs.includes(appSlug)&&
