@@ -25,7 +25,7 @@ function row(extra={}){
  return {id:ID,phase:'complete',attempt:1,maxAttempts:3,
   headSha:SHA,version:7,nextAction:'ATTACKER HTML <img src=x onerror=alert(1)>',
   recoveryMode:'none',progressPercent:100,updatedAt:'2026-11-09T23:00:00Z',
-  prUrl:'https://github.com/Ultron-MW/Ultron.MW/pull/27',
+  prUrl:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/27',
   errorTrace:'password=DO-NOT-RENDER',...extra};
 }
 test('rendered repair console ignores injected fields, uses text nodes and only verified PR links',()=>{
@@ -35,20 +35,20 @@ test('rendered repair console ignores injected fields, uses text nodes and only 
  assert.equal(visit(root,'article').length,1);
  assert.equal(visit(root,'a').length,2);
  assert.equal(visit(root,'a')[0].href,
-  'https://github.com/Ultron-MW/Ultron.MW/commit/'+SHA);
+  'https://github.com/michaeljwilliams0123/Ultron.MW/commit/'+SHA);
  assert.equal(visit(root,'a')[1].href,
-  'https://github.com/Ultron-MW/Ultron.MW/pull/27');
+  'https://github.com/michaeljwilliams0123/Ultron.MW/pull/27');
  assert.doesNotMatch(texts(root),/ATTACKER HTML|DO-NOT-RENDER/);
  assert.match(texts(root),/Review the PR/);
  assert.ok(visit(root,'button')[0].listeners.click);
 });
-test('retired personal-repository PR URL is not presented as a verified canonical PR',()=>{
+test('former organization-repository PR URL is not presented as a verified canonical PR',()=>{
  const root=new FakeNode('root');
  const model=buildRepairConsoleModel({state:'live',items:[
-  row({prUrl:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/27'})]});
+  row({prUrl:'https://github.com/Ultron-MW/Ultron.MW/pull/27'})]});
  renderRepairConsole({doc:doc(),root,model});
  assert.equal(visit(root,'a').length,1);
- assert.equal(visit(root,'a')[0].href,'https://github.com/Ultron-MW/Ultron.MW/commit/'+SHA);
+ assert.equal(visit(root,'a')[0].href,'https://github.com/michaeljwilliams0123/Ultron.MW/commit/'+SHA);
 });
 
 test('operator can copy a safe task identifier without copying private source',async()=>{

@@ -11,7 +11,7 @@ import {createPostgresAutonomousRepairLedger}
 const sha='a'.repeat(40),second='b'.repeat(40),now=()=>Date.parse('2026-11-09T20:00:00Z');
 function plan(id='repair-restart-case-001'){
  return createAutonomousRepairPlan({
-  id,owner:'michaeljwilliams0123',repository:'Ultron-MW/Ultron.MW',
+  id,owner:'michaeljwilliams0123',repository:'michaeljwilliams0123/Ultron.MW',
   branch:'ultron/repair-restart-case-001',baseSha:sha,
   objective:'Repair existing source by independently observing each external effect',
   allowedPaths:['src/demo.mjs'],maxAttempts:3,maxPaidCents:0,

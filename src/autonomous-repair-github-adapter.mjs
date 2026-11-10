@@ -8,7 +8,7 @@ import {dispatchAndObserveVerify,observeVerifyRun} from './pr-brain-verify.mjs';
  * transport, owner step grant and a PREEXISTING authorized repair branch.
  * None of the credentials come from model text or task _meta.
  */
-const REPO='Ultron-MW/Ultron.MW',ROOT='/repos/'+REPO;
+const REPO='michaeljwilliams0123/Ultron.MW',ROOT='/repos/'+REPO;
 const SHA=/^[a-f0-9]{40}$/;
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function repairCorrelation(plan,attempt){
@@ -35,7 +35,7 @@ async function observeBranch(get,plan){
  return sha;
 }
 async function existingPR(get,plan){
- const list=await get(ROOT+'/pulls?state=all&head=Ultron-MW:'+
+ const list=await get(ROOT+'/pulls?state=all&head=michaeljwilliams0123:'+
   encodeURIComponent(plan.branch)+'&base=main&per_page=100');
  if(!Array.isArray(list)||list.length>1)
   throw Error('autonomous-repair-pr-inventory-ambiguous');

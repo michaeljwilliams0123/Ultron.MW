@@ -21,7 +21,7 @@ test('bounded CPU model receives sanitized failed-test data and emits one syntax
  assert.equal(manifest.baseSha,sha);
  assert.equal(manifest.changes.length,1);
  assert.equal(manifest.changes[0].path,'src/math.mjs');
- assert.deepEqual(urls,['/repos/Ultron-MW/Ultron.MW/contents/src/math.mjs?ref='+sha]);
+ assert.deepEqual(urls,['/repos/michaeljwilliams0123/Ultron.MW/contents/src/math.mjs?ref='+sha]);
  assert.match(messages[0][1].content,/FAIL src\/math.mjs/);
  assert.match(messages[0][0].content,/untrusted text/);
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createAutonomousRepairGitHubAdapters} from '../src/autonomous-repair-github-adapter.mjs';
 
-const repo='Ultron-MW/Ultron.MW',root='/repos/'+repo;
+const repo='michaeljwilliams0123/Ultron.MW',root='/repos/'+repo;
 const base='a'.repeat(40),head='b'.repeat(40),tree='c'.repeat(40);
 const branch='ultron/repair-example-001',id='repair-example-001';
 const plan={id,repository:repo,branch,objective:'Repair bounded source and CI regression',fingerprint:'d'.repeat(64)};
