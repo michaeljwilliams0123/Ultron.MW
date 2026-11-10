@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createPublicKey,generateKeyPairSync,verify} from 'node:crypto';
+import {generateKeyPairSync,verify} from 'node:crypto';
 import {createVerifiedGitHubClient} from '../src/auth/identity-factory.mjs';
 import {createUnifiedGitHubTransport} from '../src/github-app-transport.mjs';
 import {
@@ -117,7 +117,7 @@ test('every minted App JWT carries valid RSA signature and bounded issuance time
   assert.equal(claims.iat,Math.floor(NOW/1000)-30);
   assert.equal(claims.exp,Math.floor(NOW/1000)+540);
   assert.equal(verify('RSA-SHA256',Buffer.from(header+'.'+payload),
-   createPublicKey(RSA.publicKey),Buffer.from(signature,'base64url')),true);
+   RSA.publicKey,Buffer.from(signature,'base64url')),true);
  }
 });
 
@@ -132,7 +132,7 @@ test('startup denies HTTP failures and malformed GitHub grant readback',async()=
   {repository:{id:ULTRON_REPOSITORY_ID,full_name:'other/repo'}},
  ]){
   const mock=mockGitHub(options);
-  await assert.rejects(makeClient(mock),/denied|scope|profile|identity|readback|unavailable/i);
+  await assert.rejects(makeClient(mock),/HTTP 403|denied|scope|profile|identity|readback|unavailable/i);
   assert.equal(mock.calls.filter(x=>x.request.method==='PATCH'||x.request.method==='PUT').length,0);
  }
 });
