@@ -1,5 +1,5 @@
 // Fixed public repository and endpoint; no caller-provided URL or credential.
-const ROOT='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/issues/';
+const ROOT='https://api.github.com/repos/Ultron-MW/Ultron.MW/issues/';
 const MAX_BYTES=65536;
 export async function readGithubIssue(number,{transport=fetch}={}){
  if(!Number.isSafeInteger(number)||number<1||number>1000000000)

@@ -68,6 +68,10 @@ test('verification receipt fails closed on source drift and incomplete workflow 
     () => buildGitHubVerificationReceipt({ env: { ...base, GITHUB_REPOSITORY: 'other/repo' }, observedSha: SHA }),
     /unexpected GitHub repository/,
   );
+  assert.throws(
+    () => buildGitHubVerificationReceipt({ env: { ...base, GITHUB_REPOSITORY: 'michaeljwilliams0123/Ultron.MW' }, observedSha: SHA }),
+    /unexpected GitHub repository/,
+  );
 });
 
 test('core verification attests only a successful same-repository receipt with minimum write scope', async () => {

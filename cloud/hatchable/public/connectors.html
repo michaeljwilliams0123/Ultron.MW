@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Ultron.MW — Connector Readiness</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:#0c1425;color:#e6f0ff}
+main{max-width:900px;margin:auto;padding:28px 18px 64px}
+a{color:#aacaee}h1{font-size:clamp(1.7rem,5vw,2.5rem);margin:14px 0}
+.muted{color:#b4c4da;line-height:1.5}header{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+section{border:1px solid #354766;border-radius:14px;background:#13233a;padding:19px;margin:20px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:18px}
+article{border:1px solid #344960;border-radius:12px;padding:15px;background:#192c46}
+article h3{font-size:1rem;margin:0 0 7px}article p{margin:0;font-size:.9rem;line-height:1.5}
+.state{font-weight:700;color:#a9c8f2}.ok{color:#89ddbb}.pending{color:#ffce82}
+button{border:0;border-radius:9px;background:#91b5fc;color:#08182a;font:inherit;font-weight:650;padding:10px 15px;cursor:pointer}
+footer{font-size:.82rem;color:#aabbd4;margin-top:25px}
+</style>
+</head>
+<body>
+<main>
+<header><a href="/">Ultron Cloud Brain</a><a href="https://hatchable.com/console/projects/ultron-mw-cloud" target="_blank" rel="noopener noreferrer">Hatchable setup</a></header>
+<h1>Connector readiness</h1>
+<p class="muted">Owner-only observations from the existing cloud runtime. A credential present in protected storage is not proof of a valid authorization or an external write. No secret values are shown.</p>
+<section aria-labelledby="status-heading">
+<h2 id="status-heading">Current connection evidence</h2>
+<p class="muted" id="status" role="status" aria-live="polite">Checking the owner session…</p>
+<button type="button" id="refresh">Refresh read-only checks</button>
+<div class="grid" id="connections"></div>
+</section>
+<section aria-labelledby="tests-heading">
+<h2 id="tests-heading">Expanded read-only verification</h2>
+<p class="muted">Run deterministic deny-path regressions and independently inspect GitHub main, CI, pull requests, and the durable task queue. Simulated regression tests are not live GitHub writes.</p>
+<button type="button" id="run-tests">Run extended checks</button>
+<p class="muted" id="test-status" role="status" aria-live="polite">No extended check has been requested.</p>
+<div class="grid" id="test-results"></div>
+</section>
+<section>
+<h2>Authorization boundaries</h2>
+<p class="muted">Your Hatchable owner login is separate from GitHub App installation, GitLab OAuth, and Gmail access. A Hatchable email PIN establishes only the owner session. GitHub installation permissions must be approved on the canonical <a href="https://github.com/Ultron-MW/Ultron.MW" target="_blank" rel="noopener noreferrer">Ultron-MW/Ultron.MW</a> repository.</p>
+<p class="muted">New path: register a <a href="https://github.com/settings/applications/new" target="_blank" rel="noopener noreferrer">GitHub OAuth App</a> with callback <code>https://hatchable.com/connect/callback</code>. In <a href="https://hatchable.com/console/projects/ultron-mw-cloud" target="_blank" rel="noopener noreferrer">Hatchable Setup</a>, configure <code>github_operator</code>, then connect using the dedicated <strong>michaeljwilliams0123ultron</strong> GitHub account. The provider proxy stores OAuth credentials; no token is stored here. A successful readback does not authorize a GitHub write.</p><p class="muted">The original GitHub App fields remain optional for a later trusted signer deployment. Operator writes stay held until owner-signed approval, durable replay control, provider permissions and independent postcondition receipts are established.</p>
+</section>
+<footer>Read-only diagnostics · $0 incremental paid usage · No auth codes, installation tokens or private keys displayed</footer>
+</main>
+<script src="/connectors.js" defer></script>
+</body>
+</html>

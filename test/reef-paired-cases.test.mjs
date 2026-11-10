@@ -327,7 +327,7 @@ test('Reef signer key never resides in a shared Node Buffer pool',()=>{
 test('RED: candidate cannot spoof expected policy denials by replacing the evaluator String function',async()=>{
  const malicious=[
   "globalThis.String=()=> 'Repair step denied: forged classifier';",
-  "const repo='michaeljwilliams0123/Ultron.MW';",
+  "const repo='Ultron-MW/Ultron.MW';",
   "export function admitRepairTask({plan,identityEvidence,controls}){",
   " const acceptable=plan?.repository===repo&&plan.maxCostCents===0&&",
   "  controls?.paused===false&&identityEvidence?.principal==='repair-app'&&",
@@ -358,7 +358,7 @@ test('RED: candidate cannot spoof expected policy denials by replacing the evalu
 test('candidate RegExp.exec mutation cannot forge admission policy denials',async()=>{
  const malicious=[
   "RegExp.prototype.exec=function(){return ['Repair step denied: forged classifier'];};",
-  "const repo='michaeljwilliams0123/Ultron.MW';",
+  "const repo='Ultron-MW/Ultron.MW';",
   "export function admitRepairTask({plan,identityEvidence,controls}){",
   " const acceptable=plan?.repository===repo&&plan.maxCostCents===0&&",
   "  controls?.paused===false&&identityEvidence?.principal==='repair-app'&&",
@@ -467,7 +467,7 @@ test('RED: candidate RegExp.test mutation cannot select evaluator identity fixtu
  // policy-marker detection instead of mutating application policy behavior.
  const regexFree=[
   "export function admitRepairTask({plan,identityEvidence,controls}){",
-  " if(plan.repository!=='michaeljwilliams0123/Ultron.MW'||plan.maxCostCents!==0||",
+  " if(plan.repository!=='Ultron-MW/Ultron.MW'||plan.maxCostCents!==0||",
   "    controls.paused||controls.revoked||identityEvidence.principal!=='repair-app'||",
   "    identityEvidence.expiresAt!=='2026-10-31T17:50:00Z'||",
   "    identityEvidence.permissions?.administration)",
@@ -518,7 +518,7 @@ test('RED: candidate Array species mutation cannot forge failed observation rows
 test('RED: candidate array-iterator mutation cannot rewrite case identities',async()=>{
  const simple=[
   "export function admitRepairTask({plan,identityEvidence,controls}){",
-  " if(plan.repository!=='michaeljwilliams0123/Ultron.MW')",
+  " if(plan.repository!=='Ultron-MW/Ultron.MW')",
   "  throw Error('Repair plan rejected');",
   " return {repository:plan.repository,baseSha:plan.baseSha};",
   "}",
@@ -557,7 +557,7 @@ test('RED: candidate RegExp.exec mutation cannot select evaluator identity fixtu
  // policy-marker detection instead of mutating application policy behavior.
  const regexFree=[
   "export function admitRepairTask({plan,identityEvidence,controls}){",
-  " if(plan.repository!=='michaeljwilliams0123/Ultron.MW'||plan.maxCostCents!==0||",
+  " if(plan.repository!=='Ultron-MW/Ultron.MW'||plan.maxCostCents!==0||",
   "    controls.paused||controls.revoked||identityEvidence.principal!=='repair-app'||",
   "    identityEvidence.expiresAt!=='2026-10-31T17:50:00Z'||",
   "    identityEvidence.permissions?.administration)",

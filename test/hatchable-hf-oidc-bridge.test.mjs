@@ -13,13 +13,13 @@ const claims=(aud,changes={})=>{
  return {
   iss:'https://token.actions.githubusercontent.com',
   aud,
-  sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
-  repository:'michaeljwilliams0123/Ultron.MW',
+  sub:'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:refs/heads/main',
+  repository:'Ultron-MW/Ultron.MW',
   repository_id:'1424939667',repository_visibility:'public',
-  repository_owner:'michaeljwilliams0123',
-  actor:'michaeljwilliams0123',
+  repository_owner:'Ultron-MW',repository_owner_id:'354776009',
+  actor:'michaeljwilliams0123',actor_id:'308995719',
   ref:'refs/heads/main',sha,
-  workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/hf-oidc-bridge.yml@refs/heads/main',
+  workflow_ref:'Ultron-MW/Ultron.MW/.github/workflows/hf-oidc-bridge.yml@refs/heads/main',
   event_name:'workflow_dispatch',
   iat:now,nbf:now-1,exp:now+240,
   ...changes
@@ -73,9 +73,9 @@ test('OIDC-04: no other workflow, event, private/forked repo, actor or permissio
   {repository:'fork/Ultron.MW'},{repository_id:'5'},
   {repository_visibility:'private'},{repository_owner:'attacker'},
   {actor:'github-actions[bot]'},{ref:'refs/pull/4/head'},
-  {event_name:'pull_request'},{workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/verify.yml@refs/heads/main'},
-  {sub:'repo:michaeljwilliams0123/Ultron.MW:pull_request'},
-  {sub:'repo:michaeljwilliams0123/Ultron.MW:ref:refs/heads/main'}
+  {event_name:'pull_request'},{workflow_ref:'Ultron-MW/Ultron.MW/.github/workflows/verify.yml@refs/heads/main'},
+  {sub:'repo:Ultron-MW/Ultron.MW:pull_request'},
+  {sub:'repo:Ultron-MW/Ultron.MW:ref:refs/heads/main'}
  ];
  for(const d of bad)await assert.rejects(()=>verify(initial,claims(aud,d)),/untrusted-oidc/);
 });

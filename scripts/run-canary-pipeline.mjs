@@ -2,11 +2,12 @@
  * This never invents an approval, token, commit, receipt, or deployment claim.
  */
 import {createHash} from 'node:crypto';
+import {ULTRON_REPOSITORY} from '../src/github-principal-policy.mjs';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 
-const REPOSITORY='michaeljwilliams0123/Ultron.MW';
+const REPOSITORY=ULTRON_REPOSITORY;
 const API='https://api.github.com/repos/'+REPOSITORY;
 const SHA=/^[0-9a-f]{40}$/;
 const DIGEST=/^[0-9a-f]{64}$/;

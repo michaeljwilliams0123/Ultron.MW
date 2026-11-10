@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {executeIdempotentGitHubWrite,inspectGitHubBranch} from '../src/engine/durable-executor.mjs';
 
-const repository='michaeljwilliams0123/Ultron.MW';
+const repository='Ultron-MW/Ultron.MW';
 const sha='a'.repeat(40), digest='b'.repeat(64);
 const context=()=>({taskId:'canary-001',repository,targetBranch:'canary/executor-001',operationDigest:digest});
 const persona={role:'steward',authorName:'Ultron Steward'};
@@ -212,7 +212,10 @@ test('persona attribution is fixed by the verified role, not caller-mutable fiel
 let PGlite=null;
 try{({PGlite}=await import('@electric-sql/pglite'));}catch{}
 const skip=PGlite?false:'@electric-sql/pglite unavailable';
-const migration=readFileSync(new URL('../cloud/hatchable/migrations/0039_github_idempotent_executions.sql',import.meta.url),'utf8');
+const migration='CREATE TABLE IF NOT EXISTS brain_tasks(id bigint PRIMARY KEY);\n'+
+ readFileSync(new URL('../cloud/hatchable/migrations/0013_continuum_outbox.sql',import.meta.url),'utf8')+'\n'+
+ readFileSync(new URL('../cloud/hatchable/migrations/0039_github_idempotent_executions.sql',import.meta.url),'utf8')+'\n'+
+ readFileSync(new URL('../cloud/hatchable/migrations/0040_ultron_org_transfer.sql',import.meta.url),'utf8');
 test('PGlite: real migration, durable duplicate recovery and immutable terminal receipts',{skip},async()=>{
  const db=new PGlite();await db.exec(migration);
  const h=setup({db}),first=await execute(h),second=await execute(h);

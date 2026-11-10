@@ -6,9 +6,9 @@ const request=()=>({key:'github-write-001',issueNumber:42,body:'bounded update',
  state:'closed',expectedProfileVersion:2,expectedStopVersion:3});
 function provider({lost=false,conflict=false}={}){
  let issue={number:42,body:'old',state:'open',
-  html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/issues/42'},writes=0;
+  html_url:'https://github.com/Ultron-MW/Ultron.MW/issues/42'},writes=0;
  return {get writes(){return writes;},async transport(url,init){
-  assert.equal(url,'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/issues/42');
+  assert.equal(url,'https://api.github.com/repos/Ultron-MW/Ultron.MW/issues/42');
   assert.equal(init.redirect,'error');
   if(init.method==='PATCH'){
    writes++;issue={...issue,...JSON.parse(init.body)};
@@ -30,7 +30,7 @@ test('signed GitHub issue write verifies scope, sends once and records readback'
  assert.equal(result.status,'observed');
  assert.equal(result.evidence.issueNumber,42);
  assert.equal(result.evidence.state,'closed');
- assert.equal(result.issueUrl,'https://github.com/michaeljwilliams0123/Ultron.MW/issues/42');
+ assert.equal(result.issueUrl,'https://github.com/Ultron-MW/Ultron.MW/issues/42');
  assert.equal((await execute()).status,'observed');
  assert.equal(p.writes,1);
  assert.equal(h.claimCount,1);

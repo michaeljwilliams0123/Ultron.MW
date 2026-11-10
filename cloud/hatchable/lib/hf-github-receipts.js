@@ -1,8 +1,11 @@
 /** GitHub workflow_run admission: no LLM output, no external writes, no paid work.
  * Caller MUST authenticate raw bytes with GitHub's HMAC-SHA256 before validation.
  */
-const REPO='michaeljwilliams0123/Ultron.MW';
-const OWNER='michaeljwilliams0123';
+const REPO='Ultron-MW/Ultron.MW';
+const ACTOR_IDS=Object.freeze({
+ 'michaeljwilliams0123':308995719,
+ 'michaeljwilliams0123ultron':354634860
+});
 const SHA=/^[a-f0-9]{40}$/;
 const DIGEST=/^sha256:[a-f0-9]{64}$/;
 const DELIVERY=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -21,11 +24,13 @@ function shape(r){
     !Number.isSafeInteger(r.run_attempt)||r.run_attempt<1||
     r.event!=='workflow_dispatch'||r.status!=='completed'||
     !STATUS.has(r.conclusion)||!SHA.test(r.head_sha||'')||
-    r.head_branch!=='main'||r.actor?.login!==OWNER||
+    r.head_branch!=='main'||!Number.isSafeInteger(r.actor?.id)||
+    ACTOR_IDS[r.actor?.login]!==r.actor.id||
     r.repository?.full_name!==REPO||r.repository?.private!==false)
   nope();
  return {workflowKey:FIXED[file],path:r.path,
   runId:r.id,runAttempt:r.run_attempt,sourceSha:r.head_sha,
+  actorLogin:r.actor.login,actorId:r.actor.id,
   conclusion:r.conclusion};
 }
 export function validateGithubWorkflowPayload(data){
@@ -38,7 +43,8 @@ export function compareGithubRun(event,run){
   const observed=shape(run);
   const verified=observed.workflowKey===event.workflowKey&&
    observed.runId===event.runId&&observed.runAttempt===event.runAttempt&&
-   observed.sourceSha===event.sourceSha&&observed.conclusion===event.conclusion;
+   observed.sourceSha===event.sourceSha&&observed.conclusion===event.conclusion&&
+   observed.actorLogin===event.actorLogin&&observed.actorId===event.actorId;
   return {verified,reason:verified?null:'readback-mismatch'};
  }catch{return {verified:false,reason:'readback-mismatch'};}
 }

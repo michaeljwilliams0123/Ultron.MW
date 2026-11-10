@@ -6,7 +6,7 @@
  * state, and (for high-impact operations) a one-use grant issued by the owner.
  * No caller may use the App's full installed permission set as a runtime token.
  */
-export const ULTRON_REPOSITORY='michaeljwilliams0123/Ultron.MW';
+export const ULTRON_REPOSITORY='Ultron-MW/Ultron.MW';
 export const ULTRON_REPOSITORY_ID=1424939667;
 export const ULTRON_GITHUB_PRINCIPAL='ultron-github-app';
 
