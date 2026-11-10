@@ -255,3 +255,81 @@ test('Task 2 persona handoff preserves safe commit author identity for the condu
  });
  assert.equal(Object.isFrozen(passedPersona),true);
 });
+
+
+test('crash before dispatch: an existing reserved row can be atomically claimed by replacement worker',async()=>{
+ const h=setup(),c=context();
+ h.db.rows.set(`ultron-task-${c.taskId}`,{
+  idempotencyKey:`ultron-task-${c.taskId}`,operationDigest:digest,repository,
+  targetBranch:c.targetBranch,personaRole:'steward',state:'reserved',receipt:null
+ });
+ const result=await execute(h);
+ assert.equal(result.status,'success');
+ assert.equal(h.writes,1);
+ assert.equal(h.db.rows.get(result.idempotencyKey).state,'completed');
+});
+
+test('concurrent recovery from reserved state uses CAS to dispatch exactly once',async()=>{
+ const h=setup(),c=context();
+ h.db.rows.set(`ultron-task-${c.taskId}`,{
+  idempotencyKey:`ultron-task-${c.taskId}`,operationDigest:digest,repository,
+  targetBranch:c.targetBranch,personaRole:'steward',state:'reserved',receipt:null
+ });
+ const results=await Promise.all([execute(h),execute(h),execute(h)]);
+ assert.equal(h.writes,1);
+ assert.equal(results.filter(r=>r.status==='success').length,1);
+});
+
+test('lost acknowledgement after INSERT is recovered from durable SELECT without duplicate dispatch',async()=>{
+ class LostInsertAckDb extends MemoryDb{
+  async query(sql,params){
+   if(sql.includes('INSERT INTO github_idempotent_executions')){
+    await super.query(sql,params);
+    throw Error('insert committed but acknowledgement lost');
+   }
+   return super.query(sql,params);
+  }
+ }
+ const h=setup({db:new LostInsertAckDb()});
+ const result=await execute(h);
+ assert.equal(result.status,'success');
+ assert.equal(h.writes,1);
+});
+
+test('duplicate in_flight attempt does not mutate or replace active claim',async()=>{
+ const h=setup(),c=context();
+ h.db.rows.set(`ultron-task-${c.taskId}`,{
+  idempotencyKey:`ultron-task-${c.taskId}`,operationDigest:digest,repository,
+  targetBranch:c.targetBranch,personaRole:'steward',state:'in_flight',receipt:null
+ });
+ const result=await execute(h);
+ assert.equal(result.status,'reconcile_required');
+ assert.equal(h.writes,0);
+ assert.equal(h.db.rows.get(result.idempotencyKey).state,'in_flight');
+});
+
+test('GitHub reads use an AbortSignal so stalled readback cannot hang a worker indefinitely',async()=>{
+ const calls=[];
+ await inspectGitHubBranch(token,context(),{fetchImpl:async (url,options)=>{
+  calls.push(options.signal);
+  return {status:404,ok:false};
+ }});
+ assert.equal(calls.length,1);
+ assert.equal(calls[0] instanceof AbortSignal,true);
+});
+
+test('PGlite: crashed pre-dispatch reservation can resume once under concurrent workers',{skip},async()=>{
+ const db=new PGlite();await db.exec(migration);
+ const c=context();
+ await db.query(`INSERT INTO github_idempotent_executions
+  (idempotency_key,operation_digest,repository,target_branch,persona_role,state)
+  VALUES ($1,$2,$3,$4,$5,'reserved')`,
+  [`ultron-task-${c.taskId}`,c.operationDigest,c.repository,c.targetBranch,'steward']);
+ const h=setup({db}),results=await Promise.all([execute(h),execute(h),execute(h)]);
+ assert.equal(h.writes,1);
+ assert.equal(results.some(r=>r.status==='success'),true);
+ const stored=await db.query('SELECT state FROM github_idempotent_executions WHERE idempotency_key=$1',
+  [`ultron-task-${c.taskId}`]);
+ assert.equal(stored.rows[0].state,'completed');
+ await db.close();
+});
