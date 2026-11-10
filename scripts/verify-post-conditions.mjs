@@ -5,7 +5,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fchmodSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$/;
@@ -41,7 +41,7 @@ function snapshotJson(value, seen = new WeakSet(), depth = 0) {
     }
   } else {
     out = Object.create(null);
-    for (const key of keys) {
+    for (const key of keys.sort()) {
       const d = descriptors[key];
       if (!d.enumerable || !Object.hasOwn(d, 'value'))
         throw new Error('execution receipt must contain plain JSON data');
@@ -54,7 +54,7 @@ function snapshotJson(value, seen = new WeakSet(), depth = 0) {
 
 function git(cwd, args) {
   return execFileSync('git', args, {
-    cwd, encoding: 'utf8', maxBuffer: 128 * 1024,
+    cwd, encoding: 'utf8', maxBuffer: 128 * 1024, timeout: 10_000,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 }
@@ -65,22 +65,43 @@ function validateSha(value, field) {
   return value ?? null;
 }
 
+function consistentSha(field, ...values) {
+  const present = values.filter(value => value !== undefined && value !== null);
+  present.forEach(value => validateSha(value, field));
+  if (new Set(present).size > 1) throw new Error(`conflicting ${field}`);
+  return present[0] ?? null;
+}
+
 function inspectLocalDiff(cwd, baseSha, headSha) {
   if (git(cwd, ['rev-parse', 'HEAD']) !== headSha)
     throw new Error('git HEAD mismatch with execution receipt');
   try { git(cwd, ['merge-base', '--is-ancestor', baseSha, headSha]); }
   catch { throw new Error('execution base is not an ancestor of head'); }
-  const changedFiles = git(cwd, ['diff', '--name-only', baseSha, headSha, '--']).split('\n').filter(Boolean);
+  const changedFiles = git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', baseSha, headSha, '--']).split('\0').filter(Boolean);
   if (changedFiles.length === 0) throw new Error('execution diff has no changed files');
-  const gitDiffSummary = git(cwd, ['diff', '--stat', baseSha, headSha, '--']);
+  const gitDiffSummary = git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--stat', baseSha, headSha, '--']);
   return { changedFiles, gitDiffSummary };
 }
 
 function verifyRecordOnDisk(destination, receiptDigest, key) {
-  if (!existsSync(destination)) return null;
+  let fd;
+  try {
+    // No-follow opening prevents a replay from reading through an audit symlink.
+    if (!lstatSync(destination).isFile()) throw new Error('audit path must be a regular file (symbolic link refused)');
+    fd = openSync(destination, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    if (error.code === 'ELOOP') throw new Error('audit path must be a regular file (symbolic link refused)');
+    throw error;
+  }
   let record;
-  try { record = JSON.parse(readFileSync(destination, 'utf8')); }
-  catch { throw new Error('audit integrity mismatch: unreadable local artifact'); }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > 512 * 1024)
+      throw new Error('audit path must be a bounded regular file');
+    try { record = JSON.parse(readFileSync(fd, 'utf8')); }
+    catch { throw new Error('audit integrity mismatch: unreadable local artifact'); }
+  } finally { closeSync(fd); }
   if (!record || record.schema !== SCHEMA || record.idempotencyKey !== key ||
       typeof record.auditSha256 !== 'string') throw new Error('audit integrity mismatch');
   const { auditSha256, ...unsigned } = record;
@@ -96,17 +117,23 @@ function createOnce(destination, artifact) {
   const tempPath = join(directory, `.task5-${randomBytes(16).toString('hex')}.tmp`);
   const fd = openSync(tempPath, 'wx', 0o600);
   try {
-    writeFileSync(fd, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');
-    fsyncSync(fd);
-  } finally { closeSync(fd); }
-  try {
-    // Atomic hard link: EEXIST means a concurrent worker won; never replace it.
-    linkSync(tempPath, destination);
-    const dirFd = openSync(directory, 'r');
-    try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
-  } catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-  } finally { unlinkSync(tempPath); }
+    try {
+      writeFileSync(fd, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');
+      fchmodSync(fd, 0o400); // Read-only for accidental-edit resistance, not an immutable filesystem guarantee.
+      fsyncSync(fd);
+    } finally { closeSync(fd); }
+    let created = false;
+    try {
+      linkSync(tempPath, destination); // Atomic create-once; never replaces an existing receipt.
+      created = true;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+    if (created) {
+      const dirFd = openSync(directory, 'r');
+      try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
+    }
+  } finally { unlinkSync(tempPath); } // Also clean temporary files if write/fsync/link fails.
 }
 
 export async function verifyPostConditionsAndStoreReceipt(executionReceipt, {
@@ -124,14 +151,20 @@ export async function verifyPostConditionsAndStoreReceipt(executionReceipt, {
   if (Buffer.byteLength(rawJson) > MAX_RECEIPT_BYTES)
     throw new Error('execution receipt exceeds maximum size');
   const receiptDigest = sha256(rawJson);
-  const destination = join(resolve(receiptDir), `${idempotencyKey}.json`);
+  const directory = resolve(receiptDir);
+  try {
+    if (!lstatSync(directory).isDirectory()) throw new Error('audit directory must not be a symbolic link');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  const destination = join(directory, `${idempotencyKey}.json`);
   const existing = verifyRecordOnDisk(destination, receiptDigest, idempotencyKey);
   if (existing) return existing;
 
   const details = receipt.details && typeof receipt.details === 'object' && !Array.isArray(receipt.details)
     ? receipt.details : Object.create(null);
-  const baseSha = validateSha(details.baseSha ?? receipt.baseSha, 'baseSha');
-  const headSha = validateSha(details.headSha ?? details.commitSha ?? receipt.headSha, 'headSha');
+  const baseSha = consistentSha('baseSha', receipt.baseSha, details.baseSha);
+  const headSha = consistentSha('headSha', receipt.headSha, details.headSha, details.commitSha);
   let statusResult = 'EXECUTION_NOT_SUCCEEDED';
   let gitDiffSummary = null;
   let changedFiles = [];
@@ -150,7 +183,8 @@ export async function verifyPostConditionsAndStoreReceipt(executionReceipt, {
     status: statusResult,
   };
   artifact.auditSha256 = sha256(JSON.stringify(artifact));
-  mkdirSync(resolve(receiptDir), { recursive: true, mode: 0o700 });
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  if (!lstatSync(directory).isDirectory()) throw new Error('audit directory must not be a symbolic link');
   createOnce(destination, artifact);
   return verifyRecordOnDisk(destination, receiptDigest, idempotencyKey);
 }
