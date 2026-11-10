@@ -6,17 +6,17 @@ import { resolve } from 'node:path';
 import { buildGitHubVerificationReceipt } from '../scripts/write-github-verification-receipt.mjs';
 
 const SHA = 'b'.repeat(40);
-const RUN_URL = 'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/123';
+const RUN_URL = 'https://github.com/Ultron-MW/Ultron.MW/actions/runs/123';
 
 test('verification receipt binds the passing workflow run to the exact checked-out source', () => {
   const receipt = buildGitHubVerificationReceipt({
     observedSha: SHA,
     env: {
       GITHUB_ACTIONS: 'true',
-      GITHUB_REPOSITORY: 'michaeljwilliams0123/Ultron.MW',
+      GITHUB_REPOSITORY: 'Ultron-MW/Ultron.MW',
       GITHUB_EVENT_NAME: 'pull_request',
       GITHUB_WORKFLOW: 'Ultron core verification',
-      GITHUB_WORKFLOW_REF: `michaeljwilliams0123/Ultron.MW/.github/workflows/verify.yml@refs/pull/313/merge`,
+      GITHUB_WORKFLOW_REF: `Ultron-MW/Ultron.MW/.github/workflows/verify.yml@refs/pull/313/merge`,
       GITHUB_RUN_ID: '123',
       GITHUB_RUN_ATTEMPT: '2',
       GITHUB_JOB: 'attested-receipt',
@@ -28,12 +28,12 @@ test('verification receipt binds the passing workflow run to the exact checked-o
     schemaVersion: 1,
     kind: 'github-attested-verification-receipt',
     result: 'passed',
-    repository: 'michaeljwilliams0123/Ultron.MW',
+    repository: 'Ultron-MW/Ultron.MW',
     sourceSha: SHA,
     observedCheckoutSha: SHA,
     event: 'pull_request',
     workflow: 'Ultron core verification',
-    workflowRef: 'michaeljwilliams0123/Ultron.MW/.github/workflows/verify.yml@refs/pull/313/merge',
+    workflowRef: 'Ultron-MW/Ultron.MW/.github/workflows/verify.yml@refs/pull/313/merge',
     workflowRunId: 123,
     workflowRunAttempt: 2,
     workflowRunUrl: RUN_URL,
@@ -46,10 +46,10 @@ test('verification receipt binds the passing workflow run to the exact checked-o
 test('verification receipt fails closed on source drift and incomplete workflow provenance', () => {
   const base = {
     GITHUB_ACTIONS: 'true',
-    GITHUB_REPOSITORY: 'michaeljwilliams0123/Ultron.MW',
+    GITHUB_REPOSITORY: 'Ultron-MW/Ultron.MW',
     GITHUB_EVENT_NAME: 'pull_request',
     GITHUB_WORKFLOW: 'Ultron core verification',
-    GITHUB_WORKFLOW_REF: 'michaeljwilliams0123/Ultron.MW/.github/workflows/verify.yml@refs/pull/313/merge',
+    GITHUB_WORKFLOW_REF: 'Ultron-MW/Ultron.MW/.github/workflows/verify.yml@refs/pull/313/merge',
     GITHUB_RUN_ID: '123',
     GITHUB_RUN_ATTEMPT: '1',
     GITHUB_JOB: 'attested-receipt',
