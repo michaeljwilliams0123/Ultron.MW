@@ -5,7 +5,6 @@
  * Branch existence is not success: the HEAD commit must contain an exact,
  * operation-bound trailer. Ambiguous writes are never automatically replayed.
  */
-import {createHash} from 'node:crypto';
 import {ULTRON_REPOSITORY} from '../github-principal-policy.mjs';
 
 const SHA40=/^[a-f0-9]{40}$/;
@@ -68,6 +67,9 @@ function validatedReceipt(row,intent){
   receipt.idempotencyKey!==intent.idempotencyKey||
   receipt.details?.operationDigest!==intent.operationDigest||
   receipt.details?.branch!==intent.targetBranch||
+  receipt.details?.repository!==intent.repository||
+  receipt.details?.personaRole!==intent.personaRole||
+  receipt.details?.remoteVerified!==true||
   !SHA40.test(receipt.details?.sha||'')||
   !['success','reconciled_success','recovered_success'].includes(receipt.status))
   fail('receipt-invalid');
@@ -100,8 +102,10 @@ async function hold(db,intent,reason){
    SET state='reconcile_required',updated_at=now()
    WHERE idempotency_key=$1 AND operation_digest=$2
      AND state IN ('reserved','in_flight')`,[intent.idempotencyKey,intent.operationDigest]);
- }catch{fail('reconciliation-persistence-unverified');}
- const row=await read(db,intent.idempotencyKey);
+ }catch{ /* Lost ACK may still mean the guarded SQL update committed. */ }
+ let row;
+ try{row=await read(db,intent.idempotencyKey);}
+ catch{fail('reconciliation-persistence-unverified');}
  if(!matches(row,intent))fail('intent-conflict');
  if(row.state==='completed')return validatedReceipt(row,intent);
  if(row.state!=='reconcile_required')fail('reconciliation-persistence-unverified');
@@ -142,7 +146,8 @@ export async function inspectGitHubBranch(token,intent,{fetchImpl=globalThis.fet
   if(!response.ok)fail('github-readback-unavailable');
   return response.json();
  };
- const ref=await get(`/git/ref/heads/${intent.targetBranch.split('/').map(encodeURIComponent).join('/')}`);
+ const path=`/git/ref/heads/${intent.targetBranch.split('/').map(encodeURIComponent).join('/')}`;
+ const ref=await get(path);
  if(!ref)return {state:'absent'};
  const sha=ref?.object?.sha;
  if(ref.object?.type!=='commit'||!SHA40.test(sha||''))
@@ -151,7 +156,12 @@ export async function inspectGitHubBranch(token,intent,{fetchImpl=globalThis.fet
  // A deleted/changed commit ref is uncertain, not an absent branch.
  if(!commit||typeof commit.message!=='string')fail('github-readback-unavailable');
  const matching=commit.message.split(/\r?\n/).some(line=>line===trailer(intent.operationDigest));
- return {state:matching?'matched':'conflict',sha};
+ if(!matching)return {state:'conflict',sha};
+ // The branch can advance during the commit lookup. Never attest a stale HEAD.
+ const freshRef=await get(path);
+ if(freshRef?.object?.type!=='commit'||freshRef.object.sha!==sha)
+  return {state:'conflict',sha};
+ return {state:'matched',sha};
 }
 
 /**
@@ -163,6 +173,9 @@ export async function executeIdempotentGitHubWrite(taskContext,token,persona,git
  if(typeof gitOperation!=='function'||typeof token!=='string'||token.length<8)
   fail('invalid-operation');
  const intent=validateContext(taskContext,persona);
+ // A mutable caller-supplied authorName must not impersonate another role.
+ const safePersona=Object.freeze({role:intent.personaRole,
+  authorName:`Ultron ${intent.personaRole[0].toUpperCase()}${intent.personaRole.slice(1)}`});
  const db=services.db;
  const inspect=()=>services.remote?.inspect
   ?services.remote.inspect({token,intent})
@@ -193,7 +206,7 @@ export async function executeIdempotentGitHubWrite(taskContext,token,persona,git
   RETURNING idempotency_key`,[intent.idempotencyKey,intent.operationDigest]);
  if(dispatch?.rows?.length!==1)return hold(db,intent,'dispatch-claim-lost');
  try{
-  await gitOperation({token,persona,targetBranch:intent.targetBranch,
+  await gitOperation({token,persona:safePersona,targetBranch:intent.targetBranch,
    idempotencyKey:intent.idempotencyKey,operationDigest:intent.operationDigest,
    operationMarker:trailer(intent.operationDigest)});
  }catch{/* The external side effect might have committed before an error/timeout. */}
