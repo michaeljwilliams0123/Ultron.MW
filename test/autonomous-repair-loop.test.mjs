@@ -165,3 +165,13 @@ test('untrusted noisy test output is redacted and capped before repair feedback'
  assert.ok(seen.length<=1500);assert.doesNotMatch(seen,/verySecretValue/);
  assert.doesNotMatch(seen,/ghp_/);
 });
+
+test('previously completed PR is not trusted when independent provider readback fails',async()=>{
+ const f=fixture(),p=plan();
+ assert.equal((await runAutonomousRepair(context(f,p))).status,'completed');
+ f.publisher.observe=async()=>{throw Error('GitHub provider timed out');};
+ const out=await runAutonomousRepair(context(f,p));
+ assert.equal(out.status,'reconcile-required');
+ assert.equal(f.counts.apply,1);
+ assert.equal(f.counts.startPublish,1);
+});
