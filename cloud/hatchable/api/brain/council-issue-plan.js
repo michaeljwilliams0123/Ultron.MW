@@ -4,7 +4,7 @@ import {makeIssueCouncilPlan,validateCandidateFiles} from 'lib/issue-council-pla
 export const access='admin';
 export const methods=['POST'];
 const OWNER='michaeljwilliams0123';
-const MAIN='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/main';
+const MAIN='https://api.github.com/repos/Ultron-MW/Ultron.MW/git/ref/heads/main';
 function reply(res,status,payload){
  res.setHeader('cache-control','private, no-store');
  res.setHeader('vary','Cookie');

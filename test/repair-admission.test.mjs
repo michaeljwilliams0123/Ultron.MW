@@ -4,7 +4,7 @@ import { admitRepairTask, assertRepairStep } from '../src/repair-admission.mjs';
 import {requiredTokenPermissions,ULTRON_GITHUB_PRINCIPAL}
  from '../src/github-principal-policy.mjs';
 
-const REPO = 'michaeljwilliams0123/Ultron.MW';
+const REPO = 'Ultron-MW/Ultron.MW';
 const BASE = 'a'.repeat(40);
 const NOW = '2026-10-31T17:00:00.000Z';
 const identity = (operation='identity.read') => ({

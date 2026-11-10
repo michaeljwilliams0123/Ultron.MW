@@ -67,7 +67,7 @@ test('issue detail is re-read from the fixed repository and only open issues are
  assert.equal(result.title,'Exact acceptance');
  assert.equal(result.excerpt.includes('ghp_'),false);
  assert.deepEqual(result.labels,['acceptance']);
- assert.ok(calls[0].url.startsWith('https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/issues/4'));
+ assert.ok(calls[0].url.startsWith('https://api.github.com/repos/Ultron-MW/Ultron.MW/issues/4'));
  assert.equal(calls[0].init.headers.Authorization,undefined);
  await assert.rejects(inspectOpenIssue(4,{fetchGithub:async()=>ok(issue(4,{state:'closed'}))}),
   /issue-not-open-or-not-found/);

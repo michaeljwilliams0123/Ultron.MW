@@ -16,7 +16,7 @@ test('live public GitHub read returns validated response body without retries', 
  });
  assert.equal(result.object.sha,'f'.repeat(40));
  assert.equal(calls.length,1);
- assert.equal(calls[0].url,'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/main');
+ assert.equal(calls[0].url,'https://api.github.com/repos/Ultron-MW/Ultron.MW/git/ref/heads/main');
  assert.equal(calls[0].options.headers['User-Agent'],'UltronMW-Cloud-Brain');
 });
 

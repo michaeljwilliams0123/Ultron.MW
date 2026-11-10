@@ -8,7 +8,7 @@ import {notifyOwner} from 'lib/owner-live-events.js';
 // source + artifact metadata again before lab promotion to "verified".
 export const access='public';
 export const methods=['POST'];
-const API='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+const API='https://api.github.com/repos/Ultron-MW/Ultron.MW';
 function answer(res,status,ok,error,other={}){
  return res.status(status).json({schema:'ultron.hf-oidc-ingress.v1',ok,
   ...(!ok?{error}:{}),...other});

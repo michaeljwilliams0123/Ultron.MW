@@ -1,6 +1,23 @@
 [mcp]
 enabled = true
 
+# Native GitHub OAuth removes the unsupported App RSA signing dependency.
+# Connect the dedicated Ultron GitHub account in protected Hatchable Setup.
+# This connector is READ-VERIFIED ONLY until signed grant + durable executor
+# independently approve each mutation. No token is stored in source.
+[[api]]
+name          = "github_operator"
+auth          = "oauth2"
+base_url      = "https://api.github.com"
+authorize_url = "https://github.com/login/oauth/authorize"
+token_url     = "https://github.com/login/oauth/access_token"
+scopes        = ["read:user", "public_repo"]
+required      = false
+description   = "Dedicated Ultron user OAuth for public Ultron-MW/Ultron.MW. Read-only identity checks initially; no automatic GitHub writes."
+
+[api.headers]
+Accept = "application/vnd.github+json"
+
 # Separate, optional WRITE-capable GitLab connection. This is never the
 # read_api credential used by the read-only GitLab observer. Owner OAuth
 # activation and per-operation signed grants are both required.
@@ -58,10 +75,28 @@ name = "ULTRON_GRAPH_DELEGATED_TOKEN"
 required = false
 description = "Short-lived delegated Microsoft Graph token for the configured workbook account. Requires independent consent and rotation."
 
+# Canonical Ultron-MW GitHub App installation. Values are supplied only by
+# the owner in Hatchable's protected Setup page; none are stored in source.
+# These declarations do not grant access or enable an operator by themselves.
+[[secret]]
+name = "ULTRON_GITHUB_APP_ID"
+required = false
+description = "App ID installed with narrow permissions on Ultron-MW/Ultron.MW (repository ID 1424939667)."
+
+[[secret]]
+name = "ULTRON_GITHUB_INSTALLATION_ID"
+required = false
+description = "Installation ID verified against GitHub for exactly Ultron-MW/Ultron.MW; do not reuse another repository's installation."
+
+[[secret]]
+name = "ULTRON_GITHUB_APP_PRIVATE_KEY"
+required = false
+description = "Private PEM signing key of the verified Ultron GitHub App; owner-only protected setup, never paste in source or logs."
+
 [[secret]]
 name = "ULTRON_GITHUB_ISSUE_TOKEN"
 required = false
-description = "Least-privilege token with issue access only to michaeljwilliams0123/Ultron.MW. Never store the token in source or event receipts."
+description = "Optional legacy least-privilege issue token for Ultron-MW/Ultron.MW; App installation is preferred. Never store the token in source or event receipts."
 
 [[secret]]
 name = "ULTRON_MAHORAGA_CONNECTION1026"

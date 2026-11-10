@@ -149,7 +149,7 @@ test('Council Room runner returns seven role replies with private Mahoraga evide
  }};
  const core=await import(b64(transformed)+'#'+Math.random());
  globalThis.fetch=async url=>{
-  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/main'))
+  if(url.endsWith('/repos/Ultron-MW/Ultron.MW/git/ref/heads/main'))
    return Response.json({object:{sha:'a'.repeat(40)}});
   if(url.endsWith('/repos/michaeljwilliams0123/mahoraga'))
    return Response.json({id:1343333190,full_name:'michaeljwilliams0123/mahoraga',
@@ -195,19 +195,19 @@ test('issue remediation plan rereads live issue data and gives role-specific bou
  globalThis.__councilRoomConfig={async get(){throw Error('private evidence not requested')}};
  globalThis.__councilIssueHelpers={async inspectOpenIssue(number){
   assert.equal(number,285);
-  return {number,title:'Execution acceptance',url:'https://github.com/michaeljwilliams0123/Ultron.MW/issues/285',
+  return {number,title:'Execution acceptance',url:'https://github.com/Ultron-MW/Ultron.MW/issues/285',
    labels:['acceptance'],updatedAt:'2026-11-04T00:00:00Z',
    dependencyReferences:[184],excerpt:'Require exact-head verification.'};
  }};
  globalThis.fetch=async url=>{
-  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/main'))
+  if(url.endsWith('/repos/Ultron-MW/Ultron.MW/git/ref/heads/main'))
    return Response.json({object:{sha:'a'.repeat(40)}});
   throw Error('unexpected GitHub request '+url);
  };
  try{
   const core=await import(b64(transformed)+'#issue-plan-'+Math.random());
   const body='ULTRON_ISSUE_REMEDIATION_V1\n'+JSON.stringify({
-   number:285,title:'untrusted title',url:'https://github.com/michaeljwilliams0123/Ultron.MW/issues/285',
+   number:285,title:'untrusted title',url:'https://github.com/Ultron-MW/Ultron.MW/issues/285',
    labels:['untrusted'],detectedOpenBlockers:[184]
   });
   const result=await core.buildCouncilRoomResult({message:{body,mentions:[]}});

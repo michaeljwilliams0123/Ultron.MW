@@ -10,11 +10,11 @@ const RUN=41771806146, SHA='a'.repeat(40),OWNER='michaeljwilliams0123';
 const run=(overrides={})=>({
  id:RUN,run_attempt:1,path:'.github/workflows/c06-owner-model-release.yml',
  event:'workflow_dispatch',status:'completed',conclusion:'failure',
- head_sha:SHA,head_branch:'main',actor:{login:OWNER},
- repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:false},
+ head_sha:SHA,head_branch:'main',actor:{login:OWNER,id:308995719},
+ repository:{full_name:'Ultron-MW/Ultron.MW',private:false},
  ...overrides
 });
-const payload=(overrides={})=>({action:'completed',repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:false},
+const payload=(overrides={})=>({action:'completed',repository:{full_name:'Ultron-MW/Ultron.MW',private:false},
  workflow_run:run(),...overrides});
 test('GH-HF-01: only signed-intended owner, public main, completed and allowlisted workflow events qualify',()=>{
  const x=validateGithubWorkflowPayload(payload());
@@ -34,12 +34,15 @@ test('GH-HF-02: reject forged repository, actor, paths, paid/private branch, and
  payload({repository:{full_name:'attacker/Ultron.MW',private:false}}),
  payload({workflow_run:run({repository:{full_name:'attacker/Ultron.MW'}})}),
  payload({workflow_run:run({path:'.github/workflows/other.yml'})}),
- payload({workflow_run:run({actor:{login:'attacker'}})}),
+ payload({workflow_run:run({actor:{login:'attacker',id:308995719}})}),
+ payload({workflow_run:run({actor:{login:OWNER,id:354634860}})}),
+ payload({workflow_run:run({actor:{login:OWNER}})}),
+ payload({repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:false}}),
  payload({workflow_run:run({head_branch:'experimental'})}),
  payload({workflow_run:run({status:'in_progress',conclusion:null})}),
  payload({workflow_run:run({head_sha:'main'})}),
  payload({workflow_run:run({event:'push'})}),
- payload({repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:true}}),
+ payload({repository:{full_name:'Ultron-MW/Ultron.MW',private:true}}),
  payload({action:'requested'})
  ];
  for(const bad of invalid)assert.throws(()=>validateGithubWorkflowPayload(bad));
@@ -117,4 +120,16 @@ test('GH-HF-08: owner Model Lab uses bounded persisted verified events, not brow
  assert.match(src,/hf_github_receipts/);
  assert.doesNotMatch(client,/github\.com\/api|api\.github\.com|Authorization:\s*['"]Bearer/);
  assert.doesNotMatch(client,/setInterval/);
+});
+
+test('GH-HF-09: Ultron admin actor is allowed only with exact immutable GitHub user ID',()=>{
+ const allowed=validateGithubWorkflowPayload(payload({workflow_run:run({
+  actor:{login:'michaeljwilliams0123ultron',id:354634860}
+ })}));
+ assert.equal(allowed.workflowKey,'c06');
+ for(const actor of [
+  {login:'michaeljwilliams0123ultron',id:308995719},
+  {login:'michaeljwilliams0123ultron'},
+  {login:'michaeljwilliams0123',id:354634860}
+ ])assert.throws(()=>validateGithubWorkflowPayload(payload({workflow_run:run({actor})})));
 });
