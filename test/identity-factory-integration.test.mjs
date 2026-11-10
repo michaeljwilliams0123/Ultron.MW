@@ -136,3 +136,25 @@ test('startup denies HTTP failures and malformed GitHub grant readback',async()=
   assert.equal(mock.calls.filter(x=>x.request.method==='PATCH'||x.request.method==='PUT').length,0);
  }
 });
+
+test('caller cannot retag a scoped grant while token exchange is pending',async()=>{
+ const mock=mockGitHub();
+ let block=false,release;
+ const suspended=new Promise(resolve=>{release=resolve;});
+ const fetchImpl=async(url,options)=>{
+  if(block&&url.includes('/access_tokens'))await suspended;
+  return mock.fetchImpl(url,options);
+ };
+ const factory=await createVerifiedGitHubClient({env,fetchImpl,clock:()=>NOW});
+ const scope={operation:'identity.read',repositoryId:ULTRON_REPOSITORY_ID,
+  permissions:{metadata:'read'}};
+ block=true;
+ const pending=factory.getTokenForScope(scope);
+ scope.operation='repair.branch.create';
+ scope.permissions.contents='write';
+ release();
+ const grant=await pending;
+ assert.equal(grant.operation,'identity.read');
+ assert.deepEqual(grant.permissions,{metadata:'read'});
+ assert.equal(grant.repositoryId,ULTRON_REPOSITORY_ID);
+});
