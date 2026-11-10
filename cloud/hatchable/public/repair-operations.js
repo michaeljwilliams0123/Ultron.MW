@@ -52,15 +52,15 @@ function publicItem(raw){
   raw.phase==='reconcile-required'||
   !SHA.test(raw.headSha||'')||!Number.isSafeInteger(raw.attempt)||
   raw.attempt<0||raw.attempt>3||
-  !Number.isSafeInteger(raw.version)||raw.version<0)
+  !Number.isSafeInteger(raw.version)||raw.version<0||
+  !Number.isSafeInteger(raw.maxAttempts)||raw.maxAttempts<1||
+  raw.maxAttempts>3||raw.attempt>raw.maxAttempts)
   return null;
  const prUrl=raw.phase==='complete'&&
   typeof raw.prUrl==='string'&&PR_URL.test(raw.prUrl)?raw.prUrl:null;
  return Object.freeze({
   id:raw.id,phase:raw.phase,phaseLabel:formatRepairPhase(raw.phase),
-  attempt:raw.attempt,maxAttempts:
-   Number.isInteger(raw.maxAttempts)&&raw.maxAttempts>=1&&raw.maxAttempts<=3?
-    raw.maxAttempts:3,version:raw.version,
+  attempt:raw.attempt,maxAttempts:raw.maxAttempts,version:raw.version,
   headSha:raw.headSha,prUrl,
   updatedAt:typeof raw.updatedAt==='string'&&
    Number.isFinite(Date.parse(raw.updatedAt))?raw.updatedAt:null,
