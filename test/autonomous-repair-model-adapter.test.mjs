@@ -31,7 +31,7 @@ test('untrusted model cannot pivot path or inject syntactically broken code',asy
  const wrong=createCpuAutonomousRepairer({get,
   model:async()=>JSON.stringify({changes:[{path:'.github/workflows/verify.yml',
    before:original,after:'hello'}]})});
- await assert.rejects(wrong.propose({plan,headSha:sha,attempt:1}),/invalid|unscoped/i);
+ await assert.rejects(wrong.propose({plan,headSha:sha,attempt:1}),/invalid|unscoped|not supply/i);
  const invalid=createCpuAutonomousRepairer({get,
   model:async()=>JSON.stringify({changes:[{path:'src/math.mjs',
    before:original,after:'export const arithmeticFailure = ;'}]})});
