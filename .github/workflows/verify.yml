@@ -1,10 +1,17 @@
 name: Ultron core verification
+# A repair's unique dispatch marker is surfaced in the GitHub run display_title.
+run-name: ${{ inputs.repair_correlation && format('Ultron repair {0}', inputs.repair_correlation) || 'Ultron core verification' }}
 on:
   push:
     branches: [main]
   pull_request:
     types: [opened, reopened, synchronize, edited]
   workflow_dispatch:
+    inputs:
+      repair_correlation:
+        description: 'Optional bounded repair-attempt identifier (no secrets)'
+        required: false
+        type: string
 permissions:
   contents: read
 jobs:
