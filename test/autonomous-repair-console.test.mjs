@@ -117,3 +117,8 @@ test('operator reflects a task with one authorized attempt rather than the syste
  const snapshot=normalizeRepairStatus(record({maxAttempts:1,attempt:1,phase:'exhausted'}));
  assert.equal(snapshot.maxAttempts,1);
 });
+
+test('missing checkpoint attempt limit is not silently presented as three',()=>{
+ assert.throws(()=>normalizeRepairStatus(record({maxAttempts:undefined})),/invalid/);
+ assert.throws(()=>normalizeRepairStatus(record({maxAttempts:0})),/invalid/);
+});
