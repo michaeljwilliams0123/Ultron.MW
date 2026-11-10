@@ -31,7 +31,7 @@ export function judgeIdentityProof({role,posted,readback,marker}){
   authorIsExpectedBot:Boolean(want)&&readback?.user?.login===want.botLogin&&readback?.user?.type==='Bot',
   viaExpectedApp:Boolean(want)&&readback?.performed_via_github_app?.slug===want.appSlug&&
    readback?.performed_via_github_app?.id===want.appId,
-  onThisRepository:typeof readback?.html_url==='string'&&readback.html_url.includes('/'+REPO+'/')
+  onThisRepository:canonicalCommentUrl(readback?.html_url,posted?.id)
  };
  const authenticated=Object.values(checks).every(Boolean);
  return Object.freeze({schema:'ultron.council-identity-proof.v1',role,expected:want,checks,
@@ -39,6 +39,19 @@ export function judgeIdentityProof({role,posted,readback,marker}){
   evidence:authenticated?{commentId:readback.id,url:readback.html_url,
    authorLogin:readback.user.login,authorId:readback.user.id,appId:readback.performed_via_github_app.id,
    appSlug:readback.performed_via_github_app.slug,createdAt:readback.created_at}:null});
+}
+
+// A provider readback URL is evidence only when it identifies the exact
+// GitHub issue/PR comment at the canonical host and observed comment ID.
+function canonicalCommentUrl(value,id){
+ if(typeof value!=='string'||!Number.isSafeInteger(id)||id<1)return false;
+ let url;
+ try{url=new URL(value);}catch{return false;}
+ const prefix='/'+REPO+'/';
+ return url.protocol==='https:'&&url.hostname==='github.com'&&
+  !url.username&&!url.password&&!url.port&&!url.search&&
+  url.hash==='#issuecomment-'+id&&url.pathname.startsWith(prefix)&&
+  /^(?:issues|pull)\/[1-9][0-9]*$/.test(url.pathname.slice(prefix.length));
 }
 
 export async function proveIdentity({role,token,issueNumber,runUrl,sha,fetchImpl=fetch}){

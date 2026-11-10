@@ -143,6 +143,9 @@ test('role proof URLs reject foreign hosts, arbitrary paths and conflicting comm
   html_url:'https://github.com/'+REPO+'/issues/186#issuecomment-7'};
  const posted={id:7};
  assert.equal(judgeIdentityProof({role:'Builder',posted,readback:good,marker}).authenticated,true);
+ assert.equal(judgeIdentityProof({role:'Builder',posted,readback:{
+  ...good,html_url:'https://github.com/'+REPO+'/pull/360#issuecomment-7'
+ },marker}).authenticated,true);
  for(const badUrl of [
   'https://evil.example/'+REPO+'/issues/186#issuecomment-7',
   'https://github.com.attacker.example/'+REPO+'/issues/186#issuecomment-7',
