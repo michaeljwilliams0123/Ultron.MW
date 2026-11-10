@@ -58,7 +58,9 @@ function publicItem(raw){
   typeof raw.prUrl==='string'&&PR_URL.test(raw.prUrl)?raw.prUrl:null;
  return Object.freeze({
   id:raw.id,phase:raw.phase,phaseLabel:formatRepairPhase(raw.phase),
-  attempt:raw.attempt,maxAttempts:3,version:raw.version,
+  attempt:raw.attempt,maxAttempts:
+   Number.isInteger(raw.maxAttempts)&&raw.maxAttempts>=1&&raw.maxAttempts<=3?
+    raw.maxAttempts:3,version:raw.version,
   headSha:raw.headSha,prUrl,
   updatedAt:typeof raw.updatedAt==='string'&&
    Number.isFinite(Date.parse(raw.updatedAt))?raw.updatedAt:null,
@@ -113,7 +115,7 @@ export function renderRepairConsole({doc,root,model,filter='all'}){
   const header=el(doc,'div',undefined,'repair-item-heading');
   header.append(el(doc,'strong',item.id),el(doc,'span',item.phaseLabel,'repair-phase'));
   article.append(header);
-  const meta=el(doc,'p',`Attempt ${item.attempt} / ${item.maxAttempts} (system ceiling) · Checkpoint v${item.version} · Commit ${item.headSha.slice(0,10)}`,'repair-meta');
+  const meta=el(doc,'p',`Attempt ${item.attempt} / ${item.maxAttempts} · Checkpoint v${item.version} · Commit ${item.headSha.slice(0,10)}`,'repair-meta');
   article.append(meta);
   article.append(el(doc,'p',item.nextAction,'repair-next'));
   if(item.updatedAt)article.append(el(doc,'p','Checkpoint observed: '+item.updatedAt,'repair-meta'));
