@@ -116,3 +116,32 @@ test('Ultron and Destiny resolve to the same stable enrolled route', () => {
   assert.equal(resolveCodexAuthor('ultron').binding.status, 'enrolled');
   assert.equal(parseCodexObjective('/codex ultron-codex Inspect README.md').author.id, 'destiny-codex');
 });
+
+test('dedicated GitHub username calls the same executor without changing its stable identity', () => {
+  const name = 'michaeljwilliams0123ultron';
+  const author = resolveCodexAuthor(name, {requireBinding: true});
+  assert.equal(author, resolveCodexAuthor('ultron-codex'));
+  assert.equal(author.id, 'destiny-codex');
+  const objective = '/codex ' + name + ' Inspect README.md';
+  const task = buildCodexCall({issueNumber: 103, sourceSha: BASE, objective});
+  assert.equal(task.authorId, 'destiny-codex');
+  assert.equal(task.bindingFingerprint, author.binding.fingerprint);
+  assert.deepEqual(parseCodexCall(formatCodexCall(task)), task);
+  assert.equal(new URL(createCloudPrUrl(objective)).searchParams.get('body'), PR_MARKER + '\n' + objective);
+});
+
+test('explicit leading tags build the existing owner-confirmed call envelope', () => {
+  for (const alias of ['ultron-codex', 'destiny-codex', 'michaeljwilliams0123ultron']) {
+    const objective = '@' + alias + ' Inspect README.md';
+    const author = parseCodexObjective(objective).author;
+    assert.equal(author.id, 'destiny-codex');
+    const task = buildCodexCall({issueNumber: 104, sourceSha: BASE, objective});
+    assert.equal(task.authorId, author.id);
+    assert.deepEqual(parseCodexCall(formatCodexCall(task)), task);
+    assert.equal(new URL(createCloudPrUrl(objective)).searchParams.get('body'), PR_MARKER + '\n' + objective);
+  }
+  assert.equal(parseCodexObjective('Please ask @ultron-codex Inspect README.md'), null);
+  assert.equal(parseCodexObjective('@unregistered Inspect README.md'), null);
+  for (const text of ['@ultron-codex', '@ultron-codex  task', '@ultron-codex task\nmore', '@ultron-codex task '])
+    assert.throws(() => parseCodexObjective(text));
+});
