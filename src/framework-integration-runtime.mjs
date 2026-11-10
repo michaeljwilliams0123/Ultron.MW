@@ -76,14 +76,21 @@ export function createMcpHandler(config,{githubGet=publicGet}={}) {
       jsonrpc:'2.0',id,...(error?{error}:{result})};
     if(message?.jsonrpc!=='2.0'||typeof message.method!=='string')
       return reply(null,{code:-32600,message:'Invalid JSON-RPC request'});
-    const requested=message._meta?.[MCP_PROTOCOL];
-    const current=requested!==undefined;
+    // MCP 2026-07-28 places per-request metadata inside params._meta.
+    // Never downgrade a malformed modern envelope to the legacy handshake path.
+    const envelope=message?.params?._meta;
+    if(message?._meta!==undefined||(
+      envelope!==undefined&&(!envelope||typeof envelope!=='object'||
+      Array.isArray(envelope))))
+      return reply(null,{code:-32602,message:'Invalid params'});
+    const current=envelope!==undefined;
+    const requested=envelope?.[MCP_PROTOCOL];
     if(current&&typeof requested!=='string')
       return reply(null,{code:-32602,message:'Invalid params'});
     if(current&&requested!==MCP_VERSION)
       return reply(null,{code:-32022,message:'Unsupported protocol version',
         data:{supported:[MCP_VERSION,MCP_LEGACY],requested}});
-    const capabilities=message._meta?.[MCP_CAPABILITIES];
+    const capabilities=envelope?.[MCP_CAPABILITIES];
     if(current&&(!capabilities||typeof capabilities!=='object'||Array.isArray(capabilities)))
       return reply(null,{code:-32602,message:'Invalid params'});
     const serverMeta={['io.modelcontextprotocol/serverInfo']:{

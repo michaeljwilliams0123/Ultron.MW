@@ -1,6 +1,6 @@
 # Ultron Architecture Component & Retirement Register — 2026-11-09
 
-**Status:** proposed decision inventory under #346; evidence-based, **not** authorization to decommission. Classification is about the listed scope, not the entire codebase. Owner approval, tested replacement, runtime postcondition and rollback are mandatory before **RETIRE-CANDIDATE → RETIRED**.
+**Status:** adopted decision inventory under merged PR #347; individual retirement decisions remain **proposals**, **not** authorization to decommission. Classification is about the listed scope, not the entire codebase. Owner approval, tested replacement, runtime postcondition and rollback are mandatory before **RETIRE-CANDIDATE → RETIRED**.
 
 | Component / inspected path | Evidence / distinction | Decision | Follow-up owner / acceptance |
 | --- | --- | --- | --- |
