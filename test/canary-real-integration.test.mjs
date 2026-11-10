@@ -198,16 +198,36 @@ test('owner revocation stops before any GitHub mutation',async t=>{
 
 test('matching digest trailer on an unrelated-parent commit is not signed source lineage',async t=>{
   const h=await harness(t,{fault:'forged-parent'});
-  await assert.rejects(h.run(),/canary-remote-lineage-invalid/);
+  await assert.rejects(h.run(),/canary-(?:execution-receipt-unverified|remote-lineage-invalid)/);
 });
 
 
 test('remote tree mismatch with signed source cannot pass the independent lineage gate',async t=>{
   const h=await harness(t,{fault:'forged-tree'});
-  await assert.rejects(h.run(),/canary-remote-lineage-invalid/);
+  await assert.rejects(h.run(),/canary-(?:execution-receipt-unverified|remote-lineage-invalid)/);
 });
 
 test('branch movement after Task 4 verification cannot pass the conductor gate',async t=>{
   const h=await harness(t,{fault:'moved-head'});
   await assert.rejects(h.run(),/canary-remote-lineage-invalid/);
+});
+
+
+test('a forged-parent canary never commits a completed durable receipt',async t=>{
+  const h=await harness(t,{fault:'forged-parent'});
+  await assert.rejects(h.run(),/canary-(?:execution-receipt-unverified|remote-lineage-invalid)/);
+  const result=await h.db.query('SELECT state, receipt FROM github_idempotent_executions');
+  assert.equal(result.rows.length,1);
+  assert.equal(result.rows[0].state,'reconcile_required');
+  assert.equal(result.rows[0].receipt,null);
+  assert.equal(h.github.posts.length,2,'the write is never replayed');
+});
+
+test('a forged-tree canary never commits a completed durable receipt',async t=>{
+  const h=await harness(t,{fault:'forged-tree'});
+  await assert.rejects(h.run(),/canary-(?:execution-receipt-unverified|remote-lineage-invalid)/);
+  const result=await h.db.query('SELECT state, receipt FROM github_idempotent_executions');
+  assert.equal(result.rows.length,1);
+  assert.equal(result.rows[0].state,'reconcile_required');
+  assert.equal(result.rows[0].receipt,null);
 });
