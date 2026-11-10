@@ -23,15 +23,19 @@ test('CLI fails closed without an installed graph',async()=>{
   assert.match(out.stderr,/headless-graph-unavailable/);
 });
 
-test('CLI performs an ESM graph handoff and passes signed-response flags',async()=>{
-  const out=await withCli('export async function runAutonomyGraph(c){return {status:"succeeded",context:c};}', ' Verify source ');
+test('CLI invokes the real ESM boundary with bounded graph context',async()=>{
+  const stubGraph=String.raw`export async function runAutonomyGraph(c) {
+    if (c.objective !== 'Verify source' || c.requiresResponse !== true ||
+        c.enforceSignedApproval !== true ||
+        !/^canary\/autonomous-run-[0-9]+-[a-f0-9-]{36}$/.test(c.targetBranch) ||
+        !/^canary-exec-[0-9]+-[a-f0-9-]{36}$/.test(c.taskId)) {
+      throw Error('bad-context');
+    }
+    return {status:'succeeded',productionAccepted:true};
+  }`;
+  const out=await withCli(stubGraph,' Verify source ');
   assert.equal(out.status,0,out.stderr);
-  const result=JSON.parse(out.stdout);
-  assert.equal(result.context.objective,'Verify source');
-  assert.equal(result.context.requiresResponse,true);
-  assert.equal(result.context.enforceSignedApproval,true);
-  assert.match(result.context.targetBranch,/^canary\/autonomous-run-[0-9]+-[a-f0-9-]{36}$/);
-  assert.match(result.context.taskId,/^canary-exec-[0-9]+-[a-f0-9-]{36}$/);
+  assert.deepEqual(JSON.parse(out.stdout),{status:'succeeded',productionAccepted:true});
 });
 
 test('CLI does not mark a verified plan as completed execution',async()=>{
@@ -55,4 +59,29 @@ test('dispatcher rejects fake UUIDs before execution',async()=>{
   let graphCalls=0;
   await assert.rejects(dispatchHeadlessTask('Canary',{runGraph:()=>{graphCalls++},newId:()=> '12345678-not-a-uuid'}),/headless-dispatch-identity-invalid/);
   assert.equal(graphCalls,0);
+});
+
+test('CLI never serializes scoped token fields or arbitrary graph payloads',async()=>{
+  const out=await withCli('export async function runAutonomyGraph(){return {status:"succeeded",productionAccepted:true,token:"secret-fixture-token",internal:{privateKey:"private-test-value"}};}');
+  assert.equal(out.status,0);
+  assert.doesNotMatch(out.stdout,/secret-fixture-token|private-test-value/);
+  assert.deepEqual(JSON.parse(out.stdout),{status:'succeeded',productionAccepted:true});
+});
+
+test('CLI distinguishes missing graph from missing imported dependency',async()=>{
+  const out=await withCli('import "./missing-dependency.mjs"; export async function runAutonomyGraph(){return {status:"succeeded"};}');
+  assert.equal(out.status,1);
+  assert.equal(out.stderr.trim(),'headless-execution-failed');
+});
+
+test('CLI requires positive production acceptance before successful exit',async()=>{
+  const out=await withCli('export async function runAutonomyGraph(){return {status:"succeeded"};}');
+  assert.equal(out.status,1);
+  assert.deepEqual(JSON.parse(out.stdout),{status:'succeeded',productionAccepted:false});
+});
+
+test('CLI never echoes arbitrary errors from the graph',async()=>{
+  const out=await withCli('export async function runAutonomyGraph(){throw Error("headless-secret-example");}');
+  assert.equal(out.status,1);
+  assert.equal(out.stderr.trim(),'headless-execution-failed');
 });
