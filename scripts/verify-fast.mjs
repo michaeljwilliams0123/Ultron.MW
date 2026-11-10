@@ -16,6 +16,7 @@ const tests=['test/autonomous-repair-loop.test.mjs',
  'test/autonomous-repair-model-adapter.test.mjs',
  'test/autonomous-repair-console.test.mjs',
  'test/autonomous-repair-console-dom.test.mjs',
+ 'test/autonomous-repair-restart-faults.test.mjs',
  'test/autonomous-repair-canary.test.mjs'];
 function run(args,timeout){
  const result=spawnSync(process.execPath,args,{
