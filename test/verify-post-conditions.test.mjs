@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, chmodSync, statSync, rmSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, chmodSync, statSync, readdirSync, rmSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifyPostConditionsAndStoreReceipt } from '../scripts/verify-post-conditions.mjs';
@@ -180,4 +180,84 @@ test('Task 4 reconciled and recovered success statuses remain eligible for Task 
   assert.equal(audit.status,'REMOTE_READBACK_REQUIRED');
   assert.equal(audit.remoteReadbackVerified,false);
  }
+});
+
+test('reports uncertain executor outcomes as reconcile-required rather than terminal failures', async t => {
+  const cwd = sandbox(t);
+  for (const status of ['unknown', 'reconcile-required', 'pending']) {
+    const idempotencyKey = 'task-indeterminate-' + status.replaceAll(/[^a-z]/g, '-');
+    const result = await verifyPostConditionsAndStoreReceipt({ idempotencyKey, status, details: {} }, {cwd});
+    assert.equal(result.status, 'RECONCILE_REQUIRED');
+    assert.equal(result.remoteReadbackVerified, false);
+  }
+});
+
+test('refuses an audit destination that is a symlinked directory', async t => {
+  const cwd = sandbox(t);
+  mkdirSync(join(cwd, 'external'));
+  symlinkSync(join(cwd, 'external'), join(cwd, 'receipts'), 'dir');
+  await assert.rejects(
+    () => verifyPostConditionsAndStoreReceipt({ idempotencyKey: 'task-dirlink-1', status: 'success' }, {cwd}),
+    /audit directory/,
+  );
+  assert.deepEqual(readdirSync(join(cwd, 'external')), []);
+});
+
+test('bounds receipt size before creating filesystem state', async t => {
+  const cwd = sandbox(t);
+  await assert.rejects(
+    () => verifyPostConditionsAndStoreReceipt({
+      idempotencyKey: 'task-oversized-1', status: 'success', details: { data: 'x'.repeat(65_536) },
+    }, {cwd}),
+    /maximum size/,
+  );
+  assert.equal(existsSync(join(cwd, 'receipts')), false);
+});
+
+function runConcurrentAuditWorker(cwd, status, idempotencyKey) {
+  const moduleUrl = new URL('../scripts/verify-post-conditions.mjs', import.meta.url).href;
+  const script = [
+    'import {verifyPostConditionsAndStoreReceipt} from ' + JSON.stringify(moduleUrl) + ';',
+    'try {',
+    ' const record = await verifyPostConditionsAndStoreReceipt(' +
+      JSON.stringify({idempotencyKey,status,details:{source:'worker-test'}}) + ', {cwd:' + JSON.stringify(cwd) + '});',
+    ' process.stdout.write(JSON.stringify({digest:record.auditSha256, verifiedAt:record.verifiedAt}));',
+    '} catch(error) {',
+    ' process.stderr.write(String(error.message));',
+    ' process.exitCode=2;',
+    '}',
+  ].join('\n');
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+      cwd, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '', error = '';
+    child.stdout.setEncoding('utf8').on('data', part => { output += part; });
+    child.stderr.setEncoding('utf8').on('data', part => { error += part; });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, output, error }));
+  });
+}
+
+test('eight concurrent processes publish exactly one complete audit, with no temporary files left', async t => {
+  const cwd = sandbox(t);
+  const runs = await Promise.all(Array.from({ length: 8 }, () =>
+    runConcurrentAuditWorker(cwd, 'success', 'task-race-identical-1')));
+  assert.deepEqual(runs.map(r => r.code), Array(8).fill(0));
+  const outcomes = runs.map(r => JSON.parse(r.output));
+  assert.equal(new Set(outcomes.map(x => x.digest)).size, 1);
+  assert.equal(new Set(outcomes.map(x => x.verifiedAt)).size, 1);
+  assert.deepEqual(readdirSync(join(cwd, 'receipts')), ['task-race-identical-1.json']);
+  assert.equal(JSON.parse(readFileSync(join(cwd, 'receipts/task-race-identical-1.json'),'utf8')).auditSha256, outcomes[0].digest);
+});
+
+test('competing concurrent writers cannot replace one another’s audit for a shared key', async t => {
+  const cwd = sandbox(t);
+  const results = await Promise.all([
+    runConcurrentAuditWorker(cwd, 'success', 'task-race-conflict-1'),
+    runConcurrentAuditWorker(cwd, 'failed', 'task-race-conflict-1'),
+  ]);
+  assert.deepEqual(results.map(x => x.code).sort(), [0, 2]);
+  assert.match(results.find(x => x.code === 2).error, /conflicting audit receipt/);
+  assert.deepEqual(readdirSync(join(cwd, 'receipts')), ['task-race-conflict-1.json']);
 });
