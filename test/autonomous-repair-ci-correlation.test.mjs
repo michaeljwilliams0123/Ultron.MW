@@ -82,3 +82,10 @@ test('workflow actually exposes correlation input and run-name for GitHub API di
  assert.match(yaml,/run-name:.*repair_correlation/);
  assert.match(yaml,/workflow_dispatch:\s+inputs:\s+repair_correlation:/);
 });
+
+
+test('ordinary PR/push CI retains descriptive run titles outside repair dispatches',()=>{
+ const yaml=readFileSync(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8');
+ assert.match(yaml,/github\.event\.pull_request\.title/);
+ assert.match(yaml,/github\.event\.head_commit\.message/);
+});
