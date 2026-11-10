@@ -1,6 +1,6 @@
 # Ultron MW — Architecture Governance Decision (AGD-2026-11-09)
 
-**Status:** proposed in issue #346; becomes the repository's architecture governance baseline after the governance PR merges. It is a policy and review contract, **not** a claim of runtime admission enforcement or production deployment.
+**Status:** adopted on `main` in squash-merged PR #347 (`57d5107ec4738101e4999dbb685a30432f8f37d4`), closing issue #346. This is a repository policy and review contract, **not** a claim of runtime admission enforcement or production deployment. Specific implementation and live acceptance remain governed by linked open issues.
 
 **Canonical name:** Ultron MW Cloud Brain (never "Ultro"). **Source and CI:** `michaeljwilliams0123/Ultron.MW`. **Owner-facing UI and cloud control:** `https://ultron-mw-cloud.hatchable.site`, project `proj_A6GCXRSKizko`. **Durable execution authority:** Hatchable PostgreSQL. GitHub owns branches, PRs, tests, exact-head release evidence. GitHub Pages remains an explicit fallback until #170 proves retirement parity. Mahoraga, GitLab, Codex and third-party services are external peers, not implied co-owners.
 
@@ -19,6 +19,8 @@
 - Older clients are supported through a **measured compatibility route**, subject to live usage inventory, version negotiation, tests, and owner-approved removal. `src/framework-integration-runtime.mjs` already recognizes modern `2026-07-28` and legacy `2025-06-18`; do **not** delete its old handshake branch before clients and tests have migrated. Streamable HTTP may still return request-scoped SSE: it is **legacy HTTP+SSE transport** that is deprecated. Local `stdio` remains a valid transport for local-only MCP; a remote-only policy must not remove it.
 - New tool wrappers must declare schema, identity, resource fence, effects, cost, error modes, limits and readback. Native Hatchable MCP transport must be independently probed; `[mcp] enabled = true` alone does not prove remote-version compatibility.
 - A2A is an **optional interoperability boundary for independently deployed agents** (e.g., Mahoraga or authorized external peer), not a mandatory replacement for the internal Council or a means to share credentials. Require authenticated AgentCards, version/capability negotiation, bounded delegate authority, correlation IDs, idempotency, timeout/recovery and independent peer evidence. See #190.
+
+See the [MCP source-versus-live conformance matrix](MCP-CONFORMANCE-MATRIX.md) for observed and unresolved compatibility evidence under #348.
 
 **Primary references:**
 - https://blog.modelcontextprotocol.io/posts/2026-07-28/
@@ -57,3 +59,9 @@ A proposed architecture change is **not** runtime authority. Record a linked iss
 **Operational readiness states** must be reported separately: `proposed`, `sandbox`, `authorized`, `canary`, `active`, `revoked`, plus `blocked` and `reconcile-required` for outcomes. Never infer `active` from present config, an advisory Council vote, a PR merge or a one-off mocked test.
 
 **Source provenance:** The November 9 user-provided Gemini architectural blueprint motivated this governance policy. Its unrelated claim about a developer's astrophysics profile is not supported by the connected repository and is excluded. This document reconciles that *proposal* with observable Ultron code and primary MCP/A2A specifications.
+
+## 7. Owner-authorized admin and browser implementation boundary (2026-11-09)
+
+The additional [owner-admin/browser execution governance addendum](OWNER-ADMIN-BROWSER-EXECUTION.md) translates the latest user-supplied administrative MCP/Playwright blueprint into the existing Hatchable/PostgreSQL authority, GitHub worker, owner P-256 grant and browser adapters. It identifies shell-injection hazards in proposed workflow inputs, insufficient signature-presence tests, unsafe global cookie restoration, regex-only "taint" claims, unverified `_meta` authorization, and DOM-only completion claims. It is **not** a second executor or a production activation.
+
+Adopt the existing #169/#187/#192/#204/#225 contracts, require provider-side independent write readback and preserve #351's protected workflow failure gate. No mass code replacement, permissions widening, new secret, second required human approval, or paid provider activation is justified by example code alone.
