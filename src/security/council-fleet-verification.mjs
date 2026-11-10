@@ -4,8 +4,11 @@
  * read secret files or accept caller-supplied authority/permission profiles.
  */
 import {COUNCIL_ROLES} from '../council-publication.mjs';
-import {ULTRON_REPOSITORY,ULTRON_REPOSITORY_ID,ULTRON_GITHUB_PRINCIPAL}
+import {ULTRON_REPOSITORY_ID,ULTRON_GITHUB_PRINCIPAL}
  from '../github-principal-policy.mjs';
+// Repository was transferred to an organization; the numeric ID is unchanged.
+// This probe accepts only the currently verified canonical full name.
+const PROOF_REPOSITORY='Ultron-MW/Ultron.MW';
 const IDENTIFIER=/^[1-9][0-9]{0,15}$/;
 const permissions=Object.freeze({metadata:'read'});
 export function normalizeAppPrivateKey(raw){
@@ -14,7 +17,7 @@ export function normalizeAppPrivateKey(raw){
 }
 function summary(status,reason,observedAt,extra={}){
  return Object.freeze({schema:'ultron.council-principal-probe.v1',status,reason,
-  observedAt,repository:ULTRON_REPOSITORY,personasDefined:COUNCIL_ROLES.length,
+  observedAt,repository:PROOF_REPOSITORY,personasDefined:COUNCIL_ROLES.length,
   verifiedPrincipalCount:status==='verified'?1:0,
   verifiedIndependentRoleCount:0,
   roleBindings:Object.freeze(COUNCIL_ROLES.map(roleId=>Object.freeze({
@@ -79,7 +82,7 @@ export async function verifyCouncilFleet({env={},mintScopedToken,request=globalT
  }
  const valid=data?.total_count===1&&Array.isArray(data.repositories)&&
   data.repositories.length===1&&data.repositories[0]?.id===ULTRON_REPOSITORY_ID&&
-  data.repositories[0]?.full_name===ULTRON_REPOSITORY;
+  data.repositories[0]?.full_name===PROOF_REPOSITORY;
  if(!valid)return summary('held','github-repository-scope-invalid',observedAt);
  return summary('verified','scoped-installation-readback',observedAt,{
   principal:ULTRON_GITHUB_PRINCIPAL,

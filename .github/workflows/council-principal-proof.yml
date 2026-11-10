@@ -6,7 +6,7 @@ permissions:
 jobs:
   verify-principal:
     if: >-
-      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.repository == 'Ultron-MW/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.triggering_actor == 'michaeljwilliams0123' &&
       github.ref == 'refs/heads/main'
@@ -21,11 +21,31 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+      - name: Discover Ultron Coordinator installation
+        id: coordinator
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.ULTRON_BUILDER_CLIENT_ID }}
+          private-key: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+          permission-metadata: read
+      - name: Assert authenticated Coordinator app identity
+        env:
+          ACTUAL_APP_SLUG: ${{ steps.coordinator.outputs.app-slug }}
+          EXPECTED_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
+        run: |
+          if [ "$ACTUAL_APP_SLUG" != "ultron-coordinator" ]; then
+            echo "Coordinator app slug mismatch"
+            exit 1
+          fi
+          if [ "$EXPECTED_APP_ID" != "5633654" ]; then
+            echo "Coordinator numeric App ID mismatch"
+            exit 1
+          fi
       - name: Verify one installed App principal and seven logical role labels
         env:
           ULTRON_GITHUB_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
-          ULTRON_GITHUB_INSTALLATION_ID: ${{ vars.ULTRON_GITHUB_INSTALLATION_ID }}
-          ULTRON_GITHUB_APP_PRIVATE_KEY: ${{ secrets.ULTRON_GITHUB_APP_PRIVATE_KEY }}
+          ULTRON_GITHUB_INSTALLATION_ID: ${{ steps.coordinator.outputs.installation-id }}
+          ULTRON_GITHUB_APP_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
         run: node scripts/verify-council-fleet.mjs
       - name: Retain sanitized proof or held reason
         if: always()
