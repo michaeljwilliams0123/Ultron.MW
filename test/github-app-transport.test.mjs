@@ -150,3 +150,38 @@ test('validated repository settings body stays byte-identical across asynchronou
  await transport.request('repository.settings.update','PATCH',ROOT,payload);
  assert.deepEqual(sent,['{"allow_squash_merge":true}']);
 });
+
+
+test('identity.read admits only exact repository GET with metadata-only credentials',async()=>{
+ const calls=[],scopes=[];
+ const transport=createUnifiedGitHubTransport({
+  expectedInstallationId:9123,
+  clock:()=> '2026-10-31T20:00:00Z',
+  getToken:async request=>{
+   scopes.push(request);
+   return token('identity.read');
+  },
+  fetchImpl:async(url,init)=>{
+   calls.push({url,init});
+   return {ok:true,status:200,json:async()=>({
+    id:ULTRON_REPOSITORY_ID,full_name:'michaeljwilliams0123/Ultron.MW'
+   })};
+  },
+ });
+ const repo=await transport.request('identity.read','GET',ROOT);
+ assert.equal(repo.id,ULTRON_REPOSITORY_ID);
+ assert.deepEqual(scopes,[{
+  operation:'identity.read',repositoryId:ULTRON_REPOSITORY_ID,
+  permissions:{metadata:'read'}
+ }]);
+ assert.equal(calls[0].url,'https://api.github.com'+ROOT);
+ assert.equal(calls[0].init.method,'GET');
+ for(const [method,path] of [
+  ['PATCH',ROOT],['POST',ROOT],['GET',ROOT+'/actions/runs/2'],
+  ['GET','/repos/other/repo'],['GET',ROOT+'?ignored=true']
+ ]){
+  await assert.rejects(transport.request('identity.read',method,path),/denied/i);
+ }
+ assert.equal(calls.length,1);
+ assert.equal(scopes.length,1);
+});

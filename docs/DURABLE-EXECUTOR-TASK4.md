@@ -1,0 +1,180 @@
+# Task 4 — Durable idempotent GitHub write executor
+
+Scope: `michaeljwilliams0123/Ultron.MW` only. This source-only implementation
+adds `src/engine/durable-executor.mjs`, `test/durable-executor.test.mjs` and
+`cloud/hatchable/migrations/0039_github_idempotent_executions.sql`.
+
+## Trust boundary / input contract
+
+`executeIdempotentGitHubWrite(taskContext, token, persona, gitOperation, services)`
+expects task metadata with stable `taskId`, `targetBranch` (`canary/`, `ultron/`
+or `feature/`), and a **SHA-256 `operationDigest`** bound by the Task 2
+cryptographic interceptor to the authorized request. `persona.role` must
+identify one of seven Council roles. Task 4 **does not sign, mint, or verify
+owner grants on its own**: `services.authorization.verify(intent)` must be a
+trusted server-side adapter for the Task 2 signature + nonce/revocation gate,
+returning `{ verified, operationDigest, repository, targetBranch, personaRole,
+expiresAt }`. It must be repeatable without consuming a one-time grant twice,
+and must reject expired/revoked grants; the executor rechecks immediately before
+dispatch. Never forward caller-provided `authorized:true` as the verifier.
+The executor constructs the immutable persona attribution from the
+verified Council role; caller-provided `authorName` and extra persona fields
+are not forwarded to the mutation.
+
+`services.db` is a PostgreSQL client implementing `query(sql, params)`. Use the
+existing Hatchable PostgreSQL connection and apply migration 0039 before
+activating the executor; do not create a second source of authority. The
+optional `services.remote.inspect({token,intent})` is ONLY for a trusted
+server-side GitHub readback adapter and tests. By default the module uses
+GitHub REST with the supplied short-lived token; it does not persist or log
+that token. `gitOperation` must be a pre-admitted, bounded GitHub mutation,
+not arbitrary shell or general-purpose admin access.
+
+### Integration illustration
+
+```js
+const receipt = await executeIdempotentGitHubWrite(
+  {taskId, targetBranch, operationDigest, repository:'michaeljwilliams0123/Ultron.MW'},
+  scopedToken,
+  {role:'steward', authorName:'Ultron Steward'},
+  async ({token, targetBranch, operationMarker}) => {
+    // Perform the already-authorized branch/commit mutation through GitHub.
+    // Include `operationMarker` as an exact line in the target HEAD commit
+    // message; do not treat the GitHub API response as final verification.
+  },
+  {db, authorization:{verify:verifiedGrantForIntent}}
+);
+// Deliver only a `success`, `reconciled_success`, or `recovered_success`
+// receipt with remoteVerified=true to Task 5 as a verified branch effect.
+```
+
+## Crash / replay state machine
+
+`reserved → in_flight → completed` on verified HEAD readback and confirmed
+PostgreSQL receipt SELECT. `reserved/in_flight → reconcile_required` on unknown
+remote outcome or nonmatching branch. `reconcile_required → completed` only on a
+subsequent positively matched remote HEAD observation. Terminal completed
+records are immutable. Both `(repository,target_branch)` and the idempotency
+key are unique; a changed operation digest, persona, or repository with the
+same key is a hard conflict.
+
+A branch existing by itself is **not** success. The exact HEAD commit must have
+`Ultron-Operation-Digest: <operationDigest>` as its own line. If the branch
+exists with a different marker, hold for reconciliation.
+The GitHub reference is fetched again after the commit object to reject a
+branch that moved during readback; even this is point-in-time verification,
+not a claim that the branch can never change again. A 401/403, rate
+limit, 5xx, or network error is *not* proof that the branch is absent. A
+worker that loses an API acknowledgment does not reissue the mutation: it
+rechecks remote state and durable state. A crashed worker's *still-reserved*
+intent is safe for another authorized worker to resume: an atomic PostgreSQL
+`reserved → in_flight` compare-and-set elects exactly one dispatcher. An
+`in_flight`/uncertain attempt is **not** replayed, even when GitHub says the
+branch is absent. A duplicate observer does not mutate an active `in_flight`
+record, and an INSERT acknowledgment loss is reconciled via independent SELECT.
+Every GitHub readback request has a 10-second abort deadline.
+If the dispatch CAS acknowledgement is lost, Task 4 returns a non-success
+reconciliation outcome and independently rereads the record; it never assumes
+CAS ownership or invokes the provider write. An expiring/revoked approval is
+rechecked **after** the CAS and immediately before dispatch. Unknown in-flight
+outcomes remain fenced rather than blindly replayed.
+
+Receipt status proves **only the authorized branch/commit effect**, not PR
+creation, CI completion, independent review, a merge, or deployment. Those
+operations need their own independently verified Task 5 evidence and gates.
+
+## Verification
+
+Run `node --test test/durable-executor.test.mjs`. Fast tests use a deterministic
+in-memory PostgreSQL-shaped adapter. When `@electric-sql/pglite` is installed,
+additional tests exercise the real migration, unique claims, durable SQL,
+and terminal immutability. Full repository CI is required before merge.
+
+## Final acceptance criteria — Task 4 (2026-11-10)
+
+**Decision boundary:** The checkmarks below mean **Task 4 source/PR acceptance**,
+not live Ultron cloud operation, release, or owner squash-merge approval. The
+human owner reviews and merges; no automated merger/deployer is authorized by
+this checklist. Each checked criterion is evidenced by source, focused tests,
+and GitHub's exact-head CI; green CI does not substitute for live App proof.
+
+### Source-level criteria — satisfied
+
+- [x] **AC-01 — Scoped contract.** Export
+  `executeIdempotentGitHubWrite(taskContext, token, persona, gitOperation, services)`;
+  validate task ID, SHA-256 operation digest, target branch and repository
+  `michaeljwilliams0123/Ultron.MW`. Reject malformed, altered or accessor-backed
+  context before mutation.
+- [x] **AC-02 — Trusted authorization boundary.** Require a trusted, repeatable
+  Task 2 `services.authorization.verify(intent)` binding exact repository,
+  branch, operation digest, Council role and nonexpired approval; recheck after
+  the PostgreSQL dispatch CAS. The executor does **not** issue signatures,
+  approve user requests or replace nonce/revocation enforcement.
+- [x] **AC-03 — Persistent uniqueness and immutability.** Migration `0039`
+  provides unique idempotency and per-branch constraints, state transition
+  guards and immutable terminal receipts. Receipt JSON must pass a strict SQL
+  `CHECK (... IS TRUE)` and include exact digest, repository, branch, role and
+  verified commit SHA.
+- [x] **AC-04 — Single dispatch.** A PostgreSQL `reserved -> in_flight`
+  compare-and-set elects at most one dispatcher, including an existing
+  `reserved` task after a pre-dispatch worker crash. Duplicate workers cannot
+  repeat the mutation.
+- [x] **AC-05 — Fail-closed unknown effects.** A lost INSERT acknowledgment is
+  reconciled by independent SELECT; unknown CAS acknowledgments and existing
+  `in_flight` attempts do **not** authorize another GitHub write. Timeout,
+  transport failures, conflict and absent postconditions never become success.
+- [x] **AC-06 — Independently observed effect.** GitHub HEAD must resolve to a
+  real commit whose message includes the exact operation-digest trailer; reread
+  the branch reference after the commit to detect movement. An existing branch
+  alone is insufficient. Provider readbacks have a 10-second request deadline.
+- [x] **AC-07 — Durable receipt and attribution.** Return a terminal success,
+  recovered-success or reconciled-success receipt only after independently
+  verified GitHub state and committed PostgreSQL receipt readback. Freeze
+  persona author name/email from the verified Council role, never caller
+  impersonation fields. Tokens are never persisted in the receipt.
+- [x] **AC-08 — Regression evidence.** Node tests cover idempotency, concurrency,
+  branch collisions, missing/changed markers, moved HEAD, 403/readback failures,
+  lost GitHub/SQL acknowledgments, crash recovery, expired grants and persona
+  spoofing. Four PGlite cases exercise the real migration and concurrency.
+- [x] **AC-09 — Exact-source verification.** On source head
+  `02a44f70ae76571a7221eb8cbf5e8029d4b7fcc6`, [core CI
+  #42763733941](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42763733941)
+  completed successfully: **1,766 passed, 0 failed, 18 skipped** in the main
+  Node suite; **40/40** PostgreSQL acceptance tests passed; all four Task 4
+  PGlite cases passed. [Council
+  #42763470596](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42763470596)
+  and [Reef
+  #42763470435](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42763470435)
+  passed. A later documentation-only commit requires its own new exact-head
+  check before the owner's merge decision.
+
+### Separate production/system criteria — intentionally not yet satisfied
+
+- [ ] **LIVE-01 — Installed identity and authority:** Verify a real Task 1
+  repository-scoped GitHub App installation token, Task 2 signer/nonce/revocation,
+  and the owner's authenticated consent at execution time.
+- [ ] **LIVE-02 — Cloud persistence:** Apply migration `0039` to the actual
+  Hatchable PostgreSQL environment; independently reread schema and receipts.
+  A PGlite migration test is not a production migration.
+- [ ] **LIVE-03 — End-to-end execution:** Wire Task 3 prepare-only dispatch,
+  Task 4 and Task 5 into the trusted Hatchable execution composition root;
+  exercise an owner-authorized real branch canary and verify exact GitHub SHA,
+  effect, durable ledger, and audit, including crash/lost-ACK recovery.
+- [ ] **LIVE-04 — Release proof:** Verify the relevant exact-head checks,
+  protected merge policy, independent postconditions and release/deployment
+  state on the real production system; do not equate a local diff, test double,
+  branch existence, or deterministic Council vote with release acceptance.
+
+### Dependency order and handoff
+
+Task 1 [#361](https://github.com/michaeljwilliams0123/Ultron.MW/pull/361)
+→ Task 2 [#362](https://github.com/michaeljwilliams0123/Ultron.MW/pull/362)
+→ Task 3 [#363](https://github.com/michaeljwilliams0123/Ultron.MW/pull/363)
+→ Task 4 [#365](https://github.com/michaeljwilliams0123/Ultron.MW/pull/365)
+→ Task 5 [#364](https://github.com/michaeljwilliams0123/Ultron.MW/pull/364)
+→ Conductor [#366](https://github.com/michaeljwilliams0123/Ultron.MW/pull/366).
+Combined synthetic-provider regression is recorded separately in
+[#368](https://github.com/michaeljwilliams0123/Ultron.MW/pull/368) and is
+**not** a production credential, signer or cloud acceptance receipt. Do not
+merge duplicate aggregate test branches merely to claim integration. Preserve
+zero paid-provider usage and do not auto-merge, change secrets or deploy.
