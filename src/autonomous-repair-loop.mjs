@@ -235,6 +235,10 @@ export async function runAutonomousRepair({plan,ledger,repairer,patcher,
       !await isAuthorized(authorize,plan,'repair.pr.create',row))
     return output('held',row,'publication-not-authorized');
    const claimed=await stepLedger(plan,ledger,row,'publication-dispatched');
+   // Revocation between the first check and durable intent must stop POST.
+   if(now()>=Date.parse(plan.expiresAt)||
+      !await isAuthorized(authorize,plan,'repair.pr.create',claimed))
+    return output('reconcile-required',claimed,'reserved-publication-held');
    try{await publisher.start({plan,headSha:claimed.headSha});}
    catch{/* Unknown POST result is only reconciled by readback. */}
    row=claimed;
