@@ -16,7 +16,7 @@ on:
         type: string
         required: true
       expected_sha:
-        description: Exact 40-hex current main commit
+        description: Original 40-hex base SHA of the isolated canary branch
         type: string
         required: true
       marker_run_id:

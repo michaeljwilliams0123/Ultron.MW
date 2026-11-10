@@ -30,3 +30,7 @@ Passing read-only `inspect` or `verify` proves the specified GitHub provider-sid
 ### Tests
 
 Run `node --test test/owner-canary-matrix.test.mjs` for focused cases and `node scripts/verify.mjs` for the complete repository verification. The suite covers owner/actor spoofing, target injection, stop mode, branch races, missing marker content, altered blob content, extra file diffs, lost acknowledgment, replay denial, and read-only independent verification.
+
+### Source longevity across workflow merges
+
+A legitimate canary branch normally remains pinned to the commit that existed when it was first created, even after subsequent PR merges advance `main`. The matrix compares the original full SHA to the exact current `github.sha` using GitHub's read-only compare endpoint, accepting only verified `ahead` ancestry with `behind_by=0`. The branch must still be exactly on its supplied original base (for `inspect` or before `marker`). Diverged, missing or stale current main histories are held. The marker stage only advances the old isolated branch; it never updates current main.
