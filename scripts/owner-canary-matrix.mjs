@@ -63,7 +63,7 @@ export async function runOwnerCanaryMatrix({
  const verified=(reason,extra)=>makeReceipt(args,'verified',reason,extra);
  const run=String(targetRunId),marker=String(markerRunId);
  if(!MODES.has(mode)||!validEnv(env)||!RUN.test(run)||
-   !SHA.test(expectedSha)||expectedSha!==env.GITHUB_SHA)
+   !SHA.test(expectedSha))
   return held('owner-exact-source-and-target-required');
  if(mode==='marker'&&
   (approvalPhrase!==APPROVAL||marker!==env.GITHUB_RUN_ID||
@@ -102,8 +102,17 @@ export async function runOwnerCanaryMatrix({
   repo.body?.full_name!==REPO||repo.body?.default_branch!=='main')
   return held('canonical-repository-id-not-verified');
  const main=await get('/git/ref/heads/main');
- if(main.status!==200||!sameRef(main.body,'main',expectedSha))
-  return held('exact-main-source-sha-not-verified');
+ if(main.status!==200||!sameRef(main.body,'main',env.GITHUB_SHA))
+  return held('exact-current-main-head-not-verified');
+ // Existing canaries stay pinned to their original clean commit when
+ // main advances. Do not accept unrelated/divergent ancestors or redirects.
+ if(expectedSha!==env.GITHUB_SHA){
+  const ancestry=await get('/compare/'+expectedSha+'...'+env.GITHUB_SHA);
+  if(ancestry.status!==200||ancestry.body?.status!=='ahead'||
+   !Number.isSafeInteger(ancestry.body.ahead_by)||
+   ancestry.body.ahead_by<1||ancestry.body.behind_by!==0)
+   return held('historical-canary-source-not-verified-main-ancestor');
+ }
  const branchRef=await get('/git/ref/heads/'+branch);
  if(branchRef.status!==200||!SHA.test(branchRef.body?.object?.sha||'')||
    branchRef.body?.object?.type!=='commit'||
@@ -148,7 +157,7 @@ export async function runOwnerCanaryMatrix({
   const latestRef=await get('/git/ref/heads/'+branch);
   const latestMain=await get('/git/ref/heads/main');
   if(latestRef.status!==200||!refMatches(latestRef.body,commitSha)||
-   latestMain.status!==200||!sameRef(latestMain.body,'main',expectedSha))
+   latestMain.status!==200||!sameRef(latestMain.body,'main',env.GITHUB_SHA))
    return null;
   return {commitSha,markerPath,markerSha256:digest(text),
    receiptDigest:digest(JSON.stringify([
