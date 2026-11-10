@@ -171,11 +171,11 @@ test('owner-only role proof blocks reruns triggered by bot or another GitHub use
 test('one-app role proof does not confuse attribution with independent approval or accept a changed repository ID',()=>{
  const workflow=readFileSync(new URL('../.github/workflows/council-identity-proof.yml',
   import.meta.url),'utf8');
- assert.match(workflow,/github\\.repository_id == 1424939667/);
- assert.match(workflow,/github\\.repository_owner_id == 308995719/);
- assert.match(workflow,/github\\.actor == 'michaeljwilliams0123'/);
- assert.match(workflow,/github\\.triggering_actor == 'michaeljwilliams0123'/);
- assert.match(workflow,/secrets\\.ULTRON_BUILDER_PRIVATE_KEY/);
- assert.doesNotMatch(workflow,/secrets\\[format\\('ULTRON_/);
+ assert.match(workflow,/github\.repository_id == 1424939667/);
+ assert.match(workflow,/github\.repository_owner_id == 308995719/);
+ assert.match(workflow,/github\.actor == 'michaeljwilliams0123'/);
+ assert.match(workflow,/github\.triggering_actor == 'michaeljwilliams0123'/);
+ assert.match(workflow,/secrets\.ULTRON_BUILDER_PRIVATE_KEY/);
+ assert.doesNotMatch(workflow,/secrets\[format\('ULTRON_/);
  assert.doesNotMatch(workflow,/skip-token-revoke: true|pull_request_target:|permission-pull-requests: write/);
 });
