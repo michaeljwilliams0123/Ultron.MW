@@ -89,3 +89,20 @@ test('ordinary PR/push CI retains descriptive run titles outside repair dispatch
  assert.match(yaml,/github\.event\.pull_request\.title/);
  assert.match(yaml,/github\.event\.head_commit\.message/);
 });
+
+
+test('GitHub run-name replaces the REST name field without invalidating a correlated run',async()=>{
+ const title='Ultron repair '+correlation;
+ const actualApiShape={...run(201,title),name:title,workflow_id:388875616};
+ const p=provider([actualApiShape]);
+ const found=await observeVerifyRun({get:p.get,branch,headSha:sha,correlation});
+ assert.equal(found.state,'completed');
+ assert.equal(found.runId,201);
+});
+test('a deceptive workflow name cannot override mismatched workflow path',async()=>{
+ const title='Ultron repair '+correlation;
+ const spoof={...run(202,title),name:title,path:'.github/workflows/untrusted.yml'};
+ const p=provider([spoof]);
+ const found=await observeVerifyRun({get:p.get,branch,headSha:sha,correlation});
+ assert.equal(found.state,'pending');
+});
