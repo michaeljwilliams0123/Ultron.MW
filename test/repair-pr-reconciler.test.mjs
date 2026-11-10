@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runRepairPR, createMemoryRepairLedger } from '../src/repair-pr-reconciler.mjs';
 
-const REPO='michaeljwilliams0123/Ultron.MW';
+const REPO='Ultron-MW/Ultron.MW';
 const SHA='a'.repeat(40), PREPARED='b'.repeat(40);
 const NOW='2026-10-31T17:00:00Z';
 const plan=()=>({
