@@ -185,3 +185,44 @@ test('independent read-only verification succeeds after a marker write and rejec
  const document=markerDocument({targetRunId:TARGET,markerRunId:RUN,sourceSha:BASE});
  assert.equal(h.read().document,document);
 });
+
+test('historical original canary source stays admissible only when current main descends from it',async()=>{
+ const currentMain='9'.repeat(40);
+ const h=mock({mainSha:currentMain});
+ const getCompare=async(url,opts)=>{
+  if(url===ROOT+'/compare/'+BASE+'...'+currentMain&&opts.method==='GET'){
+   return response(200,{status:'ahead',ahead_by:1,behind_by:0});
+  }
+  return h.request(url,opts);
+ };
+ const envWithAdvance={...env,GITHUB_SHA:currentMain};
+ const result=await runOwnerCanaryMatrix({
+  ...args(h,'inspect'),env:envWithAdvance,request:getCompare
+ });
+ assert.equal(result.status,'verified');
+ assert.equal(result.headSha,BASE);
+ assert.equal(result.remoteReadbackVerified,true);
+ assert.equal(h.calls.every(x=>x.method==='GET'),true);
+ const divergent=await runOwnerCanaryMatrix({
+  ...args(h,'inspect'),env:envWithAdvance,
+  request:(url,opts)=>url===ROOT+'/compare/'+BASE+'...'+currentMain?
+   Promise.resolve(response(200,{status:'diverged',ahead_by:1,behind_by:1})):
+   h.request(url,opts)
+ });
+ assert.equal(divergent.status,'held');
+ assert.equal(divergent.remoteReadbackVerified,false);
+});
+
+test('marker stage uses original clean branch ancestor, never rewrites current main',async()=>{
+ const currentMain='9'.repeat(40);
+ const h=mock({mainSha:currentMain});
+ const wrap=(url,opts)=>url===ROOT+'/compare/'+BASE+'...'+currentMain?
+   Promise.resolve(response(200,{status:'ahead',ahead_by:2,behind_by:0})):
+   h.request(url,opts);
+ const result=await runOwnerCanaryMatrix({...args(h,'marker'),
+  env:{...env,GITHUB_SHA:currentMain},request:wrap});
+ assert.equal(result.status,'verified');
+ assert.equal(result.remoteReadbackVerified,true);
+ assert.equal(result.externalWritePerformed,true);
+ assert.equal(result.sourceSha,BASE);
+});
