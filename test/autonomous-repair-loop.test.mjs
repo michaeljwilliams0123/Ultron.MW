@@ -259,3 +259,15 @@ test('revocation after PR intent reservation never calls the PR write adapter',a
  assert.equal(resumed.status,'reconcile-required');
  assert.equal(f.counts.startPublish,0);
 });
+
+
+test('plan rejects files the exact-context GitHub patch engine cannot write',()=>{
+ for(const unsupported of [
+  'src/typescript-unsupported.ts','src/.env.mjs','src/internal/.hidden.js',
+  'test/fixture.ts','src/../test/leak.js'
+ ]){
+  assert.throws(()=>plan({allowedPaths:[unsupported]}),/repair-plan/,
+   unsupported+' should fail before reserving a durable mutation');
+ }
+ assert.doesNotThrow(()=>plan({allowedPaths:['src/valid.mjs','test/valid.json']}));
+});
