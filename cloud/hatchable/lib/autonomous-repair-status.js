@@ -27,6 +27,9 @@ function safeRecord(record){
   !ID.test(record.id||'')||!DIGEST.test(record.fingerprint||'')||
   !Object.hasOwn(PHASES,record.phase)||
   !Number.isSafeInteger(record.attempt)||record.attempt<0||record.attempt>3||
+  (record.maxAttempts!==undefined&&
+   (!Number.isSafeInteger(record.maxAttempts)||record.maxAttempts<1||
+    record.maxAttempts>3||record.attempt>record.maxAttempts))||
   !Number.isSafeInteger(record.version)||record.version<0||
   !SHA.test(record.headSha||'')||
   (record.phase==='complete'&&(!Number.isSafeInteger(record.prNumber)||record.prNumber<1))||
@@ -38,7 +41,7 @@ function safeRecord(record){
 export function normalizeRepairStatus(record,updatedAt=null){
  const r=safeRecord(record),state=PHASES[r.phase];
  return Object.freeze({
-  id:r.id,phase:r.phase,attempt:r.attempt,maxAttempts:3,
+  id:r.id,phase:r.phase,attempt:r.attempt,maxAttempts:r.maxAttempts??3,
   headSha:r.headSha,version:r.version,updatedAt:timestamp(updatedAt),
   nextAction:state.nextAction,recoveryMode:state.recoveryMode,
   progressPercent:state.progressPercent,
