@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createSign,generateKeyPairSync,createHash,randomUUID} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {oidcAudience} from '../cloud/hatchable/lib/github-oidc-bridge.js';
-const REPO='michaeljwilliams0123/Ultron.MW',ID=41775191071,SHA='a'.repeat(40);
+const REPO='Ultron-MW/Ultron.MW',ID=41775191071,SHA='a'.repeat(40);
 const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
 const key={...publicKey.export({format:'jwk'}),kid:'test-oidc-runner-signing-key',alg:'RS256'};
 const b64=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
@@ -16,10 +16,10 @@ async function token(raw,other={}){
  const payload=b64({
   iss:'https://token.actions.githubusercontent.com',
   aud:await oidcAudience(raw),
-  sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
+  sub:'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:refs/heads/main',
   repository:REPO,repository_id:'1424939667',
-  repository_owner:'michaeljwilliams0123',repository_visibility:'public',
-  actor:'michaeljwilliams0123',
+  repository_owner:'Ultron-MW',repository_owner_id:'354776009',repository_visibility:'public',
+  actor:'michaeljwilliams0123',actor_id:'308995719',
   ref:'refs/heads/main',sha:SHA,
   workflow_ref:REPO+'/.github/workflows/hf-oidc-bridge.yml@refs/heads/main',
   event_name:'workflow_dispatch',iat:time,exp:time+180,
@@ -33,7 +33,7 @@ const expectedRun={
  id:ID,run_attempt:1,
  event:'workflow_dispatch',status:'completed',conclusion:'success',
  path:'.github/workflows/c06-owner-model-release.yml',
- head_sha:SHA,head_branch:'main',actor:{login:'michaeljwilliams0123'},
+ head_sha:SHA,head_branch:'main',actor:{login:'michaeljwilliams0123',id:308995719},
  repository:{full_name:REPO,private:false}
 };
 const moduleUrl=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('base64');

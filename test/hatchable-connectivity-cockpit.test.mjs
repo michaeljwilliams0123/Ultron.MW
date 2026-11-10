@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {collectConnectivity} from '../cloud/hatchable/lib/connectivity-view.js';
 
 const SHA='a'.repeat(40);
-const ROOT='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+const ROOT='https://api.github.com/repos/Ultron-MW/Ultron.MW';
 const mockDB={
  async query(sql){
   if(sql.includes('GROUP BY status'))return {rows:[{status:'done',total:14},{status:'queued',total:2}]};
@@ -21,12 +21,12 @@ const response=data=>({ok:true,status:200,json:async()=>data});
 const healthyFetch=async url=>{
  if(url===ROOT+'/git/ref/heads/main')return response({object:{sha:SHA}});
  if(url.includes('/pulls?'))return response([{number:256,title:'User interface',draft:false,
-  html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/256',
+  html_url:'https://github.com/Ultron-MW/Ultron.MW/pull/256',
   updated_at:'2026-11-03T19:00:00Z'}]);
  if(url.includes('/actions/runs?'))return response({workflow_runs:[
   {id:12,name:'Ultron core verification',status:'completed',conclusion:'success',
    head_sha:SHA,event:'push',created_at:'2026-11-03T20:00:00Z',
-   html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/12'},
+   html_url:'https://github.com/Ultron-MW/Ultron.MW/actions/runs/12'},
   {id:11,name:'Ultron core verification',status:'completed',conclusion:'failure',
    head_sha:'b'.repeat(40),event:'push',created_at:'2026-11-03T19:00:00Z'}
  ]});
@@ -69,7 +69,7 @@ test('CONNECT-03: stale CI from a different SHA must never claim head success',a
   return response({workflow_runs:[{
    id:500,name:'Ultron core verification',event:'push',status:'completed',
    conclusion:'success',head_sha:'b'.repeat(40),
-   html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/500'
+   html_url:'https://github.com/Ultron-MW/Ultron.MW/actions/runs/500'
   }]});
  };
  const value=await collectConnectivity({db:mockDB,fetchGithub:change});
@@ -121,7 +121,7 @@ test('CONNECT-06: issue-comment workflow flood cannot hide successful current-ma
     id:41879685232,name:'Ultron core verification',event:'push',
     head_sha:latestMain,status:'completed',conclusion:'success',
     created_at:'2026-11-04T17:00:00Z',
-    html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/41879685232'
+    html_url:'https://github.com/Ultron-MW/Ultron.MW/actions/runs/41879685232'
    }]});
   }
   throw Error('unexpected-url');

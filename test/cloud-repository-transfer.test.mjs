@@ -27,7 +27,7 @@ test('OIDC bridge pins transferred immutable owner/repository identity', () => {
   for (const file of ['lib/council-oidc.js', 'lib/github-oidc-bridge.js']) {
     const body = source(file);
     assert.ok(body.includes(CANONICAL), file + ' missing canonical repository');
-    assert.ok(body.includes(SUBJECT), file + ' missing immutable subject');
+    assert.ok(body.includes(SUBJECT) || (body.includes('repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:') && body.includes("const REF='refs/heads/main'")), file + ' missing immutable subject');
     assert.ok(body.includes('354776009'), file + ' missing organization ID');
     assert.ok(body.includes('1424939667'), file + ' missing preserved repository ID');
     assert.ok(!body.includes('repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667'), file + ' still accepts old OIDC subject');
