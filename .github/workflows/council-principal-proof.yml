@@ -21,6 +21,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+      - name: Diagnose Coordinator App and repository installation
+        env:
+          ULTRON_GITHUB_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
+          ULTRON_BUILDER_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+        run: node scripts/diagnose-council-installation.mjs
       - name: Discover Ultron Coordinator installation
         id: coordinator
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -52,6 +57,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: council-principal-readback-${{ github.sha }}-${{ github.run_attempt }}
-          path: artifacts/council-principal-proof.json
+          path: |
+            artifacts/council-app-installation-diagnostic.json
+            artifacts/council-principal-proof.json
           if-no-files-found: warn
           retention-days: 7
