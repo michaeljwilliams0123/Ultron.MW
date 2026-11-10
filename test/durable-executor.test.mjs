@@ -176,7 +176,7 @@ test('remote branch movement between commit and ref readback is not verification
    reads++;
    return {ok:true,status:200,json:async()=>({object:{type:'commit',sha:reads===1?sha:moved}})};
   }
-  return {ok:true,status:200,json:async()=>({message:'Commit\\n\\nUltron-Operation-Digest: '+digest})};
+  return {ok:true,status:200,json:async()=>({message:'Commit\n\nUltron-Operation-Digest: '+digest})};
  }});
  assert.equal(result.state,'conflict');
  assert.equal(reads,2,'the same ref must be sampled after fetching commit');
