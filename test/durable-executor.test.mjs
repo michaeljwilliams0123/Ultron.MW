@@ -204,7 +204,8 @@ test('persona attribution is fixed by the verified role, not caller-mutable fiel
  const result=await executeIdempotentGitHubWrite(context(),token,supplied,
   async args=>{passedPersona=args.persona;await h.operation(args);},h.services);
  assert.equal(result.status,'success');
- assert.deepEqual(passedPersona,{role:'steward',authorName:'Ultron Steward'});
+ assert.deepEqual(passedPersona,{role:'steward',authorName:'Ultron.MW [Steward]',
+  authorEmail:'ultron-mw-steward@system.local'});
  assert.equal(Object.isFrozen(passedPersona),true);
 });
 
