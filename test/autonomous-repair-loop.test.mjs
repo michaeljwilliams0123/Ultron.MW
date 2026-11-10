@@ -189,8 +189,9 @@ test('expired plan reconciles an in-flight GitHub write but cannot start a new w
  const later=()=>Date.parse('2026-11-11T21:00:00Z');
  const resumed=await runAutonomousRepair(context(f,p,{now:later}));
  assert.equal(resumed.status,'held');
- assert.equal(f.records.get(p.id).phase,'verified');
+ assert.equal(f.records.get(p.id).phase,'applied');
  assert.equal(f.counts.apply,1);
+ assert.equal(f.counts.startVerify,0);
  assert.equal(f.counts.startPublish,0);
  const untouched=fixture();
  const notStarted=await runAutonomousRepair(context(untouched,p,{now:later}));
@@ -217,4 +218,14 @@ test('repair diagnostics redact GitHub fine-grained tokens and authorization hea
  assert.equal((await runAutonomousRepair(context(f))).status,'completed');
  assert.match(seen,/FAIL/);
  assert.doesNotMatch(seen,/github_pat_|topsecret|sk-z+|Bearer\s+github_pat_/);
+});
+
+test('CI dispatch requires its own fresh grant even if source patching was authorized',async()=>{
+ const f=fixture();
+ f.authorize=async({operation})=>operation!=='repair.ci.dispatch';
+ const outcome=await runAutonomousRepair(context(f));
+ assert.equal(outcome.status,'held');
+ assert.equal(f.counts.apply,1);
+ assert.equal(f.counts.startVerify,0);
+ assert.equal(f.records.get('repair-case-0001').phase,'applied');
 });
