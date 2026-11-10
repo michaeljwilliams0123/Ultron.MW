@@ -1,8 +1,7 @@
-/**
- * Owner-authorized, one-shot GitHub branch canary conductor.
- * This composition root does not mint an approval, impersonate a Council role,
- * change server defaults, or treat a local git diff as a remote write proof.
+/** Owner-signed, fail-closed five-stage canary composition root.
+ * This never invents an approval, token, commit, receipt, or deployment claim.
  */
+import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
@@ -10,16 +9,17 @@ import {resolve} from 'node:path';
 const REPOSITORY='michaeljwilliams0123/Ultron.MW';
 const API='https://api.github.com/repos/'+REPOSITORY;
 const SHA=/^[0-9a-f]{40}$/;
+const DIGEST=/^[0-9a-f]{64}$/;
 const TASK=/^[a-z0-9][a-z0-9-]{7,79}$/;
 const BRANCH=/^ultron\/canary-[a-z0-9][a-z0-9-]{2,63}$/;
-const STATUS=new Set(['completed','verified']);
+const SUCCESS=new Set(['success','reconciled_success','recovered_success']);
+const auditStatus='REMOTE_READBACK_REQUIRED';
 
 function check(value,reason){if(!value)throw Error('canary-'+reason);}
 function plainObject(value){return value!==null&&typeof value==='object'&&!Array.isArray(value);}
 function safeRequest(input){
   check(plainObject(input)&&plainObject(input.payload),'request-invalid');
-  const plan=input.payload;
-  const params=plan.parameters;
+  const plan=input.payload,params=plan.parameters;
   check(plainObject(input.signedGrant)&&
     typeof input.signedGrant.nonce==='string'&&
     input.signedGrant.nonce===input.nonce&&
@@ -32,8 +32,7 @@ function safeRequest(input){
     'signed-plan-invalid');
   check(Object.keys(params).sort().join(',')===
     'branch,objective,sourceSha,taskId'&&
-    TASK.test(params.taskId||'')&&
-    plan.idempotencyKey==='repair:'+params.taskId&&
+    TASK.test(params.taskId||'')&&plan.idempotencyKey==='repair:'+params.taskId&&
     typeof params.objective==='string'&&params.objective.length>0&&
     params.objective.length<=800&&SHA.test(params.sourceSha||'')&&
     BRANCH.test(params.branch||''),'signed-payload-invalid');
@@ -42,16 +41,20 @@ function safeRequest(input){
 }
 
 /**
- * Narrow GitHub REST operation. A write is attempted at most once; uncertain
- * outcomes trigger readback-only reconciliation, never another POST.
+ * Perform one GitHub commit + ref mutation; Task 4 exclusively owns durable
+ * reserve, conflict detection and independent provider receipt verification.
+ * This callback never repeats either POST after an uncertain response.
  */
-export function createBranchCanaryOperation({fetchImpl=globalThis.fetch}={}){
+export function createCanaryCommitOperation({fetchImpl=globalThis.fetch}={}){
   check(typeof fetchImpl==='function','github-client-required');
-  return async ({token,persona,targetBranch,sourceSha})=>{
-    check(typeof token==='string'&&token.length>0,'token-required');
+  return async ({token,persona,targetBranch,sourceSha,operationDigest,operationMarker})=>{
+    check(typeof token==='string'&&token.length>=8,'token-required');
     check(plainObject(persona)&&typeof persona.authorName==='string'&&
-      persona.authorName.length>0,'persona-required');
-    check(BRANCH.test(targetBranch||'')&&SHA.test(sourceSha||''),'scope-invalid');
+      typeof persona.authorEmail==='string','persona-required');
+    check(BRANCH.test(targetBranch||'')&&SHA.test(sourceSha||'')&&
+      DIGEST.test(operationDigest||'')&&
+      operationMarker==='Ultron-Operation-Digest: '+operationDigest,
+      'operation-scope-invalid');
     async function request(method,path,body){
       let response;
       try{
@@ -65,81 +68,70 @@ export function createBranchCanaryOperation({fetchImpl=globalThis.fetch}={}){
       }catch{throw Error('canary-github-outcome-unknown');}
       if(response.status===404&&method==='GET')return null;
       if(!response.ok)throw Error('canary-github-http-'+response.status);
-      if(method!=='GET')return {status:response.status};
       try{return await response.json();}
-      catch{throw Error('canary-github-readback-invalid');}
+      catch{throw Error('canary-github-response-invalid');}
     }
-    const targetPath='/git/ref/heads/'+targetBranch;
     const main=await request('GET','/git/ref/heads/main');
     check(main?.object?.type==='commit'&&main.object.sha===sourceSha,
       'source-head-changed');
-    const before=await request('GET',targetPath);
-    if(before!==null){
-      check(before.object?.type==='commit'&&before.object.sha===sourceSha,
-        'branch-conflict');
-    }else{
-      // An unsuccessful or timed-out POST is never blindly retried.
-      try{
-        await request('POST','/git/refs',{
-          ref:'refs/heads/'+targetBranch,sha:sourceSha,
-        });
-      }catch{
-        const observed=await request('GET',targetPath).catch(()=>null);
-        check(observed?.object?.type==='commit'&&observed.object.sha===sourceSha,
-          'reconcile-required');
-      }
-    }
-    // Separate reads bind the reported effect to GitHub, not the POST response.
-    for(let attempt=0;attempt<2;attempt++){
-      const observed=await request('GET',targetPath);
-      check(observed?.ref==='refs/heads/'+targetBranch&&
-        observed.object?.type==='commit'&&observed.object.sha===sourceSha,
-        'remote-postcondition-unverified');
-    }
-    return Object.freeze({branch:targetBranch,sha:sourceSha,
-      url:'https://github.com/'+REPOSITORY+'/tree/'+targetBranch,
-      commitAuthor:persona.authorName,remoteReadbacks:2});
+    const branch=await request('GET','/git/ref/heads/'+targetBranch);
+    check(branch===null,'branch-exists-reconcile-with-task4');
+    const base=await request('GET','/git/commits/'+sourceSha);
+    check(SHA.test(base?.tree?.sha||''),'source-tree-unavailable');
+    // GitHub stores the orphan commit before its ref. Task 4 sees an absent
+    // branch on failure and holds for reconciliation; neither POST is retried.
+    const commit=await request('POST','/git/commits',{
+      message:'Ultron.MW authorized canary\n\n'+operationMarker,
+      tree:base.tree.sha,parents:[sourceSha],
+      author:{name:persona.authorName,email:persona.authorEmail},
+    });
+    check(SHA.test(commit?.sha||''),'commit-response-invalid');
+    await request('POST','/git/refs',{
+      ref:'refs/heads/'+targetBranch,sha:commit.sha,
+    });
+    return Object.freeze({branch:targetBranch,sha:commit.sha,
+      operationDigest,remoteVerification:'delegated-to-durable-executor'});
   };
 }
 
-/**
- * The five steps are injectable for contract tests. Live execution loads the
- * trusted implementation modules only after a real input is present.
+/** Five audited interfaces. Trusted credentials, grant verifier and DB are
+ * injected by the existing cloud backend, never accepted from the signed JSON.
  */
 export async function runMasterPipeline(operationRequest,{
   createVerifiedGitHubClient,enforceSignedApprovalAndTagPersona,
   dispatchHeadlessTask,executeIdempotentGitHubWrite,
-  verifyPostConditionsAndStoreReceipt,gitOperation=createBranchCanaryOperation(),
-  trustedApproval,
+  verifyPostConditionsAndStoreReceipt,
+  gitOperation=createCanaryCommitOperation(),trustedApproval,durableServices,
 }={}){
   const payload=safeRequest(operationRequest);
   for(const [name,fn] of Object.entries({createVerifiedGitHubClient,
     enforceSignedApprovalAndTagPersona,dispatchHeadlessTask,
     executeIdempotentGitHubWrite,verifyPostConditionsAndStoreReceipt,gitOperation}))
     check(typeof fn==='function','dependency-missing-'+name);
-  // Existing Task 3 invokes a graph immediately and ignores prepared context.
-  // Refuse that interface BEFORE calling it: an after-the-fact check is unsafe.
+  // Task 3 on PR #363 executes the graph on invocation; reject it BEFORE
+  // invoking any side effect until it offers a preparation-only contract.
   check(dispatchHeadlessTask.supportsPrepareOnly===true,
     'dispatcher-prepare-contract-required');
+  check(typeof durableServices?.db?.query==='function'&&
+    typeof durableServices?.authorization?.verify==='function',
+    'trusted-durable-adapters-required');
 
   const identity=await createVerifiedGitHubClient();
   check(identity&&typeof identity.getTokenForScope==='function'&&
     Number.isSafeInteger(identity.installationId),
     'identity-factory-invalid');
-  // Task 1 accepts an operation string; Task 2 requests a full scoped profile.
-  // Adapt shapes without widening either authority or issuing a new credential.
-  const tokenFactory={getTokenForScope:async scope=>{
+  // Task 1 accepts an operation string; Task 2 passes a scoped object.
+  const factory={getTokenForScope:async scope=>{
     check(plainObject(scope)&&scope.operation==='repair.branch.create',
       'token-scope-mismatch');
     return identity.getTokenForScope(scope.operation);
   }};
   const approved=await enforceSignedApprovalAndTagPersona(
-    operationRequest,tokenFactory,trustedApproval);
+    operationRequest,factory,trustedApproval);
   check(approved?.authorized===true&&
-    typeof approved.token==='string'&&approved.token.length>0&&
+    typeof approved.token==='string'&&approved.token.length>=8&&
     plainObject(approved.executionPayload)&&plainObject(approved.persona),
     'authorization-denied');
-  // No caller-supplied task or branch can override the signed scope.
   const signed=approved.executionPayload;
   check(signed.schema===operationRequest.payload.schema&&
     signed.operation==='repair.branch.create'&&
@@ -149,38 +141,45 @@ export async function runMasterPipeline(operationRequest,{
   for(const [key,value] of Object.entries({taskId:payload.taskId,
     objective:payload.objective,sourceSha:payload.sourceSha,
     branch:payload.targetBranch}))
-    check(signed.parameters?.[key]===value,
-      'authorization-payload-mismatch');
-
+    check(signed.parameters?.[key]===value,'authorization-payload-mismatch');
+  const operationDigest=createHash('sha256').update(JSON.stringify(signed))
+    .digest('hex');
   const task=await dispatchHeadlessTask(payload.objective,{
     taskId:payload.taskId,targetBranch:payload.targetBranch,
-    sourceSha:payload.sourceSha,requiresResponse:true,
-    authorized:true,prepareOnly:true,
+    sourceSha:payload.sourceSha,operationDigest,
+    requiresResponse:true,enforceSignedApproval:true,prepareOnly:true,
   });
   check(task?.stage==='prepared'&&task.taskId===payload.taskId&&
-    task.targetBranch===payload.targetBranch&&
-    task.sourceSha===payload.sourceSha,'dispatcher-context-mismatch');
-  // Preserve stable task identity so retries resolve to the same durable key.
+    task.targetBranch===payload.targetBranch&&task.sourceSha===payload.sourceSha&&
+    task.operationDigest===operationDigest,'dispatcher-context-mismatch');
+  const persona={...approved.persona,role:String(approved.persona.role).toLowerCase()};
+  check(persona.role==='builder','persona-role-mismatch');
   const receipt=await executeIdempotentGitHubWrite(task,approved.token,
-    approved.persona,async ({token,persona,targetBranch})=>{
-      check(targetBranch===payload.targetBranch,'executor-branch-mismatch');
-      return gitOperation({token,persona,targetBranch,sourceSha:payload.sourceSha});
-    });
+    persona,async ({token,persona,targetBranch,operationDigest:observed,operationMarker})=>{
+      check(targetBranch===payload.targetBranch&&observed===operationDigest,
+        'executor-scope-mismatch');
+      return gitOperation({token,persona,targetBranch,
+        sourceSha:payload.sourceSha,operationDigest,operationMarker});
+    },durableServices);
   check(receipt?.idempotencyKey==='ultron-task-'+payload.taskId&&
-    STATUS.has(receipt.status)&&receipt.details?.sha===payload.sourceSha&&
-    receipt.details?.branch===payload.targetBranch&&
-    receipt.details?.remoteReadbacks===2,
-    'execution-receipt-unverified');
+    SUCCESS.has(receipt.status)&&receipt.details?.branch===payload.targetBranch&&
+    receipt.details?.operationDigest===operationDigest&&
+    receipt.details?.remoteVerified===true&&
+    SHA.test(receipt.details?.sha||''),'execution-receipt-unverified');
+  // Task 5 writes an audit artifact, but explicitly never claims remote proof.
   const audit=await verifyPostConditionsAndStoreReceipt(receipt);
-  check(audit?.idempotencyKey===receipt.idempotencyKey&&
-    STATUS.has(audit.status)&&audit.details?.sha===payload.sourceSha&&
-    audit.details?.branch===payload.targetBranch,
+  check(audit?.schema==='ultron.task5.local-audit.v1'&&
+    audit.idempotencyKey===receipt.idempotencyKey&&
+    audit.executionStatus===receipt.status&&
+    audit.status===auditStatus&&audit.remoteReadbackVerified===false&&
+    DIGEST.test(audit.auditSha256||'')&&
+    DIGEST.test(audit.executionReceiptDigest||''),
     'audit-receipt-unverified');
-  // Do not print credentials, grant, nonce, or persona-private data.
   return Object.freeze({schema:'ultron.canary-conductor.v1',
-    idempotencyKey:receipt.idempotencyKey,status:'verified',
-    branch:payload.targetBranch,sourceSha:payload.sourceSha,
-    auditPath:audit.auditPath??null});
+    idempotencyKey:receipt.idempotencyKey,status:'remote-verified',
+    branch:payload.targetBranch,commitSha:receipt.details.sha,
+    auditSha256:audit.auditSha256,auditStatus:audit.status,
+    productionAccepted:false});
 }
 
 export async function loadLiveDependencies(){
@@ -199,16 +198,13 @@ export async function loadLiveDependencies(){
 }
 
 async function main(argv){
-  // No mock grant, autogenerated task ID, or insecure auto-approval fallback.
   check(argv.length===2&&argv[0]==='--request','usage--request-FILE');
-  const operationRequest=JSON.parse(await readFile(resolve(argv[1]),'utf8'));
-  // A standalone CLI has no trusted Postgres nonce ledger and signing-key
-  // resolver. The cloud composition root must inject them; never accept them
-  // from an untrusted request file or guess a production signer.
-  safeRequest(operationRequest);
+  const request=JSON.parse(await readFile(resolve(argv[1]),'utf8'));
+  safeRequest(request);
+  // The standalone CLI must not accept signer/DB authority in untrusted JSON.
+  // Use the existing trusted Hatchable composition root for live execution.
   throw Error('canary-live-approval-adapter-unconfigured');
 }
-
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   main(process.argv.slice(2)).catch(error=>{
     console.error(error instanceof Error&&error.message.startsWith('canary-')
