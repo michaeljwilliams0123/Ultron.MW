@@ -61,9 +61,14 @@ export async function verifyCouncilFleet({env={},mintScopedToken,request=globalT
  if(response?.status===429||response?.status===403&&
     (response.headers?.get?.('retry-after')!=null||
      response.headers?.get?.('x-ratelimit-remaining')==='0')){
-  const retry=Number(response.headers?.get?.('retry-after'));
-  const retryAfterSeconds=Number.isFinite(retry)&&retry>=0?
-   Math.min(Math.ceil(retry),86400):60;
+  const retryValue=response.headers?.get?.('retry-after');
+  const resetValue=response.headers?.get?.('x-ratelimit-reset');
+  const retry=retryValue===null||retryValue===undefined?NaN:Number(retryValue);
+  const reset=resetValue===null||resetValue===undefined?NaN:Number(resetValue);
+  const untilReset=Number.isFinite(reset)?Math.max(0,Math.ceil(reset-now()/1000)):0;
+  const retryAfterSeconds=Math.min(86400,Math.max(60,
+   Number.isFinite(retry)&&retry>=0?Math.ceil(retry):0,
+   response.headers?.get?.('x-ratelimit-remaining')==='0'?untilReset:0));
   return summary('held','github-rate-limited',observedAt,{retryAfterSeconds});
  }
  if(!response?.ok||response.status!==200)
