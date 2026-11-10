@@ -66,9 +66,13 @@ branch that moved during readback; even this is point-in-time verification,
 not a claim that the branch can never change again. A 401/403, rate
 limit, 5xx, or network error is *not* proof that the branch is absent. A
 worker that loses an API acknowledgment does not reissue the mutation: it
-rechecks remote state and durable state. A concurrent duplicate never takes
-another worker's `reserved` claim. An existing `in_flight`/uncertain claim is
-never blindly replayed, even if an initial remote read says absent.
+rechecks remote state and durable state. A crashed worker's *still-reserved*
+intent is safe for another authorized worker to resume: an atomic PostgreSQL
+`reserved → in_flight` compare-and-set elects exactly one dispatcher. An
+`in_flight`/uncertain attempt is **not** replayed, even when GitHub says the
+branch is absent. A duplicate observer does not mutate an active `in_flight`
+record, and an INSERT acknowledgment loss is reconciled via independent SELECT.
+Every GitHub readback request has a 10-second abort deadline.
 
 Receipt status proves **only the authorized branch/commit effect**, not PR
 creation, CI completion, independent review, a merge, or deployment. Those
@@ -78,5 +82,5 @@ operations need their own independently verified Task 5 evidence and gates.
 
 Run `node --test test/durable-executor.test.mjs`. Fast tests use a deterministic
 in-memory PostgreSQL-shaped adapter. When `@electric-sql/pglite` is installed,
-two additional tests exercise the real migration, unique claims, durable SQL,
+additional tests exercise the real migration, unique claims, durable SQL,
 and terminal immutability. Full repository CI is required before merge.

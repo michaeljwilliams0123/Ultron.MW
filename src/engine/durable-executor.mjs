@@ -51,15 +51,22 @@ async function read(db,key){
  return result.rows[0]??null;
 }
 async function reserve(db,intent){
- const r=await db.query(`INSERT INTO github_idempotent_executions
-  (idempotency_key,operation_digest,repository,target_branch,persona_role,state)
-  VALUES ($1,$2,$3,$4,$5,'reserved') ON CONFLICT (idempotency_key) DO NOTHING
-  RETURNING ${FIELDS}`,
- [intent.idempotencyKey,intent.operationDigest,intent.repository,intent.targetBranch,intent.personaRole]);
- if(!Array.isArray(r?.rows))fail('ledger-claim-unavailable');
- const row=await read(db,intent.idempotencyKey);
+ let created=false;
+ try{
+  const result=await db.query(`INSERT INTO github_idempotent_executions
+   (idempotency_key,operation_digest,repository,target_branch,persona_role,state)
+   VALUES ($1,$2,$3,$4,$5,'reserved') ON CONFLICT (idempotency_key) DO NOTHING
+   RETURNING ${FIELDS}`,
+  [intent.idempotencyKey,intent.operationDigest,intent.repository,intent.targetBranch,intent.personaRole]);
+  if(!Array.isArray(result?.rows)||result.rows.length>1)fail('ledger-claim-unavailable');
+  created=result.rows.length===1;
+ }catch{ /* The INSERT may have committed despite a lost acknowledgment. */ }
+ let row;
+ try{row=await read(db,intent.idempotencyKey);}
+ catch{fail('ledger-claim-unavailable');}
+ if(!row)fail('ledger-claim-unavailable');
  if(!matches(row,intent))fail('intent-conflict');
- return {created:r.rows.length===1,row};
+ return {created,row};
 }
 function validatedReceipt(row,intent){
  const receipt=row?.receipt;
@@ -140,8 +147,9 @@ export async function inspectGitHubBranch(token,intent,{fetchImpl=globalThis.fet
   fail('github-transport-unavailable');
  const base=`https://api.github.com/repos/${ULTRON_REPOSITORY}`;
  const get=async path=>{
-  const response=await fetchImpl(base+path,{headers:{Accept:'application/vnd.github+json',
-   Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
+  const response=await fetchImpl(base+path,{signal:AbortSignal.timeout(10_000),
+   headers:{Accept:'application/vnd.github+json',
+    Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
   if(response.status===404)return null;
   if(!response.ok)fail('github-readback-unavailable');
   return response.json();
@@ -197,20 +205,21 @@ export async function executeIdempotentGitHubWrite(taskContext,token,persona,git
    remote.sha,(services.clock??Date.now)());
  if(remote?.state==='conflict')return hold(db,intent,'remote-branch-mismatch');
  if(remote?.state!=='absent')return hold(db,intent,'remote-readback-unavailable');
- // A duplicate/resumed claim is NOT a fresh right to replay an uncertain write.
- if(!claim.created){
-  // A concurrent observer cannot steal a reserved claim from its worker.
-  if(claim.row.state==='reserved')return {idempotencyKey:intent.idempotencyKey,
-   status:'reconcile_required',details:{branch:intent.targetBranch,
-    reason:'prior-attempt-in-progress',remoteVerified:false}};
-  return hold(db,intent,'prior-attempt-uncertain');
- }
+ // A durable RESERVED row is provably pre-dispatch. The CAS below arbitrates
+ // all active workers, including recovery from a crashed reserver.
+ if(claim.row.state!=='reserved')return {idempotencyKey:intent.idempotencyKey,
+  status:'reconcile_required',details:{branch:intent.targetBranch,
+   reason:'prior-attempt-in-progress',remoteVerified:false}};
  await verifyAuthorization(services,intent);
  const dispatch=await db.query(`UPDATE github_idempotent_executions
   SET state='in_flight',updated_at=now()
   WHERE idempotency_key=$1 AND operation_digest=$2 AND state='reserved'
   RETURNING idempotency_key`,[intent.idempotencyKey,intent.operationDigest]);
- if(dispatch?.rows?.length!==1)return hold(db,intent,'dispatch-claim-lost');
+ // A lost CAS (or lost acknowledgment) is not permission to dispatch.
+ // Never mutate another worker's in-flight claim.
+ if(dispatch?.rows?.length!==1)return {idempotencyKey:intent.idempotencyKey,
+  status:'reconcile_required',details:{branch:intent.targetBranch,
+   reason:'dispatch-claim-uncertain',remoteVerified:false}};
  try{
   await gitOperation({token,persona:safePersona,targetBranch:intent.targetBranch,
    idempotencyKey:intent.idempotencyKey,operationDigest:intent.operationDigest,
