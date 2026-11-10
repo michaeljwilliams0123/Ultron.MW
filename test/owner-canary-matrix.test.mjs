@@ -164,3 +164,24 @@ test('matrix workflow uses owner-gated separate read and write job, pinned actio
  assert.match(yaml,/if: always\(\)/);
  assert.doesNotMatch(yaml,/pull_request_target:|id-token: write|actions: write|force: true|secrets\.ULTRON_BUILDER_PRIVATE_KEY/);
 });
+
+test('independent read-only verification succeeds after a marker write and rejects replay',async()=>{
+ const h=mock();
+ const committed=await runOwnerCanaryMatrix(args(h,'marker'));
+ assert.equal(committed.status,'verified');
+ const before=h.calls.length;
+ const replay=await runOwnerCanaryMatrix(args(h,'marker'));
+ assert.equal(replay.status,'held');
+ assert.equal(h.calls.slice(before).some(x=>x.method!=='GET'),false);
+ const start=h.calls.length;
+ const verified=await runOwnerCanaryMatrix(args(h,'verify'));
+ assert.equal(verified.status,'verified');
+ assert.equal(verified.operation,'branch.marker.verify');
+ assert.equal(verified.commitSha,MARKER_COMMIT);
+ assert.equal(verified.externalWritePerformed,false);
+ assert.equal(verified.remoteReadbackVerified,true);
+ assert.equal(verified.receiptDigest,committed.receiptDigest);
+ assert.equal(h.calls.slice(start).every(x=>x.method==='GET'),true);
+ const document=markerDocument({targetRunId:TARGET,markerRunId:RUN,sourceSha:BASE});
+ assert.equal(h.read().document,document);
+});
