@@ -111,3 +111,9 @@ test('read-only admin route and a genuinely navigable repair console are present
  assert.match(page,/repair-operations\.js/);
  assert.match(home,/href="\/repair-operations\.html"/);
 });
+
+
+test('operator reflects a task with one authorized attempt rather than the system-wide ceiling',()=>{
+ const snapshot=normalizeRepairStatus(record({maxAttempts:1,attempt:1,phase:'exhausted'}));
+ assert.equal(snapshot.maxAttempts,1);
+});
