@@ -369,3 +369,39 @@ test('expiry while committing dispatch claim prevents external mutation',async()
  assert.equal(h.writes,0);
  assert.equal(h.db.rows.get('ultron-task-canary-001').state,'in_flight');
 });
+
+
+test('canary readback rejects a forged parent or altered tree before terminal receipt',async()=>{
+ const sourceSha='d'.repeat(40);
+ const intended={...context(),targetBranch:'ultron/canary-lineage-test',sourceSha};
+ for(const fault of ['wrong-parent','wrong-tree',null]){
+  const urls=[];
+  const fetchImpl=async(url)=>{
+   urls.push(url);
+   let body;
+   if(url.includes('/git/ref/heads/'))body={object:{type:'commit',sha}};
+   else if(url.endsWith('/git/commits/'+sha))
+    body={sha,message:'Canary\n\nUltron-Operation-Digest: '+digest,
+      parents:[{sha:fault==='wrong-parent'?'e'.repeat(40):sourceSha}],
+      tree:{sha:'f'.repeat(40)}};
+   else if(url.endsWith('/git/commits/'+sourceSha))
+    body={sha:sourceSha,tree:{sha:fault==='wrong-tree'?'e'.repeat(40):'f'.repeat(40)}};
+   else throw Error('unexpected GitHub endpoint');
+   return {ok:true,status:200,json:async()=>body};
+  };
+  const observed=await inspectGitHubBranch(token,intended,{fetchImpl});
+  assert.equal(observed.state,fault?'conflict':'matched');
+  assert.equal(observed.sha,sha);
+  assert.equal(urls.filter(x=>x.endsWith('/git/commits/'+sourceSha)).length,
+    fault==='wrong-parent'?0:1);
+ }
+});
+
+test('canary branch cannot reserve durable execution without signed source SHA',async()=>{
+ const h=setup();
+ const unsigned={...context(),targetBranch:'ultron/canary-lineage-test'};
+ await assert.rejects(executeIdempotentGitHubWrite(unsigned,token,persona,
+  h.operation,h.services),/invalid-context/);
+ assert.equal(h.writes,0);
+ assert.equal(h.db.rows.size,0);
+});
