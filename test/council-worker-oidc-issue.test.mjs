@@ -11,11 +11,11 @@ const body=JSON.stringify({op:'reserve',caseDigest:'a'.repeat(64)});
 const data=()=>({
  iss:'https://token.actions.githubusercontent.com',
  aud:councilOidcAudience(body),repository_visibility:'public',
- repository:'Ultron-MW/Ultron.MW',repository_id:'1424939667',
- repository_owner:'Ultron-MW',repository_owner_id:'354776009',
- sub:'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:refs/heads/main',
+ repository:'michaeljwilliams0123/Ultron.MW',repository_id:'1424939667',
+ repository_owner:'michaeljwilliams0123',repository_owner_id:'308995719',
+ sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
  actor:'michaeljwilliams0123',actor_id:'308995719',
- workflow_ref:'Ultron-MW/Ultron.MW/.github/workflows/council-worker.yml@refs/heads/main',
+ workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/council-worker.yml@refs/heads/main',
  ref:'refs/heads/main',event_name:'issues',sha:'a'.repeat(40),
  iat:Math.floor(clock/1000)-5,exp:Math.floor(clock/1000)+120
 });
@@ -36,7 +36,7 @@ test('Council issue OIDC still rejects bot actors, other workflow and forged aud
  for(const change of [
   {actor:'github-actions[bot]'},
   {event_name:'pull_request'},
-  {workflow_ref:'Ultron-MW/Ultron.MW/.github/workflows/untrusted.yml@refs/heads/main'},
+  {workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/untrusted.yml@refs/heads/main'},
   {repository_visibility:'private'},
   {ref:'refs/heads/untrusted'}
  ]){

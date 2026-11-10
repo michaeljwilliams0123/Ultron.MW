@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {executeIdempotentGitHubWrite,inspectGitHubBranch} from '../src/engine/durable-executor.mjs';
 
-const repository='Ultron-MW/Ultron.MW';
+const repository='michaeljwilliams0123/Ultron.MW';
 const sha='a'.repeat(40), digest='b'.repeat(64);
 const context=()=>({taskId:'canary-001',repository,targetBranch:'canary/executor-001',operationDigest:digest});
 const persona={role:'steward',authorName:'Ultron Steward'};

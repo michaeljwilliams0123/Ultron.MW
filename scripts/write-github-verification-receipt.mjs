@@ -3,8 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// The repository was transferred; its identity remains anchored to this exact full name.
-const REPOSITORY = 'Ultron-MW/Ultron.MW';
+// Current personal repository after transfer-back; contributor identity is separate.
+const REPOSITORY = 'michaeljwilliams0123/Ultron.MW';
 const WORKFLOW = 'Ultron core verification';
 const WORKFLOW_PATH = `${REPOSITORY}/.github/workflows/verify.yml@`;
 const SHA_PATTERN = /^[0-9a-f]{40}$/;

@@ -14,7 +14,7 @@ import {requiredTokenPermissions,ULTRON_REPOSITORY_ID}
  from '../src/github-principal-policy.mjs';
 
 const OP='actions.cancel';
-const REPO='Ultron-MW/Ultron.MW';
+const REPO='michaeljwilliams0123/Ultron.MW';
 const KEY='a-very-long-trusted-server-only-hmac-secret-key-123456';
 const NOW=Date.parse('2026-11-09T20:00:00Z');
 const RESOURCE='ultron:github:'+REPO+':sha256:'+'a'.repeat(64);

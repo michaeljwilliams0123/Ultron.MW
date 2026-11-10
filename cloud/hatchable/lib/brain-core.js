@@ -7,7 +7,7 @@ import { buildCouncilRoomResult } from 'lib/council-room-core.js';
 import { collectResearchIntake } from 'lib/research-intake.js';
 import { readGithubPublic as github } from 'lib/github-public-read.js';
 
-const SITE = 'https://ultron-mw.github.io/Ultron.MW/';
+const SITE = 'https://michaeljwilliams0123.github.io/Ultron.MW/';
 const SHA = /^[0-9a-f]{40}$/;
 const REQUIRED_WORKFLOW='Ultron core verification';
 const REQUIRED_JOB='test';
@@ -38,7 +38,7 @@ export async function executeObjective(objective, {db,browser,task={}}){
  const at=new Date().toISOString();
  if(objective==='repo.inspect'){
   const sha=await currentMainSha();
-  return {objective,at,source:'github-api',repository:'Ultron-MW/Ultron.MW',sha};
+  return {objective,at,source:'github-api',repository:'michaeljwilliams0123/Ultron.MW',sha};
  }
  if(objective==='repo.prs'){
   return sourceBound(async()=>{

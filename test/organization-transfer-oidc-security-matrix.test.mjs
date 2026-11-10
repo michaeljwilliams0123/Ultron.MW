@@ -10,8 +10,8 @@ import {
 } from '../cloud/hatchable/lib/council-oidc.js';
 import { oidcAudience, verifyGitHubOidc } from '../cloud/hatchable/lib/github-oidc-bridge.js';
 
-const REPO = 'Ultron-MW/Ultron.MW';
-const SUBJECT = 'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:refs/heads/main';
+const REPO = 'michaeljwilliams0123/Ultron.MW';
+const SUBJECT = 'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main';
 const REF = 'refs/heads/main';
 const SHA = 'a'.repeat(40);
 const NOW = Date.parse('2026-11-10T12:00:00Z');
@@ -34,8 +34,8 @@ const shared = {
   sub: SUBJECT,
   repository: REPO,
   repository_id: '1424939667',
-  repository_owner: 'Ultron-MW',
-  repository_owner_id: '354776009',
+  repository_owner: 'michaeljwilliams0123',
+  repository_owner_id: '308995719',
   repository_visibility: 'public',
   ref: REF,
   sha: SHA,
@@ -55,7 +55,7 @@ const council = (changes = {}, rawBody = councilBody) =>
   verifyCouncilOidc({ token: signed(councilClaims(changes)), rawBody, fetchJwks, now: () => NOW });
 
 for (const actor of [OWNER, ULTRON]) {
-  test('Council accepts a correctly signed canonical organization identity for ' + actor.actor, async () => {
+  test('Council accepts a correctly signed canonical personal repository identity for ' + actor.actor, async () => {
     const result = await council(actor);
     assert.equal(result.actor, actor.actor);
     assert.equal(result.sha, SHA);
@@ -63,11 +63,11 @@ for (const actor of [OWNER, ULTRON]) {
   });
 }
 const councilDenials = [
-  ['retired repository name', { repository: 'michaeljwilliams0123/Ultron.MW' }],
-  ['retired repository owner', { repository_owner: 'michaeljwilliams0123' }],
-  ['wrong organization ID', { repository_owner_id: '308995719' }],
+  ['retired repository name', { repository: 'Ultron-MW/Ultron.MW' }],
+  ['retired repository owner', { repository_owner: 'Ultron-MW' }],
+  ['retired organization ID', { repository_owner_id: '354776009' }],
   ['wrong stable repository ID', { repository_id: '1' }],
-  ['old immutable subject', { sub: 'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:' + REF }],
+  ['old immutable subject', { sub: 'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:' + REF }],
   ['missing actor ID', { actor_id: undefined }],
   ['mismatched owner ID', { actor_id: '354634860' }],
   ['mismatched Ultron ID', { ...ULTRON, actor_id: '308995719' }],
@@ -153,13 +153,13 @@ for (const actor of [OWNER, ULTRON]) {
   });
 }
 const hfDenials = [
-  ['retired repo', { repository: 'michaeljwilliams0123/Ultron.MW' }],
-  ['retired owner', { repository_owner: 'michaeljwilliams0123' }],
-  ['wrong owner ID', { repository_owner_id: '308995719' }],
+  ['retired repo', { repository: 'Ultron-MW/Ultron.MW' }],
+  ['retired owner', { repository_owner: 'Ultron-MW' }],
+  ['wrong owner ID', { repository_owner_id: '354776009' }],
   ['wrong repo ID', { repository_id: '1' }],
   ['wrong actor pairing', { ...ULTRON, actor_id: '308995719' }],
   ['missing actor ID', { actor_id: undefined }],
-  ['different subject', { sub: 'repo:Ultron-MW/Ultron.MW:ref:' + REF }],
+  ['different subject', { sub: 'repo:michaeljwilliams0123/Ultron.MW:ref:' + REF }],
   ['wrong branch', { ref: 'refs/heads/release' }],
   ['wrong workflow', { workflow_ref: REPO + '/.github/workflows/verify.yml@' + REF }],
   ['wrong audience', { aud: 'untrusted' }],

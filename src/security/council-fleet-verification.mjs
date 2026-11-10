@@ -8,7 +8,7 @@ import {ULTRON_REPOSITORY_ID,ULTRON_GITHUB_PRINCIPAL}
  from '../github-principal-policy.mjs';
 // Repository was transferred to an organization; the numeric ID is unchanged.
 // This probe accepts only the currently verified canonical full name.
-const PROOF_REPOSITORY='Ultron-MW/Ultron.MW';
+const PROOF_REPOSITORY='michaeljwilliams0123/Ultron.MW';
 const IDENTIFIER=/^[1-9][0-9]{0,15}$/;
 const permissions=Object.freeze({metadata:'read'});
 export function normalizeAppPrivateKey(raw){

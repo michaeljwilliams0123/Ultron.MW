@@ -43,15 +43,15 @@ async function runOne(scenario){
     type:scenario==='wrong-type'?'Bot':'User',
     access_token:'must-never-be-exposed'}
   };
-  if(path==='/repos/Ultron-MW/Ultron.MW')return{
+  if(path==='/repos/michaeljwilliams0123/Ultron.MW')return{
    status:scenario==='repo-denied'?403:200,
    body:{id:scenario==='wrong-repo-id'?1:1424939667,
-    full_name:scenario==='wrong-repo-name'?'old/Ultron.MW':'Ultron-MW/Ultron.MW',
-    owner:{id:scenario==='wrong-org-id'?5:354776009,
-     login:scenario==='wrong-org-login'?'other':'Ultron-MW'},
+    full_name:scenario==='wrong-repo-name'?'old/Ultron.MW':'michaeljwilliams0123/Ultron.MW',
+    owner:{id:scenario==='wrong-org-id'?5:308995719,
+     login:scenario==='wrong-org-login'?'other':'michaeljwilliams0123'},
     permissions:{push:scenario!=='valid-no-push'}}
   };
-  if(path==='/repos/Ultron-MW/Ultron.MW/git/ref/heads/main')return{
+  if(path==='/repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/main')return{
    status:scenario==='ref-denied'?404:200,
    body:{ref:scenario==='wrong-ref'?'refs/heads/dev':'refs/heads/main',
     object:{type:scenario==='wrong-ref-type'?'tag':'commit',

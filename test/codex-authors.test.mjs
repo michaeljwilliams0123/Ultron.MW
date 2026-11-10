@@ -40,8 +40,8 @@ test('named owner request chooses the author in the actual PR routing contract',
   assert.equal(result.title, '[Ultron Codex] destiny-codex · issue 101');
 });
 
-test('two stable author fingerprints resolve aliases without claiming account identity', () => {
-  assert.deepEqual(CODEX_AUTHORS.map(a => a.name), ["Mike's Codex", "Destiny's Codex"]);
+test('stable author fingerprints resolve aliases without claiming account identity', () => {
+  assert.deepEqual(CODEX_AUTHORS.map(a => a.name), ["Mike's Codex", "Ultron's Codex"]);
   for (const author of CODEX_AUTHORS) {
     assert.equal(author.fingerprint, createHash('sha256')
       .update('ultron:codex-author:v1:' + author.id).digest('hex'));
@@ -108,4 +108,11 @@ test('present malformed durable records never become permission for a fresh atte
     assert.equal(codexReplayDisposition(call(), { claim: value }), 'reconcile-required');
     assert.throws(() => codexReplayDisposition(call(), { receipt: value }));
   }
+});
+
+test('Ultron and Destiny resolve to the same stable enrolled route', () => {
+  assert.equal(resolveCodexAuthor('ultron-codex'), resolveCodexAuthor('destiny-codex'));
+  assert.equal(resolveCodexAuthor('ultron').id, 'destiny-codex');
+  assert.equal(resolveCodexAuthor('ultron').binding.status, 'enrolled');
+  assert.equal(parseCodexObjective('/codex ultron-codex Inspect README.md').author.id, 'destiny-codex');
 });
