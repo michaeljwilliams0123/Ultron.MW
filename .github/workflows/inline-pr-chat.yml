@@ -1,0 +1,47 @@
+name: Ultron public CPU inline PR chat
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+concurrency:
+  group: ultron-public-chat-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  public-chat:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.event.repository.private == false &&
+      (github.actor == 'michaeljwilliams0123' ||
+       github.actor == 'michaeljwilliams0123ultron') &&
+      github.event.comment.user.login == github.actor &&
+      github.event.issue.pull_request != null &&
+      github.event.issue.state == 'open' &&
+      startsWith(github.event.comment.body, '@ultron chat ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Harden Git checkout
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Install pinned public CPU inference dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check handler and regression tests
+        run: |
+          node --check src/github-inline-chat.mjs
+          node --test test/github-inline-chat.test.mjs
+      - name: Reply via free CPU only (never invoke Codex or OpenAI API)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ULTRON_PUBLIC_CPU_INFERENCE: enabled
+        run: node src/github-inline-chat.mjs
