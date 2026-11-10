@@ -83,3 +83,22 @@ test('PGlite JSONB reordering preserves digest validation and replay semantics',
   await db.close();
  }
 });
+
+// The deployable Hatchable helper must remain byte-semantically compatible
+// with the source verifier, including nested keys and JSONB-style reordering.
+test('deployed canonical JSON matches source verifier for nested reordered evidence',async()=>{
+ const {canonicalJson:deployedCanonicalJson}=await import('../cloud/hatchable/lib/canonical-json.js');
+ const variants=[
+  {z:[{b:2,a:1},null,{nested:{y:[3,2],x:true}}],a:'receipt'},
+  {a:'receipt',z:[{a:1,b:2},null,{nested:{x:true,y:[3,2]}}]},
+  {checks:[{tier:'provider-state',ok:true,checkType:'github_api_readback'}],attemptId:'a-1'},
+  {attemptId:'a-1',checks:[{checkType:'github_api_readback',ok:true,tier:'provider-state'}]}
+ ];
+ for(const value of variants){
+  assert.equal(deployedCanonicalJson(value),canonicalJson(value));
+  assert.equal(createHash('sha256').update(deployedCanonicalJson(value)).digest('hex'),
+   createHash('sha256').update(canonicalJson(value)).digest('hex'));
+ }
+ assert.equal(deployedCanonicalJson(variants[0]),deployedCanonicalJson(variants[1]));
+ assert.equal(deployedCanonicalJson(variants[2]),deployedCanonicalJson(variants[3]));
+});
