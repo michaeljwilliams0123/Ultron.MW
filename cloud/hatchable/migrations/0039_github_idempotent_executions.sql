@@ -17,9 +17,10 @@ CREATE TABLE IF NOT EXISTS github_idempotent_executions (
     receipt->'details'->>'operationDigest'=operation_digest AND
     receipt->'details'->>'branch'=target_branch AND
     receipt->'details'->>'repository'=repository AND
+    receipt->'details'->>'personaRole'=persona_role AND
     receipt->'details'->>'remoteVerified'='true' AND
     receipt->'details'->>'sha' ~ '^[a-f0-9]{40}$' AND
-    receipt->>'status' IN ('success','reconciled_success','recovered_success')))
+    receipt->>'status' IN ('success','reconciled_success','recovered_success')) IS TRUE)
 );
 -- Guard all identity fields and final receipts against mutation or deletion.
 CREATE OR REPLACE FUNCTION github_idempotent_executions_guard() RETURNS trigger AS $$
