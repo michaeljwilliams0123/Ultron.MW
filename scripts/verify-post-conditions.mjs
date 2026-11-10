@@ -114,6 +114,15 @@ function verifyRecordOnDisk(destination, receiptDigest, key) {
   return record;
 }
 
+function assertAuditDirectory(directory) {
+  const stat = lstatSync(directory);
+  if (!stat.isDirectory()) throw new Error('audit directory must not be a symbolic link');
+  // On POSIX, a directory writable by other principals cannot safely hold
+  // create-once evidence: they can unlink or replace even mode-0400 files.
+  if (process.platform !== 'win32' && (stat.mode & 0o022) !== 0)
+    throw new Error('audit directory must not be group/world writable');
+}
+
 function createOnce(destination, artifact) {
   const directory = resolve(destination, '..');
   const tempPath = join(directory, `.task5-${randomBytes(16).toString('hex')}.tmp`);
@@ -155,7 +164,7 @@ export async function verifyPostConditionsAndStoreReceipt(executionReceipt, {
   const receiptDigest = sha256(rawJson);
   const directory = resolve(receiptDir);
   try {
-    if (!lstatSync(directory).isDirectory()) throw new Error('audit directory must not be a symbolic link');
+    assertAuditDirectory(directory);
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
@@ -187,7 +196,7 @@ export async function verifyPostConditionsAndStoreReceipt(executionReceipt, {
   };
   artifact.auditSha256 = sha256(JSON.stringify(artifact));
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  if (!lstatSync(directory).isDirectory()) throw new Error('audit directory must not be a symbolic link');
+  assertAuditDirectory(directory);
   createOnce(destination, artifact);
   return verifyRecordOnDisk(destination, receiptDigest, idempotencyKey);
 }
