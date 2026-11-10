@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const source = (file) => readFileSync(new URL('../cloud/hatchable/' + file, import.meta.url), 'utf8');
-const CANONICAL = 'Ultron-MW/Ultron.MW';
-const ORIGINAL = 'michaeljwilliams0123/Ultron.MW';
-const SUBJECT = 'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:refs/heads/main';
+const CANONICAL = 'michaeljwilliams0123/Ultron.MW';
+const ORIGINAL = 'Ultron-MW/Ultron.MW';
+const SUBJECT = 'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main';
 
-test('Hatchable issue and Council integrations point only at transferred repository', () => {
+test('Hatchable issue and Council integrations point only at current personal repository', () => {
   for (const file of [
     'lib/github-issue-read.js',
     'lib/github-issue-write.js',
@@ -23,14 +23,14 @@ test('Hatchable issue and Council integrations point only at transferred reposit
   }
 });
 
-test('OIDC bridge pins transferred immutable owner/repository identity', () => {
+test('OIDC bridge pins current immutable owner/repository identity', () => {
   for (const file of ['lib/council-oidc.js', 'lib/github-oidc-bridge.js']) {
     const body = source(file);
     assert.ok(body.includes(CANONICAL), file + ' missing canonical repository');
-    assert.ok(body.includes(SUBJECT) || (body.includes('repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:') && body.includes("const REF='refs/heads/main'")), file + ' missing immutable subject');
-    assert.ok(body.includes('354776009'), file + ' missing organization ID');
+    assert.ok(body.includes(SUBJECT) || (body.includes('repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:') && body.includes("const REF='refs/heads/main'")), file + ' missing immutable subject');
+    assert.ok(body.includes('308995719'), file + ' missing personal owner ID');
     assert.ok(body.includes('1424939667'), file + ' missing preserved repository ID');
-    assert.ok(!body.includes('repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667'), file + ' still accepts old OIDC subject');
+    assert.ok(!body.includes('repo:Ultron-MW@354776009/Ultron.MW@1424939667'), file + ' still accepts old OIDC subject');
   }
 });
 
@@ -52,10 +52,10 @@ test('forward migration admits new identity while preserving historical rows', (
   assert.match(forward, /CHECK/);
 });
 
-test('public read and execution URLs do not reference old repository path', () => {
+test('public read and execution URLs do not reference retired organization Pages path', () => {
   for (const file of ['lib/brain-core.js', 'lib/connectivity-view.js']) {
     const body = source(file);
-    assert.ok(!body.includes('michaeljwilliams0123.github.io/Ultron.MW/'), file + ' old Pages URL');
-    if (file === 'lib/brain-core.js') assert.ok(body.includes('https://ultron-mw.github.io/Ultron.MW/'), file + ' missing new Pages URL');
+    assert.ok(!body.includes('ultron-mw.github.io/Ultron.MW/'), file + ' old Pages URL');
+    if (file === 'lib/brain-core.js') assert.ok(body.includes('https://michaeljwilliams0123.github.io/Ultron.MW/'), file + ' missing new Pages URL');
   }
 });

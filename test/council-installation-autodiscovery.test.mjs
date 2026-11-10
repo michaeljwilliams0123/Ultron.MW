@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {verifyCouncilFleet} from '../src/security/council-fleet-verification.mjs';
 
-const repo={id:1424939667,full_name:'Ultron-MW/Ultron.MW'};
+const repo={id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'};
 const now=()=>Date.parse('2026-11-10T07:00:00.000Z');
 const env={GITHUB_APP_ID:'5633654',GITHUB_INSTALLATION_ID:'777321',
  GITHUB_PRIVATE_KEY:'-----BEGIN TEST KEY-----\\nnot-real\\n-----END TEST KEY-----'};
@@ -27,7 +27,7 @@ test('Council identity proof recognizes transferred canonical repository but no 
 test('read-only workflow discovers installed Coordinator from existing protected client ID and key',async()=>{
  const yaml=await readFile(new URL('../.github/workflows/council-principal-proof.yml',import.meta.url),'utf8');
  assert.match(yaml,/workflow_dispatch:/);
- assert.match(yaml,/github\.repository == 'Ultron-MW\/Ultron\.MW'/);
+ assert.match(yaml,/github\.repository == 'michaeljwilliams0123\/Ultron\.MW'/);
  assert.match(yaml,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(yaml,/contents: read/);
  assert.match(yaml,/actions\/create-github-app-token@[a-f0-9]{40}/);

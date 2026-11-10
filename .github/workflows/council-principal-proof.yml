@@ -6,7 +6,7 @@ permissions:
 jobs:
   verify-principal:
     if: >-
-      github.repository == 'Ultron-MW/Ultron.MW' &&
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.triggering_actor == 'michaeljwilliams0123' &&
       github.ref == 'refs/heads/main'

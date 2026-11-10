@@ -1,5 +1,7 @@
 # Owner-dispatched GitHub Actions canary — independent fallback
 
+> Historical transfer-era record. Superseded for current configuration on 2026-11-10: the canonical repository is `michaeljwilliams0123/Ultron.MW` (ID `1424939667`), owned by `michaeljwilliams0123` (ID `308995719`). Organization paths below describe historical observations, not current authorization. See [current identity contract](CANONICAL-GITHUB-IDENTITY.md).
+
 The Ultron Coordinator App's JWT was verified on run #42815900260, but its installation for \`Ultron-MW/Ultron.MW\` was not visible. This alternative uses the **repository's built-in per-job \`GITHUB_TOKEN\`** through manually owner-dispatched GitHub Actions, rather than Coordinator credentials.
 
 ## Read-only mode (default)

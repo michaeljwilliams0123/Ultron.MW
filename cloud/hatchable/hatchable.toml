@@ -13,7 +13,7 @@ authorize_url = "https://github.com/login/oauth/authorize"
 token_url     = "https://github.com/login/oauth/access_token"
 scopes        = ["read:user", "public_repo"]
 required      = false
-description   = "Dedicated Ultron user OAuth for public Ultron-MW/Ultron.MW. Read-only identity checks initially; no automatic GitHub writes."
+description   = "Dedicated Ultron user OAuth for public michaeljwilliams0123/Ultron.MW. Read-only identity checks initially; no automatic GitHub writes."
 
 [api.headers]
 Accept = "application/vnd.github+json"
@@ -75,18 +75,18 @@ name = "ULTRON_GRAPH_DELEGATED_TOKEN"
 required = false
 description = "Short-lived delegated Microsoft Graph token for the configured workbook account. Requires independent consent and rotation."
 
-# Canonical Ultron-MW GitHub App installation. Values are supplied only by
+# Canonical Mike-owned GitHub App installation. Values are supplied only by
 # the owner in Hatchable's protected Setup page; none are stored in source.
 # These declarations do not grant access or enable an operator by themselves.
 [[secret]]
 name = "ULTRON_GITHUB_APP_ID"
 required = false
-description = "App ID installed with narrow permissions on Ultron-MW/Ultron.MW (repository ID 1424939667)."
+description = "App ID installed with narrow permissions on michaeljwilliams0123/Ultron.MW (repository ID 1424939667)."
 
 [[secret]]
 name = "ULTRON_GITHUB_INSTALLATION_ID"
 required = false
-description = "Installation ID verified against GitHub for exactly Ultron-MW/Ultron.MW; do not reuse another repository's installation."
+description = "Installation ID verified against GitHub for exactly michaeljwilliams0123/Ultron.MW; do not reuse another repository's installation."
 
 [[secret]]
 name = "ULTRON_GITHUB_APP_PRIVATE_KEY"
@@ -96,7 +96,7 @@ description = "Private PEM signing key of the verified Ultron GitHub App; owner-
 [[secret]]
 name = "ULTRON_GITHUB_ISSUE_TOKEN"
 required = false
-description = "Optional legacy least-privilege issue token for Ultron-MW/Ultron.MW; App installation is preferred. Never store the token in source or event receipts."
+description = "Optional legacy least-privilege issue token for michaeljwilliams0123/Ultron.MW; App installation is preferred. Never store the token in source or event receipts."
 
 [[secret]]
 name = "ULTRON_MAHORAGA_CONNECTION1026"

@@ -1,5 +1,7 @@
 # Canonical repository transfer — signed canary scope (PR #374)
 
+> Historical transfer-era record. Superseded for current configuration on 2026-11-10: the canonical repository is `michaeljwilliams0123/Ultron.MW` (ID `1424939667`), owned by `michaeljwilliams0123` (ID `308995719`). Organization paths below describe historical observations, not current authorization. See [current identity contract](CANONICAL-GITHUB-IDENTITY.md).
+
 The single repository formerly at \`michaeljwilliams0123/Ultron.MW\` now belongs to the \`Ultron-MW\` organization, canonical full name \`Ultron-MW/Ultron.MW\`. Its immutable GitHub repository ID remains \`1424939667\`.
 
 This change updates the shared \`ULTRON_REPOSITORY\` identifier. Task 1 identity factory, Task 2 signed authorization and nonce scope, Task 4 durable executor, the GitHub operation policy and Task 1–5 conductor now agree on the **new full name and the same repository ID**. The conductor imports the canonical policy rather than defining a separate string. All matching Task 1–5 test fixtures are updated. The original signer is still the owner account \`michaeljwilliams0123\`; this changes the repository target, not who is authorized to sign.

@@ -3,7 +3,7 @@ export const CODEX_AUTHORS = Object.freeze([
   { id: 'mike-codex', name: "Mike's Codex", aliases: ['mike', "mike's codex", 'mikes codex'],
     fingerprint: 'b4c3874f6b58cc1afb8f5f00172a9cb426657229037e493d1519084cc90b0418',
     binding: null, sessionObservation: null },
-  { id: 'destiny-codex', name: "Destiny's Codex", aliases: ['destiny', "destiny's codex", 'destinys codex'],
+  { id: 'destiny-codex', name: "Ultron's Codex", aliases: ['ultron-codex', 'ultron', "ultron's codex", 'ultrons codex', 'destiny', "destiny's codex", 'destinys codex'],
     fingerprint: '550e01b316cfbd16729dd73a635cf6fc3343dcf682708b342d269e115fad14d9',
     binding: { kind: 'work-github-event',
       fingerprint: '1278bdf842ec4108ae053fa3656cc38fde798c7eabb10f19834ee74969ebdfbd',

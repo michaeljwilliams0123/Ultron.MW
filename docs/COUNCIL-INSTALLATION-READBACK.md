@@ -1,5 +1,7 @@
 # Distinguishing an installed App from an inaccessible repository
 
+> Historical transfer-era record. Superseded for current configuration on 2026-11-10: the canonical repository is `michaeljwilliams0123/Ultron.MW` (ID `1424939667`), owned by `michaeljwilliams0123` (ID `308995719`). Organization paths below describe historical observations, not current authorization. See [current identity contract](CANONICAL-GITHUB-IDENTITY.md).
+
 The Coordinator GitHub App is App ID 5633654. Its signing secret is currently stored under \`ULTRON_BUILDER_PRIVATE_KEY\` and its App client ID under \`ULTRON_BUILDER_CLIENT_ID\`. No key is copied or printed.
 
 The read-only Council workflow now checks \`GET /app\` using an in-memory RS256 App JWT first. It separately checks \`GET /repos/Ultron-MW/Ultron.MW/installation\`, then runs the pinned official GitHub App token action and the existing scoped repository-ID proof. On failure before the token exchange, \`artifacts/council-app-installation-diagnostic.json\` is still uploaded using \`if: always()\`.

@@ -9,7 +9,7 @@ const pem=privateKey.export({type:'pkcs1',format:'pem'});
 const now=()=>Date.parse('2026-11-10T12:00:00Z');
 const appId=5633654;
 const appResponse={id:appId,slug:'ultron-coordinator'};
-const installation={id:778899,app_id:appId,account:{login:'Ultron-MW'}};
+const installation={id:778899,app_id:appId,account:{login:'michaeljwilliams0123'}};
 
 function response(status,data){
  return {ok:status>=200&&status<300,status,
@@ -27,7 +27,7 @@ function requestFor(app,repo,requests){
   assert.equal(verify('RSA-SHA256',Buffer.from(header+'.'+payload),
    publicKey,Buffer.from(sig,'base64url')),true);
   if(url==='https://api.github.com/app')return app;
-  if(url==='https://api.github.com/repos/Ultron-MW/Ultron.MW/installation')return repo;
+  if(url==='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/installation')return repo;
   throw Error('unexpected request');
  };
 }
@@ -41,10 +41,10 @@ test('valid signing key and organization installation are observed without claim
  assert.equal(r.installationVisible,true);
  assert.equal(r.verifiedPrincipalCount,0);
  assert.equal(r.installationId,778899);
- assert.equal(r.repository,'Ultron-MW/Ultron.MW');
+ assert.equal(r.repository,'michaeljwilliams0123/Ultron.MW');
  assert.deepEqual(seen.map(x=>x.url),[
   'https://api.github.com/app',
-  'https://api.github.com/repos/Ultron-MW/Ultron.MW/installation']);
+  'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/installation']);
  assert.equal(JSON.stringify(r).includes('PRIVATE KEY'),false);
  assert.equal(JSON.stringify(r).includes('Bearer '),false);
 });
@@ -85,11 +85,11 @@ test('invalid configuration and network errors fail closed without leaking crede
  assert.equal(JSON.stringify(network).includes('SENSITIVE_ERROR_PAYLOAD'),false);
 });
 
-test('another organization installation or wrong app id never passes',async()=>{
+test('retired organization installation or wrong app id never passes',async()=>{
  for(const candidate of [
   {...installation,id:0},
   {...installation,app_id:12},
-  {...installation,account:{login:'michaeljwilliams0123'}},
+  {...installation,account:{login:'Ultron-MW'}},
   {...installation,account:{login:'Attacker'}},
  ]){
   const r=await diagnoseCouncilAppInstallation({appId,privateKey:pem,now,

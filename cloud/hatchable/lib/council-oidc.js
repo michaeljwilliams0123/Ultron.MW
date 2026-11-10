@@ -2,7 +2,7 @@ import { createHash, createVerify } from 'node:crypto';
 
 const ISSUER = 'https://token.actions.githubusercontent.com';
 const JWKS_URL = ISSUER + '/.well-known/jwks';
-const REPOSITORY = 'Ultron-MW/Ultron.MW';
+const REPOSITORY = 'michaeljwilliams0123/Ultron.MW';
 const REPOSITORY_ID = '1424939667';
 const WORKFLOW = REPOSITORY + '/.github/workflows/council-debate.yml@refs/heads/main';
 const WORKER_WORKFLOW = REPOSITORY + '/.github/workflows/council-worker.yml@refs/heads/main';
@@ -62,9 +62,9 @@ async function verifyIdentity({token,rawBody,fetchJwks,now,audience,workflowRefs
   if (claims?.iss !== ISSUER || claims.aud !== audience(rawBody) ||
       claims.repository_visibility !== 'public' ||
       claims.repository !== REPOSITORY || claims.repository_id !== REPOSITORY_ID ||
-      claims.repository_owner !== 'Ultron-MW' ||
-      claims.repository_owner_id !== '354776009' ||
-      claims.sub !== 'repo:Ultron-MW@354776009/Ultron.MW@1424939667:ref:refs/heads/main' ||
+      claims.repository_owner !== 'michaeljwilliams0123' ||
+      claims.repository_owner_id !== '308995719' ||
+      claims.sub !== 'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main' ||
       !((claims.actor==='michaeljwilliams0123'&&claims.actor_id==='308995719')||(claims.actor==='michaeljwilliams0123ultron'&&claims.actor_id==='354634860')) ||
       !workflowRefs.includes(claims.workflow_ref) ||
       (jobWorkflowRef && claims.job_workflow_ref !== jobWorkflowRef) ||

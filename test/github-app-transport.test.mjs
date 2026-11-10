@@ -5,7 +5,7 @@ import {
  requiredTokenPermissions,ULTRON_REPOSITORY_ID,
 } from '../src/github-principal-policy.mjs';
 
-const ROOT='/repos/Ultron-MW/Ultron.MW';
+const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 function token(operation,patch={}){
  return {token:'test-only-credential',operation,repositoryId:ULTRON_REPOSITORY_ID,
   installationId:9123,permissions:requiredTokenPermissions(operation),
@@ -164,7 +164,7 @@ test('identity.read admits only exact repository GET with metadata-only credenti
   fetchImpl:async(url,init)=>{
    calls.push({url,init});
    return {ok:true,status:200,json:async()=>({
-    id:ULTRON_REPOSITORY_ID,full_name:'Ultron-MW/Ultron.MW'
+    id:ULTRON_REPOSITORY_ID,full_name:'michaeljwilliams0123/Ultron.MW'
    })};
   },
  });

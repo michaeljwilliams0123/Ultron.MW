@@ -1,5 +1,5 @@
-const API='https://api.github.com/repos/Ultron-MW/Ultron.MW';
-const REPO_URL='https://github.com/Ultron-MW/Ultron.MW';
+const API='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
+const REPO_URL='https://github.com/michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
 
 function observedDate(value){
@@ -12,7 +12,7 @@ function safeGithubUrl(value,pathPrefix){
  if(typeof value!=='string'||!value.startsWith(REPO_URL+pathPrefix))return null;
  try{
   const parsed=new URL(value);
-  return parsed.origin==='https://github.com'&&parsed.pathname.startsWith('/Ultron-MW/Ultron.MW'+pathPrefix)
+  return parsed.origin==='https://github.com'&&parsed.pathname.startsWith('/michaeljwilliams0123/Ultron.MW'+pathPrefix)
    ?parsed.href:null;
  }catch{return null;}
 }

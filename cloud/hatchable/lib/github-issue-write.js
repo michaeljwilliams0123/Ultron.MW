@@ -1,6 +1,6 @@
 import {dataObject,providerBinding,grantRequest,authorizeProvider,reconcileProvider} from 'lib/mcp-provider-write.js';
 
-const ROOT='https://api.github.com/repos/Ultron-MW/Ultron.MW/issues/';
+const ROOT='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/issues/';
 const held=reason=>({ok:false,status:'held',reason});
 const uncertain=reason=>({ok:false,status:'reconcile-required',reason});
 async function bind(raw){
@@ -13,7 +13,7 @@ async function bind(raw){
   (request.state!==undefined&&!['open','closed'].includes(request.state)))
   throw Error('invalid-request');
  const binding=await providerBinding({key:request.key,operation:'github.issue.write',
-  target:['Ultron-MW/Ultron.MW',request.issueNumber],
+  target:['michaeljwilliams0123/Ultron.MW',request.issueNumber],
   payload:[request.body,request.state??null],expectedProfileVersion:request.expectedProfileVersion,
   expectedStopVersion:request.expectedStopVersion});
  return {request,binding};
@@ -41,7 +41,7 @@ async function readIssue(transport,url,headers,number){
  if(issue?.number!==number||issue.pull_request||
   !(typeof issue.body==='string'||issue.body===null)||
   !['open','closed'].includes(issue.state)||
-  issue.html_url!=='https://github.com/Ultron-MW/Ultron.MW/issues/'+number)
+  issue.html_url!=='https://github.com/michaeljwilliams0123/Ultron.MW/issues/'+number)
   throw Error('github-response-invalid');
  return issue;
 }
@@ -50,7 +50,7 @@ function publicResult(result,expectedNumber){
  const issueNumber=result.evidence?.issueNumber;
  if(!Number.isSafeInteger(issueNumber)||issueNumber!==expectedNumber)
   return uncertain('invalid-receipt');
- return {...result,issueUrl:'https://github.com/Ultron-MW/Ultron.MW/issues/'+issueNumber};
+ return {...result,issueUrl:'https://github.com/michaeljwilliams0123/Ultron.MW/issues/'+issueNumber};
 }
 export async function githubIssueWrite({mode,request,envelope,grantId,db,config,transport=fetch}={}){
  let bound;

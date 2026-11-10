@@ -1,6 +1,6 @@
 # Expanded Owner Actions Canary Acceptance Matrix
 
-Repository: `Ultron-MW/Ultron.MW` (fixed numeric repository ID `1424939667`).
+Repository: `michaeljwilliams0123/Ultron.MW` (fixed numeric repository ID `1424939667`).
 Execution identity: `github-actions[bot]` through GitHub’s per-job `GITHUB_TOKEN`, dispatched by owner `michaeljwilliams0123`.
 
 ## Modes and independently checked outcomes
@@ -25,7 +25,7 @@ The runner creates a Git tree and commit object and then attempts **one** branch
 
 ### What passing does and does not prove
 
-Passing read-only `inspect` or `verify` proves the specified GitHub provider-side observations. A passing owner-approved `marker` proves an isolated GitHub Actions ref update and readback. **None** establishes an Ultron Coordinator installation-token principal, seven independent Council agents, cryptographically signed Task 1–5 approval, or a persisted Hatchable PostgreSQL recovery receipt. Those remain separate release criteria, including open [PR #374](https://github.com/Ultron-MW/Ultron.MW/pull/374) and migration `0040`.
+Passing read-only `inspect` or `verify` proves the specified GitHub provider-side observations. A passing owner-approved `marker` proves an isolated GitHub Actions ref update and readback. **None** establishes an Ultron Coordinator installation-token principal, seven independent Council agents, cryptographically signed Task 1–5 approval, or a persisted Hatchable PostgreSQL recovery receipt. Those remain separate release criteria, including open [PR #374](https://github.com/michaeljwilliams0123/Ultron.MW/pull/374) and migration `0040`.
 
 ### Tests
 

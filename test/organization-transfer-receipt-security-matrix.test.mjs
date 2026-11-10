@@ -7,7 +7,7 @@ import {
 } from '../cloud/hatchable/lib/hf-github-receipts.js';
 import { buildGitHubVerificationReceipt } from '../scripts/write-github-verification-receipt.mjs';
 
-const REPO = 'Ultron-MW/Ultron.MW';
+const REPO = 'michaeljwilliams0123/Ultron.MW';
 const SHA = 'b'.repeat(40);
 const ACTORS = [
   { login: 'michaeljwilliams0123', id: 308995719 },
@@ -45,7 +45,7 @@ const invalidRuns = [
   ['mismatched Ultron actor ID', { actor: { login: ACTORS[1].login, id: ACTORS[0].id } }],
   ['missing actor ID', { actor: { login: ACTORS[0].login } }],
   ['bot actor', { actor: { login: 'github-actions[bot]', id: 41898282 } }],
-  ['retired repository', { repository: { full_name: 'michaeljwilliams0123/Ultron.MW', private: false } }],
+  ['retired repository', { repository: { full_name: 'Ultron-MW/Ultron.MW', private: false } }],
   ['foreign repository', { repository: { full_name: 'attacker/Ultron.MW', private: false } }],
   ['private repository', { repository: { full_name: REPO, private: true } }],
   ['untrusted branch', { head_branch: 'transfer/unreviewed' }],
@@ -63,7 +63,7 @@ for (const [description, change] of invalidRuns) {
 }
 test('GitHub receipt rejects a retired repository in the outer webhook envelope', () => {
   assert.throws(() => validateGithubWorkflowPayload(payload(run(), {
-    repository: { full_name: 'michaeljwilliams0123/Ultron.MW', private: false }
+    repository: { full_name: 'Ultron-MW/Ultron.MW', private: false }
   })), /untrusted-github-workflow/);
 });
 test('Independent readback detects changed attempt, SHA, actor and outcome', () => {
@@ -142,7 +142,7 @@ test('Attested receipt pins canonical source and $0 incremental spend', () => {
   assert.equal(receipt.workflowRunUrl, 'https://github.com/' + REPO + '/actions/runs/42816723356');
 });
 const badEnvs = [
-  ['retired repository', { GITHUB_REPOSITORY: 'michaeljwilliams0123/Ultron.MW' }],
+  ['retired repository', { GITHUB_REPOSITORY: 'Ultron-MW/Ultron.MW' }],
   ['untrusted workflow', { GITHUB_WORKFLOW: 'Unapproved Test' }],
   ['missing job', { GITHUB_JOB: 'test' }],
   ['wrong event', { GITHUB_EVENT_NAME: 'pull_request_target' }],
