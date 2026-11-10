@@ -158,13 +158,54 @@ test('GitHub readback distinguishes exact commit trailer, conflict, absence and 
   return {ok:true,status:200,json:async()=>({message:`Fix\n\nUltron-Operation-Digest: ${digest}`})};
  };
  const match=await inspectGitHubBranch(token,expected,{fetchImpl});
- assert.deepEqual(match,{state:'matched',sha});assert.equal(calls.length,2);
+ assert.deepEqual(match,{state:'matched',sha});assert.equal(calls.length,3);
  const conflict=await inspectGitHubBranch(token,expected,{fetchImpl:async url=>({ok:true,status:200,
   json:async()=>url.includes('/git/ref/')?{object:{type:'commit',sha}}:{message:'unrelated'}})});
  assert.equal(conflict.state,'conflict');
  assert.deepEqual(await inspectGitHubBranch(token,expected,{fetchImpl:async()=>({status:404,ok:false})}),{state:'absent'});
  await assert.rejects(inspectGitHubBranch(token,expected,{fetchImpl:async()=>({status:403,ok:false})}),
   /github-readback-unavailable/);
+});
+
+
+test('remote branch movement between commit and ref readback is not verification',async()=>{
+ let reads=0;
+ const moved='c'.repeat(40);
+ const result=await inspectGitHubBranch(token,context(),{fetchImpl:async url=>{
+  if(url.includes('/git/ref/')){
+   reads++;
+   return {ok:true,status:200,json:async()=>({object:{type:'commit',sha:reads===1?sha:moved}})};
+  }
+  return {ok:true,status:200,json:async()=>({message:'Commit\\n\\nUltron-Operation-Digest: '+digest})};
+ }});
+ assert.equal(result.state,'conflict');
+ assert.equal(reads,2,'the same ref must be sampled after fetching commit');
+});
+test('lost ACK after durable reconciliation update is confirmed by fresh SELECT',async()=>{
+ class LostAckDb extends MemoryDb{
+  async query(sql,params){
+   if(sql.includes("SET state='reconcile_required'")){
+    await super.query(sql,params);
+    throw Error('lost ACK after commit');
+   }
+   return super.query(sql,params);
+  }
+ }
+ const h=setup({db:new LostAckDb(),remoteState:'conflict'});
+ const result=await execute(h);
+ assert.equal(result.status,'reconcile_required');
+ assert.equal(h.db.rows.get(result.idempotencyKey).state,'reconcile_required');
+ assert.equal(h.writes,0);
+});
+test('persona attribution is fixed by the verified role, not caller-mutable fields',async()=>{
+ const h=setup();
+ let passedPersona;
+ const supplied={role:'steward',authorName:'Untrusted Admin',extra:'surprise'};
+ const result=await executeIdempotentGitHubWrite(context(),token,supplied,
+  async args=>{passedPersona=args.persona;await h.operation(args);},h.services);
+ assert.equal(result.status,'success');
+ assert.deepEqual(passedPersona,{role:'steward',authorName:'Ultron Steward'});
+ assert.equal(Object.isFrozen(passedPersona),true);
 });
 
 let PGlite=null;
@@ -178,6 +219,17 @@ test('PGlite: real migration, durable duplicate recovery and immutable terminal 
  await assert.rejects(db.query('DELETE FROM github_idempotent_executions'),/immutable/);
  await assert.rejects(db.query("UPDATE github_idempotent_executions SET state='reconcile_required'"),
   /completed-immutable/);
+ await db.close();
+});
+
+test('PGlite: incomplete JSON receipts cannot bypass SQL CHECK through NULL',{skip},async()=>{
+ const db=new PGlite();await db.exec(migration);
+ await assert.rejects(db.query(`INSERT INTO github_idempotent_executions
+  (idempotency_key,operation_digest,repository,target_branch,persona_role,state,receipt)
+  VALUES ($1,$2,$3,$4,$5,'completed',$6::jsonb)`,
+ ['ultron-task-invalid-001',digest,repository,'canary/invalid-receipt','steward',
+  JSON.stringify({idempotencyKey:'ultron-task-invalid-001',details:{branch:'canary/invalid-receipt',
+   repository,operationDigest:digest,sha,remoteVerified:true}})]),/check constraint|violates/i);
  await db.close();
 });
 test('PGlite: competing claims use real unique constraints and cannot double-write',{skip},async()=>{
