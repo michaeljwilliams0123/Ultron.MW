@@ -88,7 +88,7 @@ test('actual PGlite PostgreSQL data populates the owner inventory and hides payl
  try{
   await db.exec(readFileSync(new URL('../cloud/hatchable/migrations/0039_autonomous_repair_checkpoints.sql',import.meta.url),'utf8'));
   const record={id:'repair-database-001',fingerprint:createHash('sha256').update('one').digest('hex'),
-   phase:'verifying',attempt:2,headSha:SHA,version:5,prNumber:null,
+   phase:'verifying',attempt:2,maxAttempts:3,headSha:SHA,version:5,prNumber:null,
    manifest:{changes:[{after:'TOP-SECRET-SOURCE-STRING'}]},
    errorTrace:'Bearer SUPER-SECRET-TOKEN'};
   await db.query(`INSERT INTO brain_autonomous_repairs
