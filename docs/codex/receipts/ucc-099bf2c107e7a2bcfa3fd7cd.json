@@ -1,0 +1,15 @@
+{
+  "schema": "ultron.codex.receipt.v1",
+  "taskId": "ucc-099bf2c107e7a2bcfa3fd7cd",
+  "taskDigest": "265e62d5bc8fb1043ce0e06734fce9d0ddc0c2d3a0a9b19e42d0e823869ff646",
+  "authorId": "destiny-codex",
+  "authorFingerprint": "550e01b316cfbd16729dd73a635cf6fc3343dcf682708b342d269e115fad14d9",
+  "bindingFingerprint": "1278bdf842ec4108ae053fa3656cc38fde798c7eabb10f19834ee74969ebdfbd",
+  "sourceSha": "ace724fde5f08f853d10e42c8ff3cfbdc949361c",
+  "headSha": "4053893837a65ab3690280ffe27fd3cfde0e0e2e",
+  "claimHeadSha": "4053893837a65ab3690280ffe27fd3cfde0e0e2e",
+  "completedAt": "2026-11-10T19:18:14.863Z",
+  "status": "completed",
+  "result": "Repository: michaeljwilliams0123/Ultron.MW; owner: michaeljwilliams0123; stable authorId: destiny-codex; README.md SHA-256: 51de859a943bfee0b7e080fb71d327f22201a4dabb91d4508a363f0da41d947a; GitHub executor verified: michaeljwilliams0123ultron (user ID 354634860); no product source changed; this is not OpenAI account authentication.",
+  "identityEvidence": "work-enrollment-not-account-attestation"
+}
