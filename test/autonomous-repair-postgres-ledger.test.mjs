@@ -8,7 +8,7 @@ import {createAutonomousRepairPlan} from '../src/autonomous-repair-loop.mjs';
 const base='a'.repeat(40),updated='b'.repeat(40);
 const moment=Date.parse('2026-11-09T20:00:00Z');
 const plan=()=>createAutonomousRepairPlan({id:'repair-checkpoint-001',
- owner:'michaeljwilliams0123',repository:'michaeljwilliams0123/Ultron.MW',
+ owner:'michaeljwilliams0123',repository:'Ultron-MW/Ultron.MW',
  branch:'ultron/repair-checkpoint-001',baseSha:base,
  objective:'Repair repository unit tests using exact-context changes',
  allowedPaths:['src/example.mjs'],maxAttempts:3,maxPaidCents:0,

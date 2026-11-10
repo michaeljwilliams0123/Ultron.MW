@@ -45,7 +45,7 @@ export function normalizeRepairStatus(record,updatedAt=null){
   nextAction:state.nextAction,recoveryMode:state.recoveryMode,
   progressPercent:state.progressPercent,
   prUrl:r.phase==='complete'?
-   'https://github.com/michaeljwilliams0123/Ultron.MW/pull/'+r.prNumber:null
+   'https://github.com/Ultron-MW/Ultron.MW/pull/'+r.prNumber:null
  });
 }
 function normalizeRow(row){

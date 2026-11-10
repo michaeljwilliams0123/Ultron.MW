@@ -52,7 +52,7 @@ test('all checkpoint phases have actionable, non-misleading operator states',()=
   assert.ok(item.nextAction.length>12);
   assert.ok(item.progressPercent>=0&&item.progressPercent<=100);
   assert.equal(item.prUrl,phases[i]==='complete'?
-   'https://github.com/michaeljwilliams0123/Ultron.MW/pull/23':null);
+   'https://github.com/Ultron-MW/Ultron.MW/pull/23':null);
  }
  assert.match(formatRepairPhase('reconcile-required'),/Reconcile/);
 });

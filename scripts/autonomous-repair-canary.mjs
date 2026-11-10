@@ -32,7 +32,7 @@ const shaFor=attempt=>String.fromCharCode(97+attempt).repeat(40);
 const hash=payload=>createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 const plan=createAutonomousRepairPlan({
  id:'repair-offline-canary-001',owner:'michaeljwilliams0123',
- repository:'michaeljwilliams0123/Ultron.MW',
+ repository:'Ultron-MW/Ultron.MW',
  branch:'ultron/repair-offline-canary-001',
  baseSha:shaFor(0),objective:'Demonstrate durable self-healing without external writes',
  allowedPaths:['src/canary.mjs'],maxAttempts:3,maxPaidCents:0,

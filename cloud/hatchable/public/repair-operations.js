@@ -21,7 +21,7 @@ const PHASE_ACTIONS=Object.freeze({
 });
 const ID=/^[a-z][a-z0-9-]{7,79}$/;
 const SHA=/^[a-f0-9]{40}$/;
-const PR_URL=/^https:\/\/github\.com\/michaeljwilliams0123\/Ultron\.MW\/pull\/[1-9][0-9]*$/;
+const PR_URL=/^https:\/\/github\.com\/Ultron-MW\/Ultron\.MW\/pull\/[1-9][0-9]*$/;
 const ENDPOINT='/api/brain/autonomous-repairs?limit=25';
 
 export function formatRepairPhase(value){
@@ -121,7 +121,7 @@ export function renderRepairConsole({doc,root,model,filter='all'}){
   if(item.updatedAt)article.append(el(doc,'p','Checkpoint observed: '+item.updatedAt,'repair-meta'));
   const actions=el(doc,'div',undefined,'repair-actions');
   const commit=el(doc,'a','Inspect exact commit');
-  commit.href='https://github.com/michaeljwilliams0123/Ultron.MW/commit/'+item.headSha;
+  commit.href='https://github.com/Ultron-MW/Ultron.MW/commit/'+item.headSha;
   commit.target='_blank';commit.rel='noopener noreferrer';
   actions.append(commit);
   if(item.prUrl){

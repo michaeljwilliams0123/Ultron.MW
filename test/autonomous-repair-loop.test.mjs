@@ -7,7 +7,7 @@ const sha='a'.repeat(40),next='b'.repeat(40),next2='c'.repeat(40);
 const now=()=>Date.parse('2026-11-09T20:00:00Z');
 function plan(overrides={}){
  return createAutonomousRepairPlan({id:'repair-case-0001',owner:'michaeljwilliams0123',
-  repository:'michaeljwilliams0123/Ultron.MW',branch:'ultron/repair-autofix-001',
+  repository:'Ultron-MW/Ultron.MW',branch:'ultron/repair-autofix-001',
   baseSha:sha,objective:'Repair the failing repository test without changing release policy',
   allowedPaths:['src/example.mjs'],maxAttempts:3,maxPaidCents:0,paidFallback:false,
   expiresAt:'2026-11-10T20:00:00Z',...overrides},now());

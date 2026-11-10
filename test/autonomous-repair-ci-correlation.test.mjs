@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {observeVerifyRun,dispatchAndObserveVerify} from '../src/pr-brain-verify.mjs';
 import {createAutonomousRepairGitHubAdapters} from '../src/autonomous-repair-github-adapter.mjs';
 
-const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
+const ROOT='/repos/Ultron-MW/Ultron.MW';
 const branch='ultron/repair-ci-correlation-001';
 const sha='a'.repeat(40);
 const fp='e'.repeat(64);
@@ -13,7 +13,7 @@ const run=(id,display_title='Ultron core verification')=>({
  id,name:'Ultron core verification',path:'.github/workflows/verify.yml',
  event:'workflow_dispatch',display_title,
  head_branch:branch,head_sha:sha,
- head_repository:{full_name:'michaeljwilliams0123/Ultron.MW'},
+ head_repository:{full_name:'Ultron-MW/Ultron.MW'},
  status:'completed',conclusion:'success',run_attempt:1
 });
 function provider(runs){
