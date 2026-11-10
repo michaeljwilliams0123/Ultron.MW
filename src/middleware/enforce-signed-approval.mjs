@@ -208,6 +208,10 @@ export async function enforceSignedApprovalAndTagPersona(
   authorized:true,persona,commitHeaders,
   executionPayload:deepFreeze(payload)
  };
- Object.defineProperty(result,'token',{value:token,enumerable:false});
+ // Store the credential in a private lexical closure. Even diagnostic
+ // inspection with showHidden:true sees an accessor, not secret bytes.
+ Object.defineProperty(result,'token',{
+  get(){return token;},enumerable:false
+ });
  return Object.freeze(result);
 }
