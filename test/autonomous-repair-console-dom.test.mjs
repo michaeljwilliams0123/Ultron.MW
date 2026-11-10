@@ -33,8 +33,10 @@ test('rendered repair console ignores injected fields, uses text nodes and only 
  const model=buildRepairConsoleModel({state:'live',items:[row()]});
  renderRepairConsole({doc:document,root,model});
  assert.equal(visit(root,'article').length,1);
- assert.equal(visit(root,'a').length,1);
+ assert.equal(visit(root,'a').length,2);
  assert.equal(visit(root,'a')[0].href,
+  'https://github.com/michaeljwilliams0123/Ultron.MW/commit/'+SHA);
+ assert.equal(visit(root,'a')[1].href,
   'https://github.com/michaeljwilliams0123/Ultron.MW/pull/27');
  assert.doesNotMatch(texts(root),/ATTACKER HTML|DO-NOT-RENDER/);
  assert.match(texts(root),/Review the PR/);
@@ -63,7 +65,8 @@ test('filters recovery-needed, active and completed checkpoints without mutation
  renderRepairConsole({doc:doc(),root,
   model:{state:'live',items},filter:'needs-attention'});
  assert.equal(visit(root,'article').length,2);
- assert.equal(visit(root,'a').length,0);
+ assert.equal(visit(root,'a').length,2);
+ assert.equal(visit(root,'a').some(link=>link.href.includes('/pull/')),false);
 });
 test('fetching repair inventory uses only same-origin credentialed no-store GET',async()=>{
  let target=null,config=null;
@@ -101,4 +104,20 @@ test('actual PGlite PostgreSQL data populates the owner inventory and hides payl
   assert.equal(JSON.stringify(all).includes('SUPER-SECRET-TOKEN'),false);
   assert.equal(normalizeRepairStatus(record).prUrl,null);
  }finally{await db.close();}
+});
+
+test('copy status summary contains only verified operational metadata, never raw traces',async()=>{
+ let copied='';
+ const document=doc(),root=new FakeNode('root');
+ document.defaultView.navigator.clipboard.writeText=async value=>{copied=value;};
+ renderRepairConsole({doc:document,root,model:buildRepairConsoleModel({
+  state:'live',items:[row()]
+ })});
+ const statusButton=visit(root,'button').find(x=>x.textContent==='Copy status summary');
+ assert.ok(statusButton);
+ await statusButton.listeners.click();
+ assert.match(copied,/Ultron repair checkpoint/);
+ assert.match(copied,/Source commit/);
+ assert.match(copied,/repair-dom-001/);
+ assert.doesNotMatch(copied,/TOP-SECRET|DO-NOT-RENDER|ATTACKER HTML/);
 });
