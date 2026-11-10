@@ -66,3 +66,12 @@ test('owner-only proof workflow cannot issue writes and does not run on untruste
  assert.match(yaml,/scripts\/verify-council-fleet\.mjs/);
  assert.doesNotMatch(yaml,/pull_request_target:|id-token: write|contents: write|actions: write/);
 });
+
+test('GitHub primary limit reset embargo takes precedence over a short default delay',async()=>{
+ const reset=Math.floor(clock()/1000)+3605;
+ const limited=async()=>({ok:false,status:403,headers:{get:k=>
+  k==='x-ratelimit-remaining'?'0':k==='x-ratelimit-reset'?String(reset):null}});
+ const r=await verifyCouncilFleet({env,now:clock,mintScopedToken:issuer,request:limited});
+ assert.equal(r.status,'held');assert.equal(r.reason,'github-rate-limited');
+ assert.equal(r.retryAfterSeconds,3605);
+});
