@@ -21,7 +21,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: owner-actions-canary-\${{ github.run_id }}
+  group: owner-actions-canary-${{ github.run_id }}
   cancel-in-progress: false
 jobs:
   read-only:
@@ -48,13 +48,13 @@ jobs:
       - name: Inspect exact owner and repository without mutation
         env:
           OWNER_CANARY_MODE: read
-          GITHUB_TOKEN: \${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/owner-actions-canary.mjs
       - name: Persist sanitized read-only evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: owner-actions-read-\${{ github.run_id }}
+          name: owner-actions-read-${{ github.run_id }}
           path: artifacts/owner-actions-canary-*.json
           if-no-files-found: warn
           retention-days: 7
@@ -83,15 +83,15 @@ jobs:
       - name: Attempt exactly one explicitly approved isolated ref creation
         env:
           OWNER_CANARY_MODE: create
-          OWNER_CANARY_EXPECTED_SHA: \${{ inputs.expected_sha }}
-          OWNER_CANARY_APPROVAL_PHRASE: \${{ inputs.approval_phrase }}
-          GITHUB_TOKEN: \${{ github.token }}
+          OWNER_CANARY_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          OWNER_CANARY_APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/owner-actions-canary.mjs
       - name: Persist sanitized write or uncertain-state evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: owner-actions-create-\${{ github.run_id }}
+          name: owner-actions-create-${{ github.run_id }}
           path: artifacts/owner-actions-canary-*.json
           if-no-files-found: warn
           retention-days: 7
