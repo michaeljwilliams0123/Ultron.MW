@@ -42,7 +42,7 @@ function fixture({outcomes=['success'],pending=false,unknownPatch=false,unknownP
    counts.observePatch++;
    if(!patchAvailable)return null;
    return {verified:true,baseSha:expectedHeadSha,
-    headSha:attempt===1?next:next2,patchDigest:createHash('sha256').update(JSON.stringify(manifest)).digest('hex')};
+    headSha:attempt===1?next:attempt===2?next2:'d'.repeat(40),patchDigest:createHash('sha256').update(JSON.stringify(manifest)).digest('hex')};
   }};
  const verifier={async start(){counts.startVerify++;},
   async observe({attempt,headSha}){
