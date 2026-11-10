@@ -113,6 +113,7 @@ test('completed checkpoint cannot be accepted if the independently observed PR n
   const value=await runAutonomousRepair(f.args);
   assert.equal(value.status,'reconcile-required',
    'a different PR number must not confirm an existing completed receipt');
+  assert.equal(value.reason,'published-pr-identity-drift');
   assert.equal((await ledger.read(p.id)).phase,'complete');
   assert.equal(f.calls.post,1);
  }finally{await db.close();}

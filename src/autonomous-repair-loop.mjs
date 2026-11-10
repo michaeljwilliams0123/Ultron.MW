@@ -175,6 +175,8 @@ export async function runAutonomousRepair({plan,ledger,repairer,patcher,
    catch{return output('reconcile-required',row,'published-pr-readback-unavailable');}
    if(!checkPR(plan,row,current))
     return output('reconcile-required',row,'published-pr-readback-missing');
+   if(current.prNumber!==row.prNumber)
+    return output('reconcile-required',row,'published-pr-identity-drift');
    return output('completed',row);
   }
   if(row.phase==='exhausted')return output('exhausted',row);
