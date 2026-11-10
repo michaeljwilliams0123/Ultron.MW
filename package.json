@@ -12,5 +12,9 @@
   "devDependencies": {
     "@babel/parser": "7.29.9",
     "@electric-sql/pglite": "0.5.15"
+  },
+  "scripts": {
+    "verify:fast": "node scripts/verify-fast.mjs",
+    "repair:canary": "node scripts/autonomous-repair-canary.mjs"
   }
 }
