@@ -12,10 +12,7 @@ jobs:
       github.event.comment.user.login == 'michaeljwilliams0123' &&
       github.event.issue.pull_request != null &&
       github.event.issue.state == 'open' &&
-      (startsWith(github.event.comment.body, '/codex run ') ||
-       github.event.comment.body == '@michaeljwilliams0123ultron' ||
-       github.event.comment.body == '@ultron-codex' ||
-       github.event.comment.body == '@destiny-codex')
+      startsWith(github.event.comment.body, '/codex run ')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
