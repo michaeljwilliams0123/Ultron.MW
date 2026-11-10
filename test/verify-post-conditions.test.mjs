@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,4 +98,33 @@ test('rejects accessors and functions in receipts before hashing or logging', as
   const receipt = {idempotencyKey:'task-getter-1',status:'success',details:{}};
   Object.defineProperty(receipt.details,'token',{enumerable:true,get(){throw new Error('should not run');}});
   await assert.rejects(() => verifyPostConditionsAndStoreReceipt(receipt, {cwd}), /plain JSON data/);
+});
+
+test('reordered JSON properties replay the same semantic receipt idempotently', async t => {
+  const cwd = sandbox(t);
+  const first = {
+    idempotencyKey: 'task-keyorder-1', status: 'success',
+    details: { base: 1, head: 2 },
+  };
+  const reordered = {
+    details: { head: 2, base: 1 }, status: 'success',
+    idempotencyKey: 'task-keyorder-1',
+  };
+  const original = await verifyPostConditionsAndStoreReceipt(first, { cwd });
+  const replay = await verifyPostConditionsAndStoreReceipt(reordered, { cwd });
+  assert.deepEqual(replay, original);
+});
+
+test('rejects an audit file symlink even when its target is a valid existing receipt', async t => {
+  const cwd = sandbox(t);
+  const external = join(cwd, 'external');
+  const receipts = join(cwd, 'receipts');
+  mkdirSync(receipts);
+  const receipt = { idempotencyKey: 'task-symlink-1', status: 'success', details: {} };
+  await verifyPostConditionsAndStoreReceipt(receipt, { cwd, receiptDir: external });
+  symlinkSync(join(external, 'task-symlink-1.json'), join(receipts, 'task-symlink-1.json'));
+  await assert.rejects(
+    () => verifyPostConditionsAndStoreReceipt(receipt, { cwd }),
+    /audit.*(symbolic link|regular file)/i,
+  );
 });
