@@ -10,16 +10,14 @@
  */
 import {createScopedInstallationTokenProvider}
  from '../security/crypto_auth.mjs';
+import {createUnifiedGitHubTransport}
+ from '../github-app-transport.mjs';
 import {
  operationProfile,requiredTokenPermissions,
  ULTRON_REPOSITORY,ULTRON_REPOSITORY_ID,
 } from '../github-principal-policy.mjs';
 
-const API='https://api.github.com/repos/'+ULTRON_REPOSITORY;
-const HEADERS=Object.freeze({
- Accept:'application/vnd.github+json',
- 'X-GitHub-Api-Version':'2026-03-10',
-});
+const REPOSITORY_PATH='/repos/'+ULTRON_REPOSITORY;
 
 function positiveId(value){
  if(typeof value!=='string'||!/^[1-9][0-9]*$/.test(value))
@@ -43,22 +41,8 @@ function trustedConfiguration(env){
  });
 }
 
-async function repositoryReadback(grant,fetchImpl){
- let response;
- try{
-  response=await fetchImpl(API,{
-   method:'GET',redirect:'error',
-   headers:{...HEADERS,Authorization:'Bearer '+grant.token},
-   signal:AbortSignal.timeout(15000),
-  });
- }catch{
-  throw Error('GitHub App repository identity readback unavailable');
- }
- if(!response?.ok||response.status!==200)
-  throw Error('GitHub App repository identity readback denied');
- let data;
- try{data=await response.json();}
- catch{throw Error('GitHub App repository identity readback invalid');}
+async function verifiedRepositoryRead(transport){
+ const data=await transport.request('identity.read','GET',REPOSITORY_PATH);
  if(!data||data.id!==ULTRON_REPOSITORY_ID||
    data.full_name!==ULTRON_REPOSITORY)
   throw Error('GitHub App repository identity mismatch');
@@ -66,7 +50,7 @@ async function repositoryReadback(grant,fetchImpl){
 }
 
 /**
- * Authenticate once at startup, prove the exact repository identity, and
+ * Verify once at startup, prove the exact repository identity, and
  * demonstrate that the installation grants Contents:write without writing.
  *
  * Output contract:
@@ -106,8 +90,11 @@ export async function createVerifiedGitHubClient({
 
  // ID proof is a GET only. The write-capability check is a scoped token
  // exchange, NOT an unapproved or speculative repository mutation.
- const initialRead=await getTokenForScope('identity.read');
- await repositoryReadback(initialRead,fetchImpl);
+ const transport=createUnifiedGitHubTransport({
+  getToken:issueToken,expectedInstallationId:credentials.installationId,
+  fetchImpl,clock:()=>new Date(clock()).toISOString(),
+ });
+ await verifiedRepositoryRead(transport);
  await getTokenForScope('repair.branch.create');
 
  const octokit=Object.freeze({
@@ -115,8 +102,7 @@ export async function createVerifiedGitHubClient({
    get:async({owner,repo}={})=>{
     if(owner!=='michaeljwilliams0123'||repo!=='Ultron.MW')
      throw Error('GitHub App repository scope denied');
-    const grant=await getTokenForScope('identity.read');
-    return Object.freeze({data:await repositoryReadback(grant,fetchImpl)});
+    return Object.freeze({data:await verifiedRepositoryRead(transport)});
    },
   }),
  });
