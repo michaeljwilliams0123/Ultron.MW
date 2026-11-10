@@ -57,7 +57,7 @@ async function verifiedRepositoryRead(transport){
  *  - octokit: narrow Octokit-compatible, authenticated repos.get facade.
  *    This avoids broad SDK request/write methods and new dependencies.
  *  - installationId: verified installation ID as a positive integer.
- *  - getTokenForScope(operation): fresh repository-ID / permission-scoped
+ *  - getTokenForScope(operation | canonicalRequest): fresh scoped
  *    {token,operation,repositoryId,installationId,permissions,expiresAt}.
  *
  * IMPORTANT: This is a trusted server-side factory, NOT a public MCP tool.
@@ -75,17 +75,19 @@ export async function createVerifiedGitHubClient({
   ...credentials,fetchImpl,clock,
  });
  const getTokenForScope=async(scope)=>{
-  if(typeof scope!=='string')
-   throw Error('GitHub App token scope denied');
+  // Accept either an operation name (Tasks 2/4) or the canonical scoped
+  // request supplied by createUnifiedGitHubTransport. The issuer validates
+  // every object field, rejecting changed repositories or extra permissions.
+  const operation=typeof scope==='string'?scope:scope?.operation;
   let profile;
-  try{profile=operationProfile(scope);}
+  try{profile=operationProfile(operation);}
   catch{throw Error('GitHub App token scope denied');}
   if(profile.authorization!=='standing')
    throw Error('GitHub App elevated token scope denied');
-  return issueToken({
-   operation:scope,repositoryId:ULTRON_REPOSITORY_ID,
-   permissions:requiredTokenPermissions(scope),
-  });
+  return issueToken(typeof scope==='string'?{
+   operation,repositoryId:ULTRON_REPOSITORY_ID,
+   permissions:requiredTokenPermissions(operation),
+  }:scope);
  };
 
  // ID proof is a GET only. The write-capability check is a scoped token
