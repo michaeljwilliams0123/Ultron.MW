@@ -10,7 +10,7 @@ import {enforceSignedApprovalAndTagPersona} from '../src/middleware/enforce-sign
 import {dispatchHeadlessTask} from '../scripts/execute-autonomous-task.mjs';
 import {executeIdempotentGitHubWrite} from '../src/engine/durable-executor.mjs';
 import {verifyPostConditionsAndStoreReceipt} from '../scripts/verify-post-conditions.mjs';
-import {runMasterPipeline,createCanaryCommitOperation} from '../scripts/run-canary-pipeline.mjs';
+import {runMasterPipeline,createCanaryCommitOperation,createCanaryLineageVerifier} from '../scripts/run-canary-pipeline.mjs';
 import {requiredTokenPermissions,ULTRON_REPOSITORY_ID} from '../src/github-principal-policy.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -25,7 +25,7 @@ const env={GITHUB_APP_ID:'321',GITHUB_INSTALLATION_ID:'42',
 
 function response(status,payload){return {status,ok:status>=200&&status<300,json:async()=>payload};}
 function simulatedGitHub({fault=null}={}){
-  let branch=null,created=null;
+  let branch=null,created=null,verifiedRefReads=0;
   const calls=[];
   const fetchImpl=async (url,request={})=>{
     const method=request.method||'GET';
@@ -42,9 +42,12 @@ function simulatedGitHub({fault=null}={}){
       return response(200,{id:ULTRON_REPOSITORY_ID,full_name:REPO});
     if(path==='/git/ref/heads/main'&&method==='GET')
       return response(200,{ref:'refs/heads/main',object:{type:'commit',sha:BASE}});
-    if(path==='/git/ref/heads/'+BRANCH&&method==='GET')
-      return branch?response(200,{ref:'refs/heads/'+BRANCH,
-        object:{type:'commit',sha:branch}}):response(404,{message:'not found'});
+    if(path==='/git/ref/heads/'+BRANCH&&method==='GET'){
+      if(branch)verifiedRefReads++;
+      const observed=fault==='moved-head'&&verifiedRefReads>=4?FOREIGN:branch;
+      return observed?response(200,{ref:'refs/heads/'+BRANCH,
+        object:{type:'commit',sha:observed}}):response(404,{message:'not found'});
+    }
     if(path==='/git/commits/'+BASE&&method==='GET')
       return response(200,{sha:BASE,tree:{sha:TREE},parents:[]});
     if(path==='/git/commits/'+COMMIT&&method==='GET')
@@ -54,7 +57,8 @@ function simulatedGitHub({fault=null}={}){
       assert.equal(body.tree,TREE);
       assert.deepEqual(body.parents,[BASE]);
       assert.match(body.message,/Ultron-Operation-Digest: [a-f0-9]{64}/);
-      created={sha:COMMIT,message:body.message,tree:{sha:TREE},
+      created={sha:COMMIT,message:body.message,
+        tree:{sha:fault==='forged-tree'?FOREIGN:TREE},
         parents:[{sha:fault==='forged-parent'?FOREIGN:BASE}]};
       return response(201,{sha:COMMIT});
     }
@@ -106,6 +110,7 @@ async function harness(t,{fault=null}={}){
     verifyPostConditionsAndStoreReceipt:receipt=>
       verifyPostConditionsAndStoreReceipt(receipt,{cwd}),
     gitOperation:createCanaryCommitOperation({fetchImpl:github.fetchImpl}),
+    verifyRemoteLineage:createCanaryLineageVerifier({fetchImpl:github.fetchImpl}),
     trustedApproval:{db,trustedKey:SECRET,expectedInstallationId:42,clock:Date.now},
     durableServices:{db,clock:Date.now,fetchImpl:github.fetchImpl,
       authorization:{verify:async intent=>{
@@ -193,5 +198,16 @@ test('owner revocation stops before any GitHub mutation',async t=>{
 
 test('matching digest trailer on an unrelated-parent commit is not signed source lineage',async t=>{
   const h=await harness(t,{fault:'forged-parent'});
+  await assert.rejects(h.run(),/canary-remote-lineage-invalid/);
+});
+
+
+test('remote tree mismatch with signed source cannot pass the independent lineage gate',async t=>{
+  const h=await harness(t,{fault:'forged-tree'});
+  await assert.rejects(h.run(),/canary-remote-lineage-invalid/);
+});
+
+test('branch movement after Task 4 verification cannot pass the conductor gate',async t=>{
+  const h=await harness(t,{fault:'moved-head'});
   await assert.rejects(h.run(),/canary-remote-lineage-invalid/);
 });
