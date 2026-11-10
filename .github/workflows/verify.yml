@@ -47,6 +47,8 @@ jobs:
         run: npm install --no-save --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.15
       - name: Lint all workflows
         run: bash scripts/lint-workflows.sh
+      - name: Fast autonomous repair smoke (unprivileged, fixed commands)
+        run: npm run verify:fast
       - name: Syntax and regression checks
         run: node scripts/verify.mjs
       - name: PostgreSQL-backed acceptance replay and conflict checks
