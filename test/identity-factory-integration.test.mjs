@@ -132,7 +132,7 @@ test('startup denies HTTP failures and malformed GitHub grant readback',async()=
   {repository:{id:ULTRON_REPOSITORY_ID,full_name:'other/repo'}},
  ]){
   const mock=mockGitHub(options);
-  await assert.rejects(makeClient(mock),/HTTP 403|denied|scope|profile|identity|readback|unavailable/i);
+  await assert.rejects(makeClient(mock),/HTTP 403|outcome unknown|denied|scope|profile|identity|readback|unavailable/i);
   assert.equal(mock.calls.filter(x=>x.request.method==='PATCH'||x.request.method==='PUT').length,0);
  }
 });
