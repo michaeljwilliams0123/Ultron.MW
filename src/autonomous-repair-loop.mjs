@@ -161,7 +161,10 @@ export async function runAutonomousRepair({plan,ledger,repairer,patcher,
   row=assertRecord(plan,await ledger.read(plan.id));
   if(row.phase==='complete'){
    // A historical completion is not an independent external PR readback.
-   if(!publisher||!checkPR(plan,row,await publisher.observe({plan,headSha:row.headSha})))
+   let current;
+   try{current=await publisher?.observe?.({plan,headSha:row.headSha});}
+   catch{return output('reconcile-required',row,'published-pr-readback-unavailable');}
+   if(!checkPR(plan,row,current))
     return output('reconcile-required',row,'published-pr-readback-missing');
    return output('completed',row);
   }
