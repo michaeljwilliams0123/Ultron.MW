@@ -94,6 +94,52 @@ export function createCanaryCommitOperation({fetchImpl=globalThis.fetch}={}){
   };
 }
 
+/**
+ * Independent, token-scoped GitHub readback after the durable executor.
+ * A matching digest trailer alone does not prove that the commit descends from
+ * the signed source SHA, preserves its tree, or is still the target branch HEAD.
+ */
+export function createCanaryLineageVerifier({fetchImpl=globalThis.fetch}={}){
+  check(typeof fetchImpl==='function','remote-lineage-client-required');
+  return async ({token,branch,sourceSha,commitSha,operationDigest})=>{
+    check(typeof token==='string'&&token.length>=8&&
+      BRANCH.test(branch||'')&&SHA.test(sourceSha||'')&&
+      SHA.test(commitSha||'')&&DIGEST.test(operationDigest||''),
+      'remote-lineage-scope-invalid');
+    const refPath='/git/ref/heads/'+branch;
+    async function get(path){
+      let response;
+      try{
+        response=await fetchImpl(API+path,{
+          method:'GET',redirect:'error',signal:AbortSignal.timeout(15000),
+          headers:{Authorization:'Bearer '+token,
+            Accept:'application/vnd.github+json',
+            'X-GitHub-Api-Version':'2022-11-28'},
+        });
+      }catch{throw Error('canary-remote-lineage-unavailable');}
+      if(!response?.ok)throw Error('canary-remote-lineage-unavailable');
+      try{return await response.json();}
+      catch{throw Error('canary-remote-lineage-unavailable');}
+    }
+    const matchesHead=ref=>ref?.ref==='refs/heads/'+branch&&
+      ref.object?.type==='commit'&&ref.object.sha===commitSha;
+    check(matchesHead(await get(refPath)),'remote-lineage-invalid');
+    const [commit,parent]=await Promise.all([
+      get('/git/commits/'+commitSha),get('/git/commits/'+sourceSha)]);
+    check(commit?.sha===commitSha&&Array.isArray(commit.parents)&&
+      commit.parents.length===1&&commit.parents[0]?.sha===sourceSha&&
+      SHA.test(commit.tree?.sha||'')&&
+      commit.tree.sha===parent?.tree?.sha&&
+      typeof commit.message==='string'&&
+      commit.message.split(/\r?\n/).includes(
+        'Ultron-Operation-Digest: '+operationDigest),
+      'remote-lineage-invalid');
+    check(matchesHead(await get(refPath)),'remote-lineage-invalid');
+    return Object.freeze({verified:true,branch,sourceSha,commitSha,
+      operationDigest});
+  };
+}
+
 /** Five audited interfaces. Trusted credentials, grant verifier and DB are
  * injected by the existing cloud backend, never accepted from the signed JSON.
  */
@@ -101,12 +147,15 @@ export async function runMasterPipeline(operationRequest,{
   createVerifiedGitHubClient,enforceSignedApprovalAndTagPersona,
   dispatchHeadlessTask,executeIdempotentGitHubWrite,
   verifyPostConditionsAndStoreReceipt,
-  gitOperation=createCanaryCommitOperation(),trustedApproval,durableServices,
+  gitOperation=createCanaryCommitOperation(),
+  verifyRemoteLineage=createCanaryLineageVerifier(),
+  trustedApproval,durableServices,
 }={}){
   const payload=safeRequest(operationRequest);
   for(const [name,fn] of Object.entries({createVerifiedGitHubClient,
     enforceSignedApprovalAndTagPersona,dispatchHeadlessTask,
-    executeIdempotentGitHubWrite,verifyPostConditionsAndStoreReceipt,gitOperation}))
+    executeIdempotentGitHubWrite,verifyPostConditionsAndStoreReceipt,
+    gitOperation,verifyRemoteLineage}))
     check(typeof fn==='function','dependency-missing-'+name);
   // Task 3 on PR #363 executes the graph on invocation; reject it BEFORE
   // invoking any side effect until it offers a preparation-only contract.
@@ -166,6 +215,16 @@ export async function runMasterPipeline(operationRequest,{
     receipt.details?.operationDigest===operationDigest&&
     receipt.details?.remoteVerified===true&&
     SHA.test(receipt.details?.sha||''),'execution-receipt-unverified');
+  const lineage=await verifyRemoteLineage({
+    token:approved.token,branch:payload.targetBranch,
+    sourceSha:payload.sourceSha,commitSha:receipt.details.sha,
+    operationDigest,
+  });
+  check(lineage?.verified===true&&
+    lineage.branch===payload.targetBranch&&
+    lineage.sourceSha===payload.sourceSha&&
+    lineage.commitSha===receipt.details.sha&&
+    lineage.operationDigest===operationDigest,'remote-lineage-invalid');
   // Task 5 writes an audit artifact, but explicitly never claims remote proof.
   const audit=await verifyPostConditionsAndStoreReceipt(receipt);
   check(audit?.schema==='ultron.task5.local-audit.v1'&&
