@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync, chmodSync, statSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -89,6 +89,7 @@ test('detects an altered existing record on replay', async t => {
   const path = join(cwd,'receipts','task-tamper-1.json');
   const record = JSON.parse(readFileSync(path,'utf8'));
   record.status = 'LOCAL_DIFF_VERIFIED_REMOTE_UNVERIFIED';
+  chmodSync(path, 0o600); // A directory owner can still modify a read-only file.
   writeFileSync(path,JSON.stringify(record));
   await assert.rejects(() => verifyPostConditionsAndStoreReceipt(receipt, {cwd}), /audit integrity mismatch/);
 });
@@ -127,4 +128,26 @@ test('rejects an audit file symlink even when its target is a valid existing rec
     () => verifyPostConditionsAndStoreReceipt(receipt, { cwd }),
     /audit.*(symbolic link|regular file)/i,
   );
+});
+
+test('uses NUL-safe Git filenames for paths containing newlines', async t => {
+  const { cwd, headSha: baseSha } = gitFixture(t);
+  const unusualName = 'line\nbreak.txt';
+  writeFileSync(join(cwd, unusualName), 'third\n');
+  git(cwd, 'add', unusualName);
+  git(cwd, '-c', 'user.name=Task Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'third');
+  const headSha = git(cwd, 'rev-parse', 'HEAD');
+  const artifact = await verifyPostConditionsAndStoreReceipt({
+    idempotencyKey: 'task-weird-path-1', status: 'completed', details: { baseSha, headSha },
+  }, { cwd });
+  assert.deepEqual(artifact.changedFiles, [unusualName]);
+});
+
+test('publishes a read-only local audit file to discourage accidental mutation', async t => {
+  const cwd = sandbox(t);
+  const result = await verifyPostConditionsAndStoreReceipt({
+    idempotencyKey: 'task-readonly-1', status: 'completed',
+  }, { cwd });
+  const filename = join(cwd, 'receipts', result.idempotencyKey + '.json');
+  assert.equal(statSync(filename).mode & 0o222, 0);
 });
