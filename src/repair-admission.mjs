@@ -1,5 +1,5 @@
 import {
- assertUnifiedGitHubIdentity,parseInstant,ULTRON_GITHUB_PRINCIPAL,
+ assertUnifiedGitHubIdentity,parseInstant,ULTRON_GITHUB_PRINCIPAL,ULTRON_REPOSITORY,
 } from './github-principal-policy.mjs';
 
 /**
@@ -8,7 +8,7 @@ import {
  * authorization/stop snapshot, and independently observed GitHub base/head
  * state before any external write. No model response can create those facts.
  */
-const REPO = 'michaeljwilliams0123/Ultron.MW';
+const REPO = ULTRON_REPOSITORY;
 const SHA = /^[a-f0-9]{40}$/;
 const BRANCH = /^ultron\/repair-[a-z0-9][a-z0-9-]{2,63}$/;
 const KEY = /^repair:[a-z0-9][a-z0-9-]{7,90}$/;

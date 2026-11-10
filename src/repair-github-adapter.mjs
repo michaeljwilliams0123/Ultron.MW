@@ -1,3 +1,4 @@
+import {ULTRON_REPOSITORY,ULTRON_REPOSITORY_ID} from './github-principal-policy.mjs';
 /**
  * Narrow GitHub transport for Repair App branch/PR creation and observation.
  * This adapts the repository- and installation-scoped GitHub App operator;
@@ -5,8 +6,8 @@
  * The caller still must provide fresh authenticated installation readback,
  * durable admission and the Postgres write-intent ledger.
  */
-const REPO='michaeljwilliams0123/Ultron.MW';
-const REPO_ID=1424939667;
+const REPO=ULTRON_REPOSITORY;
+const REPO_ID=ULTRON_REPOSITORY_ID;
 const BRANCH=/^ultron\/repair-[a-z0-9][a-z0-9-]{2,63}$/;
 const SHA=/^[0-9a-f]{40}$/;
 const MARKER=/^<!-- ultron-repair:[0-9a-f]{64} -->/;

@@ -10,7 +10,7 @@ const BRANCH='ultron/canary-smoke-test';
 const params={taskId:'smoke-test-01',objective:'Verify one branch',
   sourceSha:SHA,branch:BRANCH};
 const plan={schema:'ultron.github.operation.v1',
-  repository:'michaeljwilliams0123/Ultron.MW',operation:'repair.branch.create',
+  repository:'Ultron-MW/Ultron.MW',operation:'repair.branch.create',
   activeAgentRole:'Builder',idempotencyKey:'repair:smoke-test-01',
   permittedScope:{operation:'repair.branch.create',repositoryId:1424939667,
     permissions:{metadata:'read',contents:'write'}},parameters:params};
@@ -122,7 +122,7 @@ function githubStub({existing=false,changedMain=false,uncertainAt=null}={}){
   const calls=[];
   let branchSha=existing?COMMIT:null;
   async function fetchImpl(url,opts){
-    const path=url.split('/repos/michaeljwilliams0123/Ultron.MW')[1];
+    const path=url.split('/repos/Ultron-MW/Ultron.MW')[1];
     calls.push({method:opts.method,path});
     assert.equal(opts.redirect,'error');
     const response=(status,data)=>({ok:status>=200&&status<300,status,
