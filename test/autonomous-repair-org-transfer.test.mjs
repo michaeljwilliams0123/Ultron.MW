@@ -30,7 +30,7 @@ test('Original human owner and personal repository are the only accepted repair 
   requestedPlan('Ultron-MW/Ultron.MW'),now
  ),/autonomous-repair-plan-invalid/);
 });
-test('Repair PR publication uses the original human owner's canonical repository',async()=>{
+test('Repair PR publication uses the primary human owner as the canonical repository owner',async()=>{
  const plan=createAutonomousRepairPlan(requestedPlan(),now);
  const calls=[];
  const get=async path=>{
