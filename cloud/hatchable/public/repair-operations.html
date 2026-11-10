@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Ultron.MW — Repair operations</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+*{box-sizing:border-box}body{background:#080e1b;color:#eaf1ff;margin:0;min-height:100vh}
+a{color:#b6d8ff}nav{max-width:1024px;margin:auto;display:flex;gap:12px;flex-wrap:wrap;padding:22px 18px 8px}
+nav a{padding:9px 12px;text-decoration:none;border:1px solid #466283;border-radius:9px}
+nav a[aria-current="page"]{background:#274c70}
+main{max-width:1024px;margin:auto;padding:26px 18px 64px}
+h1{font-size:clamp(29px,5vw,44px);margin:8px 0}p{line-height:1.6;color:#ccdafa}
+.eyebrow{letter-spacing:.16em;text-transform:uppercase;font-weight:750;font-size:12px;color:#96b7ff}
+.panel{background:#111e33;border:1px solid #314665;padding:22px;border-radius:14px;margin:20px 0}
+.toolbar{display:flex;gap:14px;align-items:end;flex-wrap:wrap}
+.toolbar label{display:flex;flex-direction:column;gap:7px;font-size:13px}
+select,button{padding:10px 13px;border-radius:9px;font:inherit}
+select{background:#192b45;color:#f1f5ff;border:1px solid #466283;min-width:190px}
+button{background:#82a7ff;color:#081628;border:0;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+#repair-list{display:grid;gap:12px;margin-top:22px}
+.repair-item{border:1px solid #355173;background:#0c192a;border-radius:12px;padding:17px}
+.repair-item-heading{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;overflow-wrap:anywhere}
+.repair-phase{border:1px solid #5a7392;color:#bcdcff;border-radius:20px;padding:4px 10px;font-size:12px}
+.repair-meta{font-size:12px;color:#9bb5d7;overflow-wrap:anywhere}
+.repair-next{font-weight:650;color:#eaf1ff}
+.repair-actions{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
+.repair-actions button{background:#273f5f;color:#d9e9ff;border:1px solid #557398}
+#repair-connection{padding:10px;border-left:3px solid #96b7ff;background:#16253d}
+.repair-notice{border:1px dashed #607799;padding:18px;border-radius:9px}
+footer{color:#aabbd3;font-size:12px;margin-top:25px}
+</style>
+</head>
+<body>
+<nav aria-label="Primary Ultron workspace">
+ <a href="/workspace.html">Workspace</a>
+ <a href="/">Cloud controls</a>
+ <a href="/council-room.html">Council room</a>
+ <a href="/repair-operations.html" aria-current="page">Repair operations</a>
+</nav>
+<main>
+ <div class="eyebrow">Ultron MW Cloud Brain · Owner operations</div>
+ <h1>Autonomous repair checkpoints</h1>
+ <p>Inspect actual PostgreSQL checkpoints after a repair, test run or restart.
+ This page only reads state. It cannot rerun a GitHub write, grant authority, merge a PR or deploy.</p>
+ <section class="panel" aria-labelledby="repair-headline">
+  <div class="toolbar">
+   <button type="button" id="repair-refresh">Refresh live status</button>
+   <label for="repair-filter">View
+    <select id="repair-filter">
+     <option value="all">All repairs</option>
+     <option value="needs-attention">Needs reconciliation</option>
+     <option value="active">Active</option>
+     <option value="complete">Verified PRs</option>
+    </select>
+   </label>
+  </div>
+  <p id="repair-connection" aria-live="polite" role="status">Not yet checked.</p>
+  <h2 id="repair-headline">Repair checkpoints</h2>
+  <div id="repair-list" aria-label="Durable repair checkpoint list"></div>
+ </section>
+ <footer>
+  Status comes only from the authenticated Hatchable PostgreSQL inventory.
+  Completion means a verified reviewable PR, not a merged or deployed release.
+  If authentication is required, use the <a href="https://hatchable.com/console/projects/ultron-mw-cloud" target="_blank" rel="noopener noreferrer">Hatchable project owner session</a>.
+ </footer>
+</main>
+<script type="module">
+ import {initRepairConsole} from './repair-operations.js';
+ initRepairConsole();
+</script>
+</body>
+</html>
