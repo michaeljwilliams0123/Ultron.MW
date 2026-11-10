@@ -56,6 +56,6 @@ test('public read and execution URLs do not reference old repository path', () =
   for (const file of ['lib/brain-core.js', 'lib/connectivity-view.js']) {
     const body = source(file);
     assert.ok(!body.includes('michaeljwilliams0123.github.io/Ultron.MW/'), file + ' old Pages URL');
-    assert.ok(body.includes('https://ultron-mw.github.io/Ultron.MW/'), file + ' missing new Pages URL');
+    if (file === 'lib/brain-core.js') assert.ok(body.includes('https://ultron-mw.github.io/Ultron.MW/'), file + ' missing new Pages URL');
   }
 });

@@ -1,4 +1,4 @@
-const REPO='michaeljwilliams0123/Ultron.MW';
+const REPO='Ultron-MW/Ultron.MW';
 const API='https://api.github.com/repos/'+REPO+'/issues?state=open&per_page=100&page=';
 const MAX_PAGES=3;
 const MAX_ISSUES=150;
