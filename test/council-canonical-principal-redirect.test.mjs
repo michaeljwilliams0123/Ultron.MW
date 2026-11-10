@@ -132,3 +132,35 @@ test('missing key, expired installation token, or unavailable provider never fab
  assert.equal(result.verifiedPrincipalCount,0);
  assert.equal(result.verifiedIndependentRoleCount,0);
 });
+
+
+test('role proof URLs reject foreign hosts, arbitrary paths and conflicting comment IDs',async()=>{
+ const {judgeIdentityProof}=await import('../scripts/council-identity-proof.mjs');
+ const marker='council-identity-proof:builder:abc123';
+ const good={id:7,body:'<!-- '+marker+' -->',created_at:'2026-11-10T19:00:00Z',
+  user:{login:'ultron-coordinator[bot]',type:'Bot',id:353078104},
+  performed_via_github_app:{slug:'ultron-coordinator',id:APP_ID},
+  html_url:'https://github.com/'+REPO+'/issues/186#issuecomment-7'};
+ const posted={id:7};
+ assert.equal(judgeIdentityProof({role:'Builder',posted,readback:good,marker}).authenticated,true);
+ for(const badUrl of [
+  'https://evil.example/'+REPO+'/issues/186#issuecomment-7',
+  'https://github.com.attacker.example/'+REPO+'/issues/186#issuecomment-7',
+  'https://github.com/'+REPO+'/issues/186#issuecomment-999',
+  'https://github.com/'+REPO+'/commit/123#issuecomment-7',
+  'http://github.com/'+REPO+'/issues/186#issuecomment-7',
+  'https://github.com/'+REPO+'/issues/186?redirect=evil#issuecomment-7'
+ ]){
+  assert.equal(judgeIdentityProof({role:'Builder',posted,readback:{
+   ...good,html_url:badUrl
+  },marker}).authenticated,false,'invalid proof URL: '+badUrl);
+ }
+});
+test('owner-only role proof blocks reruns triggered by bot or another GitHub user',()=>{
+ const y=readFileSync(new URL('../.github/workflows/council-identity-proof.yml',
+  import.meta.url),'utf8');
+ assert.match(y,/github\.triggering_actor == 'michaeljwilliams0123'/);
+ assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
+ assert.match(y,/github\.ref == 'refs\/heads\/main'/);
+ assert.doesNotMatch(y,/pull_request_target:|permissions:\s*[\s\S]*contents: write/);
+});
