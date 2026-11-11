@@ -8,6 +8,7 @@ import {diagnoseCouncilAppInstallation}
  from '../src/security/council-app-installation-diagnostic.mjs';
 import {verifyCouncilFleet}
  from '../src/security/council-fleet-verification.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const REPO_ID=1424939667;
@@ -28,8 +29,7 @@ test('single immutable GitHub repo ID is bound to the current primary human owne
  assert.equal(ULTRON_REPOSITORY_ID,REPO_ID);
 });
 test('protected Council workflow is callable only by primary human owner on canonical main',()=>{
- const y=readFileSync(new URL('../.github/workflows/council-principal-proof.yml',
-  import.meta.url),'utf8');
+ const y=legacyView('council-principal-proof.yml');
  assert.match(y,/github\.repository == 'michaeljwilliams0123\/Ultron\.MW'/);
  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(y,/github\.triggering_actor == 'michaeljwilliams0123'/);
@@ -160,8 +160,7 @@ test('role proof URLs reject foreign hosts, arbitrary paths and conflicting comm
  }
 });
 test('owner-only role proof blocks reruns triggered by bot or another GitHub user',()=>{
- const y=readFileSync(new URL('../.github/workflows/council-identity-proof.yml',
-  import.meta.url),'utf8');
+ const y=legacyView('council-identity-proof.yml');
  assert.match(y,/github\.triggering_actor == 'michaeljwilliams0123'/);
  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(y,/github\.ref == 'refs\/heads\/main'/);
@@ -169,8 +168,7 @@ test('owner-only role proof blocks reruns triggered by bot or another GitHub use
 });
 
 test('one-app role proof does not confuse attribution with independent approval or accept a changed repository ID',()=>{
- const workflow=readFileSync(new URL('../.github/workflows/council-identity-proof.yml',
-  import.meta.url),'utf8');
+ const workflow=legacyView('council-identity-proof.yml');
  assert.match(workflow,/github\.repository_id == 1424939667/);
  assert.match(workflow,/github\.repository_owner_id == 308995719/);
  assert.match(workflow,/github\.actor == 'michaeljwilliams0123'/);

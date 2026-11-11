@@ -5,7 +5,7 @@
  * No token minting, token persistence, workflow secret access, or retries.
  */
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
-const WORKFLOW='(?:verify\\.yml|council-debate\\.yml|continuum-council-supervisor\\.yml)';
+const WORKFLOW='(?:verify\\.yml|council-debate\\.yml)';
 const ROUTES=[
  ['GET',new RegExp('^'+ROOT+'$')],
  ['PATCH',new RegExp('^'+ROOT+'$')],

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {runOwnerCanaryMatrix,markerDocument} from '../scripts/owner-canary-matrix.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const BASE='a'.repeat(40),TREE='b'.repeat(40);
 const MARKER_TREE='c'.repeat(40),MARKER_COMMIT='d'.repeat(40);
@@ -149,13 +150,13 @@ test('detects remote identity, ref drift, missing marker, tampering, and partial
 });
 
 test('matrix workflow uses owner-gated separate read and write job, pinned actions, and no secret keys',async()=>{
- const yaml=await readFile(new URL('../.github/workflows/owner-canary-matrix.yml',import.meta.url),'utf8');
+ const yaml=legacyView('owner-canary-matrix.yml');
  assert.match(yaml,/workflow_dispatch:/);
  assert.match(yaml,/default: inspect/);
  assert.match(yaml,/contents: read/);
  assert.match(yaml,/contents: write/);
  assert.match(yaml,/APPROVE_ONE_CANARY_MARKER_COMMIT/);
- assert.match(yaml,/inputs\.mode == 'marker'/);
+ assert.match(yaml,/inputs\.matrix_mode == 'marker'/);
  assert.match(yaml,/github\.repository == 'michaeljwilliams0123\/Ultron\.MW'/);
  assert.match(yaml,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(yaml,/github\.triggering_actor == 'michaeljwilliams0123'/);

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {verifyCouncilFleet, normalizeAppPrivateKey} from '../src/security/council-fleet-verification.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 const repo={id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'};
 const env={GITHUB_APP_ID:'321',GITHUB_INSTALLATION_ID:'654',GITHUB_PRIVATE_KEY:'-----BEGIN FAKE KEY-----\\nabc\\n-----END FAKE KEY-----'};
 const clock=()=>Date.parse('2026-11-10T02:00:00Z');
@@ -58,7 +59,7 @@ test('private key normalization preserves actual newlines and converts escaped P
 });
 test('owner-only proof workflow cannot issue writes and does not run on untrusted PR events',async()=>{
  const {readFile}=await import('node:fs/promises');
- const yaml=await readFile(new URL('../.github/workflows/council-principal-proof.yml',import.meta.url),'utf8');
+ const yaml=legacyView('council-principal-proof.yml');
  assert.match(yaml,/workflow_dispatch:/);
  assert.match(yaml,/contents: read/);
  assert.match(yaml,/github\.actor == 'michaeljwilliams0123'/);

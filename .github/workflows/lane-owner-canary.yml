@@ -1,37 +1,81 @@
-name: Lane Owner Canary (shadow, Predictor)
-# Consolidated lane 'owner-canary', owned by Council role Predictor.
-# Owner-approved canaries and acceptance matrix.
-# PHASE 1 SHADOW: read-only replay of the legacy workflows below. Legacy files
-# keep every trigger and side effect until the owner signs the retirement
-# checklist in docs/WORKFLOW-CONSOLIDATION.md. Manifest: src/workflow-consolidation.mjs
-# Absorbs:
-#   - owner-actions-canary.yml (absorb)
-#   - owner-canary-matrix.yml (absorb)
-#   - mahoraga-connection1026.yml (absorb)
+name: Owner canary lane
+# Council lane 'owner-canary' (Predictor). Consolidates owner-actions-canary.yml,
+# owner-canary-matrix.yml and mahoraga-connection1026.yml. Inputs that collided
+# (`mode`) are namespaced per canary; every write still needs its own approval
+# phrase and exact SHA exactly as before.
 on:
   workflow_dispatch:
     inputs:
-      days:
-        description: Days of legacy run history to replay (1-30)
+      canary_task:
+        description: Which owner canary to run
+        required: true
+        type: choice
+        options:
+          - owner-actions-canary
+          - owner-canary-matrix
+          - mahoraga-connection1026
+      actions_mode:
+        description: 'owner-actions-canary: read-only by default; create means one isolated branch'
+        type: choice
+        options:
+          - read
+          - create
+        default: read
         required: false
-        default: 7
-        type: number
+      matrix_mode:
+        description: 'owner-canary-matrix: read-only inspect/verify or one separately approved marker'
+        type: choice
+        options:
+          - inspect
+          - verify
+          - marker
+        default: inspect
+        required: false
+      connection_mode:
+        description: 'mahoraga-connection1026: read-only verification or explicitly authorized private-branch push canary'
+        type: choice
+        options:
+          - read
+          - write-canary
+        default: read
+        required: false
+      expected_sha:
+        description: 'actions create: exact current main SHA; matrix: original 40-hex base SHA of the canary branch'
+        type: string
+        required: false
+      target_run_id:
+        description: 'owner-canary-matrix: original isolated canary branch run ID'
+        type: string
+        required: false
+      marker_run_id:
+        description: 'owner-canary-matrix: marker workflow run ID (verify mode)'
+        type: string
+        required: false
+      approval_phrase:
+        description: 'actions create: APPROVE_ONE_OWNER_ACTIONS_CANARY; matrix marker: APPROVE_ONE_CANARY_MARKER_COMMIT'
+        type: string
+        required: false
 permissions:
   contents: read
-concurrency:
-  group: lane-shadow-owner-canary
-  cancel-in-progress: true
 jobs:
-  shadow:
-    name: owner-canary shadow replay
+  read-only:
     if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.canary_task == 'owner-actions-canary') &&
+      (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
-      (github.event_name == 'schedule' || github.actor == 'michaeljwilliams0123')
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.actions_mode == 'read'
+      )
+    concurrency:
+      group: owner-actions-canary-${{ github.run_id }}-read-only
+      cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 3
     permissions:
       contents: read
-      actions: read
     steps:
       - name: Configure Git bare-repository policy
         run: git config --global safe.bareRepository explicit
@@ -41,8 +85,179 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - name: Static parity and read-only legacy replay (no writes)
+      - name: Inspect exact owner and repository without mutation
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LANE_DAYS: ${{ inputs.days || 7 }}
-        run: node scripts/workflow-shadow.mjs --lane owner-canary --days "$LANE_DAYS"
+          OWNER_CANARY_MODE: read
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/owner-actions-canary.mjs
+      - name: Persist sanitized read-only evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: owner-actions-read-${{ github.run_id }}
+          path: artifacts/owner-actions-canary-*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  one-branch:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.canary_task == 'owner-actions-canary') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.actions_mode == 'create' &&
+      inputs.approval_phrase == 'APPROVE_ONE_OWNER_ACTIONS_CANARY'
+      )
+    concurrency:
+      group: owner-actions-canary-${{ github.run_id }}-one-branch
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Attempt exactly one explicitly approved isolated ref creation
+        env:
+          OWNER_CANARY_MODE: create
+          OWNER_CANARY_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          OWNER_CANARY_APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/owner-actions-canary.mjs
+      - name: Persist sanitized write or uncertain-state evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: owner-actions-create-${{ github.run_id }}
+          path: artifacts/owner-actions-canary-*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  inspect-or-verify:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.canary_task == 'owner-canary-matrix') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.matrix_mode == 'inspect' || inputs.matrix_mode == 'verify')
+      )
+    concurrency:
+      group: owner-canary-matrix-${{ github.run_id }}-inspect-or-verify
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Inspect canary branch or independently verify marker provenance
+        env:
+          OWNER_MATRIX_MODE: ${{ inputs.matrix_mode }}
+          OWNER_MATRIX_TARGET_RUN_ID: ${{ inputs.target_run_id }}
+          OWNER_MATRIX_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          OWNER_MATRIX_MARKER_RUN_ID: ${{ inputs.marker_run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/owner-canary-matrix.mjs
+      - name: Upload sanitized independent readback receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: owner-canary-read-${{ github.run_id }}
+          path: artifacts/owner-canary-matrix-*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  marker-write:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.canary_task == 'owner-canary-matrix') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.matrix_mode == 'marker' &&
+      inputs.approval_phrase == 'APPROVE_ONE_CANARY_MARKER_COMMIT'
+      )
+    concurrency:
+      group: owner-canary-matrix-${{ github.run_id }}-marker-write
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: write
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Perform one separately approved non-forced ref update
+        env:
+          OWNER_MATRIX_MODE: marker
+          OWNER_MATRIX_TARGET_RUN_ID: ${{ inputs.target_run_id }}
+          OWNER_MATRIX_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          OWNER_MATRIX_MARKER_RUN_ID: ${{ github.run_id }}
+          OWNER_MATRIX_APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          OWNER_CANARY_STOP: ${{ vars.ULTRON_OWNER_CANARY_STOP }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/owner-canary-matrix.mjs
+      - name: Upload sanitized marker or uncertain-state receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: owner-canary-marker-${{ github.run_id }}
+          path: artifacts/owner-canary-matrix-*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  verify:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.canary_task == 'mahoraga-connection1026') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' && github.actor == 'michaeljwilliams0123'
+      )
+    permissions:
+      contents: read
+    concurrency:
+      group: mah-connection1026-${{ github.run_id }}-verify
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Validate Mahoraga fine-grained PAT without printing secret
+        env:
+          MAHORAGA_PAT: ${{ secrets.ULTRON_MAHORAGA_CONNECTION1026 }}
+          CANARY_MODE: ${{ inputs.connection_mode }}
+        run: node scripts/mahoraga-connection1026.mjs

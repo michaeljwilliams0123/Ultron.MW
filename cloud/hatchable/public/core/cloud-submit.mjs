@@ -1,7 +1,7 @@
 // GitHub Pages can prefill a cloud task. It never receives a GitHub token.
 import { planObjective } from './cycle.mjs';
 import { commandsFor } from './capabilities.mjs';
-export const SELF_SCAN_WORKFLOW='https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/self-scan-pr.yml';
+export const SELF_SCAN_WORKFLOW='https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/lane-ops-audit.yml';
 export const CLOUD_TASKS='https://github.com/michaeljwilliams0123/Ultron.MW/issues';
 export function createCloudTaskUrl(objective){
   if(typeof objective!=='string'||!objective.trim()||

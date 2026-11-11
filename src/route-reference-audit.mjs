@@ -3,9 +3,9 @@ import { posix } from 'node:path';
 // Issue #69: these release, UI and recovery entrypoints cannot be inferred dead
 // merely because no JavaScript module imports them.
 export const RETAINED_ROUTES = Object.freeze([
-  '.github/workflows/verify.yml', '.github/workflows/pr-brain.yml',
-  '.github/workflows/cloud-pr.yml', '.github/workflows/cloud-objective.yml',
-  '.github/workflows/self-scan-pr.yml', '.github/workflows/gitlab-mirror.yml',
+  '.github/workflows/verify.yml', '.github/workflows/owner-comment-router.yml',
+  '.github/workflows/cloud-pr.yml', '.github/workflows/lane-governed-task.yml',
+  '.github/workflows/lane-ops-audit.yml',
   'docs/app.js', 'docs/index.html', 'scripts/mirror-gitlab.sh',
   'gitbook-docs.yaml', 'gitbook/.gitbook.yaml',
 ]);

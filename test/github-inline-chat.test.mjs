@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseInlineChat,admitInlineChat,runInlineChat} from '../src/github-inline-chat.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const OWNER='michaeljwilliams0123';
@@ -98,7 +99,7 @@ test('reply verification requires actual GitHub bot echo',async()=>{
 
 test('workflow is opt-in, non-paid, and limits permissions',async()=>{
   const {readFile}=await import('node:fs/promises');
-  const yaml=await readFile(new URL('../.github/workflows/inline-pr-chat.yml',import.meta.url),'utf8');
+  const yaml=legacyView('inline-pr-chat.yml');
   assert.match(yaml,/startsWith\(github\.event\.comment\.body, '@ultron chat '\)/);
   assert.match(yaml,/github\.event\.repository\.private == false/);
   assert.match(yaml,/github\.actor == 'michaeljwilliams0123ultron'/);

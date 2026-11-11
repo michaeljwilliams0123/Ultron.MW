@@ -406,7 +406,7 @@
     try {
       const url = createCloudTaskUrl(objective);
       window.open(url, '_blank', 'noopener,noreferrer');
-      line('Ultron · public GitHub handoff', url.includes('/actions/workflows/self-scan-pr.yml') ?
+      line('Ultron · public GitHub handoff', url.includes('/actions/workflows/lane-ops-audit.yml') ?
       'Select Run workflow on GitHub to create or update the self-scan PR; no Issue is created.' :
       'Review and submit the canonical read-only commands in GitHub. To publish source changes, use Create PR to main.');
     } catch (error) {

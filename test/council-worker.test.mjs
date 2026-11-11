@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parseWorkerRequest,runWorkerOperation,toLedgerResult,checkEgressUrl,WORKER_OPS} from '../src/council-worker.mjs';
 import {createLedgerClient,runLedgeredAction} from '../src/council-ledger-client.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const SHA='a'.repeat(40);
 const base=over=>({objectiveId:'obj-1',op:'github.repo.inspect',sourceSha:SHA,...over});
@@ -99,7 +100,7 @@ test('ledger mapping: only verified is done; worker is never an independent iden
 });
 
 test('worker workflow is owner-gated, main-only, bounded and SHA-pinned',()=>{
- const y=readFileSync(new URL('../.github/workflows/council-worker.yml',import.meta.url),'utf8');
+ const y=legacyView('council-worker.yml');
  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(y,/github\.ref == 'refs\/heads\/main'/);
  assert.match(y,/timeout-minutes: 5/);

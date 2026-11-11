@@ -1,35 +1,46 @@
-name: Lane Governed Task (shadow, Ultron Core)
-# Consolidated lane 'governed-task', owned by Council role Ultron Core.
-# Bounded governed operations routed by Ultron Core.
-# PHASE 1 SHADOW: read-only replay of the legacy workflows below. Legacy files
-# keep every trigger and side effect until the owner signs the retirement
-# checklist in docs/WORKFLOW-CONSOLIDATION.md. Manifest: src/workflow-consolidation.mjs
-# Absorbs:
-#   - governed-execution.yml (retire)
+name: Ultron council worker lane
+# Council lane 'governed-task' (Ultron Core). Holds exactly one job: the
+# short-lived council execution worker (was council-worker.yml). Hatchable
+# trusts this file's OIDC identity as the council worker
+# (cloud/hatchable/lib/council-oidc.js), and GitHub OIDC has no job claim, so
+# the file stays single-job and is never a reusable workflow (no
+# workflow_call). A parity test enforces both. Keep the path stable.
 on:
+  issues:
+    types: [opened]
   workflow_dispatch:
     inputs:
-      days:
-        description: Days of legacy run history to replay (1-30)
-        required: false
-        default: 7
-        type: number
+      request:
+        description: 'Worker request JSON (objectiveId, op, role, sourceSha, params, issueNumber)'
+        required: true
+        type: string
 permissions:
   contents: read
-concurrency:
-  group: lane-shadow-governed-task
-  cancel-in-progress: true
 jobs:
-  shadow:
-    name: governed-task shadow replay
+  work:
     if: >-
+      (github.event_name == 'issues' || github.event_name == 'workflow_dispatch') &&
+      (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
-      (github.event_name == 'schedule' || github.actor == 'michaeljwilliams0123')
-    runs-on: ubuntu-latest
-    timeout-minutes: 6
+      github.actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issues' &&
+        github.event.issue.user.login == 'michaeljwilliams0123' &&
+        ((github.event.issue.title == '[Ultron Worker] Browser execution' &&
+          startsWith(github.event.issue.body, 'ULTRON_BROWSER_ACTION_V1')) ||
+         (github.event.issue.title == '[Ultron Worker] Browser external acceptance' &&
+          startsWith(github.event.issue.body, 'ULTRON_BROWSER_WRITE_V1')))))
+      )
     permissions:
       contents: read
-      actions: read
+      issues: write
+      id-token: write
+    concurrency:
+      group: council-worker-${{ github.run_id }}-work
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Configure Git bare-repository policy
         run: git config --global safe.bareRepository explicit
@@ -39,8 +50,28 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - name: Static parity and read-only legacy replay (no writes)
+      - name: Install Playwright for browser objectives
+        if: contains(inputs.request, 'browser.check') || contains(inputs.request, 'browser.action') || contains(inputs.request, 'browser.external-write') || (github.event_name == 'issues' && (github.event.issue.title == '[Ultron Worker] Browser execution' || github.event.issue.title == '[Ultron Worker] Browser external acceptance'))
+        run: |
+          npm install --no-save --ignore-scripts --no-audit --no-fund playwright@1.65.0
+          npx playwright install --with-deps chromium
+      - name: Check bounded browser and worker source
+        run: |
+          node --check src/browser-action.mjs
+          node --check src/browser-external-write.mjs
+          node --check src/council-worker.mjs
+          node --check scripts/council-worker.mjs
+      - name: Execute objective with ledger, timeout and post-action verification
         env:
+          WORKER_REQUEST: ${{ inputs.request }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LANE_DAYS: ${{ inputs.days || 7 }}
-        run: node scripts/workflow-shadow.mjs --lane governed-task --days "$LANE_DAYS"
+          MAHORAGA_REPOSITORY: ${{ vars.MAHORAGA_REPOSITORY }}
+          MAHORAGA_READ_TOKEN: ${{ secrets.MAHORAGA_READ_TOKEN }}
+        run: timeout 240 node scripts/council-worker.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: council-worker-result
+          path: council-worker-result.json
+          if-no-files-found: ignore
+          retention-days: 14

@@ -88,20 +88,17 @@ test('OIDC-05: no unknown payload fields, malformed run ids, oversized or replay
   null, [],'hello',
  ])assert.throws(()=>validateOidcBody(body),/untrusted-oidc/);
 });
-test('OIDC-06: two trust boundaries remain separate and no extra secrets are required',()=>{
+test('OIDC-06: bridge workflow is retired; no lane mints the bridge audience; endpoint stays fail-closed',async()=>{
+ const {readdirSync}=await import('node:fs');
  const api=readFileSync('cloud/hatchable/api/brain/hf-oidc-event.js','utf8');
- const action=readFileSync('.github/workflows/hf-oidc-bridge.yml','utf8');
- const publisher=readFileSync('scripts/hf-oidc-publish.mjs','utf8');
  assert.match(api,/access='public'/);
  assert.match(api,/verifyGitHubOidc/);
  assert.match(api,/validateGithubWorkflowPayload/);
- assert.match(api,/admitGithubDelivery/);
- assert.match(api,/notifyOwner/);
- assert.match(action,/id-token: write/);
- assert.match(action,/workflow_run:/);
- assert.match(action,/workflow_dispatch:/);
- assert.doesNotMatch(action,/pull_request_target|secrets\.|contents: write|pull-requests: write/);
- assert.match(publisher,/ACTIONS_ID_TOKEN_REQUEST_URL/);
- assert.match(publisher,/audience=/);
- assert.doesNotMatch(publisher,/GITHUB_TOKEN|HF_TOKEN|API_KEY/);
+ // hf-oidc-bridge.yml never succeeded (Hatchable's unauthenticated readback
+ // returned 503); the owner approved retiring it. The trust entry is removed
+ // in the follow-up Hatchable release; until then nothing can mint for it.
+ const files=readdirSync('.github/workflows');
+ assert.equal(files.includes('hf-oidc-bridge.yml'),false);
+ for(const name of files)
+  assert.doesNotMatch(readFileSync('.github/workflows/'+name,'utf8'),/hf-oidc-publish\.mjs/,name);
 });

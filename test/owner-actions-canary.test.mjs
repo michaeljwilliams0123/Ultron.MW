@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {runOwnerActionsCanary} from '../scripts/owner-actions-canary.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const SHA='a'.repeat(40),OTHER='b'.repeat(40);
 const ROOT='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
@@ -139,7 +140,7 @@ test('read errors and uncertain writes cannot be counted as verified',async()=>{
 });
 
 test('workflow keeps a separate owner-gated, contents:write job and a read-only default',async()=>{
- const yml=await readFile(new URL('../.github/workflows/owner-actions-canary.yml',import.meta.url),'utf8');
+ const yml=legacyView('owner-actions-canary.yml');
  assert.match(yml,/workflow_dispatch:/);
  assert.match(yml,/default: read/);
  assert.match(yml,/APPROVE_ONE_OWNER_ACTIONS_CANARY/);

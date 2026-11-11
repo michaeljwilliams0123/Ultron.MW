@@ -5,6 +5,7 @@ import {resolveMode,diagnoseRun,planRepair,selectStaleDrafts,planBranchUpdate,sa
   renderIssue,findIssueForSignature,issueMarker,ALLOWED_OPS} from '../src/council-self-repair.mjs';
 import {OWNER_ONLY_OPERATIONS} from '../src/council-of-ultron.mjs';
 import {handleRun,sweepDrafts,renderSummary} from '../scripts/council-self-repair.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const SHA='b'.repeat(40);
@@ -131,7 +132,7 @@ test('adapter: sweep updates a behind draft with expected head and dispatches Ve
 });
 
 test('workflow is report-only by default, splits read and write jobs, never runs PR code',()=>{
-  const y=readFileSync(new URL('../.github/workflows/council-self-repair.yml',import.meta.url),'utf8');
+  const y=legacyView('council-self-repair.yml');
   assert.match(y,/vars\.ULTRON_SELF_REPAIR_MODE \|\| 'report-only'/);
   assert.match(y,/needs\.diagnose\.outputs\.act == 'true' && vars\.ULTRON_SELF_REPAIR_MODE == 'act'/);
   const [diagnose,act]=y.split('\n  act:\n');
