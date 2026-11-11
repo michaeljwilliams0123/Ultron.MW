@@ -1,5 +1,6 @@
 import {db,events} from 'hatchable';
-import {compareGithubRun,selectArtifactMetadata} from 'lib/hf-github-receipts.js';
+import {compareGithubRun,selectArtifactMetadata,mainContainsSource,mainComparePath}
+ from 'lib/hf-github-receipts.js';
 import {notifyOwner} from 'lib/owner-live-events.js';
 export const access='scheduler';
 export const methods=['POST'];
@@ -36,13 +37,19 @@ export default async function(_req,res){
  let run,artifacts;
  try{
   run=await github('/actions/runs/'+event.runId);
-  if(!compareGithubRun(event,run).verified){
+  let mismatch=compareGithubRun(event,run).verified?null:'independent-source-mismatch';
+  // A run whose commit is not on main (for example a tag named main) is never
+  // verified evidence, whatever its head_branch says.
+  if(!mismatch&&!mainContainsSource(await github(mainComparePath(event.sourceSha)),event.sourceSha))
+   mismatch='source-not-on-main';
+  if(mismatch){
    const held=await db.query(`UPDATE hf_github_receipts
-    SET state='held',failure_code='independent-source-mismatch',
+    SET state='held',failure_code=$3,
      claim_token=NULL,lease_until=to_timestamp(0),updated_at=now()
-    WHERE id=$1 AND claim_token=$2 RETURNING id`,[row.id,claimToken]);
+    WHERE id=$1 AND claim_token=$2 RETURNING id`,[row.id,claimToken,mismatch]);
    if(held.rows?.length)await notifyOwner(events,'github');
-   return res.json({ok:true,result:held.rows?.length?'held-source-mismatch':'claim-lost'});
+   return res.json({ok:true,result:held.rows?.length?
+    (mismatch==='source-not-on-main'?'held-source-not-on-main':'held-source-mismatch'):'claim-lost'});
   }
   const response=await github('/actions/runs/'+event.runId+'/artifacts?per_page=100');
   if(!Array.isArray(response?.artifacts))throw Error('artifact-metadata-unavailable');
