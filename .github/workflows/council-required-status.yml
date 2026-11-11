@@ -30,6 +30,7 @@ jobs:
       issues: read
       pull-requests: read
       statuses: write
+      actions: read
     steps:
       - name: Configure Git bare-repository policy
         run: git config --global safe.bareRepository explicit
