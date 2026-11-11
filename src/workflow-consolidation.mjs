@@ -25,19 +25,19 @@ export const LANES=Object.freeze({
   ci:Object.freeze({owner:'Skeptic',file:'verify.yml',
     purpose:'Exact-head verification, attested receipts, fixed comparison. Required check `test`.'}),
   'comment-router':Object.freeze({owner:'Companion',file:'owner-comment-router.yml',
-    purpose:'One front door for owner comments: cloud feedback, PR conversation, implementation, /council, Codex audit, inline chat.'}),
+    purpose:'One front door for owner comments and hosted objectives: cloud objective/feedback, PR conversation, implementation, /council, Codex audit, inline chat.'}),
   council:Object.freeze({owner:'Steward',file:'council-debate.yml',
-    purpose:'Council debate, Continuum supervisor and identity proofs.'}),
+    purpose:'Council debate and identity proofs.'}),
   'owner-canary':Object.freeze({owner:'Predictor',file:'lane-owner-canary.yml',
     purpose:'Owner-approved canaries and acceptance matrix.'}),
   'lab-evidence':Object.freeze({owner:'Generator',file:'lane-lab-evidence.yml',
     purpose:'Hugging Face CPU labs, held-out evidence and C06 model release.'}),
   'ops-audit':Object.freeze({owner:'Sentinel',file:'lane-ops-audit.yml',
-    purpose:'Live acceptance audit, hourly self-scan, GitLab mirror, Reef probe, self-repair loop.'}),
+    purpose:'Live acceptance audit, hourly self-scan, GitLab mirror, Reef probe, self-repair loop, Continuum supervisor.'}),
   'cloud-handoff':Object.freeze({owner:'Builder',file:'cloud-pr.yml',
     purpose:'Owner PR creation and room execution handoff (Hatchable job_workflow_ref pin).'}),
   'governed-task':Object.freeze({owner:'Ultron Core',file:'lane-governed-task.yml',
-    purpose:'Hosted read-only objectives and the Council execution worker (own OIDC identity).'}),
+    purpose:'The Council execution worker only: a dedicated single-job file whose OIDC identity Hatchable trusts.'}),
 });
 
 export const LEGACY_WORKFLOWS=Object.freeze([
@@ -50,9 +50,9 @@ export const LEGACY_WORKFLOWS=Object.freeze([
   wf('reef-runtime-probe.yml','ops-audit','absorbed',['reef-runtime-probe'],
     {note:'Moved to ops-audit, not ci, so a probe failure never turns Verify red.'}),
   wf('owner-comment-router.yml','comment-router','lane',
-    ['cloud-feedback','issue-implementation','council-command'],{pinnedBy:[
+    ['issue-implementation','council-command'],{pinnedBy:[
     pin(HATCH+'council-oidc.js','/.github/workflows/owner-comment-router.yml@refs/heads/main','Hatchable OIDC room-router trust pin'),
-  ]}),
+  ],note:'Its cloud-feedback reusable call was replaced by the inline `cloud` job (from cloud-objective.yml).'}),
   wf('codex-trigger-audit.yml','comment-router','absorbed',['codex-trigger-audit']),
   wf('inline-pr-chat.yml','comment-router','absorbed',['public-chat']),
   wf('pr-brain.yml','comment-router','absorbed',['pr-conversation'],{pinnedBy:[
@@ -60,9 +60,10 @@ export const LEGACY_WORKFLOWS=Object.freeze([
   ],note:'The converse job is inlined as the router job pr-conversation (was a reusable call).'}),
   wf('council-debate.yml','council','lane',['council-debate'],{pinnedBy:[
     pin(HATCH+'council-oidc.js','/.github/workflows/council-debate.yml@refs/heads/main','Hatchable OIDC council trust pin'),
-    pin('.github/workflows/council-debate.yml',"workflow_id:'council-debate.yml'",'supervisor dispatches by filename'),
+    pin('.github/workflows/lane-ops-audit.yml',"workflow_id:'council-debate.yml'",'Continuum supervisor (ops-audit) dispatches by filename'),
   ]}),
-  wf('continuum-council-supervisor.yml','council','absorbed',['reconcile']),
+  wf('continuum-council-supervisor.yml','ops-audit','absorbed',['reconcile'],
+    {note:'In ops-audit, not council-debate.yml, so the router /council call needs no actions: write.'}),
   wf('council-identity-proof.yml','council','absorbed',['prove']),
   wf('council-principal-proof.yml','council','absorbed',['verify-principal']),
   wf('owner-actions-canary.yml','owner-canary','absorbed',['read-only','one-branch'],
@@ -97,18 +98,29 @@ export const LEGACY_WORKFLOWS=Object.freeze([
   ]}),
   wf('council-self-repair.yml','ops-audit','absorbed',['diagnose','act'],
     {note:'Added by #411 after phase 1; folded into ops-audit as its header planned.'}),
-  wf('cloud-objective.yml','governed-task','absorbed',['cloud'],{pinnedBy:[
-    pin('.github/workflows/owner-comment-router.yml','./.github/workflows/lane-governed-task.yml','reusable workflow call'),
+  wf('cloud-objective.yml','comment-router','absorbed',['cloud'],{pinnedBy:[
+    pin('src/self-observer.mjs',"'node src/cloud-entry.mjs'",'self-observer inventory (repo-internal)'),
   ]}),
   wf('cloud-pr.yml','cloud-handoff','lane',['create-pr'],{pinnedBy:[
     pin(HATCH+'council-oidc.js','/.github/workflows/cloud-pr.yml@refs/heads/main','Hatchable OIDC room-execution trust pin'),
   ],note:'Unchanged. Nothing was folded in, so its job_workflow_ref identity stays exclusive.'}),
   wf('council-worker.yml','governed-task','absorbed',['work'],{pinnedBy:[
     pin(HATCH+'council-oidc.js','/.github/workflows/lane-governed-task.yml@refs/heads/main','Hatchable OIDC worker trust pin (lane identity)'),
-  ],note:'Moved to governed-task (not cloud-pr) so the worker keeps an OIDC identity of its own.'}),
+  ],note:'lane-governed-task.yml is a dedicated single-job worker file (no workflow_call), so the pinned worker identity maps to exactly this job.'}),
   wf('governed-execution.yml','governed-task','retired',['execute_task'],
     {note:'0 recorded runs; owner approved retirement.'}),
 ]);
+
+/** Jobs allowed to request `id-token: write`, per file. GitHub OIDC tokens
+ * carry no job claim, so Hatchable's per-file trust is only as narrow as this
+ * list. `uses` jobs grant the ceiling for a reusable call. */
+export const OIDC_JOBS=Object.freeze({
+  'verify.yml':['attested-receipt'],
+  'council-debate.yml':['council-debate'],
+  'cloud-pr.yml':['create-pr'],
+  'lane-governed-task.yml':['work'],
+  'owner-comment-router.yml':['issue-implementation','council-command'],
+});
 
 /** Workflow files allowed besides the eight lanes (separately reviewed PRs). */
 export const NON_LEGACY_WORKFLOWS=Object.freeze(['council-required-status.yml']);

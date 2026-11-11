@@ -13,7 +13,7 @@ const CONTENT=Object.freeze({
   'docs/core/capabilities.mjs':'command: /self scan',
   'docs/core/cycle.mjs':'route /self scan',
   '.github/workflows/lane-ops-audit.yml':'run: node src/self-scan-pr.mjs\npull-requests: write',
-  '.github/workflows/owner-comment-router.yml':'run: node src/pr-brain.mjs\nref: main',
+  '.github/workflows/owner-comment-router.yml':'run: node src/pr-brain.mjs\nref: main\nrun: node src/cloud-entry.mjs',
   'src/pr-brain.mjs':'handlePrConversation routePrTurn',
   'src/pr-brain-verify.mjs':'dispatchAndObserveVerify',
   'src/ci-evidence.mjs':'selectVerifiedMainCi readVerifiedMainCi',
@@ -23,7 +23,6 @@ const CONTENT=Object.freeze({
   'src/cloud-cycle.mjs':"case '/self scan':",
   'src/cloud-pr.mjs':'import {launchCodePr}',
   '.github/workflows/cloud-pr.yml':'run: node src/cloud-pr.mjs\npull-requests: write',
-  '.github/workflows/lane-governed-task.yml':'run: node src/cloud-entry.mjs',
   '.github/workflows/verify.yml':'run: node scripts/verify.mjs',
 });
 const PATHS=[

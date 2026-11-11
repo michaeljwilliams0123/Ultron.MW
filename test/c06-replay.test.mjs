@@ -14,7 +14,8 @@ test('C06-R01 requires verified original ancestor, identical generator and no du
  assert.equal(approved.mainSha,latest);
  assert.equal(approved.runId,'41775971062');
  assert.ok(C06_REPLAY_PINNED_PATHS.includes('src/c06-model-origin.mjs'));
- assert.ok(C06_REPLAY_PINNED_PATHS.includes('.github/workflows/c06-owner-model-release.yml'));
+ assert.ok(C06_REPLAY_PINNED_PATHS.includes('.github/workflows/lane-lab-evidence.yml'));
+ assert.ok(!C06_REPLAY_PINNED_PATHS.includes('.github/workflows/c06-owner-model-release.yml'));
  for(const patch of [{actor:'attacker'},{repository:'another/repo'},
   {sourceSha:'main'},{mainSha:'main'},{runId:'x123'},
   {isOriginalAncestor:false},{alreadyPublished:true},
@@ -71,4 +72,14 @@ test('C06-R07 replay must compare full generated file bytes, not reject all pree
  const s=await readFile(new URL('../scripts/c06-verify-replay.mjs',import.meta.url),'utf8');
  assert.match(s,/hasNovelC06Outputs/);
  assert.doesNotMatch(s,/!!alreadyInMain/);
+});
+
+test('C06-R06 every pinned replay toolchain path exists, and the pinned workflow holds the C06 jobs',async()=>{
+ const {existsSync}=await import('node:fs');
+ for(const path of C06_REPLAY_PINNED_PATHS)
+  assert.ok(existsSync(new URL('../'+path,import.meta.url)),'pinned path missing: '+path);
+ const lane=await readFile(new URL('../.github/workflows/lane-lab-evidence.yml',import.meta.url),'utf8');
+ assert.match(lane,/^  generate:$/m);
+ assert.match(lane,/^  publish:$/m);
+ assert.match(lane,/inputs\.lab_task == 'c06-owner-model-release'/);
 });

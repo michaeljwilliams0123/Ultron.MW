@@ -1,79 +1,25 @@
-name: Ultron governed task lane
-# Council lane 'governed-task' (Ultron Core). Consolidates cloud-objective.yml
-# (hosted read-only objectives, also called by the owner comment router) and
-# council-worker.yml (short-lived execution worker). Hatchable trusts this
-# file's own OIDC identity for the worker (cloud/hatchable/lib/council-oidc.js);
-# keep the path stable.
+name: Ultron council worker lane
+# Council lane 'governed-task' (Ultron Core). Holds exactly one job: the
+# short-lived council execution worker (was council-worker.yml). Hatchable
+# trusts this file's OIDC identity as the council worker
+# (cloud/hatchable/lib/council-oidc.js), and GitHub OIDC has no job claim, so
+# the file stays single-job and is never a reusable workflow (no
+# workflow_call). A parity test enforces both. Keep the path stable.
 on:
   issues:
     types: [opened]
-  workflow_call:
   workflow_dispatch:
     inputs:
-      governed_task:
-        description: Which governed task to run
-        required: true
-        type: choice
-        options:
-          - objective
-          - worker
-      objective:
-        description: 'objective: one-line read-only Ultron objective'
-        required: false
-        type: string
       request:
-        description: 'worker: request JSON (objectiveId, op, role, sourceSha, params, issueNumber)'
-        required: false
+        description: 'Worker request JSON (objectiveId, op, role, sourceSha, params, issueNumber)'
+        required: true
         type: string
 permissions:
   contents: read
 jobs:
-  cloud:
-    if: >-
-      (github.event_name == 'issues' || github.event_name == 'issue_comment' || (github.event_name == 'workflow_dispatch' && inputs.governed_task == 'objective' && inputs.objective != '')) &&
-      (
-      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
-      github.actor == 'michaeljwilliams0123' &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event_name == 'issues' &&
-        github.event.issue.user.login == 'michaeljwilliams0123' &&
-        github.event.issue.title == '[Ultron Cloud] Objective') ||
-       (github.event_name == 'issue_comment' &&
-        github.event.issue.user.login == 'michaeljwilliams0123' &&
-        github.event.comment.user.login == 'michaeljwilliams0123' &&
-        startsWith(github.event.comment.body, 'ULTRON_FEEDBACK_V1') &&
-        startsWith(github.event.issue.body, 'ULTRON_CLOUD_V1')))
-      )
-    permissions:
-      contents: read
-      issues: write
-    concurrency:
-      group: ultron-cloud-${{ github.event.issue.number || github.run_id }}-cloud
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - name: Configure Git bare-repository policy
-        run: git config --global safe.bareRepository explicit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22'
-      - name: Validate hosted executor
-        run: |
-          node --check src/cloud-cycle.mjs
-          node --check src/cloud-feedback.mjs
-          node --check src/cloud-entry.mjs
-      - name: Execute and persist GitHub receipt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node src/cloud-entry.mjs
-
   work:
     if: >-
-      (github.event_name == 'issues' || (github.event_name == 'workflow_dispatch' && inputs.governed_task == 'worker' && inputs.request != '')) &&
+      (github.event_name == 'issues' || github.event_name == 'workflow_dispatch') &&
       (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
