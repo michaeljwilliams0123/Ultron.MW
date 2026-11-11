@@ -22,7 +22,7 @@ const BASE=['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
  '0016_owner_autonomy_profile.sql','0033_owner_passkey_authority.sql',
  '0034_owner_passkey_enrollment.sql','0037_github_approval_nonces.sql',
  '0039_github_idempotent_executions.sql'];
-const HELD=['0040_ultron_org_transfer.sql','0041_github_pr_comment_executions.sql'];
+const HELD=['0041_github_pr_comment_executions.sql'];
 async function database(t,files){
  const db=new PGlite();
  for(const f of files)await db.exec(await readFile(
@@ -78,7 +78,7 @@ test('signer rejects unusable keys without echoing key material',()=>{
  }
 });
 
-test('canary readiness reports not-configured while 0041 is held and credentials are absent',async t=>{
+test('canary readiness reports not-configured while 0041 is absent and credentials are absent',async t=>{
  const db=await database(t,BASE);
  const none=await prCommentCanaryReadiness({db,readConfig:configFrom({})});
  assert.deepEqual({...none,missing:[...none.missing]},{configured:false,status:'not-configured',
@@ -124,7 +124,7 @@ test('the App JWT the canary sends verifies against the App public key',async t=
   {iat:1_799_999_970,exp:1_800_000_540,iss:'5633654'});
  assert.equal(createVerify('RSA-SHA256').update(h+'.'+p)
   .verify(RSA.publicKey,Buffer.from(s,'base64url')),true);
- const executions=(await db.query('SELECT count(*)::int AS n FROM github_idempotent_executions')).rows[0].n;
+ const executions=(await db.query('SELECT count(*)::int AS n FROM github_pr_comment_executions')).rows[0].n;
  assert.equal(executions,0,'a denied token exchange writes nothing');
 });
 

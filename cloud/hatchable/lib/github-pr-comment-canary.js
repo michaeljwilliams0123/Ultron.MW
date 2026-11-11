@@ -41,10 +41,13 @@ function exact(value,keys){
   Object.keys(value).length===keys.length&&
   Object.keys(value).every(key=>keys.includes(key));
 }
-// Columns added by migration 0041. While 0041 is held, the canary reports
-// not-configured instead of attempting a reservation or provider write.
-const LEDGER_COLUMNS=['target_kind','target_number','body_sha256','grant_id',
- 'provider_comment_id','provider_url','provider_actor','provider_app_id'];
+// Ledger table created by migration 0041 (github_pr_comment_executions).
+// Until it exists, the canary reports not-configured instead of attempting a
+// reservation or provider write.
+const LEDGER_TABLE='github_pr_comment_executions';
+const LEDGER_COLUMNS=['idempotency_key','operation_digest','repository',
+ 'target_number','body_sha256','grant_id','persona_role','state',
+ 'provider_comment_id','provider_url','provider_actor','provider_app_id','receipt'];
 const CONFIG_NAMES={appId:'ULTRON_GITHUB_APP_ID',installationId:'ULTRON_GITHUB_INSTALLATION_ID',
  privateKey:'ULTRON_GITHUB_APP_PRIVATE_KEY',ownerJwk:'ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK'};
 export const PR_COMMENT_CANARY_CONFIG=Object.freeze({...CONFIG_NAMES});
@@ -73,8 +76,8 @@ export async function prCommentCanaryReadiness({db,readConfig}={}){
  if(typeof db?.query==='function'){
   try{
    const result=await db.query(`SELECT count(*)::int AS n FROM information_schema.columns
-    WHERE table_schema=current_schema() AND table_name='github_idempotent_executions'
-     AND column_name = ANY($1::text[])`,[LEDGER_COLUMNS]);
+    WHERE table_schema=current_schema() AND table_name=$2
+     AND column_name = ANY($1::text[])`,[LEDGER_COLUMNS,LEDGER_TABLE]);
    ledger=Number(result?.rows?.[0]?.n)===LEDGER_COLUMNS.length;
   }catch{ledger=false;}
  }
@@ -194,12 +197,12 @@ async function independentRead(fetchImpl,id,prepared){
 async function row(db,key){
  const result=await db.query(`SELECT idempotency_key,state,operation_digest,
   target_number,body_sha256,grant_id,created_at,receipt
-  FROM github_idempotent_executions WHERE idempotency_key=$1`,[key]);
+  FROM github_pr_comment_executions WHERE idempotency_key=$1`,[key]);
  if(result?.rows?.length!==1)fail('ledger-readback-unavailable');
  return result.rows[0];
 }
 async function markReconcile(db,prepared){
- try{await db.query(`UPDATE github_idempotent_executions
+ try{await db.query(`UPDATE github_pr_comment_executions
   SET state='reconcile_required',updated_at=now()
   WHERE idempotency_key=$1 AND state IN ('reserved','in_flight')`,
  [prepared.idempotencyKey]);}catch{}
@@ -211,7 +214,7 @@ async function complete(db,prepared,digest,comment,status){
   bodySha256:prepared.bodySha256,commentId:Number(comment.id),
   commentUrl:comment.html_url,actor:BOT_LOGIN,appId:APP_ID,
   personaRole:'builder',remoteVerified:true}};
- try{await db.query(`UPDATE github_idempotent_executions SET
+ try{await db.query(`UPDATE github_pr_comment_executions SET
   state='completed',provider_comment_id=$3,provider_url=$4,
   provider_actor=$5,provider_app_id=$6,receipt=$7::jsonb,updated_at=now()
   WHERE idempotency_key=$1 AND operation_digest=$2
@@ -231,7 +234,7 @@ export async function submitPrCommentCanary({
  if(typeof db?.query!=='function'||!SHA256.test(digest||'')||
    typeof fetchImpl!=='function'||typeof clock!=='function')fail('service-invalid');
  const token=await tokenForComment(appCredentials,fetchImpl,clock);
- const claimed=await db.query(`UPDATE github_idempotent_executions
+ const claimed=await db.query(`UPDATE github_pr_comment_executions
   SET state='in_flight',updated_at=now()
   WHERE idempotency_key=$1 AND operation_digest=$2 AND state='reserved'
   RETURNING idempotency_key`,[prepared.idempotencyKey,digest]);
