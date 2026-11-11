@@ -44,6 +44,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      checks: read
       issues: write
       pull-requests: write
       id-token: write
@@ -179,6 +180,46 @@ jobs:
             core.exportVariable('TARGET_SOURCE_SHA', targetSourceSha);
             core.exportVariable('TITLE_FILE', path.join(dir, 'title.txt'));
             core.exportVariable('BODY_FILE', path.join(dir, 'body.txt'));
+
+      - name: Independently read exact-head CI evidence (advisory only)
+        if: env.IS_PR == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
+          TARGET_SOURCE_SHA: ${{ env.TARGET_SOURCE_SHA }}
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path');
+            const {owner,repo}=context.repo;
+            const number=Number(process.env.ITEM_NUMBER);
+            const sha=process.env.TARGET_SOURCE_SHA;
+            const destination=path.join(process.env.RUNNER_TEMP,
+              'ultron-council','exact-head-ci.json');
+            let evidence={}; // A provider outage or failed check must never generate a pass.
+            try {
+              if(!Number.isSafeInteger(number)||number<1||
+                 !/^[a-f0-9]{40}$/.test(sha||''))throw Error('invalid-pr-target');
+              const current=(await github.rest.pulls.get({
+                owner,repo,pull_number:number
+              })).data;
+              if(current.state!=='open'||current.head?.sha!==sha)
+                throw Error('council-head-drift');
+              const [checks,comparison]=await Promise.all([
+                github.rest.checks.listForRef({
+                  owner,repo,ref:sha,per_page:100
+                }),
+                github.rest.repos.compareCommits({
+                  owner,repo,base:current.base.sha,head:sha
+                })
+              ]);
+              if(checks.data?.total_count>100)
+                throw Error('check-inventory-truncated');
+              evidence={pr:current,comparison:comparison.data,checkRuns:checks.data};
+            } catch(error) {
+              core.warning('Council exact-head CI remains unverified: '+error.message);
+            }
+            fs.writeFileSync(destination,JSON.stringify(evidence));
+            core.exportVariable('COUNCIL_REVIEW_EVIDENCE_FILE',destination);
 
       - name: Run owner-first council debate
         id: debate
