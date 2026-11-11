@@ -7,8 +7,10 @@ import { snapshotSha } from '../src/git-hubs.mjs';
 import {
   CAPABILITY_LANES, LANE_IDS, COUNCIL_ROSTER, OWNER_ONLY_OPERATIONS, validateMemberProfile, validateRoster,
   loadCouncilSkills, createCouncilMemory, restoreCouncilMemory, inferLanes, routeCouncilTask,
-  recordCouncilOutcome, councilScorecard, mapOwnerMessage, companionReply,
+  recordCouncilOutcome, councilScorecard, mapOwnerMessage, companionReply, isVerifiedOutcome, scorecardRows,
 } from '../src/council-of-ultron.mjs';
+import * as pgMemory from '../cloud/hatchable/lib/council-memory.js';
+import { readFileSync } from 'node:fs';
 
 const root = resolve(import.meta.dirname, '..');
 const EV = 'https://github.com/michaeljwilliams0123/Ultron.MW/pull/398';
@@ -283,4 +285,34 @@ test('Skeptic restore: Phase 1 outcomes without evidenceVerified load as unverif
   }
   const verified = restoreCouncilMemory(resealMemory(snap, () => ({ outcomes: [{ ...outcome, evidenceVerified: true }] })));
   assert.equal(councilScorecard(verified)['ultron-builder'].agentic.attempts, 1);
+});
+
+test('Skeptic L1 + #410: routing and the persisted scorecard share ONE verified-outcome predicate', () => {
+  // Same function object, owned by the Phase 2 memory lib and re-exported by the router.
+  assert.equal(isVerifiedOutcome, pgMemory.isVerifiedOutcome);
+  // Only a literal boolean true counts.
+  assert.equal(isVerifiedOutcome({ evidenceVerified: true }), true);
+  for (const v of [false, 'true', 1, null, undefined, {}, [true]]) assert.equal(isVerifiedOutcome({ evidenceVerified: v }), false, String(v));
+  for (const o of [null, undefined, true, 'x', 1]) assert.equal(isVerifiedOutcome(o), false);
+  // Neither side keeps its own inline comparison that could drift from the predicate.
+  for (const file of ['src/council-of-ultron.mjs', 'cloud/hatchable/lib/council-memory.js']) {
+    const src = readFileSync(resolve(root, file), 'utf8');
+    const inline = src.match(/evidenceVerified\s*[!=]==?\s*(true|false)/g) || [];
+    assert.ok(inline.length <= (file.includes('council-memory') ? 1 : 0), file + ': ' + inline.join(', '));
+  }
+  // Behavioral parity: the same snapshot yields the same rows from both sides.
+  const snap = createCouncilMemory({ now: clock }).snapshot();
+  const base = { routing: 'c'.repeat(64), lead: 'ultron-builder', evidence: [EV], at: '2026-11-10T00:00:00.000Z' };
+  const outcomes = [
+    { ...base, taskId: 'task-v1', lanes: ['agentic'], status: 'succeeded', evidenceVerified: true },
+    { ...base, taskId: 'task-v2', lanes: ['agentic', 'reasoning'], status: 'failed', evidenceVerified: true },
+    { ...base, taskId: 'task-u1', lanes: ['agentic'], status: 'succeeded', evidenceVerified: false },
+    { ...base, taskId: 'task-v3', lead: 'ultron-skeptic', lanes: ['reasoning'], status: 'succeeded', evidenceVerified: true },
+  ];
+  const restored = restoreCouncilMemory(resealMemory(snap, () => ({ outcomes })));
+  const sealed = restored.snapshot();
+  const routingRows = scorecardRows(councilScorecard(restored), sealed.sha256);
+  const storeRows = scorecardRows(pgMemory.verifiedScorecard(sealed), sealed.sha256);
+  assert.deepEqual(JSON.parse(JSON.stringify(routingRows)), JSON.parse(JSON.stringify(storeRows)));
+  assert.equal(routingRows.find(r => r.member_id === 'ultron-builder' && r.lane === 'agentic').attempts, 2);
 });

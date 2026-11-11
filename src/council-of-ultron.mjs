@@ -16,6 +16,11 @@ import { COUNCIL_APP_ROLES } from './council-app-bindings.mjs';
 import { COUNCIL_ABILITIES, memberAbilityAdmission } from './council-members.mjs';
 import { evaluateHubEntry, snapshotSha, verifyGitHubs } from './git-hubs.mjs';
 import { commandsFor } from '../docs/core/capabilities.mjs';
+// One shared "is this outcome verified" predicate, owned by the Phase 2 memory
+// lib (it must stay importable on Hatchable). Re-exported here so routing and
+// the persisted scorecard use the same rule.
+import { isVerifiedOutcome } from '../cloud/hatchable/lib/council-memory.js';
+export { isVerifiedOutcome };
 
 const fail = code => { throw Object.assign(new Error('council-of-ultron-' + code), { code }); };
 const freezeDeep = value => {
@@ -245,7 +250,7 @@ export function restoreCouncilMemory(snapshot, options = {}) {
   if (snapshotSha(body) !== sha256) fail('snapshot-digest-mismatch');
   validateMemoryState(body, validateRoster(options.roster ?? COUNCIL_ROSTER));
   // Phase 1 snapshots may lack evidenceVerified: anything but literal true restores as unverified.
-  const outcomes = body.outcomes.map(o => ({ ...o, evidenceVerified: o.evidenceVerified === true }));
+  const outcomes = body.outcomes.map(o => ({ ...o, evidenceVerified: isVerifiedOutcome(o) }));
   return createCouncilMemory({ ...options, state: { ...body, outcomes } });
 }
 
@@ -356,7 +361,7 @@ export function councilScorecard(memory) {
   const card = Object.create(null); // Skeptic M4: no prototype to pollute
   for (const outcome of memory.outcomes()) for (const lane of outcome.lanes) {
     // Skeptic L1: unverified evidence never steers routing.
-    if (outcome.evidenceVerified !== true || !ID.test(outcome.lead || '') || !LANE_IDS.includes(lane)) continue;
+    if (!isVerifiedOutcome(outcome) || !ID.test(outcome.lead || '') || !LANE_IDS.includes(lane)) continue;
     const slot = ((card[outcome.lead] ||= Object.create(null))[lane] ||= { attempts: 0, successes: 0, rate: 0.5 });
     if (outcome.status === 'held') continue;
     slot.attempts += 1;
