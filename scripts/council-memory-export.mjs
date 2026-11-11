@@ -11,9 +11,13 @@ import { planGitLabMirror, planGitBookPublish } from '../src/council-memory-stor
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const [file, flag] = process.argv.slice(2);
-if (!file) { console.error('usage: node scripts/council-memory-export.mjs <snapshot.json> [--write]'); process.exit(2); }
-const snapshot = JSON.parse(await readFile(resolve(file), 'utf8'));
-const plans = [planGitLabMirror(snapshot), planGitBookPublish(snapshot)];
+if (!file) { console.error('usage: ULTRON_COUNCIL_MEMORY_HMAC_KEY=... node scripts/council-memory-export.mjs <sealed-snapshot.json> [--write]'); process.exit(2); }
+// Input is the sealed envelope from GET /api/brain/council-memory. Without the
+// owner's HMAC key the seal cannot be checked, so nothing is written.
+const key = process.env.ULTRON_COUNCIL_MEMORY_HMAC_KEY;
+if (!key) { console.error('BLOCKED: ULTRON_COUNCIL_MEMORY_HMAC_KEY is not set; refusing to export an unverified snapshot.'); process.exit(3); }
+const sealed = JSON.parse(await readFile(resolve(file), 'utf8'));
+const plans = [planGitLabMirror(sealed, key), planGitBookPublish(sealed, key)];
 for (const plan of plans) {
   console.log(plan.adapter + ' -> ' + plan.path + ' (' + plan.content.length + ' bytes)\n  ' + plan.route);
   if (flag === '--write') {

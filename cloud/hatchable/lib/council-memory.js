@@ -1,4 +1,4 @@
-import {createHash} from 'node:crypto';
+import {createHash,createHmac,timingSafeEqual} from 'node:crypto';
 
 // Council of Ultron Phase 2 memory store on Hatchable PostgreSQL.
 // Pure library: every function takes the db client, so the same SQL runs on
@@ -84,8 +84,11 @@ export function validateEntry(entry){
  if(kind==='outcome'){
   iso(body.at);
   if(!HEX64.test(body.routing||'')||body.lead!==memberId||!OUTCOMES.includes(body.status)||
-     !Array.isArray(body.lanes)||!body.lanes.length||body.lanes.some(l=>!LANES.includes(l)))fail('outcome-invalid');
+     !Array.isArray(body.lanes)||!body.lanes.length||body.lanes.length>8||body.lanes.some(l=>!LANES.includes(l))||
+     typeof body.taskId!=='string'||!/^[a-z0-9][a-z0-9:._-]{2,80}$/.test(body.taskId)||
+     typeof body.evidenceVerified!=='boolean')fail('outcome-invalid');
   evidence(body.evidence,{required:true});
+  if(Object.keys(body).sort().join()!=='at,evidence,evidenceVerified,lanes,lead,routing,status,taskId')fail('body-invalid');
  }
  if(!['fact','journal','shared','outcome'].includes(kind))fail('kind-invalid');
  if(canonicalJson(body).length>8000)fail('body-too-large');
@@ -106,11 +109,46 @@ export async function appendEntries(db,entries){
 }
 
 /** Refuse any snapshot whose schema or content hash does not match. */
+const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
+const plain=o=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.getPrototypeOf(o)===Object.prototype;
 export function verifySnapshot(snapshot){
- if(!snapshot||typeof snapshot!=='object'||snapshot.schema!==SCHEMA)fail('snapshot-schema-mismatch');
+ if(!plain(snapshot)||snapshot.schema!==SCHEMA)fail('snapshot-schema-mismatch');
+ if(Object.keys(snapshot).sort().join()!=='members,outcomes,schema,sha256,shared')fail('snapshot-shape-invalid');
  const {sha256,...body}=snapshot;
  if(!HEX64.test(sha256||'')||sha256Of(body)!==sha256)fail('snapshot-digest-mismatch');
+ if(!plain(body.members)||!Array.isArray(body.shared)||!Array.isArray(body.outcomes))fail('snapshot-shape-invalid');
+ for(const id of Object.keys(body.members)){
+  const slot=body.members[id];
+  if(!MEMBER_IDS.includes(id)||!plain(slot)||Object.keys(slot).sort().join()!=='journal,namespace,profile'||
+     slot.namespace!==MEMBERS[id]||!plain(slot.profile)||!Array.isArray(slot.journal))fail('snapshot-member-invalid');
+  for(const k of Object.keys(slot.profile))if(!FACT_KEY.test(k))fail('fact-key-invalid');
+ }
  return body;
+}
+
+// Keyed seal. The plain sha256 is tamper-evident only; anyone can recompute
+// it. The HMAC binds a snapshot to the owner's ULTRON_COUNCIL_MEMORY_HMAC_KEY.
+// No key, no seal and no load: fail closed.
+export function hmacKey(raw){
+ if(typeof raw!=='string'||!raw.trim())fail('hmac-key-missing');
+ let key;try{key=Buffer.from(raw.trim(),'base64')}catch{fail('hmac-key-invalid')}
+ if(key.length<32)fail('hmac-key-invalid');
+ return key;
+}
+export const SEALED_SCHEMA='ultron.council-memory.sealed.v1';
+export function sealSnapshot(snapshot,key){
+ verifySnapshot(snapshot);
+ const mac=createHmac('sha256',key).update(SEALED_SCHEMA+'\n'+snapshot.sha256).digest('hex');
+ return {schema:SEALED_SCHEMA,snapshot,hmacSha256:mac};
+}
+export function openSealed(sealed,key){
+ if(!plain(sealed)||sealed.schema!==SEALED_SCHEMA||!HEX64.test(sealed.hmacSha256||''))fail('seal-invalid');
+ verifySnapshot(sealed.snapshot);
+ const want=createHmac('sha256',key).update(SEALED_SCHEMA+'\n'+sealed.snapshot.sha256).digest();
+ if(!timingSafeEqual(want,Buffer.from(sealed.hmacSha256,'hex')))fail('seal-mismatch');
+ // Re-run every write-path validator before anyone uses the content.
+ entriesFromSnapshot(sealed.snapshot).forEach(validateEntry);
+ return sealed.snapshot;
 }
 
 /** Turn a verified in-repo snapshot into owner-attributed entries. */
@@ -118,21 +156,20 @@ export function entriesFromSnapshot(snapshot){
  const body=verifySnapshot(snapshot);
  const out=[];
  for(const [memberId,slot] of Object.entries(body.members||{})){
-  if(!MEMBER_IDS.includes(memberId)||slot.namespace!==MEMBERS[memberId])fail('snapshot-member-invalid');
-  for(const [factKey,fact] of Object.entries(slot.profile||{}))
+  for(const [factKey,fact] of Object.entries(slot.profile))
    out.push({memberId,writtenBy:memberId,kind:'fact',factKey,body:fact});
-  for(const j of slot.journal||[])out.push({memberId,writtenBy:memberId,kind:'journal',body:j});
+  for(const j of slot.journal)out.push({memberId,writtenBy:memberId,kind:'journal',body:j});
  }
- for(const s of body.shared||[])out.push({memberId:s.by,writtenBy:s.by,kind:'shared',body:s});
- for(const o of body.outcomes||[])out.push({memberId:o.lead,writtenBy:'ultron-core',kind:'outcome',body:o});
+ for(const s of body.shared)out.push({memberId:s.by,writtenBy:s.by,kind:'shared',body:s});
+ for(const o of body.outcomes)out.push({memberId:o.lead,writtenBy:'ultron-core',kind:'outcome',body:o});
  // Restore order by timestamp keeps "newest fact wins" faithful.
  return out.sort((a,b)=>a.body.at<b.body.at?-1:a.body.at>b.body.at?1:0);
 }
 
 /** Import a snapshot: verify first, then insert everything in one statement per batch. */
-export async function importSnapshot(db,snapshot){
+export async function importSnapshot(db,sealed,key){
+ const snapshot=openSealed(sealed,key); // HMAC + full validation before the first write
  const entries=entriesFromSnapshot(snapshot);
- entries.forEach(validateEntry); // validate everything before the first write
  let inserted=0;
  for(let i=0;i<entries.length;i+=MAX_BATCH)inserted+=(await appendEntries(db,entries.slice(i,i+MAX_BATCH))).inserted;
  return {entries:entries.length,inserted};
@@ -141,17 +178,24 @@ export async function importSnapshot(db,snapshot){
 /** Build the in-repo snapshot format from the table (same retention as src). */
 export async function exportSnapshot(db,{journalLimit=200}={}){
  if(!Number.isSafeInteger(journalLimit)||journalLimit<1||journalLimit>5000)fail('journal-limit-invalid');
- const rows=(await db.query(`SELECT id,member_id,kind,fact_key,body FROM brain_council_memory_entries ORDER BY id`)).rows;
- const data={schema:SCHEMA,members:{},shared:[],outcomes:[]};
- for(const id of MEMBER_IDS)data.members[id]={namespace:MEMBERS[id],profile:{},journal:[]};
+ const rows=(await db.query(`SELECT id,member_id,written_by,kind,fact_key,body FROM brain_council_memory_entries ORDER BY id`)).rows;
+ // Build in Maps (no prototype keys), re-validating every row as it loads.
+ const facts=new Map(MEMBER_IDS.map(id=>[id,new Map()])),journals=new Map(MEMBER_IDS.map(id=>[id,[]]));
+ const shared=[],outcomes=[];
  let lastEntryId=0;
  for(const r of rows){
   lastEntryId=Math.max(lastEntryId,Number(r.id));
   const body=typeof r.body==='string'?JSON.parse(r.body):r.body;
-  if(r.kind==='fact')data.members[r.member_id].profile[r.fact_key]=body;
-  else if(r.kind==='journal')data.members[r.member_id].journal.push(body);
-  else if(r.kind==='shared')data.shared.push(body);
-  else data.outcomes.push(body);
+  const e=validateEntry({memberId:r.member_id,writtenBy:r.written_by,kind:r.kind,factKey:r.fact_key??null,body});
+  if(e.kind==='fact')facts.get(e.memberId).set(e.factKey,body);
+  else if(e.kind==='journal')journals.get(e.memberId).push(body);
+  else if(e.kind==='shared')shared.push(body);
+  else outcomes.push(body);
+ }
+ const data={schema:SCHEMA,members:{},shared,outcomes};
+ for(const id of MEMBER_IDS){
+  const profile={};for(const k of [...facts.get(id).keys()].sort())profile[k]=facts.get(id).get(k);
+  data.members[id]={namespace:MEMBERS[id],profile,journal:journals.get(id)};
  }
  for(const id of MEMBER_IDS){const j=data.members[id].journal;if(j.length>journalLimit)j.splice(0,j.length-journalLimit)}
  if(data.shared.length>journalLimit)data.shared.splice(0,data.shared.length-journalLimit);
@@ -160,23 +204,38 @@ export async function exportSnapshot(db,{journalLimit=200}={}){
 }
 
 /** Store a snapshot only after re-verifying it (never write then check). */
-export async function storeVerifiedSnapshot(db,{snapshot,lastEntryId}){
- verifySnapshot(snapshot);
+export async function storeVerifiedSnapshot(db,{snapshot,lastEntryId},key){
+ const sealed=sealSnapshot(snapshot,key);
+ openSealed(sealed,key); // verify before storing, never after
  if(!Number.isSafeInteger(lastEntryId)||lastEntryId<0)fail('last-entry-invalid');
- const r=await db.query(`INSERT INTO brain_council_memory_snapshots(sha256,schema_version,last_entry_id,body)
-  VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(sha256) DO NOTHING RETURNING id`,
-  [snapshot.sha256,SCHEMA,lastEntryId,JSON.stringify(snapshot)]);
- return {sha256:snapshot.sha256,stored:r.rows.length===1};
+ const r=await db.query(`INSERT INTO brain_council_memory_snapshots(sha256,schema_version,last_entry_id,hmac_sha256,body)
+  VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(sha256) DO NOTHING RETURNING id`,
+  [snapshot.sha256,SCHEMA,lastEntryId,sealed.hmacSha256,JSON.stringify(snapshot)]);
+ return {sha256:snapshot.sha256,hmacSha256:sealed.hmacSha256,stored:r.rows.length===1};
 }
 
 /** Read a stored snapshot and refuse it unless schema and hash still match. */
-export async function readStoredSnapshot(db,sha256){
+export async function readStoredSnapshot(db,sha256,key){
  if(!HEX64.test(sha256||''))fail('snapshot-id-invalid');
- const row=(await db.query(`SELECT body FROM brain_council_memory_snapshots WHERE sha256=$1`,[sha256])).rows[0];
+ const row=(await db.query(`SELECT body,hmac_sha256 FROM brain_council_memory_snapshots WHERE sha256=$1`,[sha256])).rows[0];
  if(!row)return null;
  const snapshot=typeof row.body==='string'?JSON.parse(row.body):row.body;
- verifySnapshot(snapshot);
- return snapshot;
+ return openSealed({schema:SEALED_SCHEMA,snapshot,hmacSha256:row.hmac_sha256},key);
+}
+
+/** Scorecard over VERIFIED outcomes only (evidenceVerified===true). Unverified
+ * outcomes are references, not results, and never move routing. */
+export function verifiedScorecard(snapshot){
+ const card={};
+ for(const o of verifySnapshot(snapshot).outcomes){
+  if(o.evidenceVerified!==true||o.status==='held')continue;
+  for(const lane of o.lanes){
+   const slot=((card[o.lead]||={})[lane]||={attempts:0,successes:0,rate:0.5});
+   slot.attempts+=1;if(o.status==='succeeded')slot.successes+=1;
+   slot.rate=Number(((slot.successes+1)/(slot.attempts+2)).toFixed(4));
+  }
+ }
+ return card;
 }
 
 /** Write one whole scorecard generation in a single statement. The prior

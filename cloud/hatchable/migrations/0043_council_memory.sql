@@ -7,7 +7,8 @@
 --  * One writer per key-space: a member writes only its own namespace; only
 --    ultron-core (the routing lead) records outcomes. Enforced by CHECK.
 --  * IDs come from DB sequences. Batches are capped in the library (max 500).
---  * Snapshots carry schema + sha256 and are only stored after verification.
+--  * Snapshots carry schema + sha256 + a keyed HMAC (ULTRON_COUNCIL_MEMORY_HMAC_KEY)
+--    and are only stored after verification. Loads re-run the write validators.
 --  * Scorecard rows are written as a whole generation in one statement; the
 --    previous generation stays readable until the new one exists.
 CREATE TABLE IF NOT EXISTS brain_council_memory_entries (
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS brain_council_memory_snapshots (
  sha256 TEXT NOT NULL UNIQUE CHECK (sha256 ~ '^[a-f0-9]{64}$'),
  schema_version TEXT NOT NULL CHECK (schema_version='ultron.council-memory.v1'),
  last_entry_id BIGINT NOT NULL CHECK (last_entry_id >= 0),
+ hmac_sha256 TEXT NOT NULL CHECK (hmac_sha256 ~ '^[a-f0-9]{64}$'),
  body JSONB NOT NULL CHECK (jsonb_typeof(body)='object'),
  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

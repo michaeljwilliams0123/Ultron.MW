@@ -47,6 +47,29 @@ source of truth, as `gitbook/sync-and-disaster-recovery.md` requires.
    `src/council-of-ultron.mjs`, produced only by `scorecardRows()`. The migration
    and the store are tested against it.
 
+## Security hardening (Skeptic review of #403)
+
+- **Keyed seal.** The plain `sha256` only shows that something changed; anyone
+  can recompute it. Snapshots that leave or enter the store are therefore
+  wrapped as `ultron.council-memory.sealed.v1`, with an HMAC-SHA256 under
+  `ULTRON_COUNCIL_MEMORY_HMAC_KEY`. The stored snapshot row keeps the
+  `hmac_sha256`.
+  - Import, read-back and mirror planning all refuse a missing or wrong seal.
+  - With no key configured, the store stays closed.
+- **Validate on every load.** Every load or restore re-runs the write-path
+  validators, even for a correctly sealed snapshot. That covers strict
+  snapshot shape, member allowlist, fact-key pattern (so no `__proto__`),
+  credential patterns and exact entry key sets.
+  - The adapter restores only through `validatedRestore`.
+  - The Postgres export builds memory in `Map`s.
+- **Verified outcomes only.** The persisted scorecard counts only outcomes
+  with `evidenceVerified === true` (`verifiedScorecard`). Phase 1 records every
+  outcome as unverified, so no scorecard rows are written until an independent
+  verifier exists.
+- `src/council-of-ultron.mjs` changes here are limited to the
+  `SCORECARD_COLUMNS` / `scorecardRows` contract. The Skeptic's own PR fixes
+  `restoreCouncilMemory` itself.
+
 Credential-like text (`ghp_…`, `github_pat_…`, `glpat-…`, `sk-…`, PEM keys) is
 rejected, as in Phase 1. Evidence links must be Ultron.MW/mahoraga GitHub URLs,
 `sha256:` or `receipt:` references.
@@ -60,19 +83,24 @@ rejected, as in Phase 1. Evidence links must be Ultron.MW/mahoraga GitHub URLs,
    tables.
 3. Deploy `lib/council-memory.js`, `api/brain/council-memory.js` and the
    updated `hatchable.toml`.
-4. **New config value (only one):** in Hatchable Setup, set
-   `ULTRON_COUNCIL_MEMORY_MODE` = `postgres`. It is a switch, not a credential.
-   Unset or any other value keeps memory off.
+4. **Two new Hatchable Setup values:**
+   - `ULTRON_COUNCIL_MEMORY_MODE` = `postgres`. This is a switch, not a
+     credential. Unset or any other value keeps memory off.
+   - `ULTRON_COUNCIL_MEMORY_HMAC_KEY` = base64 of at least 32 random bytes, for
+     example `openssl rand -base64 32`. This one is a secret: owner-only
+     protected setup, never in source or logs. Without it the route answers
+     `council-memory-hmac-key-missing`.
 5. Read back while signed in as the owner:
-   - `GET /api/brain/council-memory` returns `ok:true` and an empty
-     `ultron.council-memory.v1` snapshot.
+   - `GET /api/brain/council-memory` returns `ok:true` and a `sealed`
+     envelope around an empty `ultron.council-memory.v1` snapshot.
    - `POST {"op":"snapshot"}` stores it.
 6. Optional mirrors (no new secrets):
    - **GitLab:** set the existing repo variable `ULTRON_GITLAB_MIRROR_ENABLED=true`
      and the existing secret `ULTRON_GITLAB_MIRROR_TOKEN` if you haven't already.
-     To mirror a snapshot, run
-     `node scripts/council-memory-export.mjs <snapshot.json> --write` and open a
-     PR with the files.
+     To mirror a snapshot, save the `sealed` object from
+     `GET /api/brain/council-memory`, then run
+     `ULTRON_COUNCIL_MEMORY_HMAC_KEY=… node scripts/council-memory-export.mjs <sealed.json> --write`
+     and open a PR with the files. The script refuses to run without the key.
    - **GitBook:** connect Git Sync to `gitbook/` on `main`, as already
      documented. The generated `gitbook/council-journal.md` publishes on merge.
 

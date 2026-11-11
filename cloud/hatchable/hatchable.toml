@@ -114,6 +114,11 @@ required = false
 description = "Council memory store switch. Exactly 'postgres' enables Hatchable PostgreSQL council memory (migration 0043); any other value or unset keeps it OFF (fail closed). Not a credential."
 
 [[secret]]
+name = "ULTRON_COUNCIL_MEMORY_HMAC_KEY"
+required = false
+description = "Base64 key (at least 32 random bytes) that HMAC-seals council memory snapshots. Absent means council memory stays closed. Owner-only protected setup; never in source, logs or snapshots."
+
+[[secret]]
 name = "ULTRON_VAULT_KEY"
 required = true
 description = "Base64 32-byte AES-256-GCM key sealing owner credentials and council GitHub App private keys."
