@@ -2,7 +2,8 @@ import {db,config} from 'hatchable';
 import {verifyDelegatedGrant,reservePrCommentExecution}
  from 'lib/security-adjudicator.js';
 import {preparePrCommentCanary,validatePreparedCanary,operationDigest,
- submitPrCommentCanary,reconcilePrCommentCanary,prCommentCanaryReadiness}
+ submitPrCommentCanary,reconcilePrCommentCanary,prCommentCanaryReadiness,
+ prCommentCanaryEnabled}
  from 'lib/github-pr-comment-canary.js';
 
 export const access='admin';
@@ -46,13 +47,30 @@ function notConfigured(res,readiness){
  return reply(res,503,{ok:false,status:'not-configured',
   error:'canary-not-configured',missing:readiness.missing});
 }
+function disabled(res){
+ return reply(res,503,{ok:false,status:'disabled',error:'canary-disabled',
+  reason:'canary-disabled'});
+}
 export default async function handler(req,res){
  const mode=req.body?.mode;
+ const readConfig=name=>config.get(name);
+ if(mode==='status'){
+  let readiness;
+  try{readiness=await prCommentCanaryReadiness({db,readConfig});}
+  catch{readiness={enabled:false,prerequisitesReady:false,configured:false,
+   status:'disabled',reason:'canary-disabled',missing:['readiness-unavailable']};}
+  return reply(res,200,{ok:true,status:readiness.status,
+   configured:readiness.configured,enabled:readiness.enabled,
+   reason:readiness.reason,prerequisitesReady:readiness.prerequisitesReady,
+   missing:readiness.missing});
+ }
+ // Kill switch first: while disabled no other mode reads the ledger,
+ // reserves, exchanges tokens or calls GitHub.
+ if(!(await prCommentCanaryEnabled(readConfig)))return disabled(res);
  let readiness;
- try{readiness=await prCommentCanaryReadiness({db,readConfig:name=>config.get(name)});}
+ try{readiness=await prCommentCanaryReadiness({db,readConfig});}
  catch{readiness={configured:false,status:'not-configured',missing:['readiness-unavailable']};}
- if(mode==='status')return reply(res,200,{ok:true,status:readiness.status,
-  configured:readiness.configured,missing:readiness.missing});
+ if(!readiness.enabled)return disabled(res);
  if(!readiness.configured)return notConfigured(res,readiness);
  if(mode==='prepare'){
   try{
@@ -73,7 +91,7 @@ export default async function handler(req,res){
   catch{return reply(res,400,{ok:false,error:'canary-envelope-invalid'});}
   try{
    const result=await reconcilePrCommentCanary({db,prepared,
-    operationDigest:digest});
+    operationDigest:digest,appCredentials:await appCredentials()});
    return reply(res,200,{ok:true,status:result.status,
     idempotencyKey:prepared.idempotencyKey,receipt:result.receipt});
   }catch{return reply(res,202,{ok:false,status:'reconcile-required',

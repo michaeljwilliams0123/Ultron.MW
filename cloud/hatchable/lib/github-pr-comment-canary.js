@@ -51,6 +51,14 @@ const LEDGER_COLUMNS=['idempotency_key','operation_digest','repository',
 const CONFIG_NAMES={appId:'ULTRON_GITHUB_APP_ID',installationId:'ULTRON_GITHUB_INSTALLATION_ID',
  privateKey:'ULTRON_GITHUB_APP_PRIVATE_KEY',ownerJwk:'ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK'};
 export const PR_COMMENT_CANARY_CONFIG=Object.freeze({...CONFIG_NAMES});
+// Default-off kill switch. The canary may only act when this flag is exactly
+// the string 'true'. Unset, empty, unreadable or any other value means disabled.
+export const PR_COMMENT_CANARY_ENABLE_FLAG='ULTRON_PR_COMMENT_CANARY_ENABLED';
+export async function prCommentCanaryEnabled(readConfig){
+ if(typeof readConfig!=='function')return false;
+ try{return (await readConfig(PR_COMMENT_CANARY_ENABLE_FLAG))==='true';}
+ catch{return false;}
+}
 async function readOptional(readConfig,name){
  try{const value=await readConfig(name);return typeof value==='string'?value:
   value==null?'':String(value);}catch{return '';}
@@ -82,8 +90,12 @@ export async function prCommentCanaryReadiness({db,readConfig}={}){
   }catch{ledger=false;}
  }
  if(!ledger)missing.push('migration-0041');
- return Object.freeze({configured:missing.length===0,
-  status:missing.length?'not-configured':'configured',missing:Object.freeze(missing)});
+ const enabled=await prCommentCanaryEnabled(readConfig);
+ const ready=missing.length===0;
+ return Object.freeze({enabled,prerequisitesReady:ready,configured:enabled&&ready,
+  status:!enabled?'disabled':ready?'configured':'not-configured',
+  reason:!enabled?'canary-disabled':ready?null:'canary-not-configured',
+  missing:Object.freeze(missing)});
 }
 export function canonicalCanaryComment({pullRequest,idempotencyKey}={}){
  if(!Number.isSafeInteger(pullRequest)||pullRequest<1||pullRequest>999999999||
@@ -149,6 +161,10 @@ async function provider(fetchImpl,url,options={}){
  catch{fail('provider-outcome-unknown');}
  return response;
 }
+// GitHub stamps expires_at as its own clock + 60 minutes, measured after our
+// pre-request clock() read, so a strict now+3600s bound rejects every real
+// exchange. Allow bounded request latency and clock skew, nothing more.
+const TOKEN_EXPIRY_SKEW_MS=5*60000;
 async function tokenForComment(raw,fetchImpl,clock){
  const c=credentials(raw),now=clock(),seconds=Math.floor(now/1000);
  if(!Number.isSafeInteger(now)||seconds<1)fail('clock-invalid');
@@ -172,7 +188,8 @@ async function tokenForComment(raw,fetchImpl,clock){
    Object.keys(body.permissions).length!==2||!Array.isArray(body.repositories)||
    body.repositories.length!==1||body.repositories[0]?.id!==REPO_ID||
    body.repositories[0]?.full_name!==REPO||
-   !(Date.parse(body.expires_at)>now&&Date.parse(body.expires_at)<=now+3600000))
+   !(Date.parse(body.expires_at)>now&&
+     Date.parse(body.expires_at)<=now+3600000+TOKEN_EXPIRY_SKEW_MS))
   fail('token-response-invalid');
  return body.token;
 }
@@ -186,9 +203,16 @@ function verifiedComment(value,prepared){
   new RegExp('^https://github[.]com/michaeljwilliams0123/Ultron[.]MW/(issues|pull)/'+
    prepared.pullRequest+'#issuecomment-'+value.id+'$').test(value.html_url);
 }
-async function independentRead(fetchImpl,id,prepared){
+function readHeaders(token){
+ const headers={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10'};
+ if(typeof token==='string'&&token)headers.Authorization='Bearer '+token;
+ return headers;
+}
+// Readbacks use the installation token: anonymous GitHub reads share a
+// 60-request/hour per-IP budget across the hosting egress and fail unpredictably.
+async function independentRead(fetchImpl,id,prepared,token){
  const response=await provider(fetchImpl,`${API}/repos/${REPO}/issues/comments/${id}`,{
-  headers:{Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10'}});
+  headers:readHeaders(token)});
  if(response.status!==200)fail('readback-unavailable');
  let body;try{body=await response.json();}catch{fail('readback-unavailable');}
  if(!verifiedComment(body,prepared))fail('readback-mismatch');
@@ -248,7 +272,7 @@ export async function submitPrCommentCanary({
   if(response.status!==201)fail('provider-write-denied');
   let created;try{created=await response.json();}catch{fail('provider-outcome-unknown');}
   if(!verifiedComment(created,prepared))fail('provider-response-mismatch');
-  const observed=await independentRead(fetchImpl,Number(created.id),prepared);
+  const observed=await independentRead(fetchImpl,Number(created.id),prepared,token);
   return complete(db,prepared,digest,observed,'success');
  }catch(error){
   await markReconcile(db,prepared);
@@ -256,21 +280,29 @@ export async function submitPrCommentCanary({
  }
 }
 export async function reconcilePrCommentCanary({
- db,prepared,operationDigest:digest,fetchImpl=globalThis.fetch
+ db,prepared,operationDigest:digest,appCredentials,fetchImpl=globalThis.fetch,
+ clock=Date.now
 }={}){
  prepared=validatePreparedCanary(prepared);
  if(typeof db?.query!=='function'||!SHA256.test(digest||'')||
-   typeof fetchImpl!=='function')fail('service-invalid');
+   typeof fetchImpl!=='function'||typeof clock!=='function')fail('service-invalid');
  const stored=await row(db,prepared.idempotencyKey);
  if(stored.operation_digest!==digest||databaseId(stored.target_number)!==prepared.pullRequest||
    stored.body_sha256!==prepared.bodySha256)fail('intent-conflict');
  if(stored.state==='completed')return Object.freeze({status:'recovered_success',receipt:stored.receipt});
  if(!['in_flight','reconcile_required'].includes(stored.state))fail('reconciliation-not-admitted');
+ const token=appCredentials?await tokenForComment(appCredentials,fetchImpl,clock):'';
+ // The per-issue comments endpoint ignores sort/direction and returns oldest
+ // first, so bound the scan to comments created after the reservation.
+ const reservedAt=Date.parse(stored.created_at instanceof Date?
+  stored.created_at.toISOString():String(stored.created_at||''));
+ const since=Number.isFinite(reservedAt)?
+  '&since='+encodeURIComponent(new Date(reservedAt-60000).toISOString()):'';
  const matches=[];
  for(let page=1;page<=5;page++){
   const response=await provider(fetchImpl,
-   `${API}/repos/${REPO}/issues/${prepared.pullRequest}/comments?per_page=100&page=${page}&sort=created&direction=desc`,{
-    headers:{Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10'}});
+   `${API}/repos/${REPO}/issues/${prepared.pullRequest}/comments?per_page=100&page=${page}${since}`,{
+    headers:readHeaders(token)});
   if(response.status!==200)fail('readback-unavailable');
   let comments;try{comments=await response.json();}catch{fail('readback-unavailable');}
   if(!Array.isArray(comments))fail('readback-unavailable');
@@ -279,6 +311,6 @@ export async function reconcilePrCommentCanary({
  }
  if(matches.length!==1){await markReconcile(db,prepared);fail(matches.length
   ?'readback-conflict':'readback-not-found');}
- const observed=await independentRead(fetchImpl,Number(matches[0].id),prepared);
+ const observed=await independentRead(fetchImpl,Number(matches[0].id),prepared,token);
  return complete(db,prepared,digest,observed,'reconciled_success');
 }
