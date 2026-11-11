@@ -74,6 +74,21 @@ prove a lane receipt verifies on Hatchable -> remove old Hatchable paths.
 Rollback: revert this PR. The legacy files come back unchanged and Hatchable
 still trusts their paths until the final step.
 
+## Step 3: old Hatchable paths removed
+
+After a lane receipt is proven to verify on the deployed Hatchable, the final
+Hatchable release trusts only the lane identities:
+
+- `council-oidc.js`: worker accepts only `lane-governed-task.yml@refs/heads/main`.
+- `hf-github-receipts.js` and `hf-lab-view.js`: only `lane-lab-evidence.yml`
+  runs with the exact name and an allowlisted `Ultron lab evidence: <task>`
+  title. The lab view makes one GitHub call instead of four.
+- `heldout-evidence.js`: only the lab lane evaluator.
+- Retired OIDC bridge: `lib/github-oidc-bridge.js`,
+  `api/brain/hf-oidc-event.js` (public route `/api/brain/hf-oidc-event`) and
+  `scripts/hf-oidc-publish.mjs` are deleted. Make sure the Hatchable deploy
+  removes the route rather than leaving the previous version's file in place.
+
 ## Known follow-ups
 
 - The phase-1 lane bug fixes (pr-conversation preflight skip on unadmitted PRs,

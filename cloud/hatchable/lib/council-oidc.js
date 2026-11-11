@@ -5,10 +5,8 @@ const JWKS_URL = ISSUER + '/.well-known/jwks';
 const REPOSITORY = 'michaeljwilliams0123/Ultron.MW';
 const REPOSITORY_ID = '1424939667';
 const WORKFLOW = REPOSITORY + '/.github/workflows/council-debate.yml@refs/heads/main';
-const WORKER_WORKFLOW = REPOSITORY + '/.github/workflows/council-worker.yml@refs/heads/main';
-// Transition (26 -> 8 workflow consolidation): the worker jobs move into the
-// governed-task lane, which keeps a workflow identity of its own. Both refs are
-// trusted for one release; the legacy ref is removed after the lane is proven.
+// The council worker runs in the governed-task lane, which keeps a workflow
+// identity of its own (26 -> 8 step 3: legacy council-worker.yml ref removed).
 const WORKER_LANE_WORKFLOW = REPOSITORY + '/.github/workflows/lane-governed-task.yml@refs/heads/main';
 const ROOM_ROUTER_WORKFLOW = REPOSITORY + '/.github/workflows/owner-comment-router.yml@refs/heads/main';
 const ROOM_EXECUTION_WORKFLOW = REPOSITORY + '/.github/workflows/cloud-pr.yml@refs/heads/main';
@@ -123,7 +121,7 @@ export async function verifyCouncilOidc({token,rawBody,fetchJwks=fetch,now=Date.
 
 export async function verifyCouncilWorkerOidc({token,rawBody,fetchJwks=fetch,now=Date.now}={}){
  const identity=await verifyIdentity({token,rawBody,fetchJwks,now,
-  audience:councilOidcAudience,workflowRefs:[WORKER_WORKFLOW,WORKER_LANE_WORKFLOW],
+  audience:councilOidcAudience,workflowRefs:[WORKER_LANE_WORKFLOW],
   eventNames:['workflow_dispatch','issues']});
  return Object.freeze({actor:identity.actor,sha:identity.sha,event:identity.event,
   audience:identity.audience,source:'council-worker'});

@@ -8,7 +8,8 @@ import {
 const read=path=>readFileSync(path,'utf8');
 const RUN=41771806146, SHA='a'.repeat(40),OWNER='michaeljwilliams0123';
 const run=(overrides={})=>({
- id:RUN,run_attempt:1,path:'.github/workflows/c06-owner-model-release.yml',
+ id:RUN,run_attempt:1,path:'.github/workflows/lane-lab-evidence.yml',
+ name:'Ultron lab evidence',display_title:'Ultron lab evidence: c06-owner-model-release',
  event:'workflow_dispatch',status:'completed',conclusion:'failure',
  head_sha:SHA,head_branch:'main',actor:{login:OWNER,id:308995719},
  repository:{full_name:'michaeljwilliams0123/Ultron.MW',private:false},
@@ -22,11 +23,9 @@ test('GH-HF-01: only signed-intended owner, public main, completed and allowlist
  assert.equal(x.runId,RUN);
  assert.equal(x.conclusion,'failure');
  assert.equal(x.sourceSha,SHA);
- const validNames=[
- '.github/workflows/hf-heldout-cpu.yml',
- '.github/workflows/hf-free-cpu-tournament.yml'];
- assert.deepEqual(validNames.map(path=>validateGithubWorkflowPayload(payload({
-  workflow_run:run({path})
+ const validTasks=['hf-heldout-cpu','hf-free-cpu-tournament'];
+ assert.deepEqual(validTasks.map(task=>validateGithubWorkflowPayload(payload({
+  workflow_run:run({display_title:'Ultron lab evidence: '+task})
  })).workflowKey),['heldout','tournament']);
 });
 test('GH-HF-02: reject forged repository, actor, paths, paid/private branch, and uncompleted run',()=>{
@@ -145,8 +144,10 @@ test('LANE-GH-HF-01: lab lane runs are keyed by exact path, workflow name and ru
   lane('hf-heldout-cpu',{path:'.github/workflows/lane-ci.yml'}),
   lane('c06',{}),lane('hf-heldout-cpu',{display_title:undefined})])
   assert.throws(()=>validateGithubWorkflowPayload(payload({workflow_run:bad})));
- // Legacy paths stay trusted during the transition.
- assert.equal(validateGithubWorkflowPayload(payload()).workflowKey,'c06');
+ // 26 -> 8 step 3: legacy single-purpose paths are no longer trusted.
+ for(const path of ['.github/workflows/hf-heldout-cpu.yml','.github/workflows/hf-free-cpu-tournament.yml',
+  '.github/workflows/c06-owner-model-release.yml'])
+  assert.throws(()=>validateGithubWorkflowPayload(payload({workflow_run:run({path,name:undefined,display_title:undefined})})));
  // A lane receipt does not verify against a legacy readback of a different key.
  const trusted=validateGithubWorkflowPayload(payload({workflow_run:lane('hf-heldout-cpu')}));
  assert.equal(compareGithubRun(trusted,lane('hf-heldout-cpu')).verified,true);

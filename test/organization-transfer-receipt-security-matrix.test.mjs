@@ -18,7 +18,9 @@ const ACTORS = [
 const run = (changes = {}) => ({
   id: 42816723356,
   run_attempt: 1,
-  path: '.github/workflows/c06-owner-model-release.yml',
+  path: '.github/workflows/lane-lab-evidence.yml',
+  name: 'Ultron lab evidence',
+  display_title: 'Ultron lab evidence: c06-owner-model-release',
   event: 'workflow_dispatch',
   status: 'completed',
   conclusion: 'success',
@@ -54,6 +56,7 @@ const invalidRuns = [
   ['pull request event', { event: 'pull_request_target' }],
   ['uncompleted run', { status: 'in_progress' }],
   ['unlisted workflow', { path: '.github/workflows/other.yml' }],
+  ['retired legacy lab workflow', { path: '.github/workflows/c06-owner-model-release.yml', name: undefined, display_title: undefined }],
   ['malformed source SHA', { head_sha: 'main' }],
   ['zero run ID', { id: 0 }],
   ['zero run attempt', { run_attempt: 0 }]
