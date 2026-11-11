@@ -1,4 +1,5 @@
-import {createHash,createSign,randomBytes} from 'node:crypto';
+import {createHash} from 'node:crypto';
+import {signRs256,parseRsaPrivateKey,base64url} from 'lib/rsa-pkcs1-sign.js';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const REPO_ID=1424939667;
@@ -13,7 +14,12 @@ const POLICY_SHA=createHash('sha256').update(
  'ultron.c04.owner-signed-coordinator-pr-comment.v1').digest('hex');
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
-const json=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
+const json=value=>base64url(Buffer.from(JSON.stringify(value),'utf8'));
+function randomHex(length){
+ if(typeof globalThis.crypto?.getRandomValues!=='function')fail('entropy-unavailable');
+ return Array.from(globalThis.crypto.getRandomValues(new Uint8Array(length)),
+  byte=>byte.toString(16).padStart(2,'0')).join('');
+}
 function fail(message){throw Error('github-pr-comment-canary-'+message);}
 function positive(value){
  const text=String(value??'');
@@ -35,6 +41,50 @@ function exact(value,keys){
   Object.keys(value).length===keys.length&&
   Object.keys(value).every(key=>keys.includes(key));
 }
+// Ledger table created by migration 0041 (github_pr_comment_executions).
+// Until it exists, the canary reports not-configured instead of attempting a
+// reservation or provider write.
+const LEDGER_TABLE='github_pr_comment_executions';
+const LEDGER_COLUMNS=['idempotency_key','operation_digest','repository',
+ 'target_number','body_sha256','grant_id','persona_role','state',
+ 'provider_comment_id','provider_url','provider_actor','provider_app_id','receipt'];
+const CONFIG_NAMES={appId:'ULTRON_GITHUB_APP_ID',installationId:'ULTRON_GITHUB_INSTALLATION_ID',
+ privateKey:'ULTRON_GITHUB_APP_PRIVATE_KEY',ownerJwk:'ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK'};
+export const PR_COMMENT_CANARY_CONFIG=Object.freeze({...CONFIG_NAMES});
+async function readOptional(readConfig,name){
+ try{const value=await readConfig(name);return typeof value==='string'?value:
+  value==null?'':String(value);}catch{return '';}
+}
+// Reports only which prerequisites are missing, by name. Never returns or
+// logs a credential value.
+export async function prCommentCanaryReadiness({db,readConfig}={}){
+ const missing=[];
+ if(typeof readConfig!=='function')missing.push('github-app-credentials','owner-authority-public-jwk');
+ else{
+  const [appId,installationId,privateKey,ownerJwk]=await Promise.all([
+   readOptional(readConfig,CONFIG_NAMES.appId),
+   readOptional(readConfig,CONFIG_NAMES.installationId),
+   readOptional(readConfig,CONFIG_NAMES.privateKey),
+   readOptional(readConfig,CONFIG_NAMES.ownerJwk)]);
+  if(!appId||!installationId||!privateKey)missing.push('github-app-credentials');
+  else if(appId!==String(APP_ID)||installationId!==String(INSTALLATION_ID))
+   missing.push('github-app-credentials-mismatch');
+  else{try{parseRsaPrivateKey(privateKey);}catch{missing.push('github-app-private-key-unusable');}}
+  if(ownerJwk.length<20||ownerJwk.length>4096)missing.push('owner-authority-public-jwk');
+ }
+ let ledger=false;
+ if(typeof db?.query==='function'){
+  try{
+   const result=await db.query(`SELECT count(*)::int AS n FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name=$2
+     AND column_name = ANY($1::text[])`,[LEDGER_COLUMNS,LEDGER_TABLE]);
+   ledger=Number(result?.rows?.[0]?.n)===LEDGER_COLUMNS.length;
+  }catch{ledger=false;}
+ }
+ if(!ledger)missing.push('migration-0041');
+ return Object.freeze({configured:missing.length===0,
+  status:missing.length?'not-configured':'configured',missing:Object.freeze(missing)});
+}
 export function canonicalCanaryComment({pullRequest,idempotencyKey}={}){
  if(!Number.isSafeInteger(pullRequest)||pullRequest<1||pullRequest>999999999||
    !KEY.test(idempotencyKey||''))fail('request-invalid');
@@ -53,7 +103,7 @@ export async function preparePrCommentCanary({db,pullRequest}={}){
   WHERE a.id=1 AND a.owner='michaeljwilliams0123'`)).rows?.[0];
  if(!state||state.paused||state.max_paid_cents!==0||state.allowed!==true)
   fail('authority-state-denied');
- const idempotencyKey=`ultron-task-c04-pr${pullRequest}-${randomBytes(12).toString('hex')}`;
+ const idempotencyKey=`ultron-task-c04-pr${pullRequest}-${randomHex(12)}`;
  const commentBody=canonicalCanaryComment({pullRequest,idempotencyKey});
  const bodySha256=hash(commentBody);
  const resource=`github:pr-comment:${REPO}:${pullRequest}:sha256:${bodySha256}`;
@@ -105,8 +155,7 @@ async function tokenForComment(raw,fetchImpl,clock){
  const unsigned=json({alg:'RS256',typ:'JWT'})+'.'+
   json({iat:seconds-30,exp:seconds+540,iss:String(c.appId)});
  let jwt;
- try{jwt=unsigned+'.'+createSign('RSA-SHA256').update(unsigned).end()
-  .sign(c.privateKey).toString('base64url');}
+ try{jwt=unsigned+'.'+base64url(signRs256(c.privateKey,unsigned));}
  catch{fail('configuration-invalid');}
  const permissions={issues:'write',metadata:'read'};
  const response=await provider(fetchImpl,
@@ -148,12 +197,12 @@ async function independentRead(fetchImpl,id,prepared){
 async function row(db,key){
  const result=await db.query(`SELECT idempotency_key,state,operation_digest,
   target_number,body_sha256,grant_id,created_at,receipt
-  FROM github_idempotent_executions WHERE idempotency_key=$1`,[key]);
+  FROM github_pr_comment_executions WHERE idempotency_key=$1`,[key]);
  if(result?.rows?.length!==1)fail('ledger-readback-unavailable');
  return result.rows[0];
 }
 async function markReconcile(db,prepared){
- try{await db.query(`UPDATE github_idempotent_executions
+ try{await db.query(`UPDATE github_pr_comment_executions
   SET state='reconcile_required',updated_at=now()
   WHERE idempotency_key=$1 AND state IN ('reserved','in_flight')`,
  [prepared.idempotencyKey]);}catch{}
@@ -165,7 +214,7 @@ async function complete(db,prepared,digest,comment,status){
   bodySha256:prepared.bodySha256,commentId:Number(comment.id),
   commentUrl:comment.html_url,actor:BOT_LOGIN,appId:APP_ID,
   personaRole:'builder',remoteVerified:true}};
- try{await db.query(`UPDATE github_idempotent_executions SET
+ try{await db.query(`UPDATE github_pr_comment_executions SET
   state='completed',provider_comment_id=$3,provider_url=$4,
   provider_actor=$5,provider_app_id=$6,receipt=$7::jsonb,updated_at=now()
   WHERE idempotency_key=$1 AND operation_digest=$2
@@ -185,7 +234,7 @@ export async function submitPrCommentCanary({
  if(typeof db?.query!=='function'||!SHA256.test(digest||'')||
    typeof fetchImpl!=='function'||typeof clock!=='function')fail('service-invalid');
  const token=await tokenForComment(appCredentials,fetchImpl,clock);
- const claimed=await db.query(`UPDATE github_idempotent_executions
+ const claimed=await db.query(`UPDATE github_pr_comment_executions
   SET state='in_flight',updated_at=now()
   WHERE idempotency_key=$1 AND operation_digest=$2 AND state='reserved'
   RETURNING idempotency_key`,[prepared.idempotencyKey,digest]);
