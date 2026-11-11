@@ -154,3 +154,43 @@ test('governance repair pilot atomically commits paired source and regression on
  assert.equal(state.calls.filter(c=>c[0]==='POST'&&c[1].endsWith('/git/commits')).length,1);
  assert.equal(state.calls.some(c=>c[1].endsWith('/refs/heads/main')),false);
 });
+
+
+test('governance repair refuses a changed live PR before creating Git blobs',async()=>{
+ const branch='governance/council-7of7-20261110',main='9'.repeat(40);
+ const authorized={number:397,state:'open',
+  body:'<!-- ULTRON_COUNCIL_REPAIR_PR_V1 -->',
+  head:{ref:branch,sha:HEAD,repo:{id:1424939667,full_name:REPO}},
+  base:{ref:'main',sha:main,repo:{id:1424939667,full_name:REPO}}};
+ const changes=[
+  {path:'src/council-members.mjs',before:'old',after:'new'},
+  {path:'test/council-members.test.mjs',before:'old',after:'new'}
+ ];
+ for(const mutate of [
+  p=>{p.body='owner marker removed';},
+  p=>{p.state='closed';},
+  p=>{p.head.sha=NEXT;},
+  p=>{p.base.sha='7'.repeat(40);}
+ ]){
+  const live=structuredClone(authorized);mutate(live);
+  let posts=0;
+  const get=async path=>{
+   if(path===ROOT+'/pulls/397')return live;
+   if(path===ROOT+'/git/ref/heads/main')return{object:{sha:main}};
+   if(path===ROOT+'/compare/'+main+'...'+HEAD)
+    return{status:'ahead',behind_by:0,merge_base_commit:{sha:main}};
+   if(path===ROOT+'/git/ref/heads/'+branch)return{object:{sha:HEAD}};
+   if(path===ROOT+'/git/commits/'+HEAD)return{tree:{sha:TREE}};
+   if(path.startsWith(ROOT+'/contents/'))return{
+    encoding:'base64',sha:'e'.repeat(40),content:Buffer.from('old').toString('base64')};
+   throw Error('Unexpected read '+path);
+  };
+  await assert.rejects(()=>applyPrPatch({pr:authorized,
+    manifest:JSON.stringify({objective:'Authorized Council repair',baseSha:HEAD,changes}),
+    get,post:async()=>{posts++;throw Error('write unexpectedly reached')},
+    updateRef:async()=>{posts++;throw Error('ref update unexpectedly reached')},
+    sleep:async()=>{}
+  }),/Council.*(?:changed|drift|admission|unverified)/i);
+  assert.equal(posts,0,'disallowed live PR must fail before provider mutation');
+ }
+});
