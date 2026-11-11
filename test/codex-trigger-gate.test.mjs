@@ -111,20 +111,21 @@ test('trigger identity is bound to the exact authenticated GitHub comment ID',()
   }
 });
 
-test('exact Ultron/Destiny owner tags target the existing validated task', () => {
-  for (const body of ['@michaeljwilliams0123ultron', '@ultron-codex', '@destiny-codex',
-    '/codex run michaeljwilliams0123ultron', '/codex run ultron-codex']) {
-    const input = clean(); input.event.comment.body = body;
-    assert.equal(assessCodexTrigger(input).state, 'transport-observed-executor-unverified');
-    input.ownerTriggerCount = 2;
-    assert.equal(assessCodexTrigger(input).state, 'reconcile-required');
+test('bare mentions do not enter C03, while explicit named owner commands preserve replay checks', () => {
+  for (const body of ['@michaeljwilliams0123ultron','@ultron-codex',
+    '@destiny-codex','@michaeljwilliams0123ultron do something else',
+    '@ultron-codex ','Please @ultron-codex','@mike-codex','@unregistered']) {
+    const input=clean();input.event.comment.body=body;
+    assert.equal(assessCodexTrigger(input).state,'held',body);
   }
-  for (const body of ['@michaeljwilliams0123ultron do something else', '@ultron-codex ',
-    'Please @ultron-codex', '@mike-codex', '@unregistered', '/codex run mike-codex']) {
-    const input = clean(); input.event.comment.body = body;
-    assert.equal(assessCodexTrigger(input).state, 'held');
+  for (const body of ['/codex run destiny-codex',
+    '/codex run michaeljwilliams0123ultron','/codex run ultron-codex']) {
+    const input=clean();input.event.comment.body=body;
+    assert.equal(assessCodexTrigger(input).state,'transport-observed-executor-unverified',body);
+    input.ownerTriggerCount=2;
+    assert.equal(assessCodexTrigger(input).state,'reconcile-required',body);
   }
-  const input = clean(); input.event.comment.body = '@michaeljwilliams0123ultron';
-  input.event.comment.user.login = 'outsider';
-  assert.equal(assessCodexTrigger(input).state, 'held');
+  const input=clean();input.event.comment.body='/codex run destiny-codex';
+  input.event.comment.user.login='outsider';
+  assert.equal(assessCodexTrigger(input).state,'held');
 });
