@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: trusted-council-${{ github.event.workflow_run.head_sha || github.event.issue.number || github.run_id }}
+  group: trusted-council-${{ github.event.workflow_run.pull_requests[0].number || github.event.issue.number || github.event.workflow_run.head_sha || github.run_id }}
   cancel-in-progress: false
 jobs:
   trusted-council-status:
@@ -128,17 +128,96 @@ jobs:
             core.exportVariable('ORIGINAL_SECURITY_SIGNAL',
               risk.some(term=>input.includes(term))?'1':'0');
             core.setOutput('skip','false');
-      - name: Reassess exact PR evidence using trusted default-branch Council
+      - name: Mark exact-head Council status pending before loading evidence
         if: steps.prepare.outputs.skip == 'false'
-        env:
-          GEMINI_API_KEY: ''
-          GROQ_API_KEY: ''
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const {owner,repo}=context.repo;
+            const sha=process.env.TARGET_SOURCE_SHA;
+            const base=process.env.TARGET_BASE_SHA;
+            const number=Number(process.env.ITEM_NUMBER);
+            const live=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
+            if(live.state!=='open'||live.head?.sha!==sha||live.base?.sha!==base)
+              throw Error('Council preflight head/base drift');
+            await github.rest.repos.createCommitStatus({
+              owner,repo,sha,context:'ultron/council-7of7',
+              state:'pending',description:'Rechecking 7/7 role and real model evidence',
+              target_url:'https://github.com/'+owner+'/'+repo+
+                '/actions/runs/'+context.runId
+            });
+
+      - name: Download actual same-head Council run artifact from GitHub
+        if: steps.prepare.outputs.skip == 'false'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path');
+            const {owner,repo}=context.repo;
+            const sha=process.env.TARGET_SOURCE_SHA;
+            const prNumber=Number(process.env.ITEM_NUMBER);
+            const sourceRuns=context.eventName==='workflow_run'
+              ? [context.payload.workflow_run]
+              : await github.paginate(github.rest.actions.listWorkflowRuns,{
+                owner,repo,workflow_id:'council-debate.yml',
+                event:'pull_request',head_sha:sha,per_page:100
+              });
+            const candidates=sourceRuns.filter(run=>
+              run?.event==='pull_request' &&
+              run.status==='completed' && run.conclusion==='success' &&
+              run.head_sha===sha &&
+              run.head_repository?.full_name==='michaeljwilliams0123/Ultron.MW' &&
+              run.pull_requests?.some(p=>p.number===prNumber));
+            const run=candidates.sort((a,b)=>b.id-a.id)[0];
+            if(!run)throw Error('No verified completed exact-head Council PR run');
+            const artifacts=await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,{
+                owner,repo,run_id:run.id,per_page:100
+              });
+            const matches=artifacts.filter(a=>
+              a.name==='council-debate-'+run.id &&
+              a.expired!==true &&
+              Number.isSafeInteger(a.size_in_bytes) &&
+              a.size_in_bytes>0 && a.size_in_bytes<=3000000);
+            if(matches.length!==1)
+              throw Error('Council artifact absent, ambiguous, expired or oversized');
+            const archive=await github.rest.actions.downloadArtifact({
+              owner,repo,artifact_id:matches[0].id,archive_format:'zip'
+            });
+            const dir=path.join(process.env.RUNNER_TEMP,'trusted-council');
+            const destination=path.join(dir,'evidence');
+            fs.mkdirSync(destination,{recursive:true});
+            const archivePath=path.join(dir,'council.zip');
+            const binary=Buffer.from(archive.data);
+            if(binary.length<25||binary.length>3000000)
+              throw Error('Council artifact download invalid or oversized');
+            fs.writeFileSync(archivePath,binary);
+            core.exportVariable('COUNCIL_ARTIFACT_ZIP',archivePath);
+            core.exportVariable('COUNCIL_EVIDENCE_DIRECTORY',destination);
+            core.exportVariable('COUNCIL_EVIDENCE_RUN_ID',String(run.id));
+            core.info('Downloaded Council run '+run.id+' for exact SHA '+sha+
+              '; no PR source or artifact code will execute');
+
+      - name: Extract bounded JSON evidence only (never execute artifact code)
+        if: success() && steps.prepare.outputs.skip == 'false'
         run: |
           set -euo pipefail
-          TITLE="$(cat "$TITLE_FILE")"
-          BODY="$(cat "$BODY_FILE")"
-          export TITLE BODY
-          node scripts/council-debate.mjs
+          unzip -j -o "$COUNCIL_ARTIFACT_ZIP" \
+            council-members.json council-receipt.json \
+            -d "$COUNCIL_EVIDENCE_DIRECTORY" >/dev/null
+          node --input-type=module - <<'NODE'
+          import {readFileSync,statSync} from 'node:fs';
+          import {join} from 'node:path';
+          const dir=process.env.COUNCIL_EVIDENCE_DIRECTORY;
+          for(const file of ['council-members.json','council-receipt.json']){
+            const path=join(dir,file);
+            const size=statSync(path).size;
+            if(size<10||size>750000)throw Error('Council JSON size invalid');
+            const data=JSON.parse(readFileSync(path,'utf8'));
+            if(!data||typeof data!=='object'||Array.isArray(data))
+              throw Error('Council JSON structure invalid');
+          }
+          NODE
       - name: Apply exact seven-of-seven policy or explicit owner exception
         if: steps.prepare.outputs.skip == 'false'
         continue-on-error: true
@@ -168,7 +247,7 @@ jobs:
               (result?.status==='accepted'&&result?.approvedCount===7 ||
                result?.status==='owner-overridden'&&result?.overrideUsed===true);
             const description=pass?(result.status==='accepted'?
-              '7/7 Council role approvals; exact PR evidence' :
+              '7/7 roles and 3/3 model reviews; exact-head evidence' :
               'Exact-head owner exception #'+result.overrideCommentId+'; standard CI required') :
               'Council HOLD; seven unanimous role approvals required';
             await github.rest.repos.createCommitStatus({
