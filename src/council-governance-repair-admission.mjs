@@ -11,9 +11,9 @@ const BRANCH=/^governance\/council-[a-z0-9][a-z0-9-]{2,62}$/;
 export const COUNCIL_REPAIR_MARKER='<!-- ULTRON_COUNCIL_REPAIR_PR_V1 -->';
 
 const SOURCE_TO_TEST=Object.freeze({
- 'src/council-members.mjs':'test/council-members.test.mjs',
- 'src/council-run-provenance.mjs':'test/council-run-provenance.test.mjs',
- 'src/council-owner-delegation.mjs':'test/council-owner-delegation.test.mjs'
+ // Gate code (council-release-gate, council-trusted-gate, enforce script,
+ // workflows, config) is never repairable through this path.
+ 'src/council-members.mjs':'test/council-members.test.mjs'
 });
 const ELIGIBLE=new Set([
  ...Object.keys(SOURCE_TO_TEST),...Object.values(SOURCE_TO_TEST),

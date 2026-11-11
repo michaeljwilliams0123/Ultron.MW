@@ -73,7 +73,7 @@ jobs:
             const dir = path.join(process.env.RUNNER_TEMP, 'ultron-council');
             fs.mkdirSync(dir, { recursive: true });
             const actor = context.actor || '';
-            let ownerMode = actor === 'michaeljwilliams0123' ? '1' : '0';
+            const ownerMode = actor === 'michaeljwilliams0123' ? '1' : '0';
             let title = '';
             let body = '';
             let itemNumber = 0;
@@ -85,17 +85,6 @@ jobs:
             if (context.eventName === 'pull_request') {
               const pr = context.payload.pull_request || {};
               targetSourceSha = String(pr.head?.sha || '');
-              // Verify delegated initiator provenance; this is NOT owner override.
-              if(actor==='michaeljwilliams0123ultron' &&
-                 pr.user?.login==='michaeljwilliams0123ultron' &&
-                 pr.user?.id===354634860 &&
-                 pr.head?.repo?.id===1424939667 &&
-                 pr.head?.repo?.full_name==='michaeljwilliams0123/Ultron.MW' &&
-                 /^[a-f0-9]{40}$/.test(pr.head?.sha||'') &&
-                 pr.base?.repo?.id===1424939667 &&
-                 pr.base?.repo?.full_name==='michaeljwilliams0123/Ultron.MW' &&
-                 pr.base?.ref==='main')
-                ownerMode='1';
               title = String(pr.title || '');
               body = String(pr.body || '');
               itemNumber = Number(pr.number) || 0;

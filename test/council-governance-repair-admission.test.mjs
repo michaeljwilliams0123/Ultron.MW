@@ -42,13 +42,16 @@ test('source and matching regression test are required together',()=>{
  assert.throws(()=>assertCouncilRepairManifest(fixture(),{changes:[entry(sourcePath)]}),
    /regression|paired|scope/i);
  assert.throws(()=>assertCouncilRepairManifest(fixture(),{changes:[
-   entry(sourcePath),entry('test/council-run-provenance.test.mjs')
- ]}),/regression|paired|scope/i);
+   entry(sourcePath),entry('test/council-trusted-gate.test.mjs')
+ ]}),/regression|paired|scope|denied/i);
 });
 test('arbitrary and security-sensitive source, workflows, signer and gate changes are forbidden',()=>{
  for(const path of [
   '.github/workflows/council-debate.yml',
   'src/council-release-gate.mjs',
+  'src/council-trusted-gate.mjs',
+  'test/council-trusted-gate.test.mjs',
+  'config/council-owner-signing-key.json',
   'src/pr-brain.mjs',
   'src/council-app-identities.mjs',
   'src/security/crypto_auth.ts',

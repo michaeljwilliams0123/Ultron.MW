@@ -21,7 +21,8 @@ export function validateOwnerOverride(comment,{sourceSha,baseSha,prNumber,now,
    !Number.isSafeInteger(comment.id)||comment.id<1||
    typeof comment.body!=='string'||typeof comment.created_at!=='string'||
    comment.created_at!==comment.updated_at)return null;
- const match=OVERRIDE.exec(comment.body.trim());
+ // GitHub may store CRLF from some clients; the signed payload uses LF.
+ const match=OVERRIDE.exec(comment.body.replace(/\r\n/g,'\n').trim());
  if(!match||Number(match[1])!==prNumber||
    match[2]!==sourceSha||match[3]!==baseSha||!match[5].trim())return null;
  const issued=Date.parse(comment.created_at),when=Date.parse(now||'');

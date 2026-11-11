@@ -1,36 +1,39 @@
 name: Ultron trusted Council release status
-# Runs the policy code on default main, not an untrusted PR branch.
-# Publishes a status on the exact PR SHA; a ruleset must REQUIRE this context.
+# Trusted Council 7/7 gate (v2). The workflow definition (pull_request_target,
+# issue_comment) and every script it runs come from default `main`; the PR
+# branch is never checked out or executed. PR title, body, file list, reviews
+# and comments are read through the API as data. The result is published as a
+# check run by a dedicated GitHub App, so no other workflow can forge it.
+# Without that App configured, nothing is published and the gate stays closed.
 on:
-  workflow_run:
-    workflows: [Ultron Council Multi-Agent Debate Loop]
-    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   issue_comment:
     types: [created]
 permissions:
   contents: read
-concurrency:
-  group: trusted-council-${{ github.event.workflow_run.pull_requests[0].number || github.event.issue.number || github.event.workflow_run.head_sha || github.run_id }}
-  cancel-in-progress: false
 jobs:
   trusted-council-status:
     if: >-
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
-      ((github.event_name == 'workflow_run' &&
-        github.event.workflow_run.event == 'pull_request' &&
-        github.event.workflow_run.head_repository.full_name == github.repository) ||
+      ((github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.base.ref == 'main') ||
        (github.event_name == 'issue_comment' &&
-        github.actor == 'michaeljwilliams0123' &&
+        github.event.issue.pull_request != null &&
         github.event.comment.user.id == 308995719 &&
-        github.event.issue.pull_request != null))
+        (startsWith(github.event.comment.body, '/council override ') ||
+         startsWith(github.event.comment.body, '/council recheck'))))
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
+    concurrency:
+      group: trusted-council-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: false
     permissions:
       contents: read
       issues: read
       pull-requests: read
-      statuses: write
-      actions: read
+      checks: read
     steps:
       - name: Configure Git bare-repository policy
         run: git config --global safe.bareRepository explicit
@@ -41,230 +44,123 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - name: Resolve live exact-head PR and authenticated owner exception
+      - name: Read live PR, changed files, reviews and owner comments as data
         id: prepare
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
             const fs=require('node:fs'),path=require('node:path');
+            const {pathToFileURL}=require('node:url');
+            const gate=await import(pathToFileURL(
+              path.join(process.env.GITHUB_WORKSPACE,'src/council-trusted-gate.mjs')).href);
             const {owner,repo}=context.repo;
-            let pr;
-            if(context.eventName==='workflow_run'){
-              const run=context.payload.workflow_run||{};
-              if(!/^[a-f0-9]{40}$/.test(run.head_sha||'') ||
-                 run.head_repository?.full_name!=='michaeljwilliams0123/Ultron.MW'){
-                core.setOutput('skip','true');return;
-              }
-              const candidates=await github.paginate(github.rest.pulls.list,{
-                owner,repo,head:owner+':'+String(run.head_branch||''),
-                state:'open',per_page:100
-              });
-              pr=candidates.find(p=>
-                p.head?.sha===run.head_sha &&
-                p.head?.repo?.full_name==='michaeljwilliams0123/Ultron.MW');
-              if(!pr){core.setOutput('skip','true');return;}
-            }else if(context.eventName==='issue_comment'){
-              const c=context.payload.comment||{};
-              if(c.user?.login!=='michaeljwilliams0123' ||
-                 c.user?.id!==308995719 ||
-                 typeof c.body!=='string' ||
-                 !c.body.startsWith('/council override ')){
-                core.setOutput('skip','true');return;
-              }
-              const r=await github.rest.pulls.get({
-                owner,repo,pull_number:context.issue.number
-              });
-              pr=r.data;
-            }else{core.setOutput('skip','true');return;}
-            if(pr.state!=='open' ||
-               pr.head?.repo?.full_name!=='michaeljwilliams0123/Ultron.MW' ||
-               !/^[a-f0-9]{40}$/.test(pr.head?.sha||'') ||
-               !/^[a-f0-9]{40}$/.test(pr.base?.sha||'')){
+            const number=context.eventName==='pull_request_target'
+              ? Number(context.payload.pull_request?.number)
+              : Number(context.payload.issue?.number);
+            if(!Number.isSafeInteger(number)||number<1){core.setOutput('skip','true');return;}
+            const pr=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
+            if(pr.state!=='open'||pr.base?.ref!=='main'||
+               pr.head?.repo?.id!==1424939667||pr.base?.repo?.id!==1424939667){
               core.setOutput('skip','true');return;
             }
-            // Refresh source and base once more to fence races.
-            const fresh=(await github.rest.pulls.get({
-              owner,repo,pull_number:pr.number
-            })).data;
-            if(fresh.head.sha!==pr.head.sha||fresh.base.sha!==pr.base.sha)
+            const files=await github.paginate(github.rest.pulls.listFiles,
+              {owner,repo,pull_number:number,per_page:100});
+            const reviews=await github.paginate(github.rest.pulls.listReviews,
+              {owner,repo,pull_number:number,per_page:100});
+            const comments=await github.paginate(github.rest.issues.listComments,
+              {owner,repo,issue_number:number,per_page:100});
+            const live=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
+            if(live.head.sha!==pr.head.sha||live.base.sha!==pr.base.sha)
               throw Error('Council PR head/base changed during readback');
-            const comments=await github.paginate(github.rest.issues.listComments,{
-              owner,repo,issue_number:pr.number,per_page:100
-            });
+            const complete=files.length===pr.changed_files&&files.length<3000;
             const override=[...comments].reverse().find(c=>
-              c.user?.login==='michaeljwilliams0123' &&
-              c.user?.id===308995719 &&
-              typeof c.body==='string' &&
+              gate.isOwnerAccount(c.user)&&typeof c.body==='string'&&
               c.body.startsWith('/council override '))||null;
+            const intent=gate.ownerIntent(pr,reviews);
+            const risk=gate.classifyTrustedRisk({files,filesComplete:complete});
             const dir=path.join(process.env.RUNNER_TEMP,'trusted-council');
             fs.mkdirSync(dir,{recursive:true});
-            const title=path.join(dir,'title.txt');
-            const body=path.join(dir,'body.txt');
-            const ownerComment=path.join(dir,'override.json');
-            fs.writeFileSync(title,String(pr.title||'').slice(0,240));
-            fs.writeFileSync(body,String(pr.body||'').slice(0,8000));
-            fs.writeFileSync(ownerComment,JSON.stringify(override));
-            core.exportVariable('TITLE_FILE',title);
-            core.exportVariable('BODY_FILE',body);
-            core.exportVariable('COUNCIL_OVERRIDE_FILE',ownerComment);
+            const write=(name,value)=>{const p=path.join(dir,name);
+              fs.writeFileSync(p,typeof value==='string'?value:JSON.stringify(value));return p;};
+            const slim={number:pr.number,state:pr.state,user:pr.user,
+              head:{sha:pr.head.sha,ref:pr.head.ref,repo:{id:pr.head.repo.id,full_name:pr.head.repo.full_name}},
+              base:{sha:pr.base.sha,ref:pr.base.ref,repo:{id:pr.base.repo.id,full_name:pr.base.repo.full_name}}};
+            core.exportVariable('COUNCIL_PR_FILE',write('pr.json',slim));
+            core.exportVariable('COUNCIL_FILES_FILE',write('files.json',
+              {complete,files:files.map(f=>({filename:f.filename,previous_filename:f.previous_filename,status:f.status}))}));
+            core.exportVariable('COUNCIL_OVERRIDE_FILE',write('override.json',override));
+            core.exportVariable('TITLE_FILE',write('title.txt',String(pr.title||'').slice(0,240)));
+            core.exportVariable('BODY_FILE',write('body.txt',String(pr.body||'').slice(0,8000)));
             core.exportVariable('ITEM_NUMBER',String(pr.number));
             core.exportVariable('TARGET_SOURCE_SHA',pr.head.sha);
             core.exportVariable('TARGET_BASE_SHA',pr.base.sha);
             core.exportVariable('IS_PR','true');
-            // Owner's delegated bot user may initiate a same-repo PR,
-            // but has no right to sign an override or bypass any HOLD.
-            const delegated=pr.user?.login==='michaeljwilliams0123ultron' &&
-              pr.user?.id===354634860 &&
-              pr.head?.repo?.id===1424939667 &&
-              pr.head?.repo?.full_name==='michaeljwilliams0123/Ultron.MW' &&
-              /^[a-f0-9]{40}$/.test(pr.head?.sha||'') &&
-              pr.base?.repo?.id===1424939667 &&
-              pr.base?.repo?.full_name==='michaeljwilliams0123/Ultron.MW' &&
-              pr.base?.ref==='main';
-            core.exportVariable('OWNER_MODE',
-              pr.user?.id===308995719||delegated?'1':'0');
-            const risk=['secret','credential','token','password',
-              'bypass security','fail-open','delete main','force push'];
-            const input=(String(pr.title||'')+' '+String(pr.body||'')).toLowerCase();
-            core.exportVariable('ORIGINAL_SECURITY_SIGNAL',
-              risk.some(term=>input.includes(term))?'1':'0');
+            core.exportVariable('OWNER_MODE',intent.owner?'1':'0');
+            // From the trusted file list, never from PR text (Skeptic H2).
+            core.exportVariable('ORIGINAL_SECURITY_SIGNAL',risk.security?'1':'0');
+            core.info('Owner intent: '+(intent.via||'none')+'; security paths: '+
+              (risk.securityPaths.join(', ')||'none')+'; files complete: '+complete);
             core.setOutput('skip','false');
-      - name: Mark exact-head Council status pending before loading evidence
-        if: steps.prepare.outputs.skip == 'false'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        with:
-          script: |
-            const {owner,repo}=context.repo;
-            const sha=process.env.TARGET_SOURCE_SHA;
-            const base=process.env.TARGET_BASE_SHA;
-            const number=Number(process.env.ITEM_NUMBER);
-            const live=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
-            if(live.state!=='open'||live.head?.sha!==sha||live.base?.sha!==base)
-              throw Error('Council preflight head/base drift');
-            await github.rest.repos.createCommitStatus({
-              owner,repo,sha,context:'ultron/council-7of7',
-              state:'pending',description:'Rechecking 7/7 role and real model evidence',
-              target_url:'https://github.com/'+owner+'/'+repo+
-                '/actions/runs/'+context.runId
-            });
-
-      - name: Download actual same-head Council run artifact from GitHub
-        if: steps.prepare.outputs.skip == 'false'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        with:
-          script: |
-            const fs=require('node:fs'),path=require('node:path');
-            const {owner,repo}=context.repo;
-            const sha=process.env.TARGET_SOURCE_SHA;
-            const prNumber=Number(process.env.ITEM_NUMBER);
-            const sourceRuns=context.eventName==='workflow_run'
-              ? [context.payload.workflow_run]
-              : await github.paginate(github.rest.actions.listWorkflowRuns,{
-                owner,repo,workflow_id:'council-debate.yml',
-                event:'pull_request',head_sha:sha,per_page:100
-              });
-            const {pathToFileURL}=require('node:url');
-            const {selectLatestCouncilReviewRun}=await import(
-              pathToFileURL(path.join(process.cwd(),
-                'src/council-run-provenance.mjs')).href);
-            const current=(await github.rest.pulls.get({
-              owner,repo,pull_number:prNumber
-            })).data;
-            if(current.state!=='open'||current.head?.sha!==sha||
-               current.base?.sha!==process.env.TARGET_BASE_SHA)
-              throw Error('Council PR head/base changed during evidence lookup');
-            // GitHub REST can return pull_requests: [] for an actual PR run.
-            // Match authenticated workflow ID/path and canonical repository,
-            // exact source branch/SHA, and current PR identity instead.
-            const run=selectLatestCouncilReviewRun(sourceRuns,current);
-            if(!run)throw Error('No verified completed exact-head Council PR run');
-            const artifacts=await github.paginate(
-              github.rest.actions.listWorkflowRunArtifacts,{
-                owner,repo,run_id:run.id,per_page:100
-              });
-            const matches=artifacts.filter(a=>
-              a.name==='council-debate-'+run.id &&
-              a.expired!==true &&
-              Number.isSafeInteger(a.size_in_bytes) &&
-              a.size_in_bytes>0 && a.size_in_bytes<=3000000);
-            if(matches.length!==1)
-              throw Error('Council artifact absent, ambiguous, expired or oversized');
-            const archive=await github.rest.actions.downloadArtifact({
-              owner,repo,artifact_id:matches[0].id,archive_format:'zip'
-            });
-            const dir=path.join(process.env.RUNNER_TEMP,'trusted-council');
-            const destination=path.join(dir,'evidence');
-            fs.mkdirSync(destination,{recursive:true});
-            const archivePath=path.join(dir,'council.zip');
-            const binary=Buffer.from(archive.data);
-            if(binary.length<25||binary.length>3000000)
-              throw Error('Council artifact download invalid or oversized');
-            fs.writeFileSync(archivePath,binary);
-            core.exportVariable('COUNCIL_ARTIFACT_ZIP',archivePath);
-            core.exportVariable('COUNCIL_EVIDENCE_DIRECTORY',destination);
-            core.exportVariable('COUNCIL_EVIDENCE_RUN_ID',String(run.id));
-            core.info('Downloaded Council run '+run.id+' for exact SHA '+sha+
-              '; no PR source or artifact code will execute');
-
-      - name: Extract bounded JSON evidence only (never execute artifact code)
-        if: success() && steps.prepare.outputs.skip == 'false'
-        run: |
-          set -euo pipefail
-          unzip -j -o "$COUNCIL_ARTIFACT_ZIP" \
-            council-members.json council-receipt.json \
-            -d "$COUNCIL_EVIDENCE_DIRECTORY" >/dev/null
-          node --input-type=module - <<'NODE'
-          import {readFileSync,statSync} from 'node:fs';
-          import {join} from 'node:path';
-          const dir=process.env.COUNCIL_EVIDENCE_DIRECTORY;
-          for(const file of ['council-members.json','council-receipt.json']){
-            const path=join(dir,file);
-            const size=statSync(path).size;
-            if(size<10||size>750000)throw Error('Council JSON size invalid');
-            const data=JSON.parse(readFileSync(path,'utf8'));
-            if(!data||typeof data!=='object'||Array.isArray(data))
-              throw Error('Council JSON structure invalid');
-          }
-          NODE
-      - name: Apply exact seven-of-seven policy or explicit owner exception
+      - name: Run Council debate from main on PR data
+        id: debate
         if: steps.prepare.outputs.skip == 'false'
         continue-on-error: true
         env:
-          ULTRON_OWNER_SIGNING_PUBLIC_JWK: ${{ vars.ULTRON_OWNER_SIGNING_PUBLIC_JWK }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -euo pipefail
+          TITLE=$(cat "$TITLE_FILE")
+          BODY=$(cat "$BODY_FILE")
+          export TITLE BODY
+          node scripts/council-debate.mjs
+      - name: Apply seven-of-seven policy from main
+        id: evaluate
+        if: steps.prepare.outputs.skip == 'false'
+        continue-on-error: true
+        env:
+          COUNCIL_EVIDENCE_DIRECTORY: ${{ github.workspace }}
         run: node scripts/enforce-council-acceptance.mjs
-      - name: Publish trusted required commit status to exact PR SHA
-        if: always() && steps.prepare.outputs.skip == 'false'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      - name: Mint dedicated Council Gate App token
+        id: app
+        if: steps.prepare.outputs.skip == 'false' && vars.COUNCIL_GATE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
+          client-id: ${{ vars.COUNCIL_GATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.COUNCIL_GATE_APP_PRIVATE_KEY }}
+          repositories: Ultron.MW
+          permission-checks: write
+          permission-pull-requests: read
+      - name: Publish check run as the Council Gate App
+        if: steps.prepare.outputs.skip == 'false' && steps.app.outputs.token != ''
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          GATE_APP_ID: ${{ vars.COUNCIL_GATE_APP_ID }}
+          GATE_APP_SLUG: ${{ vars.COUNCIL_GATE_APP_SLUG }}
+          MINTED_APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        with:
+          github-token: ${{ steps.app.outputs.token }}
           script: |
-            const fs=require('node:fs');
+            const fs=require('node:fs'),path=require('node:path');
+            const {pathToFileURL}=require('node:url');
+            const gate=await import(pathToFileURL(
+              path.join(process.env.GITHUB_WORKSPACE,'src/council-trusted-gate.mjs')).href);
+            const publisher=gate.resolveGatePublisher({appId:process.env.GATE_APP_ID,
+              expectedSlug:process.env.GATE_APP_SLUG,mintedSlug:process.env.MINTED_APP_SLUG});
+            if(!publisher)throw Error('Council Gate App identity mismatch; refusing to publish');
             const {owner,repo}=context.repo;
-            const sha=process.env.TARGET_SOURCE_SHA;
-            const base=process.env.TARGET_BASE_SHA;
-            const number=Number(process.env.ITEM_NUMBER);
-            if(!/^[a-f0-9]{40}$/.test(sha||'')||!Number.isSafeInteger(number))
-              throw Error('Council trusted status target invalid');
-            const live=(await github.rest.pulls.get({
-              owner,repo,pull_number:number
-            })).data;
-            if(live.state!=='open'||live.head?.sha!==sha||live.base?.sha!==base)
-              throw Error('Council trusted status stale; refused to write');
+            const sha=process.env.TARGET_SOURCE_SHA,number=Number(process.env.ITEM_NUMBER);
+            const live=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
+            if(live.state!=='open'||live.head.sha!==sha||live.base.sha!==process.env.TARGET_BASE_SHA)
+              throw Error('Council PR changed before publish; a newer run will decide');
             let result=null;
-            try{result=JSON.parse(fs.readFileSync('council-release-gate.json','utf8'));}
-            catch{result=null;}
-            const pass=result?.sourceSha===sha &&
-              result?.baseSha===base && result?.prNumber===number &&
-              (result?.status==='accepted'&&result?.approvedCount===7 ||
-               result?.status==='owner-overridden'&&result?.overrideUsed===true);
-            const description=pass?(result.status==='accepted'?
-              '7/7 roles and 3/3 model reviews; exact-head evidence' :
-              'Exact-head owner exception #'+result.overrideCommentId+'; standard CI required') :
-              'Council HOLD; seven unanimous role approvals required';
-            await github.rest.repos.createCommitStatus({
-              owner,repo,sha,context:'ultron/council-7of7',
-              state:pass?'success':'failure',
-              description:description.slice(0,140),
-              target_url:'https://github.com/'+owner+'/'+repo+
-                '/actions/runs/'+context.runId
-            });
-            core.info('Published '+(pass?'PASS':'HOLD')+' Council status on '+sha);
+            try{result=JSON.parse(fs.readFileSync('council-release-gate.json','utf8'));}catch{result=null;}
+            const body=gate.buildGateCheckRun(result,{sha,prNumber:number,
+              detailsUrl:'https://github.com/'+owner+'/'+repo+'/actions/runs/'+context.runId});
+            await github.rest.checks.create({owner,repo,...body});
+            core.info('Published '+body.conclusion+' '+body.name+' on '+sha);
+      - name: Fail closed when the Council Gate App is not configured
+        if: steps.prepare.outputs.skip == 'false' && steps.app.outputs.token == ''
+        run: |
+          echo "::error::Council Gate App not configured (vars.COUNCIL_GATE_APP_CLIENT_ID). No ultron/council-7of7 check published; the gate stays closed. See docs/COUNCIL-7OF7-ENFORCEMENT.md."
+          exit 1

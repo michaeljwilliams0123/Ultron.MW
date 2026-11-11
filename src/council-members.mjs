@@ -84,7 +84,8 @@ export function changeProfile(text){
 }
 
 const has=(text,words)=>words.some(w=>text.includes(w));
-// Advisory classification ONLY, never a release permission or independent review.
+// Advisory classification ONLY, never a release permission, independent review,
+// or a reason to lift a security hold (Skeptic H1 on #397).
 // Caller must obtain this evidence by trusted GitHub provider readback; the
 // 7/7 release gate separately requires real model consent and exact-head CI.
 function hasVerifiedReviewEvidence(c){
@@ -112,7 +113,7 @@ const BRAINS={
       const actions=[];
       if(spec&&!c.isPr)actions.push(act('branch.create','Start an implementation branch.',{branch:'ultron/council-builder-'+slugify(c.title)}));
       if(c.isPr)actions.push(act('pr.comment','Report build readiness on the exact head.'));
-      return{verdict:spec&&(!c.flags.security||c.exactHeadEvidence)?'proceed':'hold',
+      return{verdict:spec&&!c.flags.security?'proceed':'hold',
         headline:spec?'Buildable as written.':'Needs a concrete spec.',reasons,actions};
     }
   },
@@ -147,7 +148,7 @@ const BRAINS={
       const size=c.body.length>2000||c.flags.multiFile;
       const reasons=[size?'Large or multi-file change: higher chance of regression.':'Small change: low regression risk.'];
       if(c.governor.unknowns.length)reasons.push('Open unknowns: '+c.governor.unknowns.join(', ')+'.');
-      return{verdict:size&&c.flags.security&&!c.exactHeadEvidence?'hold':'proceed',
+      return{verdict:size&&c.flags.security?'hold':'proceed',
         headline:size?'Moderate risk; watch CI.':'Low risk.',reasons,
         actions:[act('issue.comment','Publish forecast and the signals that would flip it.')].concat(size&&!c.profile.docsOnly?[act('mahoraga.repo.inspect','Plan-only: compare against Mahoraga history for similar regressions.')]:[])};
     }
@@ -166,7 +167,9 @@ const BRAINS={
     assess(c){
       const infra=(c.flags.infra||c.profile.workflow)&&!c.profile.docsOnly;
       const reasons=[infra?'Touches CI/deploy; run Verify before anything merges.':c.profile.docsOnly?'Docs-only: no runtime or CI impact; exact-head checks still gate merge.':'No infrastructure impact detected.'];
-      const hold=(c.flags.security&&!c.exactHeadEvidence)||(infra&&c.isPr&&!c.sourceSha);
+      const hold=c.flags.security||(infra&&c.isPr&&!c.sourceSha);
+      // Green exact-head CI is reported, never used to lift a security hold.
+      if(c.exactHeadEvidence)reasons.push('Exact-head CI verified by trusted readback (advisory only; does not lift security holds).');
       return{verdict:hold?'hold':'proceed',headline:hold?'Alert: verify first.':'Operationally quiet.',reasons,
         actions:infra||(c.isPr&&!c.profile.docsOnly)?[act('actions.dispatch','Run Verify on main.',{workflow:'verify.yml',ref:'main'}),act('mahoraga.repo.inspect','Plan-only: read the Mahoraga mirror for drift against this change.')]:[]};
     }
@@ -175,7 +178,7 @@ const BRAINS={
     mandate:'Keep the owner’s latest intent and priorities central.',
     assess(c){
       const reasons=[c.ownerMode?'Owner-initiated: execution outranks gatekeeping.':'Not owner-initiated; confirm intent before acting.'];
-      return{verdict:c.ownerMode&&(!c.flags.security||c.exactHeadEvidence)?'proceed':'hold',
+      return{verdict:c.ownerMode&&!c.flags.security?'proceed':'hold',
         headline:c.ownerMode?'Matches owner intent.':'Awaiting owner confirmation.',reasons,
         actions:[act('issue.comment','Restate the owner intent and next step in one line.')]};
     }

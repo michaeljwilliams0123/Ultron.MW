@@ -224,7 +224,7 @@ test('comment writes carry an execution marker that readback finds, minting a re
 });
 
 
-test('verified exact-head CI can clear advisory keyword-only holds for four roles, not security approvers',()=>{
+test('verified exact-head CI never lifts a security hold for any role (Skeptic H1)',()=>{
  const evidence={
   schema:'ultron.council-exact-head-evidence.v1',verified:true,
   sourceSha:SHA,prNumber:397,repositoryId:1424939667,providerAppId:15368,
@@ -236,11 +236,10 @@ test('verified exact-head CI can clear advisory keyword-only holds for four role
   itemNumber:397,isPr:true,ownerMode:true,flags:{security:true,multiFile:true,infra:true},
   reviewEvidence:evidence
  }));
- const accepted=out.filter(x=>x.verdict==='proceed').map(x=>x.identity.role);
- for(const role of ['Builder','Predictor','Sentinel','Companion'])
-  assert.ok(accepted.includes(role),role+' should use verified head evidence');
- for(const role of ['Skeptic','Steward'])
-  assert.ok(!accepted.includes(role),role+' must retain security HOLD');
+ for(const role of ['Builder','Predictor','Sentinel','Companion','Skeptic','Steward'])
+  assert.equal(out.find(m=>m.identity.role===role).verdict,'hold',
+   role+' must keep the security HOLD despite green CI');
+ assert.ok(out.find(m=>m.identity.role==='Sentinel').reasons.some(r=>/advisory only/.test(r)));
 });
 test('stale or unverified CI evidence cannot soften any security-language hold',()=>{
  for(const evidence of [

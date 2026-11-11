@@ -1,21 +1,50 @@
-# Ultron Council — mandatory 7/7 release gate
+# Ultron Council: mandatory 7/7 release gate (trusted v2)
+
+v2 rebuilds the #397 gate after the Skeptic review of head `045f5af8`.
+Findings C1, C2, H1, H2, H3 and M4 are addressed below.
 
 ## Release contract
 
-Default: **seven of seven** distinct Council role verdicts must be `proceed` on the
-exact live PR source SHA. Every role must be present exactly once, with evidence,
-no unresolved unknowns or dissent, and the governor must also proceed. Missing,
-stale, duplicated, failed, or unparseable evidence **HOLDS**. Builder, Skeptic
-and Sentinel also require *real* free-tier model-backed `proceed` verdicts,
-without unresolved disagreements; their `hold`, `revise`, or missing provider
-receipt **HOLDS** even if seven deterministic role labels are green. The
-release-status worker reads the actual completed Council run's bounded JSON
-artifact, never a credential-free recomputation that silently loses dissent.
-Seven role labels are **not** seven independently authenticated GitHub Apps.
+By default, all **seven** Council role verdicts must be `proceed` on the exact
+live PR head. Every role must be present once, with evidence, no unresolved
+unknowns or dissent, and the governor must also proceed. Builder, Skeptic and
+Sentinel also need real model-backed `proceed` verdicts with no open
+disagreements. Missing, stale, duplicated or unparseable evidence **HOLDS**.
+Seven role labels are **not** seven independently authenticated accounts.
 
-Owner exception: a GitHub comment authenticated as the canonical owner
-`michaeljwilliams0123` (GitHub user ID 308995719) **and** carrying a detached
-owner-held P-256 signature over this exact canonical payload:
+**Security-sensitive changes** need more than 7/7. A change is sensitive when
+GitHub's changed-file list for the PR (renames included) touches `.github/`,
+gate code (`src/council-release-gate.mjs`, `src/council-trusted-gate.mjs`,
+`src/council-members.mjs`, `src/council-publication.mjs`,
+`src/council-reasoning.mjs`, `scripts/enforce-council-acceptance.mjs`,
+`scripts/council-debate.mjs`, `scripts/council-act.mjs`), `config/`,
+`src/security/`, files whose names mention auth, credential, secret, token,
+signing, permission, ruleset, admin, OIDC or passkey, the package manifests,
+or the verify scripts. An incomplete file list counts as sensitive.
+
+- For these changes, only a **signed owner exception** can turn a 7/7 into a
+  pass. Green CI never lifts a security hold (H1).
+- The classification comes from the file list, never from PR title or body
+  keywords, so PR text cannot remove a hold (H2). Text keywords can still
+  *add* holds inside `scripts/council-debate.mjs`.
+
+**Owner** means GitHub user `michaeljwilliams0123` (ID 308995719, type User)
+and nobody else. Delegated or bot accounts, including
+`michaeljwilliams0123ultron`, are never the owner (H1). Owner intent for the
+Companion/Steward roles is satisfied by an owner-authored PR or by an owner
+**APPROVED review on the exact head commit**. After approving, comment
+`/council recheck` to re-run the gate.
+
+## Owner exception (signed)
+
+The owner posts an unedited comment, no older than 24 hours:
+
+```text
+/council override PR_NUMBER HEAD_SHA BASE_SHA NONCE_32_LOWER_HEX -- REASON
+signature:p256:BASE64URL_DER_ECDSA_SIGNATURE
+```
+
+The signature is P-256 ECDSA/SHA-256 over this payload, which ends in a newline:
 
 ```text
 ULTRON-COUNCIL-OVERRIDE-v1
@@ -27,65 +56,72 @@ NONCE_32_LOWER_HEX
 REASON
 ```
 
-The payload includes a trailing newline. The owner posts exactly:
+The public verification key is **pinned in source** at
+`config/council-owner-signing-key.json` on `main`. It is no longer read from
+the repo variable `ULTRON_OWNER_SIGNING_PUBLIC_JWK` (H3), so changing the key
+takes a reviewed PR to `main`. That variable is now unused; it was not deleted
+or renamed. While `publicJwk` is `null`, the exception is unavailable and the
+gate stays closed. CRLF line endings are normalised before verification (M4).
 
-```text
-/council override PR_NUMBER HEAD_SHA BASE_SHA NONCE_32_LOWER_HEX -- REASON
-signature:p256:BASE64URL_DER_ECDSA_SIGNATURE
-```
+## Trusted evaluation (C1)
 
-The trusted workflow reads the pinned public P-256 verification JWK from the
-GitHub Actions variable `ULTRON_OWNER_SIGNING_PUBLIC_JWK`. It **never receives
-or persists the owner's private key**. If the variable is absent or invalid,
-owner override is unavailable (HOLD), never silently downgraded to GitHub
-comment authentication alone. A valid owner comment must be unedited and no
-older than 24 hours; the reason is 20–240 ASCII characters. A normal "approved",
-chat permission, unsigned GitHub comment or bot action is **NOT** an override.
-A new commit, base change, PR change, edited comment, wrong public key,
-modified payload, or missing nonce invalidates the signature. A verified
-exception remains auditable as `owner-overridden` with held roles, model dissent,
-source comment ID, and `overrideSignatureVerified=true`.
-This exception affects **only** the Council gate; it never overrides repository
-checks, high-risk external-write signatures, replay protection, or deployment
-controls.
+`.github/workflows/council-required-status.yml` triggers on
+`pull_request_target` and on owner `issue_comment` (`/council override` and
+`/council recheck`). For both triggers, GitHub takes the **workflow definition
+from `main`**. The job checks out `main` only and never fetches the PR head or
+its merge ref. The PR's title, body, changed files, reviews and comments are
+read through the API and written to JSON or text files as data. The job then
+runs `scripts/council-debate.mjs` and `scripts/enforce-council-acceptance.mjs`
+from `main`.
 
-## Trusted GitHub commit status (recommended ruleset check)
+Evidence is no longer downloaded from a `pull_request` run of
+`council-debate.yml`. That run's YAML comes from the PR branch, so its
+artifacts could be forged. `council-debate.yml` stays an advisory reviewer
+only.
 
-`.github/workflows/council-required-status.yml` is defined on default `main`
-and runs on **completed Council workflow runs**, or on the owner's exact override
-comment. It checks out only `main`; it never executes PR code with privileged
-credentials. It re-fetches the current PR head and base, downloads **only**
-the JSON receipts from the matching completed Council workflow, checks
-bounded artifact sizes and actual model dissent, then publishes the exact
-commit-status context:
+The job's `GITHUB_TOKEN` is read-only, with no `statuses` or `checks` write.
 
-`ultron/council-7of7`
+## Dedicated publishing identity (C2)
 
-Use a **required status check**, not seven GitHub reviewer accounts, for this
-logical Council. Also keep the existing required `test` check and strict
-up-to-date base requirement. Require the expected source `GitHub Actions`
-when offered. Keep the ruleset bypass list empty; the owner uses the
-authenticated exception comment so every exception has a visible record.
+The result is a **check run** named `ultron/council-7of7`, created with an
+installation token for a dedicated GitHub App. The previous approach was a
+commit status from integration 15368, and any GitHub Actions workflow can
+post one of those. Before publishing, the workflow re-reads the PR and refuses
+to publish if the head or base moved. It also checks that the minted token's
+App slug equals the configured slug.
 
-GitHub settings for the public personal repo:
-`https://github.com/michaeljwilliams0123/Ultron.MW/settings/rules`
-→ New branch ruleset → target default branch `main` → Active →
-Require status checks → add **ultron/council-7of7** and **test** →
-Require branches to be up to date → save. Do not delete existing branch
-protection or other required checks.
+**Fail closed:** if the App is not configured, nothing is published. The job
+fails with an explicit error, and a ruleset that requires the check keeps the
+PR blocked.
 
-**Deployment prerequisite:** This ruleset must only be activated *after*
-the trusted status workflow has landed on `main` and has emitted a status
-at least once, or GitHub may not list the check in its selector. Until
-then, source-level tests do not constitute repository-wide enforced policy.
-A **disabled** repository ruleset was created through the connected owner
-administration API: [Ultron — Mandatory Council 7-of-7](https://github.com/michaeljwilliams0123/Ultron.MW/rules/26999141).
-It requires `test` and `ultron/council-7of7` with strict up-to-date
-checks and no bypass actors. Do **not** activate until the trusted status
-workflow is merged on `main` and independently produces a correct current-head
-status. The GitHub owner administration connector can update its enforcement.
+### Setup Michael must do (not done by any agent)
 
-`council-debate.yml` remains an advisory review workflow; it does **not** run the newly added release-gate script before that script exists on trusted `main`. This avoids a self-deadlocking bootstrap (PR CI checking out main cannot import unmerged policy code). The trusted `ultron/council-7of7` status is the release enforcement surface; a green advisory Council workflow alone must **never** be used as the release requirement. The trusted workflow reacts both to Council workflow completion and to a fresh exact-head owner-override comment, so no manual re-review trigger is necessary.
+1. Create a GitHub App, for example **Ultron Council Gate** (slug
+   `ultron-council-gate`), under your account:
+   - Repository permissions: **Checks: Read and write**, **Pull requests:
+     Read-only**, **Metadata: Read-only**. Nothing else.
+   - No webhook is needed.
+   - Install it on `michaeljwilliams0123/Ultron.MW` only.
+2. In the repo settings, add Actions **variables** `COUNCIL_GATE_APP_ID`,
+   `COUNCIL_GATE_APP_CLIENT_ID` and `COUNCIL_GATE_APP_SLUG`, and an Actions
+   **secret** `COUNCIL_GATE_APP_PRIVATE_KEY` holding the App's private key PEM.
+   These are new names. No existing secret or variable is renamed or removed.
+3. Optional: generate an owner P-256 key pair offline and keep the private key
+   off GitHub. Open a PR that sets `publicJwk` in
+   `config/council-owner-signing-key.json` to the public JWK only
+   (`kty`, `crv`, `x`, `y`).
+4. Merge this PR. Then open a test PR and confirm that a `ultron/council-7of7`
+   check run appears from the App, not from GitHub Actions.
+5. Only then, edit ruleset 26999141 (currently disabled): require
+   `ultron/council-7of7` **with the source set to the Council Gate App**, keep
+   `test` and the up-to-date rule, then enable it.
+   - Mind M2 (lockout): Dependabot and bot PRs need an owner APPROVED review
+     plus `/council recheck`.
+   - A model-provider outage will hold every PR. Keep the signed exception
+     available, or leave the ruleset in evaluate mode first.
+
+Until steps 1 and 2 are done, the gate is code only and blocks nothing.
+No agent enables or edits the ruleset or branch protection.
 
 ## Review → repair → verify → re-review
 
@@ -125,14 +161,13 @@ integration requires separate review and live acceptance. No paid inference.
 
 ## Verification and status
 
-Use `node --test test/council-release-gate.test.mjs` and the repository
-`verify.yml` suite. Verify the trusted status from GitHub's commit-status API
-and its source App, not merely a green advisory Council workflow. Confirm
-the owner exception works only on an exact head+base, and an older head or
-a non-owner comment cannot mark the current commit successful.
+Run `node --test test/council-trusted-gate.test.mjs test/council-release-gate.test.mjs`
+and the full `node scripts/verify.mjs`. Verify live results from the
+check-runs API, confirming `app.slug` is the Council Gate App. A green advisory
+`council-debate` run is never the release requirement.
 
 Relevant official documentation:
 - https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository
-- https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
-- https://docs.github.com/en/actions/concepts/security/github_token
 - https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target
+- https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/making-authenticated-api-requests-with-a-github-app-in-a-github-actions-workflow
+- https://docs.github.com/en/rest/checks/runs#create-a-check-run
