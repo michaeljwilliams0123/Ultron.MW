@@ -42,6 +42,22 @@ Destiny's ChatGPT Plus subscription is separate from the OpenAI API. Sign in wit
 
 Initial live canary workflow [42929091449](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42929091449) passed its unit tests and reached the PR comment operation but GitHub responded HTTP 403. The runner's observed `GITHUB_TOKEN` effective scope was `Contents: read; Issues: write`, with no Pull requests scope. The dedicated job now adds **Pull requests: write** solely for PR timeline replies; GitHub's regular comment endpoint may require both scopes on affected installations (see [upstream GitHub report](https://github.com/github/rest-api-description/issues/6994)). This remains narrower than Contents write and does not allow source pushes. A successful response must still be independently read back as an actual GitHub comment; token permission alone is not successful acceptance.
 
+## Response quality hardening — PR #394
+
+Live canary [GitHub comment 6783084566](https://github.com/michaeljwilliams0123/Ultron.MW/pull/387#issuecomment-6783084566) demonstrated a true `github-actions[bot]` reply with a generic refusal to a harmless GitHub policy question. A passing GitHub Actions run confirms transport, not answer usefulness. The 0.5B public CPU model remains pinned and is **not** silently upgraded or replaced with paid inference.
+
+The inline handler now has two distinct **answer bases**:
+
+- `github-policy` for a bounded set of repository-policy facts: an `@michaeljwilliams0123ultron` mention is GitHub notification, `/codex run destiny-codex` is an explicit owner-only, read-only C03 provenance audit on an admitted task PR, and `@ultron chat` replies are posted by `github-actions[bot]` rather than Destiny or a ChatGPT Plus session.
+- `github-verified` for `What does this PR change?`, reading the current PR's actual GitHub changed-file list. If inventory is inconsistent, truncated, oversized or unavailable, `github-unavailable` links to Files changed instead of presenting guessed files.
+- `local-cpu` for other questions, with a less refusal-prone task prompt. A generic refusal, empty response or repeated question fails the response-quality gate and produces `quality-fallback`, including useful documented commands; model/runtime errors produce `model-unavailable`.
+
+The marker still binds replies to the original verified GitHub comment ID; same-repository event admission, actor allowlist, public-only GitHub Actions, least-privilege token scope, duplicate delivery protection and independent comment readback remain unchanged. No API tokens or Codex/ChatGPT/paid provider access are added. This improves **the known policy and metadata questions**, but does not establish general language-model reasoning quality. Monitor actual outputs rather than treating a green Actions workflow as a scored quality pass.
+
+### Verification contract
+
+Run `node --test test/github-inline-chat-quality.test.mjs test/github-inline-chat.test.mjs` and the repository's full exact-head verification. After merging, publish one new owner-authored `@ultron chat Summarize how GitHub mentions differ from deliberate Codex tasks, and state your actual identity and limits.` on PR #387. Verify that the answer states correct distinction and attribution, and check real GitHub Actions conclusion and comment readback; a generic refusal or fallback does not pass acceptance.
+
 ## Safety, limitations and rollback
 
 The public CPU workflow is limited to owner/secondary identity checks, open public PRs, a bounded exact `@ultron chat ` command, checkout from trusted `main`, repository read and issue-comment write, one answer, idempotency and independent GitHub readback. It cannot push, merge, deploy, authenticate to ChatGPT, charge a provider or change external Codex preferences. It invokes no OpenAI API and has no paid fallback. If inference cannot run, it posts an explicit unavailable response.
