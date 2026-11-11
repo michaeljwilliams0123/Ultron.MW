@@ -7,8 +7,8 @@ const REPO={id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'};
 const pr=()=>({number:397,state:'open',head:{sha:SHA,repo:{...REPO}},
  base:{ref:'main',sha:BASE,repo:{...REPO}}});
 const compare=()=>({status:'ahead',behind_by:0,merge_base_commit:{sha:BASE}});
-const checks=()=>({check_runs:['test','fixed-comparison','attested-receipt'].map(name=>({
- name,head_sha:SHA,status:'completed',conclusion:'success',app:{id:APP,slug:'github-actions'}
+const checks=()=>({check_runs:['test','fixed-comparison','attested-receipt'].map((name,i)=>({
+ id:100+i,name,head_sha:SHA,status:'completed',conclusion:'success',app:{id:APP,slug:'github-actions'}
 }))});
 function run(p=pr(),c=compare(),v=checks()){
  return buildCouncilExactHeadEvidence({pr:p,comparison:c,checkRuns:v});
@@ -51,4 +51,18 @@ test('duplicate check-name impersonation is rejected',()=>{
 test('a missing or fabricated check array does not pass',()=>{
  assert.equal(run(pr(),compare(),{}).verified,false);
  assert.equal(run(pr(),compare(),null).verified,false);
+});
+
+
+test('repeated legitimate CI executions use the newest verified same-App check',()=>{
+ const c=checks();
+ c.check_runs.push({...c.check_runs[0],id:1,conclusion:'failure'});
+ // A prior failed run must not permanently poison the same exact SHA.
+ assert.equal(run(pr(),compare(),c).verified,true);
+ const newest=checks();
+ newest.check_runs.push({...newest.check_runs[0],id:500,conclusion:'failure'});
+ assert.equal(run(pr(),compare(),newest).verified,false);
+ const pending=checks();
+ pending.check_runs.push({...pending.check_runs[0],id:501,status:'in_progress',conclusion:null});
+ assert.equal(run(pr(),compare(),pending).verified,false);
 });
