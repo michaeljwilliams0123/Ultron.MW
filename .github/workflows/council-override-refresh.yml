@@ -1,0 +1,74 @@
+name: Council owner exception refresh
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  rerun-council:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event.comment.user.login == 'michaeljwilliams0123' &&
+      github.event.comment.user.id == 308995719 &&
+      github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+      issues: read
+      pull-requests: read
+      contents: read
+    steps:
+      - name: Revalidate exact owner exception and refresh held PR Council
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const {owner,repo}=context.repo;
+            const issueNumber=Number(context.issue.number);
+            if(!Number.isSafeInteger(issueNumber)||issueNumber<1)
+              throw Error('Council exception target invalid');
+            const comment=context.payload.comment;
+            if(comment?.user?.login!=='michaeljwilliams0123' ||
+                comment.user?.id!==308995719 ||
+                typeof comment.body!=='string' ||
+                comment.body.length>350 ||
+                comment.updated_at!==comment.created_at) {
+              core.info('Not an unedited authenticated owner exception.');
+              return;
+            }
+            const matched=/^\/council override ([a-f0-9]{40}) ([a-f0-9]{40}) -- ([^\r\n]{20,240})$/.exec(comment.body.trim());
+            if(!matched){core.info('Not an exact Council override command.');return;}
+            const issued=Date.parse(comment.created_at),now=Date.now();
+            if(!Number.isFinite(issued)||issued>now+60000||now-issued>86400000)
+              throw Error('Council owner exception expired or from future');
+            const {data:pr}=await github.rest.pulls.get({
+              owner,repo,pull_number:issueNumber
+            });
+            if(pr.state!=='open' || pr.head?.repo?.full_name!=='michaeljwilliams0123/Ultron.MW' ||
+              pr.head?.sha!==matched[1] || pr.base?.sha!==matched[2])
+              throw Error('Council owner exception does not bind current PR head and base');
+            const {data:workflowRuns}=await github.rest.actions.listWorkflowRuns({
+              owner,repo,workflow_id:'council-debate.yml',event:'pull_request',
+              head_sha:pr.head.sha,per_page:100
+            });
+            const candidates=(workflowRuns.workflow_runs||[]).filter(run=>
+              run.head_sha===pr.head.sha &&
+              run.head_branch===pr.head.ref &&
+              run.event==='pull_request' &&
+              run.status==='completed' &&
+              run.conclusion==='failure' &&
+              run.pull_requests?.some(p=>p.number===issueNumber));
+            const newest=candidates.sort((a,b)=>b.id-a.id)[0];
+            if(!newest){
+              core.warning('No exact-head failed Council PR workflow to refresh. No rule bypass.');
+              return;
+            }
+            await github.rest.actions.reRunWorkflowFailedJobs({
+              owner,repo,run_id:newest.id
+            });
+            core.info('Owner exception triggered a fresh Council run for PR #'+issueNumber+
+              ' exact head '+pr.head.sha+' run '+newest.id);
