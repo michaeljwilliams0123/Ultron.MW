@@ -122,14 +122,51 @@ test('GH-HF-08: owner Model Lab uses bounded persisted verified events, not brow
  assert.doesNotMatch(client,/setInterval/);
 });
 
-test('GH-HF-09: Ultron admin actor is allowed only with exact immutable GitHub user ID',()=>{
- const allowed=validateGithubWorkflowPayload(payload({workflow_run:run({
-  actor:{login:'michaeljwilliams0123ultron',id:354634860}
- })}));
- assert.equal(allowed.workflowKey,'c06');
+test('GH-HF-09: lab receipts trust only the owner actor with its exact immutable GitHub user ID',()=>{
+ assert.equal(validateGithubWorkflowPayload(payload()).actorLogin,OWNER);
  for(const actor of [
+  {login:'michaeljwilliams0123ultron',id:354634860},
   {login:'michaeljwilliams0123ultron',id:308995719},
   {login:'michaeljwilliams0123ultron'},
   {login:'michaeljwilliams0123',id:354634860}
  ])assert.throws(()=>validateGithubWorkflowPayload(payload({workflow_run:run({actor})})));
+});
+
+test('GH-HF-10: a receipt is verified only if its commit is on main (not just head_branch main)',async()=>{
+ const {mainContainsSource,mainComparePath}=await import('../cloud/hatchable/lib/hf-github-receipts.js');
+ const cmp=(status,extra={})=>({status,ahead_by:status==='ahead'?3:0,behind_by:0,
+  base_commit:{sha:SHA},...extra});
+ assert.equal(mainContainsSource(cmp('identical'),SHA),true);
+ assert.equal(mainContainsSource(cmp('ahead'),SHA),true);
+ for(const bad of [cmp('behind',{behind_by:2}),cmp('diverged',{behind_by:1,ahead_by:4}),
+  cmp('ahead',{behind_by:1}),cmp('ahead',{base_commit:{sha:'b'.repeat(40)}}),
+  cmp('ahead',{ahead_by:undefined}),{},null,'identical'])
+  assert.equal(mainContainsSource(bad,SHA),false);
+ assert.equal(mainContainsSource(cmp('identical'),'main'),false);
+ assert.equal(mainComparePath(SHA),'/compare/'+SHA+'...main?per_page=1');
+ assert.throws(()=>mainComparePath('main'));
+ const worker=read('cloud/hatchable/api/brain/hf-github-reconcile.js');
+ assert.match(worker,/mainContainsSource\(await github\(mainComparePath\(event\.sourceSha\)\),event\.sourceSha\)/);
+ assert.match(worker,/'source-not-on-main'/);
+ // The ancestry check runs before the receipt can be marked verified.
+ assert.ok(worker.indexOf('mainComparePath(')<worker.indexOf("SET state='verified'"));
+});
+
+test('LANE-GH-HF-01: lab lane runs are keyed by exact path, workflow name and run title',()=>{
+ const lane=(task,extra={})=>run({path:'.github/workflows/lane-lab-evidence.yml',
+  name:'Ultron lab evidence',display_title:'Ultron lab evidence: '+task,...extra});
+ assert.equal(validateGithubWorkflowPayload(payload({workflow_run:lane('hf-heldout-cpu')})).workflowKey,'heldout');
+ assert.equal(validateGithubWorkflowPayload(payload({workflow_run:lane('hf-free-cpu-tournament')})).workflowKey,'tournament');
+ assert.equal(validateGithubWorkflowPayload(payload({workflow_run:lane('c06-owner-model-release')})).workflowKey,'c06');
+ for(const bad of [lane('held-out-acceptance'),lane('c06-owner-model-release',{name:'Other'}),
+  lane('hf-heldout-cpu',{display_title:'Ultron lab evidence: hf-heldout-cpu '}),
+  lane('hf-heldout-cpu',{path:'.github/workflows/lane-ci.yml'}),
+  lane('c06',{}),lane('hf-heldout-cpu',{display_title:undefined})])
+  assert.throws(()=>validateGithubWorkflowPayload(payload({workflow_run:bad})));
+ // Legacy paths stay trusted during the transition.
+ assert.equal(validateGithubWorkflowPayload(payload()).workflowKey,'c06');
+ // A lane receipt does not verify against a legacy readback of a different key.
+ const trusted=validateGithubWorkflowPayload(payload({workflow_run:lane('hf-heldout-cpu')}));
+ assert.equal(compareGithubRun(trusted,lane('hf-heldout-cpu')).verified,true);
+ assert.equal(compareGithubRun(trusted,lane('hf-free-cpu-tournament')).verified,false);
 });

@@ -14,6 +14,17 @@ const JOB='held-out';
 const STEP='Evaluate post-freeze seeded cases';
 const GENERATOR_PATH='cloud/hatchable/lib/heldout-cases.js';
 const WORKFLOW_PATH='.github/workflows/held-out-acceptance.yml';
+// Transition: the evaluator may run from the legacy workflow OR from the
+// consolidated lab lane. The run's workflow path and name must belong to the
+// SAME identity, and the frozen workflow blob must be that file's blob.
+// Kept literal (not imported) so this module stays self-contained; a test
+// asserts these equal LAB_LANE_PATH/LAB_LANE_NAME in lib/workflow-lanes.js.
+export const LAB_LANE_EVALUATOR=Object.freeze({
+ path:'.github/workflows/lane-lab-evidence.yml',name:'Ultron lab evidence'});
+const EVALUATORS=Object.freeze([
+ Object.freeze({path:WORKFLOW_PATH,name:WORKFLOW}),
+ LAB_LANE_EVALUATOR
+]);
 const ADAPTER_PATH='cloud/hatchable/lib/acceptance-evidence.js';
 const HEADERS={Accept:'application/vnd.github+json','User-Agent':'UltronMW-HeldOut-Adapter'};
 const LIST_PAGE_LIMIT=10;
@@ -109,11 +120,12 @@ export async function observeHeldOutEvidence({
   throw Error('heldout-candidate-not-current-merged-pr');
  const {comment,value:manifest}=manifestFrom(comments,{objectiveId,
   pullNumber:candidatePullNumber,headSha:candidate.head.sha,baseSha:candidate.base.sha});
- const [currentCommit,headCommit,generatorFile,workflowFile,baselineFile,candidateFile,runs]=
+ const [currentCommit,headCommit,generatorFile,workflowFiles,baselineFile,candidateFile,runs]=
   await Promise.all([
    request('/commits/'+currentSha,fetchImpl),request('/commits/'+candidate.head.sha,fetchImpl),
    request('/contents/'+GENERATOR_PATH+'?ref='+candidate.head.sha,fetchImpl),
-   request('/contents/'+WORKFLOW_PATH+'?ref='+candidate.head.sha,fetchImpl),
+   Promise.all(EVALUATORS.map(item=>request('/contents/'+item.path+'?ref='+
+    candidate.head.sha,fetchImpl,{optional:true}))),
    request('/contents/'+ADAPTER_PATH+'?ref='+candidate.base.sha,fetchImpl,{optional:true}),
    request('/contents/'+ADAPTER_PATH+'?ref='+candidate.head.sha,fetchImpl),
    request('/actions/runs?head_sha='+currentSha+'&event=workflow_dispatch&per_page=100',fetchImpl)
@@ -121,13 +133,17 @@ export async function observeHeldOutEvidence({
  if(!SHA40.test(currentCommit?.commit?.tree?.sha||'')||
     currentCommit.commit.tree.sha!==headCommit?.commit?.tree?.sha)
   throw Error('heldout-candidate-tree-not-current-main');
- if(generatorFile?.sha!==manifest.generatorBlobSha||workflowFile?.sha!==manifest.workflowBlobSha)
+ const evaluator=EVALUATORS.find((item,index)=>
+  typeof manifest.workflowBlobSha==='string'&&
+  workflowFiles[index]?.sha===manifest.workflowBlobSha);
+ if(generatorFile?.sha!==manifest.generatorBlobSha||!evaluator)
   throw Error('heldout-frozen-source-mismatch');
  if(!Array.isArray(runs?.workflow_runs)||!Number.isSafeInteger(runs.total_count)||
     runs.total_count<0||runs.total_count!==runs.workflow_runs.length||runs.total_count>=100)
   throw Error('heldout-runs-incomplete');
  const title=WORKFLOW+' '+manifest.baselineSha+'..'+manifest.candidateHeadSha;
- const eligible=runs.workflow_runs.filter(run=>integer(run?.id)&&run.name===WORKFLOW&&
+ const eligible=runs.workflow_runs.filter(run=>integer(run?.id)&&run.name===evaluator.name&&
+  (run.path===evaluator.path||String(run.path).startsWith(evaluator.path+'@'))&&
   run.display_title===title&&run.event==='workflow_dispatch'&&run.head_sha===currentSha&&
   run.status==='completed'&&run.conclusion==='success'&&iso(run.created_at)&&
   Date.parse(run.created_at)>Date.parse(comment.created_at));
