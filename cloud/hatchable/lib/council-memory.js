@@ -223,12 +223,19 @@ export async function readStoredSnapshot(db,sha256,key){
  return openSealed({schema:SEALED_SCHEMA,snapshot,hmacSha256:row.hmac_sha256},key);
 }
 
-/** Scorecard over VERIFIED outcomes only (evidenceVerified===true). Unverified
+/** The ONE "is this outcome verified" predicate. Only a literal boolean
+ * true in evidenceVerified counts: 'true', 1, missing or anything else is
+ * unverified. Shared with src/council-of-ultron.mjs (routing-side guard and
+ * restore) so the scorecard and routing rules cannot drift. */
+export const isVerifiedOutcome=outcome=>
+ outcome!==null&&typeof outcome==='object'&&outcome.evidenceVerified===true;
+
+/** Scorecard over VERIFIED outcomes only (isVerifiedOutcome). Unverified
  * outcomes are references, not results, and never move routing. */
 export function verifiedScorecard(snapshot){
  const card={};
  for(const o of verifySnapshot(snapshot).outcomes){
-  if(o.evidenceVerified!==true||o.status==='held')continue;
+  if(!isVerifiedOutcome(o)||o.status==='held')continue;
   for(const lane of o.lanes){
    const slot=((card[o.lead]||={})[lane]||={attempts:0,successes:0,rate:0.5});
    slot.attempts+=1;if(o.status==='succeeded')slot.successes+=1;
