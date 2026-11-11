@@ -65,6 +65,6 @@ node scripts/council-of-ultron.mjs ask "Is Ultron up?"
 
 ## Not in Phase 1
 
-Persisting memory to Hatchable PostgreSQL, wiring the Council Room UI, running
+Persisting memory to Hatchable PostgreSQL (now Phase 2, default off: see `docs/COUNCIL-MEMORY-PHASE2.md`), wiring the Council Room UI, running
 routines, and any live write. Those follow the existing governed execution path
 and the release gate proposed in PR #397.
