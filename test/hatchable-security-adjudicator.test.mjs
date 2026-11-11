@@ -175,6 +175,7 @@ test('C04: exact owner-signed PR comment grant is bound to one repository, PR, d
  const grant={...base,grantId:'owner-c04-pr-comment-20261110',
   actor:'worker:coordinator',objectiveId:'c04-pr-390-comment',
   operation:'pr.comment',resource,
+  policySha:'742eeeaa209cebeb376c23778918082ebc07efa1b25f9ecb2ad77a3acf82a7ac',
   notBefore:start,expiresAt:'2026-11-10T20:04:59.000Z',
   profileVersion:7,stopVersion:5,administrativeChange:false};
  const scope={actor:grant.actor,objectiveId:grant.objectiveId,
@@ -202,4 +203,8 @@ test('C04: exact owner-signed PR comment grant is bound to one repository, PR, d
  await assert.rejects(check(grant,{...scope,resource:
   'github:pr-comment:michaeljwilliams0123/Ultron.MW:391:sha256:'+'b'.repeat(64)},
   '2026-11-10T20:01:00.000Z'),/grant-scope-mismatch/);
+ // #420: a pr.comment grant with any other policySha is refused.
+ for(const policySha of ['a'.repeat(64),undefined])
+  await assert.rejects(check({...grant,policySha},scope,'2026-11-10T20:01:00.000Z'),
+   /invalid-grant-(policy|claims)/);
 });

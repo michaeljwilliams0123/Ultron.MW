@@ -134,3 +134,8 @@ token_url     = "https://gitlab.com/oauth/token"
 scopes        = ["read_api"]
 required      = false
 description   = "Read-only private Ultron GitLab project CI observation; connect separately via owner OAuth."
+
+[[secret]]
+name = "ULTRON_PR_COMMENT_CANARY_ENABLED"
+required = false
+description = "Owner opt-in for the C04 PR-comment canary. Exactly 'true' enables it; unset or any other value keeps it disabled (default off)."

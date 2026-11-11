@@ -3,6 +3,7 @@ import {createVerify} from 'node:crypto';
 // signing key; workers hold ONLY the pinned public verification key.
 // This module cannot mint credentials, grant itself privileges, or change policy.
 const VERIFIED=new WeakSet();
+const PR_COMMENT_POLICY_SHA='742eeeaa209cebeb376c23778918082ebc07efa1b25f9ecb2ad77a3acf82a7ac';
 const OPERATIONS=new Set([
  'repo.inspect','repo.issue.create','repo.verify.dispatch','repo.pr.review',
  'repo.pr.squash','repo.branch.update','cloud.deploy','permissions.change',
@@ -93,6 +94,10 @@ export async function verifyDelegatedGrant({
    (typeof grant.resource!=='string'||!PR_COMMENT_RESOURCE.test(grant.resource)||
     grant.administrativeChange!==false))
   refuse('invalid-grant-pr-comment-scope');
+ // #420: pr.comment grants must carry the exact C04 PR-comment policy hash,
+ // sha256('ultron.c04.owner-signed-coordinator-pr-comment.v1').
+ if(grant.operation==='pr.comment'&&grant.policySha!==PR_COMMENT_POLICY_SHA)
+  refuse('invalid-grant-policy');
  const versioned=Object.hasOwn(grant,'profileVersion')||
   Object.hasOwn(grant,'stopVersion');
  if(versioned&&(!Number.isSafeInteger(grant.profileVersion)||
