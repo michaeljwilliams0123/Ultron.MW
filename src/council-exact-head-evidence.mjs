@@ -31,11 +31,17 @@ export function buildCouncilExactHeadEvidence({pr,comparison,checkRuns}={}){
   return denied('check-run-inventory-unavailable');
  for(const name of REQUIRED){
   const matches=checkRuns.check_runs.filter(x=>x?.name===name);
-  if(matches.length!==1)return denied('required-check-missing-or-ambiguous');
-  const observed=matches[0];
-  if(observed.head_sha!==pr.head.sha||
-     observed.status!=='completed'||observed.conclusion!=='success'||
-     observed.app?.id!==ACTIONS_APP_ID||observed.app?.slug!=='github-actions')
+  // GitHub retains earlier attempts on a stable commit, including old failed
+  // checks. Pick the highest provider-generated check-run ID, not array order.
+  // Any conflicting App identity or duplicate ID remains an ambiguity: HOLD.
+  if(matches.length<1||matches.length>100||
+     matches.some(r=>!Number.isSafeInteger(r?.id)||r.id<1||
+       r.head_sha!==pr.head.sha||r.app?.id!==ACTIONS_APP_ID||
+       r.app?.slug!=='github-actions')||
+     new Set(matches.map(r=>r.id)).size!==matches.length)
+   return denied('required-check-missing-or-ambiguous');
+  const observed=matches.reduce((newest,item)=>item.id>newest.id?item:newest);
+  if(observed.status!=='completed'||observed.conclusion!=='success')
    return denied('required-check-not-verified');
  }
  return Object.freeze({
