@@ -45,6 +45,7 @@ export async function verifyHistoricalCoordinatorProof(call){
    typeof comment.body==='string'&&
    comment.body.includes('Run: https://github.com/'+REPO+'/actions/runs/'+RUN_ID)&&
    comment.body.includes('Source: '+String.fromCharCode(96)+PROOF_SHA+String.fromCharCode(96))&&
+   comment.body.includes('identity proof (council-identity-proof:builder:a75b152fa573d364)')&&
    comment.body.includes('<!-- council-identity-proof:builder:a75b152fa573d364 -->');
   const workflowVerified=run.id===RUN_ID&&
    run.head_sha===PROOF_SHA&&run.event==='workflow_dispatch'&&
