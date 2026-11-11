@@ -1,6 +1,6 @@
 # Council self-repair loop
 
-**Status:** draft, staged, report-only by default. This is the Grok Bots
+**Status:** draft, report-only by default. This is the Grok Bots
 pattern applied to CI: a lead routes the work, background workers bring back
 drafts, and anything consequential becomes an approval card for the owner.
 
@@ -40,13 +40,11 @@ enforces this.
   stale owner drafts.
 - `workflow_dispatch` takes an optional `run_id`.
 
-## Why the workflow is staged
+## Where it lives
 
-The file is `.github/workflow-lanes/council-self-repair.yml`. The box token has
-no `workflow` scope, so it can't push it into `.github/workflows/` yet. To activate it:
-`git mv .github/workflow-lanes/council-self-repair.yml .github/workflows/`, then
-push with a token that has the `workflow` scope. At the 26 → 8 cutover it folds
-into the ops-audit lane (Sentinel).
+`.github/workflows/council-self-repair.yml`. `workflow_run` and `schedule` only
+fire from the default branch, so nothing runs before merge. At the 26 → 8
+cutover it folds into the ops-audit lane (Sentinel).
 
 ## Relation to the existing repair engine
 

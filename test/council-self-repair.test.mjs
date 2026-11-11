@@ -131,7 +131,7 @@ test('adapter: sweep updates a behind draft with expected head and dispatches Ve
 });
 
 test('workflow is report-only by default, splits read and write jobs, never runs PR code',()=>{
-  const y=readFileSync(new URL('../.github/workflow-lanes/council-self-repair.yml',import.meta.url),'utf8');
+  const y=readFileSync(new URL('../.github/workflows/council-self-repair.yml',import.meta.url),'utf8');
   assert.match(y,/vars\.ULTRON_SELF_REPAIR_MODE \|\| 'report-only'/);
   assert.match(y,/needs\.diagnose\.outputs\.act == 'true' && vars\.ULTRON_SELF_REPAIR_MODE == 'act'/);
   const [diagnose,act]=y.split('\n  act:\n');
