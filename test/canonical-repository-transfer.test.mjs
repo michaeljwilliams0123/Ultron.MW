@@ -13,10 +13,14 @@ test('signed Task 1–5 operation authority follows the verified current reposit
 
 test('five-stage GitHub canary API target inherits canonical repository from shared policy',async()=>{
  const conductor=await readFile(
-  new URL('../scripts/run-canary-pipeline.mjs',import.meta.url),'utf8');
- assert.match(conductor,/import \{ULTRON_REPOSITORY\} from '\.\.\/src\/github-principal-policy\.mjs'/);
+  new URL('../src/engine/master-pipeline.mjs',import.meta.url),'utf8');
+ assert.match(conductor,/import \{ULTRON_REPOSITORY\} from '\.\.\/github-principal-policy\.mjs'/);
  assert.match(conductor,/const REPOSITORY=ULTRON_REPOSITORY/);
  assert.doesNotMatch(conductor,/const REPOSITORY='michaeljwilliams0123\/Ultron\.MW'/);
+ const cli=await readFile(
+  new URL('../scripts/run-canary-pipeline.mjs',import.meta.url),'utf8');
+ assert.match(cli,/from '\.\.\/src\/engine\/master-pipeline\.mjs'/);
+ assert.doesNotMatch(cli,/michaeljwilliams0123\/Ultron\.MW/);
 });
 
 test('forward migration retains legacy receipt and admits canonical writes',async t=>{
