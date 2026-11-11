@@ -110,7 +110,18 @@ jobs:
             core.exportVariable('TARGET_SOURCE_SHA',pr.head.sha);
             core.exportVariable('TARGET_BASE_SHA',pr.base.sha);
             core.exportVariable('IS_PR','true');
-            core.exportVariable('OWNER_MODE',pr.user?.id===308995719?'1':'0');
+            // Owner's delegated bot user may initiate a same-repo PR,
+            // but has no right to sign an override or bypass any HOLD.
+            const delegated=pr.user?.login==='michaeljwilliams0123ultron' &&
+              pr.user?.id===354634860 &&
+              pr.head?.repo?.id===1424939667 &&
+              pr.head?.repo?.full_name==='michaeljwilliams0123/Ultron.MW' &&
+              /^[a-f0-9]{40}$/.test(pr.head?.sha||'') &&
+              pr.base?.repo?.id===1424939667 &&
+              pr.base?.repo?.full_name==='michaeljwilliams0123/Ultron.MW' &&
+              pr.base?.ref==='main';
+            core.exportVariable('OWNER_MODE',
+              pr.user?.id===308995719||delegated?'1':'0');
             const risk=['secret','credential','token','password',
               'bypass security','fail-open','delete main','force push'];
             const input=(String(pr.title||'')+' '+String(pr.body||'')).toLowerCase();
