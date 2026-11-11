@@ -135,17 +135,12 @@ test('shadow replay only issues reads and reports projected lane outcomes',async
 
 // Callers must not point at a deleted workflow file. Exceptions are explicit:
 // the manifest itself, historical log classification, immutable historical run
-// evidence and (until step 3) the
-// Hatchable dual-trust transition pins.
+// evidence. Step 3 removed the Hatchable dual-trust transition pins, and the
+// C06 replay toolchain list now pins the lab lane file.
 const LEGACY_REFERENCE_ALLOWED=new Map([
   ['src/workflow-consolidation.mjs','manifest'],
   ['src/workflow-lane-rules.mjs','historical log classification'],
   ['cloud/hatchable/lib/c06-live-evidence.js','immutable historical run path'],
-  ['cloud/hatchable/lib/council-oidc.js','dual-trust transition (removed in step 3)'],
-  ['cloud/hatchable/lib/hf-github-receipts.js','dual-trust transition (removed in step 3)'],
-  ['cloud/hatchable/lib/hf-lab-view.js','dual-trust transition (removed in step 3)'],
-  ['cloud/hatchable/lib/heldout-evidence.js','dual-trust transition (removed in step 3)'],
-  ['cloud/hatchable/lib/github-oidc-bridge.js','retired bridge (deleted in step 3)'],
 ]);
 test('no runtime source references a deleted workflow file outside the explicit exceptions',()=>{
   const gone=LEGACY_WORKFLOWS.filter(w=>w.disposition!=='lane').map(w=>w.file);

@@ -12,20 +12,13 @@ const ACTOR_IDS=Object.freeze({
 const SHA=/^[a-f0-9]{40}$/;
 const DIGEST=/^sha256:[a-f0-9]{64}$/;
 const DELIVERY=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Legacy single-purpose workflow files (transition: still trusted).
-const FIXED=Object.freeze({
- 'hf-heldout-cpu.yml':'heldout',
- 'hf-free-cpu-tournament.yml':'tournament',
- 'c06-owner-model-release.yml':'c06'
-});
-const PATH=/^\.github\/workflows\/([a-z0-9-]+\.yml)$/;
 const STATUS=new Set(['success','failure','cancelled','timed_out','action_required','neutral','skipped','stale','startup_failure']);
 function nope(){throw Error('untrusted-github-workflow');}
 function shape(r){
- const file=typeof r?.path==='string'?r.path.match(PATH)?.[1]:null;
- // Consolidated lab lane: exact path + workflow name + allowlisted run title.
+ // Consolidated lab lane only: exact path + workflow name + allowlisted run
+ // title (26 -> 8 step 3: legacy single-purpose files are no longer trusted).
  const laneKey=labLaneRunKey(r);
- if(!laneKey&&(!file||!Object.hasOwn(FIXED,file)))nope();
+ if(!laneKey)nope();
  if(!Number.isSafeInteger(r.id)||r.id<=0||
     !Number.isSafeInteger(r.run_attempt)||r.run_attempt<1||
     r.event!=='workflow_dispatch'||r.status!=='completed'||
@@ -34,7 +27,7 @@ function shape(r){
     ACTOR_IDS[r.actor?.login]!==r.actor.id||
     r.repository?.full_name!==REPO||r.repository?.private!==false)
   nope();
- return {workflowKey:laneKey||FIXED[file],path:r.path,
+ return {workflowKey:laneKey,path:r.path,
   runId:r.id,runAttempt:r.run_attempt,sourceSha:r.head_sha,
   actorLogin:r.actor.login,actorId:r.actor.id,
   conclusion:r.conclusion};

@@ -15,7 +15,7 @@ const data=()=>({
  repository_owner:'michaeljwilliams0123',repository_owner_id:'308995719',
  sub:'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main',
  actor:'michaeljwilliams0123',actor_id:'308995719',
- workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/council-worker.yml@refs/heads/main',
+ workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/lane-governed-task.yml@refs/heads/main',
  ref:'refs/heads/main',event_name:'issues',sha:'a'.repeat(40),
  iat:Math.floor(clock/1000)-5,exp:Math.floor(clock/1000)+120
 });
@@ -47,7 +47,7 @@ test('Council issue OIDC still rejects bot actors, other workflow and forged aud
  await assert.rejects(verifyCouncilWorkerOidc({...options,rawBody:'different',token:token(data())}),
   /council-oidc-untrusted/);
 });
-test('LANE-OIDC-01: transition trusts the governed-task lane as the worker identity, nothing broader',async()=>{
+test('LANE-OIDC-01: only the governed-task lane is the worker identity, nothing broader',async()=>{
  const lane='michaeljwilliams0123/Ultron.MW/.github/workflows/lane-governed-task.yml@refs/heads/main';
  for(const event_name of ['issues','workflow_dispatch']){
   const out=await verifyCouncilWorkerOidc({...options,token:token({...data(),workflow_ref:lane,event_name})});
@@ -58,6 +58,7 @@ test('LANE-OIDC-01: transition trusts the governed-task lane as the worker ident
   {workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/lane-cloud-handoff.yml@refs/heads/main'},
   {workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/cloud-pr.yml@refs/heads/main'},
   {workflow_ref:lane,event_name:'issue_comment'},
+  {workflow_ref:'michaeljwilliams0123/Ultron.MW/.github/workflows/council-worker.yml@refs/heads/main'},
   {workflow_ref:lane,ref:'refs/heads/untrusted'}
  ]){
   await assert.rejects(

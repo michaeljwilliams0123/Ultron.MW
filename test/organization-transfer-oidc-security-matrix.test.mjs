@@ -8,7 +8,6 @@ import {
   verifyCouncilWorkerOidc,
   verifyCouncilRoomExecutionOidc
 } from '../cloud/hatchable/lib/council-oidc.js';
-import { oidcAudience, verifyGitHubOidc } from '../cloud/hatchable/lib/github-oidc-bridge.js';
 
 const REPO = 'michaeljwilliams0123/Ultron.MW';
 const SUBJECT = 'repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:refs/heads/main';
@@ -98,7 +97,7 @@ test('Council rejects a tampered signature', async () => {
 test('Council worker permits the pinned worker workflow for Ultron but not the debate workflow', async () => {
   const claims = councilClaims({
     ...ULTRON,
-    workflow_ref: REPO + '/.github/workflows/council-worker.yml@' + REF,
+    workflow_ref: REPO + '/.github/workflows/lane-governed-task.yml@' + REF,
     event_name: 'workflow_dispatch'
   });
   const result = await verifyCouncilWorkerOidc({ token: signed(claims), rawBody: councilBody, fetchJwks, now: () => NOW });
@@ -106,6 +105,12 @@ test('Council worker permits the pinned worker workflow for Ultron but not the d
   assert.equal(result.actor, ULTRON.actor);
   await assert.rejects(
     verifyCouncilWorkerOidc({ token: signed(councilClaims()), rawBody: councilBody, fetchJwks, now: () => NOW }),
+    /council-oidc-untrusted/
+  );
+  // 26 -> 8 step 3: the retired legacy worker identity is no longer trusted.
+  await assert.rejects(
+    verifyCouncilWorkerOidc({ token: signed({ ...claims, workflow_ref: REPO + '/.github/workflows/council-worker.yml@' + REF }),
+      rawBody: councilBody, fetchJwks, now: () => NOW }),
     /council-oidc-untrusted/
   );
 });
@@ -125,51 +130,4 @@ test('Council room execution requires exact router and reusable workflow identit
     verifyCouncilRoomExecutionOidc({ ...opts, token: signed({ ...claims, job_workflow_ref: REPO + '/.github/workflows/verify.yml@' + REF }) }),
     /council-oidc-untrusted/
   );
-});
-
-const hfBody = JSON.stringify({
-  schema: 'ultron.hf-oidc-run.v1',
-  runId: 42816723356,
-  runAttempt: 1,
-  deliveryId: '00000000-0000-4000-8000-000000003720'
-});
-const hfClaims = async (changes = {}) => ({
-  ...shared,
-  ...OWNER,
-  aud: await oidcAudience(hfBody),
-  workflow_ref: REPO + '/.github/workflows/hf-oidc-bridge.yml@' + REF,
-  event_name: 'workflow_dispatch',
-  ...changes
-});
-const hfVerify = async (changes = {}, rawBody = hfBody) => verifyGitHubOidc({
-  token: signed(await hfClaims(changes)), rawBody, fetchJwks, now: () => NOW
-});
-for (const actor of [OWNER, ULTRON]) {
-  test('HF receipt ingress accepts signed ' + actor.actor + ' and preserves delivery ID', async () => {
-    const result = await hfVerify(actor);
-    assert.equal(result.actor, actor.actor);
-    assert.equal(result.deliveryId, '00000000-0000-4000-8000-000000003720');
-    assert.equal(result.runId, 42816723356);
-  });
-}
-const hfDenials = [
-  ['retired repo', { repository: 'Ultron-MW/Ultron.MW' }],
-  ['retired owner', { repository_owner: 'Ultron-MW' }],
-  ['wrong owner ID', { repository_owner_id: '354776009' }],
-  ['wrong repo ID', { repository_id: '1' }],
-  ['wrong actor pairing', { ...ULTRON, actor_id: '308995719' }],
-  ['missing actor ID', { actor_id: undefined }],
-  ['different subject', { sub: 'repo:michaeljwilliams0123/Ultron.MW:ref:' + REF }],
-  ['wrong branch', { ref: 'refs/heads/release' }],
-  ['wrong workflow', { workflow_ref: REPO + '/.github/workflows/verify.yml@' + REF }],
-  ['wrong audience', { aud: 'untrusted' }],
-  ['expired token', { exp: Math.floor(NOW / 1000) - 1 }]
-];
-for (const [description, mutation] of hfDenials) {
-  test('HF receipt ingress rejects ' + description, async () => {
-    await assert.rejects(hfVerify(mutation), /untrusted-oidc/);
-  });
-}
-test('HF receipt ingress rejects replay with modified body', async () => {
-  await assert.rejects(hfVerify({}, hfBody + ' '), /untrusted-oidc/);
 });

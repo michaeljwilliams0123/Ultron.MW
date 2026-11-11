@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -33,8 +34,8 @@ function manifest(overrides={}){
    '<!-- ultron-seeded-held-out-manifest:v1\n'+JSON.stringify(body)+'\n-->'};
 }
 function fixtures(overrides={}){
- const run={id:40310000001,name:'Ultron held-out acceptance',
-  path:'.github/workflows/held-out-acceptance.yml',
+ const run={id:40310000001,name:'Ultron lab evidence',
+  path:'.github/workflows/lane-lab-evidence.yml',
   display_title:'Ultron held-out acceptance '+BASE+'..'+HEAD,
   event:'workflow_dispatch',head_sha:MAIN,status:'completed',conclusion:'success',
   created_at:'2026-10-26T10:10:00Z'};
@@ -51,9 +52,8 @@ function fixtures(overrides={}){
   ['/commits/'+HEAD]:{commit:{tree:{sha:TREE}}},
   ['/contents/cloud/hatchable/lib/heldout-cases.js?ref='+HEAD]:
    {sha:GENERATOR,...encoded(casesSource)},
-  ['/contents/.github/workflows/held-out-acceptance.yml?ref='+HEAD]:
+  ['/contents/.github/workflows/lane-lab-evidence.yml?ref='+HEAD]:
    {sha:WORKFLOW_BLOB,...encoded('workflow')},
-  ['/contents/.github/workflows/lane-lab-evidence.yml?ref='+HEAD]:null,
   ['/contents/cloud/hatchable/lib/acceptance-evidence.js?ref='+BASE]:null,
   ['/contents/cloud/hatchable/lib/acceptance-evidence.js?ref='+HEAD]:encoded(adapterSource),
   ['/actions/runs?head_sha='+MAIN+'&event=workflow_dispatch&per_page=100']:
@@ -134,8 +134,8 @@ test('seeded adapter rejects edited manifests and wrongly parameterized runs',as
  const path='/actions/runs?head_sha='+MAIN+'&event=workflow_dispatch&per_page=100';
  await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,
   candidatePullNumber:106,fetchImpl:fixtures({[path]:{total_count:1,workflow_runs:[{
-   id:40310000001,name:'Ultron held-out acceptance',
-   path:'.github/workflows/held-out-acceptance.yml',
+   id:40310000001,name:'Ultron lab evidence',
+   path:'.github/workflows/lane-lab-evidence.yml',
    display_title:'Ultron held-out acceptance '+HEAD+'..'+BASE,
    event:'workflow_dispatch',head_sha:MAIN,status:'completed',conclusion:'success',
    created_at:'2026-10-26T10:10:00Z'}]}})}),/heldout-run-missing/);
@@ -180,7 +180,7 @@ test('seeded trust requires a fresh exact GitHub and Actions reread',async()=>{
   {evaluation:false});
 });
 
-test('LANE-HO-01: transition trusts the consolidated lab lane only as one exact identity',async()=>{
+test('LANE-HO-01: only the consolidated lab lane is a trusted held-out evaluator',async()=>{
  const lanes=await import('../cloud/hatchable/lib/workflow-lanes.js');
  assert.equal(LAB_LANE_EVALUATOR.path,lanes.LAB_LANE_PATH);
  assert.equal(LAB_LANE_EVALUATOR.name,lanes.LAB_LANE_NAME);
@@ -190,26 +190,19 @@ test('LANE-HO-01: transition trusts the consolidated lab lane only as one exact 
   display_title:'Ultron held-out acceptance '+BASE+'..'+HEAD,
   event:'workflow_dispatch',head_sha:MAIN,status:'completed',conclusion:'success',
   created_at:'2026-10-26T10:10:00Z'};
- const laneFiles={
-  ['/contents/.github/workflows/held-out-acceptance.yml?ref='+HEAD]:null,
-  ['/contents/.github/workflows/lane-lab-evidence.yml?ref='+HEAD]:
-   {sha:WORKFLOW_BLOB,...encoded('lane workflow')}};
  const observed=await observeHeldOutEvidence({objectiveId:OBJECTIVE,candidatePullNumber:106,
-  fetchImpl:fixtures({...laneFiles,[runs]:{total_count:1,workflow_runs:[laneRun]}})});
+  fetchImpl:fixtures({[runs]:{total_count:1,workflow_runs:[laneRun]}})});
  assert.equal(observed.evaluationRunId,40310000001);
- // Lane blob frozen, but the run claims the legacy workflow name: rejected.
+ // Retired legacy evaluator identity (name and/or path): rejected.
+ for(const legacy of [{name:'Ultron held-out acceptance'},
+  {path:'.github/workflows/held-out-acceptance.yml'},
+  {name:'Ultron held-out acceptance',path:'.github/workflows/held-out-acceptance.yml'}])
+  await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,candidatePullNumber:106,
+   fetchImpl:fixtures({[runs]:{total_count:1,workflow_runs:[{...laneRun,...legacy}]}})}),/heldout-run-missing/);
+ // The lane file does not carry the frozen blob: rejected.
  await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,candidatePullNumber:106,
-  fetchImpl:fixtures({...laneFiles,[runs]:{total_count:1,workflow_runs:[
-   {...laneRun,name:'Ultron held-out acceptance'}]}})}),/heldout-run-missing/);
- // Lane name on the legacy path: rejected.
- await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,candidatePullNumber:106,
-  fetchImpl:fixtures({...laneFiles,[runs]:{total_count:1,workflow_runs:[
-   {...laneRun,path:'.github/workflows/held-out-acceptance.yml'}]}})}),/heldout-run-missing/);
- // Legacy blob frozen but only a lane run exists: rejected.
- await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,candidatePullNumber:106,
-  fetchImpl:fixtures({[runs]:{total_count:1,workflow_runs:[laneRun]}})}),/heldout-run-missing/);
- // Neither file carries the frozen blob: rejected.
- await assert.rejects(observeHeldOutEvidence({objectiveId:OBJECTIVE,candidatePullNumber:106,
-  fetchImpl:fixtures({['/contents/.github/workflows/held-out-acceptance.yml?ref='+HEAD]:null})}),
+  fetchImpl:fixtures({['/contents/.github/workflows/lane-lab-evidence.yml?ref='+HEAD]:null})}),
   /heldout-frozen-source-mismatch/);
+ assert.doesNotMatch(readFileSync(new URL('../cloud/hatchable/lib/heldout-evidence.js',import.meta.url),'utf8'),
+  /held-out-acceptance\.yml/);
 });

@@ -9,22 +9,20 @@ const SET_SCHEMA='ultron.held-out-evaluation-set.v1';
 const EVIDENCE_CLASS='seeded-adapter-regression-v1';
 const OUTCOME_SCHEMA='ultron.held-out-outcome.v1';
 const MARKER=/<!-- ultron-seeded-held-out-manifest:v1\s*\n([\s\S]*?)\n-->/;
+// Run-title prefix (the lab lane keeps the legacy held-out run name format).
 const WORKFLOW='Ultron held-out acceptance';
 const JOB='held-out';
 const STEP='Evaluate post-freeze seeded cases';
 const GENERATOR_PATH='cloud/hatchable/lib/heldout-cases.js';
-const WORKFLOW_PATH='.github/workflows/held-out-acceptance.yml';
-// Transition: the evaluator may run from the legacy workflow OR from the
-// consolidated lab lane. The run's workflow path and name must belong to the
-// SAME identity, and the frozen workflow blob must be that file's blob.
+// The evaluator runs from the consolidated lab lane only (26 -> 8 step 3; the
+// legacy held-out workflow identity is no longer trusted). The run's
+// workflow path and name must both match, and the frozen workflow blob must be
+// that file's blob.
 // Kept literal (not imported) so this module stays self-contained; a test
 // asserts these equal LAB_LANE_PATH/LAB_LANE_NAME in lib/workflow-lanes.js.
 export const LAB_LANE_EVALUATOR=Object.freeze({
  path:'.github/workflows/lane-lab-evidence.yml',name:'Ultron lab evidence'});
-const EVALUATORS=Object.freeze([
- Object.freeze({path:WORKFLOW_PATH,name:WORKFLOW}),
- LAB_LANE_EVALUATOR
-]);
+const EVALUATORS=Object.freeze([LAB_LANE_EVALUATOR]);
 const ADAPTER_PATH='cloud/hatchable/lib/acceptance-evidence.js';
 const HEADERS={Accept:'application/vnd.github+json','User-Agent':'UltronMW-HeldOut-Adapter'};
 const LIST_PAGE_LIMIT=10;
