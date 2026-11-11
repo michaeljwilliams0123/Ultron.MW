@@ -166,9 +166,9 @@ export async function runInlineChat({event,actor,repository,eventName,
   const saved=await post(ROOT+'/issues/'+turn.number+'/comments',{body});
   if (!Number.isSafeInteger(saved?.id) || saved.id<1)
     throw Error('GitHub chat comment write not acknowledged');
-  const verified=await get(ROOT+'/issues/comments/'+saved.id);
-  if (verified?.id!==saved.id || verified.body!==body ||
-      verified.user?.login!=='github-actions[bot]')
+  const echoed=await get(ROOT+'/issues/comments/'+saved.id);
+  if (echoed?.id!==saved.id || echoed.body!==body ||
+      echoed.user?.login!=='github-actions[bot]')
     throw Error('GitHub chat comment readback failed');
   return {status:'replied',created:true,replyId:saved.id,prNumber:turn.number,
     provider:'local-cpu-only',basis};
