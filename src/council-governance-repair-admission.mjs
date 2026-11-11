@@ -30,25 +30,32 @@ export function isCouncilGovernanceRepairPr(pr){
   canonical(pr.head?.repo)&&canonical(pr.base?.repo)&&
   pr.base.ref==='main';
 }
-export function assertCouncilRepairManifest(pr,patch){
+export function assertCouncilRepairPaths(pr,rawPaths){
  if(!isCouncilGovernanceRepairPr(pr))
   throw Error('Council governance repair admission denied');
- const changes=patch?.changes;
- if(!Array.isArray(changes)||changes.length<1||changes.length>4)
+ if(!Array.isArray(rawPaths)||rawPaths.length<1||rawPaths.length>4)
   throw Error('Council repair changes out of scope');
  const paths=new Set();
- for(const change of changes){
-  const path=change?.path;
-  if(typeof path!=='string'||!ELIGIBLE.has(path)||
-     paths.has(path)||typeof change.before!=='string'||
-     typeof change.after!=='string'||!change.before||
-     !change.after||change.before===change.after)
+ for(const path of rawPaths){
+  if(typeof path!=='string'||!ELIGIBLE.has(path)||paths.has(path))
    throw Error('Council repair path or duplicate change denied');
   paths.add(path);
  }
  for(const [source,test] of Object.entries(SOURCE_TO_TEST)){
   if(paths.has(source)&&!paths.has(test))
    throw Error('Council source repair requires paired regression: '+test);
+ }
+ return true;
+}
+export function assertCouncilRepairManifest(pr,patch){
+ const changes=patch?.changes;
+ if(!Array.isArray(changes))
+  throw Error('Council repair changes out of scope');
+ assertCouncilRepairPaths(pr,changes.map(change=>change?.path));
+ for(const change of changes){
+  if(typeof change?.before!=='string'||typeof change?.after!=='string'||
+     !change.before||!change.after||change.before===change.after)
+   throw Error('Council repair source context invalid');
  }
  return true;
 }
