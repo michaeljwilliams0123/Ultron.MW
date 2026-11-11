@@ -118,7 +118,8 @@ export async function verifyDelegatedGrant({
   objectiveId:grant.objectiveId,operation:grant.operation,
   resource:grant.resource,policySha:grant.policySha,
   ...(versioned?{profileVersion:grant.profileVersion,stopVersion:grant.stopVersion}:{}),
-  expiresAt:grant.expiresAt,administrativeChange:grant.administrativeChange
+  notBefore:grant.notBefore,expiresAt:grant.expiresAt,
+  administrativeChange:grant.administrativeChange
  });
  VERIFIED.add(verified);
  return verified;
@@ -177,4 +178,91 @@ export async function consumeDelegatedGrant({db,verifiedGrant}={}){
  if(row?.denied)return {ok:false,error:'authority-denied'};
  return row?.grant_id?{ok:true,grantId:row.grant_id,receiptId:row.receipt_id}:
   {ok:false,error:'grant-replayed'};
+}
+
+// C04 positive-path composition: atomically bind the already-verified owner
+// grant, its one-use nonce record, and the durable GitHub execution intent.
+// The provider write is forbidden until this transaction returns `reserved`.
+export async function reservePrCommentExecution({
+ db,verifiedGrant,idempotencyKey,pullRequest,bodySha256,operationDigest
+}={}){
+ if(!db?.query||!VERIFIED.has(verifiedGrant))refuse('invalid-verified-grant');
+ if(verifiedGrant.operation!=='pr.comment'||verifiedGrant.administrativeChange!==false||
+   !/^ultron-task-[A-Za-z0-9][A-Za-z0-9_-]{0,90}$/.test(idempotencyKey||'')||
+   !Number.isSafeInteger(pullRequest)||pullRequest<1||pullRequest>999999999||
+   !SHA256.test(bodySha256||'')||!SHA256.test(operationDigest||'')||
+   verifiedGrant.resource!==`github:pr-comment:michaeljwilliams0123/Ultron.MW:${pullRequest}:sha256:${bodySha256}`)
+  refuse('invalid-pr-comment-execution');
+ if(!Number.isSafeInteger(verifiedGrant.profileVersion)||verifiedGrant.profileVersion<1||
+   !Number.isSafeInteger(verifiedGrant.stopVersion)||verifiedGrant.stopVersion<1)
+  return {ok:false,error:'grant-unbound'};
+ const sql=`WITH passkey AS MATERIALIZED (
+  SELECT 1 AS enrolled FROM brain_owner_passkeys
+  WHERE revoked_at IS NULL
+  ORDER BY created_at LIMIT 1
+ ), authority AS MATERIALIZED (
+  SELECT 1 FROM brain_owner_autonomy_profile a
+  JOIN brain_runtime_control c ON c.id=1
+  WHERE a.id=1 AND a.owner='michaeljwilliams0123'
+    AND a.preset IN ('build','release') AND a.version=$10 AND c.version=$11
+    AND NOT c.paused AND a.max_paid_cents=0
+    AND jsonb_exists(a.allowed_operations,'pr.comment')
+    AND EXISTS(SELECT 1 FROM passkey)
+  FOR SHARE
+ ), existing AS MATERIALIZED (
+  SELECT idempotency_key,state,operation_digest,body_sha256,target_number
+  FROM github_idempotent_executions
+  WHERE idempotency_key=$1 OR
+   (repository='michaeljwilliams0123/Ultron.MW' AND
+    target_kind='pull_request_comment' AND target_number=$12 AND body_sha256=$13)
+ ), nonce AS (
+  INSERT INTO brain_github_approval_nonces(
+   nonce,operation,target_resource,approval_timestamp,expires_at)
+  SELECT $2,'pr.comment',$3,$4::timestamptz,$5::timestamptz
+  WHERE $5::timestamptz>clock_timestamp()
+    AND EXISTS(SELECT 1 FROM authority)
+    AND NOT EXISTS(SELECT 1 FROM existing)
+  ON CONFLICT(nonce) DO NOTHING RETURNING nonce
+ ), admitted AS (
+  INSERT INTO brain_authority_grants(
+   grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
+  SELECT $2,$6,$7,'pr.comment',$3,$8,$5::timestamptz FROM nonce
+  RETURNING grant_id
+ ), execution AS (
+  INSERT INTO github_idempotent_executions(
+   idempotency_key,operation_digest,repository,target_kind,target_branch,
+   target_number,body_sha256,grant_id,persona_role,state)
+  SELECT $1,$9,'michaeljwilliams0123/Ultron.MW','pull_request_comment',
+   NULL,$12,$13,grant_id,'builder','reserved' FROM admitted
+  RETURNING idempotency_key,state
+ ), receipt AS (
+  INSERT INTO brain_events(event_type,details)
+  SELECT 'github-pr-comment-reserved',jsonb_build_object(
+   'grantId',$2::text,'idempotencyKey',$1::text,'operationDigest',$9::text,
+   'pullRequest',$12::bigint,'bodySha256',$13::text)
+  FROM execution RETURNING id
+ )
+ SELECT 'reserved' AS outcome,e.idempotency_key,e.state,r.id AS receipt_id,
+  true AS passkey_enrolled
+ FROM execution e JOIN receipt r ON true
+ UNION ALL
+ SELECT 'existing',x.idempotency_key,x.state,NULL,
+  EXISTS(SELECT 1 FROM passkey) FROM existing x
+ WHERE NOT EXISTS(SELECT 1 FROM execution)
+ UNION ALL
+ SELECT 'denied',NULL,NULL,NULL,EXISTS(SELECT 1 FROM passkey)
+ WHERE NOT EXISTS(SELECT 1 FROM execution) AND NOT EXISTS(SELECT 1 FROM existing)`;
+ const result=await db.query(sql,[idempotencyKey,verifiedGrant.grantId,
+  verifiedGrant.resource,verifiedGrant.notBefore,verifiedGrant.expiresAt,
+  verifiedGrant.objectiveId,verifiedGrant.actor,verifiedGrant.policySha,
+  operationDigest,verifiedGrant.profileVersion,verifiedGrant.stopVersion,
+  pullRequest,bodySha256]);
+ const row=result?.rows?.[0];
+ if(row?.outcome==='reserved')return {ok:true,status:'reserved',
+  idempotencyKey,receiptId:row.receipt_id};
+ if(row?.outcome==='existing')return {ok:false,error:'execution-already-reserved',
+  status:row.state};
+ if(row?.passkey_enrolled===false)return {ok:false,error:'owner-passkey-required'};
+ return {ok:false,error:Date.parse(verifiedGrant.expiresAt)<=Date.now()
+  ?'grant-expired':'authority-or-replay-denied'};
 }
