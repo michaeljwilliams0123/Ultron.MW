@@ -15,6 +15,8 @@ async function call(body){
   method:'POST',credentials:'include',cache:'no-store',redirect:'error',
   headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  let value;try{value=await response.json();}catch{throw Error('Unreadable owner API response.');}
+ if(value&&value.status==='not-configured')
+  throw Error('Canary not configured: '+(Array.isArray(value.missing)?value.missing.join(', '):'prerequisites missing')+'.');
  if(!response.ok&&response.status!==202)
   throw Error(String(value.error||`Owner API returned ${response.status}.`));
  return value;

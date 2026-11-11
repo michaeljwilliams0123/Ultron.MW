@@ -2,7 +2,7 @@ import {db,config} from 'hatchable';
 import {verifyDelegatedGrant,reservePrCommentExecution}
  from 'lib/security-adjudicator.js';
 import {preparePrCommentCanary,validatePreparedCanary,operationDigest,
- submitPrCommentCanary,reconcilePrCommentCanary}
+ submitPrCommentCanary,reconcilePrCommentCanary,prCommentCanaryReadiness}
  from 'lib/github-pr-comment-canary.js';
 
 export const access='admin';
@@ -42,8 +42,18 @@ function grantId(envelope){
   return value.grantId;
  }catch{throw Error('envelope');}
 }
+function notConfigured(res,readiness){
+ return reply(res,503,{ok:false,status:'not-configured',
+  error:'canary-not-configured',missing:readiness.missing});
+}
 export default async function handler(req,res){
  const mode=req.body?.mode;
+ let readiness;
+ try{readiness=await prCommentCanaryReadiness({db,readConfig:name=>config.get(name)});}
+ catch{readiness={configured:false,status:'not-configured',missing:['readiness-unavailable']};}
+ if(mode==='status')return reply(res,200,{ok:true,status:readiness.status,
+  configured:readiness.configured,missing:readiness.missing});
+ if(!readiness.configured)return notConfigured(res,readiness);
  if(mode==='prepare'){
   try{
    const prepared=await preparePrCommentCanary({db,
