@@ -1,23 +1,24 @@
 # Meet the Council
 
-A short, plain-language introduction to the Council of Ultron. The Phase 1 foundation, trust model, and local commands are in [COUNCIL-OF-ULTRON.md](./COUNCIL-OF-ULTRON.md). This page only restates what that document already says.
+A short, plain-language introduction to the Council of Ultron. The Phase 1 foundation, trust model, and local commands are in [COUNCIL-OF-ULTRON.md](./COUNCIL-OF-ULTRON.md). Names, roles, and duties below come from that document and from the canonical `COUNCIL_ROSTER` in `src/council-of-ultron.mjs` (merged to `main` in [#403](https://github.com/michaeljwilliams0123/Ultron.MW/pull/403)). Nothing here is invented beyond those two sources.
 
 Phase 1 is source-only and advisory. It adds a roster, memory, a skills hookup, a lane router, and a Companion reply draft. It registers no new capability, executes no operation, calls no model, and changes no workflow, secret, env name, endpoint, ruleset, or GitHub App binding.
 
+The Council follows the GrokBot pattern: one lead brain with specialized member bots around it. `COUNCIL_ROSTER` lists the lead plus the seven existing Council roles, in this order. Each profile has a name, a description, capability lanes, skills, declarative routines, a memory namespace, and tools. A profile can narrow a role’s existing abilities, never widen them. Routines are declared on the roster; Phase 1 does not schedule or run them.
+
 ## Ultron Core
 
-The Council follows the GrokBot pattern: one lead brain with specialized member bots around it.
-
-**Ultron Core** (`ultron-core`, also called Ultron) is that lead. It triages work, routes tasks, merges evidence, and escalates questions that need the owner.
+**Ultron** (role Core, id `ultron-core`) is the lead brain and chief of staff. It triages work, routes work to members, merges their evidence, and escalates owner decisions.
 
 ## The seven members
 
-Phase 1 uses the seven existing Council roles. Their profiles live in `COUNCIL_ROSTER` (see [COUNCIL-OF-ULTRON.md](./COUNCIL-OF-ULTRON.md)). That foundation document does not list each member’s name and duties one by one. It does name two of them in the routing and front-door design:
-
-- **Skeptic** — joined as a challenger when the lead routes a task.
-- **Companion** — speaks first at the Council Room front door, in plain language, with in-thread progress and approval cards. Outbound replies start as drafts (`sent:false`) for the Council Room thread.
-
-Each member profile can include a name, a description, capability lanes, skills, declarative routines, a memory namespace, and tools. A profile can narrow a role’s existing abilities, never widen them.
+- **Ultron Builder** (role Builder, id `ultron-builder`) — Ships working changes: turns a spec into a branch, code, and tests. Primary lane: agentic.
+- **Ultron Skeptic** (role Skeptic, id `ultron-skeptic`) — Breaks assumptions: finds the counterexample and demands a falsifiable test. Primary lane: reasoning. When the lead routes a task, the Skeptic is added as challenger.
+- **Ultron Steward** (role Steward, id `ultron-steward`) — Guards authority, provenance, secrets hygiene, and release gates. Primary lane: governance.
+- **Ultron Predictor** (role Predictor, id `ultron-predictor`) — Forecasts outcomes, registers calibrated forecasts, and scores routing by track record. Primary lane: predictive.
+- **Ultron Generator** (role Generator, id `ultron-generator`) — Generates alternatives, drafts, designs, and candidate skill improvements. Primary lane: generative.
+- **Ultron Sentinel** (role Sentinel, id `ultron-sentinel`) — Watches CI, drift, and live operations; opens bounded repairs. Primary lane: reliability.
+- **Ultron Companion** (role Companion, id `ultron-companion`) — Keeps the owner’s intent central: summaries, priorities, and decision cards. Primary lane: continuity. At the Council Room front door, Companion speaks first in plain language, with in-thread progress and approval cards. Outbound replies start as drafts (`sent:false`) for the Council Room thread.
 
 ## How work is routed
 
