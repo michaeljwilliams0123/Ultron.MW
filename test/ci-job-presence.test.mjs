@@ -36,6 +36,9 @@ test('known-good #352 shape is green only when every expected job exists and suc
     jobs:page([job('test'),job('fixed-comparison'),job('attested-receipt')])});
   assert.equal(x.state,'green');
   assert.equal(x.recovery,null);
+  // run-name makes the API `name` the PR title; identity is the workflow path.
+  assert.equal(classifyVerifyRun({run:run({conclusion:'success',name:'fix(ci): some PR title'}),
+    pullRequest:pr,jobs:page([job('test'),job('fixed-comparison'),job('attested-receipt')])}).state,'green');
   // Aggregate success cannot hide a missing or skipped required job.
   assert.equal(classifyVerifyRun({run:run({conclusion:'success'}),pullRequest:pr,
     jobs:page([job('test'),job('attested-receipt')])}).state,'unknown-missing');

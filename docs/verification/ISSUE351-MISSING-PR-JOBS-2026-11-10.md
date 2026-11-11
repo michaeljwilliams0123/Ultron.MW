@@ -41,6 +41,16 @@ a run-level `Internal server error` annotation), then concluded the run
 workflow configuration, reusable-workflow, or source defect; no workflow change
 is warranted and none was made.
 
+## Ruled out: Reef `cancel-in-progress`
+
+`reef-runtime-probe.yml` cancels superseded runs per PR (`cancel-in-progress:
+true`), which explains the many `cancelled` Reef runs during rapid pushes. Those
+runs conclude `cancelled`, not `failure`, and are replaced by a run on the newer
+head. The one failing Reef run on the final head (42673203739) had zero jobs and
+the same `Internal server error` annotation. `verify.yml` has no `concurrency:`
+block, so cancellation cannot remove `fixed-comparison` from a Core run. The
+setting is intentional and unchanged.
+
 ## Repository-side mitigation
 
 - `src/ci-job-presence.mjs` classifies a Core run from the jobs actually created:

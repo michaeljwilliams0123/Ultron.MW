@@ -42,7 +42,9 @@ function invalid(reason){return Object.freeze({schema:'ultron.ci-job-presence.v1
  * @param annotations run-level annotation messages, if available
  */
 export function classifyVerifyRun({run,jobs,pullRequest,annotations=[]}={}){
-  if(!run||run.path!==VERIFY_WORKFLOW.path||run.name!==VERIFY_WORKFLOW.name)
+  // Identity is the workflow path: verify.yml's `run-name:` makes the API
+  // `name` the PR title or commit message, so `name` is display-only here.
+  if(!run||run.path!==VERIFY_WORKFLOW.path)
     return invalid('not an Ultron core verification run');
   if(!Number.isSafeInteger(run.id)||run.id<1||!SHA.test(run.head_sha||''))
     return invalid('run identity incomplete');
