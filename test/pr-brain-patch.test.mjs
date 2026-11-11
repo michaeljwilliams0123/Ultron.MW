@@ -110,6 +110,7 @@ test('governance repair pilot atomically commits paired source and regression on
  const state={sha:HEAD,blobs:[],updatedFiles:{},calls:[],newTree:null};
  const get=async path=>{
   state.calls.push(['GET',path]);
+  if(path===ROOT+'/pulls/397')return structuredClone(p);
   if(path===ROOT+'/git/ref/heads/main')return{object:{sha:main}};
   if(path===ROOT+'/compare/'+main+'...'+HEAD)
    return{status:'ahead',behind_by:0,merge_base_commit:{sha:main}};
