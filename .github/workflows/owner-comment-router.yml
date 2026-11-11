@@ -1,32 +1,68 @@
 name: Ultron owner comment router
 # Council lane 'comment-router' (Companion). One front door for owner
 # comments. Also absorbs codex-trigger-audit.yml, inline-pr-chat.yml and
-# pr-brain.yml (inline here; pull_request_review_comment kept).
+# pr-brain.yml (inline here; pull_request_review_comment kept) and the hosted
+# objective job of cloud-objective.yml (inline as `cloud`).
 on:
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  # Hosted read-only objectives (was cloud-objective.yml): owner issues titled
+  # '[Ultron Cloud] Objective' and manual dispatch. Only job `cloud` uses them.
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      objective:
+        description: One-line read-only Ultron objective
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
-  cloud-feedback:
+  cloud:
     if: >-
-      (github.event_name == 'issue_comment') &&
+      (github.event_name == 'issues' || github.event_name == 'issue_comment' || (github.event_name == 'workflow_dispatch' && inputs.objective != '')) &&
       (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
-      github.event.comment.user.login == 'michaeljwilliams0123' &&
-      github.event.issue.user.login == 'michaeljwilliams0123' &&
-      startsWith(github.event.comment.body, 'ULTRON_FEEDBACK_V1') &&
-      startsWith(github.event.issue.body, 'ULTRON_CLOUD_V1')
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issues' &&
+        github.event.issue.user.login == 'michaeljwilliams0123' &&
+        github.event.issue.title == '[Ultron Cloud] Objective') ||
+       (github.event_name == 'issue_comment' &&
+        github.event.issue.user.login == 'michaeljwilliams0123' &&
+        github.event.comment.user.login == 'michaeljwilliams0123' &&
+        startsWith(github.event.comment.body, 'ULTRON_FEEDBACK_V1') &&
+        startsWith(github.event.issue.body, 'ULTRON_CLOUD_V1')))
       )
     permissions:
       contents: read
       issues: write
-      id-token: write
-    uses: ./.github/workflows/lane-governed-task.yml
-    secrets: inherit
+    concurrency:
+      group: ultron-cloud-${{ github.event.issue.number || github.run_id }}-cloud
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Validate hosted executor
+        run: |
+          node --check src/cloud-cycle.mjs
+          node --check src/cloud-feedback.mjs
+          node --check src/cloud-entry.mjs
+      - name: Execute and persist GitHub receipt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node src/cloud-entry.mjs
 
   pr-conversation:
     if: >-
@@ -150,7 +186,6 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-      actions: write
       id-token: write
     uses: ./.github/workflows/council-debate.yml
     secrets: inherit

@@ -3,9 +3,11 @@
  */
 import {labLaneRunKey} from './workflow-lanes.js';
 const REPO='michaeljwilliams0123/Ultron.MW';
+// Lab receipts: owner only. Every lab job gates github.actor to the owner and
+// every recorded lab run (legacy and lane) was owner-dispatched; a bot-actor
+// run could only come from a file that is not the real lab workflow.
 const ACTOR_IDS=Object.freeze({
- 'michaeljwilliams0123':308995719,
- 'michaeljwilliams0123ultron':354634860
+ 'michaeljwilliams0123':308995719
 });
 const SHA=/^[a-f0-9]{40}$/;
 const DIGEST=/^sha256:[a-f0-9]{64}$/;
@@ -34,6 +36,20 @@ export function validateGithubWorkflowPayload(data){
  if(!data||data.action!=='completed'||data.repository?.full_name!==REPO||
     data.repository?.private!==false)nope();
  return Object.freeze(shape(data.workflow_run));
+}
+/** `head_branch==='main'` names a branch OR a tag called main, so the
+ * readback must also prove the run's commit is on main: GitHub
+ * GET /compare/{sourceSha}...main must report main identical to or strictly
+ * ahead of the commit (behind_by 0). Anything else fails closed. */
+export function mainContainsSource(comparison,sourceSha){
+ return SHA.test(sourceSha||'')&&!!comparison&&typeof comparison==='object'&&
+  (comparison.status==='identical'||comparison.status==='ahead')&&
+  comparison.behind_by===0&&Number.isSafeInteger(comparison.ahead_by)&&
+  comparison.ahead_by>=0&&comparison.base_commit?.sha===sourceSha;
+}
+export function mainComparePath(sourceSha){
+ if(!SHA.test(sourceSha||''))nope();
+ return '/compare/'+sourceSha+'...main?per_page=1';
 }
 export function compareGithubRun(event,run){
  try{

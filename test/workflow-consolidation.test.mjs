@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {LANES,LEGACY_WORKFLOWS,laneFiles,checkParity,scanWorkflow,cutoverFileCount}
+import {LANES,LEGACY_WORKFLOWS,laneFiles,checkParity,scanWorkflow,cutoverFileCount,OIDC_JOBS}
   from '../src/workflow-consolidation.mjs';
 import {prConversationAdmission,classifyLegacyFailure,laneConclusion}
   from '../src/workflow-lane-rules.mjs';
@@ -68,7 +68,7 @@ test('required check `test` is still produced only by verify.yml, unchanged',()=
 
 test('every moved job keeps its original trigger behind a job-level gate',()=>{
   const gated={'lane-lab-evidence.yml':/inputs\.lab_task == /,'lane-owner-canary.yml':/inputs\.canary_task == /,
-    'lane-ops-audit.yml':/github\.event_name == /,'lane-governed-task.yml':/github\.event_name == |inputs\.governed_task == /};
+    'lane-ops-audit.yml':/github\.event_name == /,'lane-governed-task.yml':/github\.event_name == /};
   for(const [file,gate] of Object.entries(gated)){
     const yml=read('.github/workflows/'+file);
     for(const job of scanWorkflow(yml).jobs){
@@ -135,13 +135,12 @@ test('shadow replay only issues reads and reports projected lane outcomes',async
 
 // Callers must not point at a deleted workflow file. Exceptions are explicit:
 // the manifest itself, historical log classification, immutable historical run
-// evidence and the retired C06 replay toolchain list. Step 3 removed the
-// Hatchable dual-trust transition pins.
+// evidence. Step 3 removed the Hatchable dual-trust transition pins, and the
+// C06 replay toolchain list now pins the lab lane file.
 const LEGACY_REFERENCE_ALLOWED=new Map([
   ['src/workflow-consolidation.mjs','manifest'],
   ['src/workflow-lane-rules.mjs','historical log classification'],
   ['cloud/hatchable/lib/c06-live-evidence.js','immutable historical run path'],
-  ['src/c06-replay-admission.mjs','retired replay toolchain path list'],
 ]);
 test('no runtime source references a deleted workflow file outside the explicit exceptions',()=>{
   const gone=LEGACY_WORKFLOWS.filter(w=>w.disposition!=='lane').map(w=>w.file);
@@ -157,4 +156,34 @@ test('no runtime source references a deleted workflow file outside the explicit 
   const hits=files.filter(f=>!LEGACY_REFERENCE_ALLOWED.has(f)&&pattern.test(read(f)))
     .map(f=>f+': '+read(f).match(pattern)[1]);
   assert.deepEqual(hits,[]);
+});
+
+// Skeptic M1: Hatchable trusts lane-governed-task.yml@main as the council
+// worker. GitHub OIDC has no job claim, so that file must stay a dedicated
+// single-job file that no other workflow can call, and id-token must stay on
+// an explicit per-file job allowlist everywhere.
+const jobBody=(yml,job)=>yml.split('\n  '+job+':\n')[1].split(/\n  [A-Za-z0-9_-]+:\n/)[0];
+test('worker identity file is single-job, not reusable, and only listed jobs can mint OIDC',()=>{
+  const worker=read('.github/workflows/lane-governed-task.yml');
+  assert.deepEqual(scanWorkflow(worker).jobs,['work']);
+  assert.doesNotMatch(worker,/^  workflow_call:/m);
+  assert.deepEqual([...scanWorkflow(worker).triggers].sort(),['issues','workflow_dispatch']);
+  assert.match(jobBody(worker,'work'),/github\.ref == 'refs\/heads\/main'/);
+  assert.match(jobBody(worker,'work'),/github\.actor == 'michaeljwilliams0123'/);
+  for(const file of list()){
+    const yml=read('.github/workflows/'+file);
+    assert.doesNotMatch(yml,/^permissions:[^\n]*\n(?:  [^\n]*\n)*?  id-token:/m,file+': no workflow-level id-token');
+    const minting=scanWorkflow(yml).jobs.filter(job=>/^      id-token: write$/m.test(jobBody(yml,job)));
+    assert.deepEqual(minting,OIDC_JOBS[file]||[],file);
+  }
+  for(const file of list())
+    assert.ok(!read('.github/workflows/'+file).includes('uses: ./.github/workflows/lane-governed-task.yml'),file);
+});
+
+test('router reusable calls carry no ceiling beyond what the called jobs use (Skeptic L2)',()=>{
+  const router=read('.github/workflows/owner-comment-router.yml');
+  assert.doesNotMatch(jobBody(router,'cloud'),/id-token|actions: write/);
+  const council=jobBody(router,'council-command');
+  assert.doesNotMatch(council,/actions: write/);
+  assert.doesNotMatch(read('.github/workflows/council-debate.yml'),/actions: write/);
 });

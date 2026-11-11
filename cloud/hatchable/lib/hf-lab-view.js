@@ -74,8 +74,16 @@ function observedRun(item,run,file){
   runUrl:BROWSER+'/actions/runs/'+run.id,
   startedAt:date(run.created_at)};
 }
-// One read of the consolidated lab lane; a run counts for a task only with
-// its exact path, workflow name and allowlisted run title.
+// One read of the consolidated lab lane. A run counts for a task only with
+// its exact path, workflow name and allowlisted run title, and only as an
+// owner workflow_dispatch on main (Skeptic L1): a branch or bot run must never
+// pose as the newest lab result.
+const OWNER={login:'michaeljwilliams0123',id:308995719};
+export function eligibleLaneRun(run,key){
+ return labLaneRunKey(run)===key&&run.head_branch==='main'&&
+  run.event==='workflow_dispatch'&&run.actor?.login===OWNER.login&&
+  run.actor?.id===OWNER.id;
+}
 export async function collectHfRuns({fetchGithub=fetch,now=()=>new Date().toISOString()}={}){
  const observedAt=now();
  const result=emptySnapshot(observedAt);
@@ -87,7 +95,7 @@ export async function collectHfRuns({fetchGithub=fetch,now=()=>new Date().toISOS
   return result;
  }
  result.workflows=WORKFLOWS.map(item=>{
-  try{return observedRun(item,runs.find(run=>labLaneRunKey(run)===item.key),LAB_LANE_FILE);}
+  try{return observedRun(item,runs.find(run=>eligibleLaneRun(run,item.key)),LAB_LANE_FILE);}
   catch(error){return emptyWorkflow(item,'unavailable',
    String(error?.message||'provider-unavailable').slice(0,65));}
  });

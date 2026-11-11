@@ -5,9 +5,9 @@ import {readFileSync} from 'node:fs';
 const root=new URL('../.github/workflows/',import.meta.url);
 const read=name=>readFileSync(new URL(name,root),'utf8');
 const router=()=>read('owner-comment-router.yml');
-// 26 -> 8 consolidation: cloud-objective.yml now lives in lane-governed-task.yml
-// and pr-brain.yml's converse job is inlined in the router as pr-conversation.
-const sources=['lane-governed-task.yml','council-debate.yml','cloud-pr.yml'];
+// 26 -> 8 consolidation: cloud-objective.yml's job is inlined in the router as
+// `cloud`, and pr-brain.yml's converse job is inlined as pr-conversation.
+const sources=['council-debate.yml','cloud-pr.yml'];
 const routerJob=(name,next)=>router().split('  '+name+':')[1].split(next?'\n  '+next+':':'\u0000')[0];
 
 test('one native Actions workflow receives issue comments, replacing three skipped runs',()=>{
@@ -35,8 +35,10 @@ test('owner commands retain exactly the original three independently scoped capa
 });
 
 test('existing issue, PR, manual and review-comment entrypoints remain intact',()=>{
- assert.match(read('lane-governed-task.yml'),/^  issues:/m);
- assert.match(read('lane-governed-task.yml'),/^  workflow_dispatch:/m);
+ assert.match(router(),/^  issues:\n    types: \[opened\]/m);
+ assert.match(router(),/^  workflow_dispatch:\n    inputs:\n      objective:/m);
+ assert.match(routerJob('cloud','pr-conversation'),/github\.event\.issue\.title == '\[Ultron Cloud\] Objective'/);
+ assert.match(routerJob('cloud','pr-conversation'),/run: node src\/cloud-entry\.mjs/);
  assert.match(router(),/^  pull_request_review_comment:/m);
  assert.match(read('council-debate.yml'),/^  issues:/m);
  assert.match(read('council-debate.yml'),/^  pull_request:/m);
@@ -52,13 +54,14 @@ test('router retains scope-limited permissions for each job, no new timers',()=>
  assert.match(yml,/\bactions: write/);
  // Only the inlined PR conversation job (formerly pr-brain.yml, which received
  // `secrets: inherit`) may reference the optional provider key.
- for(const [job,next] of [['cloud-feedback','pr-conversation'],['issue-implementation','council-command'],
+ for(const [job,next] of [['cloud','pr-conversation'],['issue-implementation','council-command'],
   ['council-command','codex-trigger-audit'],['codex-trigger-audit','public-chat'],['public-chat',null]])
   assert.doesNotMatch(routerJob(job,next),/OPENAI_API_KEY|PRIVATE_KEY|MAHORAGA_PAT/,job);
  assert.doesNotMatch(yml,/PRIVATE_KEY|MAHORAGA_PAT/);
  assert.match(routerJob('pr-conversation','issue-implementation'),/OPENAI_API_KEY: \$\{\{ secrets\.ULTRON_OPENAI_API_KEY \}\}/);
  // Review comments reach only the PR conversation job.
- for(const [job,next] of [['cloud-feedback','pr-conversation'],['issue-implementation','council-command'],
+ assert.match(routerJob('cloud','pr-conversation'),/^      \(github\.event_name == 'issues' \|\| github\.event_name == 'issue_comment' \|\| \(github\.event_name == 'workflow_dispatch' && inputs\.objective != ''\)\) &&$/m);
+ for(const [job,next] of [['issue-implementation','council-command'],
   ['council-command','codex-trigger-audit'],['codex-trigger-audit','public-chat'],['public-chat',null]])
   assert.match(routerJob(job,next),/\(github\.event_name == 'issue_comment'\) &&/,job);
 });

@@ -10,6 +10,7 @@ const response=body=>({ok:true,status:200,json:async()=>body});
 // All lab evidence comes from one consolidated lane (26 -> 8 step 3).
 const laneRun=(id,task,extra={})=>({id,head_sha:HEAD,status:'completed',conclusion:'success',
  event:'workflow_dispatch',created_at:'2026-11-04T03:00:00Z',name:'Ultron lab evidence',
+ head_branch:'main',actor:{login:'michaeljwilliams0123',id:308995719},
  path:'.github/workflows/lane-lab-evidence.yml',display_title:'Ultron lab evidence: '+task,...extra});
 const mockFetch=async url=>{
  urls.push(url);
@@ -129,4 +130,20 @@ test('LANE-LAB-01: only an exact lane run counts; legacy files are never read',a
  assert.equal(by('c06').state,'no-run');
  assert.equal(urls.length,1);
  for(const item of WORKFLOWS)assert.equal(item.file,'lane-lab-evidence.yml');
+});
+
+test('LANE-LAB-02: a lane run counts only as an owner workflow_dispatch on main (Skeptic L1)',async()=>{
+ const {eligibleLaneRun}=await import('../cloud/hatchable/lib/hf-lab-view.js');
+ const good={id:7,name:'Ultron lab evidence',path:'.github/workflows/lane-lab-evidence.yml',
+  display_title:'Ultron lab evidence: hf-heldout-cpu',head_branch:'main',event:'workflow_dispatch',
+  actor:{login:'michaeljwilliams0123',id:308995719}};
+ assert.equal(eligibleLaneRun(good,'heldout'),true);
+ assert.equal(eligibleLaneRun(good,'c06'),false);
+ for(const change of [{head_branch:'attacker-branch'},{event:'push'},{actor:{login:'michaeljwilliams0123ultron',id:354634860}},
+  {actor:{login:'michaeljwilliams0123',id:1}},{actor:undefined},{head_branch:undefined}])
+  assert.equal(eligibleLaneRun({...good,...change},'heldout'),false,JSON.stringify(change));
+ const result=await collectHfRuns({fetchGithub:async url=>String(url).includes('lane-lab-evidence.yml')?
+  response({workflow_runs:[{...good,id:60000000001,head_sha:HEAD,status:'completed',conclusion:'success',
+   created_at:'2026-11-11T05:00:00Z',head_branch:'attacker-branch'}]}):mockFetch(url)});
+ assert.equal(result.workflows.find(x=>x.key==='heldout').state,'no-run');
 });

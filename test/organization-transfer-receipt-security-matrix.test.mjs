@@ -37,13 +37,15 @@ const payload = (r = run(), changes = {}) => ({
   ...changes
 });
 
-for (const actor of ACTORS) {
-  test('GitHub receipt admission trusts ' + actor.login + ' only with exact ID and canonical repo', () => {
-    const accepted = validateGithubWorkflowPayload(payload(run({ actor })));
-    assert.equal(accepted.sourceSha, SHA);
-    assert.equal(accepted.workflowKey, 'c06');
-  });
-}
+test('GitHub receipt admission trusts ' + ACTORS[0].login + ' only with exact ID and canonical repo', () => {
+  const accepted = validateGithubWorkflowPayload(payload(run({ actor: ACTORS[0] })));
+  assert.equal(accepted.sourceSha, SHA);
+  assert.equal(accepted.workflowKey, 'c06');
+});
+// Skeptic L5: lab jobs are owner-only, so the Ultron bot is not a lab receipt actor.
+test('GitHub lab receipt admission rejects ' + ACTORS[1].login + ' even with its exact ID', () => {
+  assert.throws(() => validateGithubWorkflowPayload(payload(run({ actor: ACTORS[1] }))), /untrusted-github-workflow/);
+});
 const invalidRuns = [
   ['mismatched primary actor ID', { actor: { login: ACTORS[0].login, id: ACTORS[1].id } }],
   ['mismatched Ultron actor ID', { actor: { login: ACTORS[1].login, id: ACTORS[0].id } }],

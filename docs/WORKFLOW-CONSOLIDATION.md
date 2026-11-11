@@ -16,13 +16,13 @@ its lane file).
 | Lane | Owner | File | What it contains |
 | --- | --- | --- | --- |
 | ci | Skeptic | `verify.yml` (unchanged) | `test` (required), `attested-receipt`, `fixed-comparison` |
-| comment-router | Companion | `owner-comment-router.yml` | cloud feedback, PR conversation (was `pr-brain.yml`, now inline), issue implementation, `/council`, Codex trigger audit, inline PR chat |
-| council | Steward | `council-debate.yml` | debate, Continuum supervisor (`reconcile`, hourly cron), identity proof, principal proof (dispatch `council_task`) |
+| comment-router | Companion | `owner-comment-router.yml` | hosted objective / cloud feedback (was `cloud-objective.yml`, now inline job `cloud`), PR conversation (was `pr-brain.yml`, now inline), issue implementation, `/council`, Codex trigger audit, inline PR chat |
+| council | Steward | `council-debate.yml` | debate, identity proof, principal proof (dispatch `council_task`) |
 | owner-canary | Predictor | `lane-owner-canary.yml` | owner Actions canary, canary matrix, Mahoraga connection1026 (dispatch `canary_task`; inputs `actions_mode`, `matrix_mode`, `connection_mode`) |
 | lab-evidence | Generator | `lane-lab-evidence.yml` | HF held-out CPU, HF free-CPU tournament, C06 owner model release, held-out acceptance (dispatch `lab_task`) |
-| ops-audit | Sentinel | `lane-ops-audit.yml` | live acceptance audit, self-scan PR, GitLab mirror, Reef probe, council self-repair (dispatch `ops_task`) |
+| ops-audit | Sentinel | `lane-ops-audit.yml` | live acceptance audit, self-scan PR, GitLab mirror, Reef probe, council self-repair, Continuum supervisor (`reconcile`, hourly :19 UTC) (dispatch `ops_task`) |
 | cloud-handoff | Builder | `cloud-pr.yml` (unchanged) | owner PR creation / room execution |
-| governed-task | Ultron Core | `lane-governed-task.yml` | hosted read-only objective (was `cloud-objective.yml`, router-called) and council worker (was `council-worker.yml`) |
+| governed-task | Ultron Core | `lane-governed-task.yml` | council worker only (was `council-worker.yml`): a dedicated single-job file, never a reusable workflow |
 
 Retired with owner sign-off: `c06-reconcile-publish.yml` and
 `governed-execution.yml` (no recorded runs), and `hf-oidc-bridge.yml` (never
@@ -46,14 +46,26 @@ lane files are removed.
 - Colliding dispatch inputs are namespaced (owner-canary `mode`). Script env
   names are unchanged.
 - Callers updated: `src/pr-brain.mjs` dispatches `lane-ops-audit.yml` with
-  `ops_task=self-scan-pr`; owner UI self-scan links; `src/self-observer.mjs`;
-  `src/route-reference-audit.mjs`; `src/owner-workbench.mjs` dispatch allowlist;
-  the router's cloud-feedback now calls `lane-governed-task.yml`.
-- Reusable-call permission ceilings: GitHub requires a caller job's permissions
-  to cover every job in the called workflow. So the router's `cloud-feedback`
-  ceiling now also lists `id-token: write` (the worker job, always skipped on
-  `issue_comment`) and `council-command` lists `actions: write` (the
-  supervisor job, skipped). Inner job permissions are unchanged.
+  `ops_task=self-scan-pr`; owner UI self-scan and cloud links;
+  `src/self-observer.mjs`; `src/route-reference-audit.mjs`;
+  `src/owner-workbench.mjs` dispatch allowlist; `src/c06-replay-admission.mjs`
+  pins `lane-lab-evidence.yml`. Owner dispatch names: see
+  [WORKFLOW-CHEAT-SHEET.md](WORKFLOW-CHEAT-SHEET.md).
+- No widened permission ceilings. The router's reusable calls are only
+  `cloud-pr.yml` (issue implementation) and `council-debate.yml` (`/council`),
+  with the same ceilings as before the consolidation. The hosted objective job
+  is inline in the router, and the Continuum supervisor (the only job needing
+  `actions: write`) lives in ops-audit, not in `council-debate.yml`.
+
+## Worker identity (Skeptic M1)
+
+Hatchable trusts `lane-governed-task.yml@refs/heads/main` as the council
+worker. GitHub OIDC tokens carry no job claim, so that file holds exactly one
+job (`work`), has no `workflow_call`, and nothing calls it. The 8-file target
+is kept by moving the former `cloud-objective.yml` job into the router instead
+of adding a ninth file. `test/workflow-consolidation.test.mjs` enforces the
+single-job, non-reusable shape and an explicit per-file allowlist of jobs that
+may request `id-token: write` (`OIDC_JOBS` in the manifest).
 
 ## Load-bearing identities and Hatchable trust
 
