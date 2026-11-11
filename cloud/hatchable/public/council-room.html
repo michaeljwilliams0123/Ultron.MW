@@ -20,6 +20,9 @@
   <a href="/workspace.html">Workspace</a>
   <a href="/">Cloud controls</a>
   <a href="/council-room.html" aria-current="page">Council room</a>
+  <a href="/passkey-owner.html">Owner passkeys</a>
+  <a href="/repair-operations.html">Repair operations</a>
+  <a href="/github-pr-comment-canary.html">GitHub App canary</a>
  </nav>
  <div class="system-pill"><span></span> Hatchable live</div>
 </header>
@@ -42,11 +45,17 @@
   <div>
    <p class="overline">PERSISTENT OWNER THREAD</p>
    <h2 id="room-title">Ultron Council Room</h2>
-   <p>Track decisions, participate directly, and see the receipt behind every result.</p>
+   <p>Start here. Companion replies first in plain language; the Council weighs in below. Decisions only you can make arrive as approval cards, and nothing runs unless you click Approve.</p>
   </div>
   <button class="ghost-button" id="refresh" type="button">Refresh</button>
  </header>
  <div id="room-status" class="room-status" role="status" aria-live="polite">Opening the room…</div>
+ <section id="sign-in-card" class="sign-in-card" aria-labelledby="sign-in-title" hidden>
+  <p class="overline">START HERE</p>
+  <h3 id="sign-in-title">Sign in to talk to the Council</h3>
+  <p id="sign-in-copy">The Council Room is owner-only. Sign in with Hatchable and you will come straight back here. Companion answers first, in plain language.</p>
+  <a id="sign-in-button" class="sign-in-button" href="#" rel="noopener">Sign in with Hatchable</a>
+ </section>
  <ol id="message-list" class="messages" aria-label="Council conversation"></ol>
  <button id="load-more" class="load-more" type="button" hidden>Load earlier messages</button>
  <section id="issue-card" class="issue-card" aria-labelledby="issue-title">
@@ -110,5 +119,6 @@
 </div>
 <script src="/__hatchable/events.js"></script>
 <script src="/council-room.js"></script>
+<script src="/nav-guard.js" defer></script>
 </body>
 </html>

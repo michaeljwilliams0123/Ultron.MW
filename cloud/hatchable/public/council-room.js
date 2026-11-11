@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const api='/api/brain/council-room';
-const state={members:[],messages:[],jobs:[],nextCursor:null,sending:false};
+const state={members:[],messages:[],jobs:[],nextCursor:null,sending:false,draft:false};
 const $=id=>document.getElementById(id);
 const roleInitials={builder:'BU',skeptic:'SK',steward:'ST',predictor:'PR',generator:'GE',sentinel:'SE',companion:'CO',council:'UC','michaeljwilliams0123':'MW'};
 const names={owner:'Michael',system:'Ultron Council'};
@@ -36,6 +36,41 @@ function repoLinks(context){
  }
  return wrap;
 }
+// In-thread approval cards only REQUEST a decision. The owner's click is the
+// decision; typing "approve" in the composer does nothing. Even an approval
+// only records owner intent: nothing executes from this page.
+function approvalCard(card,taskId){
+ const box=node('section','approval-card '+card.state);
+ box.setAttribute('aria-label','Approval needed: '+card.title);
+ box.append(node('p','overline','NEEDS YOUR DECISION · '+card.op),node('strong','',card.title),node('p','',card.reason));
+ if(card.state==='requested'){
+  const row=node('div','approval-actions');
+  for(const choice of ['approve','decline']){
+   const b=node('button',choice==='approve'?'approve':'decline',choice==='approve'?'Approve':'Decline');
+   b.type='button';b.addEventListener('click',()=>decide(card,taskId,choice,row));row.append(b);
+  }
+  box.append(row,node('small','','Approving records your decision only. The operation still runs through its normal governed path; nothing runs from chat.'));
+ }else if(card.state==='decision-recording-unavailable'){
+  box.append(node('small','','Decision recording is not set up on this deployment yet (migration 0042). No action will be taken.'));
+ }else{
+  box.append(node('small','',(card.state==='approved'?'You approved this':'You declined this')+(card.decidedAt?' · '+timeLabel(card.decidedAt):'')+'. Nothing was executed from this card.'));
+ }
+ return box;
+}
+async function decide(card,taskId,choice,row){
+ row.querySelectorAll('button').forEach(b=>b.disabled=true);
+ status((choice==='approve'?'Recording your approval':'Recording your decline')+' for “'+card.title+'”…');
+ try{
+  const response=await fetch('/api/brain/council-room-approval',{method:'POST',credentials:'same-origin',cache:'no-store',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({taskId,cardId:card.id,choice})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok)throw Error(data.error||('HTTP '+response.status));
+  await load();status(data.decision.next);
+ }catch(error){
+  row.querySelectorAll('button').forEach(b=>b.disabled=false);
+  status('Decision not recorded: '+String(error.message||error)+'. Nothing was executed.',true);
+ }
+}
 function renderMessages(){
  const list=$('message-list');list.replaceChildren();
  if(!state.messages.length){
@@ -43,16 +78,18 @@ function renderMessages(){
   list.append(empty);return;
  }
  for(const m of state.messages){
-  const li=node('li','message '+(m.authorType==='owner'?'owner':m.authorType));
+  const li=node('li','message '+(m.authorType==='owner'?'owner':m.authorType)+(m.context?.lead?' lead':''));
   const avatar=node('div','message-avatar',roleInitials[m.authorId]||String(m.authorRole||m.authorId).slice(0,2).toUpperCase());
   const bubble=node('article','bubble');const meta=node('div','message-meta');
   const author=m.authorType==='member'?(m.authorRole||m.authorId):(names[m.authorType]||m.authorId);
-  meta.append(node('strong','',author),node('span','kind',m.kind||'message'));
+  meta.append(node('strong','',author),node('span','kind',m.context?.lead?'replies first':(m.kind||'message')));
   const time=document.createElement('time');time.dateTime=m.createdAt;time.textContent=timeLabel(m.createdAt);meta.append(time);
   bubble.append(meta,node('p','',m.body));
   if(m.context?.action)bubble.append(node('p','council-action','Proposed action: '+m.context.action));
   if(m.context?.evidence)bubble.append(node('p','council-evidence','Evidence required (not yet verified): '+m.context.evidence));
   if(m.context?.planStatus)bubble.append(node('p','council-plan-status','Plan: '+m.context.planStatus+' · GitHub writes: '+(m.context.githubWriteStatus||'not authorized')));
+  if(Array.isArray(m.context?.approvalCards))for(const card of m.context.approvalCards)
+   bubble.append(approvalCard(card,m.context.taskId));
   const links=repoLinks(m.context);if(links.children.length)bubble.append(links);
   if(m.job){
    const badge=node('span','job-badge '+m.job.state,(m.job.state==='done'?'✓ ':m.job.state==='running'?'◌ ':'○ ')+'Task '+m.job.state);
@@ -73,17 +110,45 @@ function renderJobs(){
   box.append(item);
  }
 }
+// Sign-in front door: Hatchable returns login_required with a login_url.
+// Only an https hatchable.com URL is used, and it returns to this page.
+function safeLoginUrl(raw){
+ try{
+  const url=new URL(String(raw||''));
+  if(url.protocol!=='https:'||!/(^|\.)hatchable\.com$/.test(url.hostname))return null;
+  const back=url.searchParams.get('redirect');
+  if(back){
+   const inner=new URL(back);
+   if(inner.origin===location.origin){inner.searchParams.set('next',location.pathname);url.searchParams.set('redirect',inner.href)}
+  }
+  return url.href;
+ }catch{return null}
+}
+function showSignIn(data,code){
+ const card=$('sign-in-card'),button=$('sign-in-button');
+ if(code===403&&data.error==='owner-required'){
+  $('sign-in-title').textContent='Signed in, but not as the owner';
+  $('sign-in-copy').textContent='The Council Room only opens for michaeljwilliams0123. Sign in with that account to continue.';
+ }
+ const href=safeLoginUrl(data.login_url);
+ button.hidden=!href;if(href)button.href=href;
+ card.hidden=false;
+ status(href?'Sign in to open the Council Room.':'Sign-in required. Open Hatchable and sign in, then refresh this page.',true);
+}
 async function load(before=null){
  try{
   const url=new URL(api,location.origin);url.searchParams.set('limit','60');if(before)url.searchParams.set('before',before);
   const response=await fetch(url,{credentials:'same-origin',cache:'no-store'});
   const data=await response.json().catch(()=>({}));
+  if(response.status===401||(response.status===403&&data.error==='owner-required')||data.error==='login_required')
+   return showSignIn(data,response.status);
+  $('sign-in-card').hidden=true;
   if(!response.ok||!data.ok)throw Error(data.error||('HTTP '+response.status));
   state.members=data.members||[];state.jobs=data.jobs||[];state.nextCursor=data.nextCursor;
   state.messages=before?[...(data.messages||[]),...state.messages]:(data.messages||[]);
   renderMembers();renderMessages();renderJobs();
   $('load-more').hidden=!state.nextCursor;
-  status('Live room connected · '+state.messages.length+' entries · paid spend ceiling $0');
+  status('Live room connected · '+state.messages.length+' entries · paid spend ceiling $0'+(state.draft?' · your draft is in the composer, not sent yet':''));
  }catch(error){
   status('Council room unavailable: '+String(error.message||error),true);
  }
@@ -108,6 +173,16 @@ async function send(){
  }catch(error){status('Message not confirmed: '+String(error.message||error)+'. Your text remains in the composer.',true)}
  finally{state.sending=false;$('send').disabled=false}
 }
+// Draft hand-off from Workspace or the GitHub Pages console: prefill only,
+// never auto-send. The draft travels in the URL fragment (not sent to servers).
+(()=>{
+ const m=/^#draft=(.*)$/.exec(location.hash||'');if(!m)return;
+ let text='';try{text=decodeURIComponent(m[1]).slice(0,6000)}catch{return}
+ history.replaceState(null,'',location.pathname+location.search);
+ if(!text.trim()||/(?:password|passcode|otp|api[_ -]?key|private[_ -]?key)\s*[:=]|\bgh[pousr]_[A-Za-z0-9_]{20,}\b/i.test(text))return;
+ $('composer-body').value=text;$('char-count').textContent=text.length+' / 6000';state.draft=true;
+ status('Draft carried over. Review it and press Send to council; nothing was sent yet.');
+})();
 $('send').addEventListener('click',send);
 $('composer-body').addEventListener('input',e=>$('char-count').textContent=e.target.value.length+' / 6000');
 $('composer-body').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send()}});
