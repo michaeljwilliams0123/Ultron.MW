@@ -6,6 +6,7 @@ const VERIFIED=new WeakSet();
 const OPERATIONS=new Set([
  'repo.inspect','repo.issue.create','repo.verify.dispatch','repo.pr.review',
  'repo.pr.squash','repo.branch.update','cloud.deploy','permissions.change',
+ 'pr.comment',
  'webhook.configure','cloud.note.create','mcp.queue.submit','mcp.task.control',
  'graph.workbook.cell.write','github.issue.write','gitlab.branch.create',
  'owner.passkey.enroll'
@@ -15,6 +16,8 @@ const ISSUER='ultron-owner-authority';
 const OWNER='michaeljwilliams0123';
 const AUDIENCE='ultron-cloud-brain';
 const SHA256=/^[a-f0-9]{64}$/;
+// C04: one canonical PR number and the exact SHA-256 comment-body digest.
+const PR_COMMENT_RESOURCE=/^github:pr-comment:michaeljwilliams0123\/Ultron\.MW:[1-9][0-9]{0,8}:sha256:[a-f0-9]{64}$/;
 const GRANT_ID=/^[A-Za-z0-9_.:-]{8,128}$/;
 const MAX_TTL_MS=15*60*1000;
 function refuse(message){throw Error(message);}
@@ -86,13 +89,19 @@ export async function verifyDelegatedGrant({
     typeof grant.administrativeChange!=='boolean')
   refuse('invalid-grant-claims');
  if(!OPERATIONS.has(grant.operation))refuse('unsupported-grant-operation');
+ if(grant.operation==='pr.comment'&&
+   (typeof grant.resource!=='string'||!PR_COMMENT_RESOURCE.test(grant.resource)||
+    grant.administrativeChange!==false))
+  refuse('invalid-grant-pr-comment-scope');
  const versioned=Object.hasOwn(grant,'profileVersion')||
   Object.hasOwn(grant,'stopVersion');
  if(versioned&&(!Number.isSafeInteger(grant.profileVersion)||
   grant.profileVersion<1||!Number.isSafeInteger(grant.stopVersion)||
   grant.stopVersion<1))refuse('invalid-grant-versions');
  const begin=parseTime(grant.notBefore),end=parseTime(grant.expiresAt);
- if(end<=begin||end-begin>MAX_TTL_MS)refuse('grant-ttl-exceeded');
+ if(end<=begin||end-begin>MAX_TTL_MS||
+   (grant.operation==='pr.comment'&&end-begin>5*60*1000))
+  refuse('grant-ttl-exceeded');
  const current=parseTime(now);
  if(current<begin)refuse('grant-not-yet-valid');
  if(current>=end)refuse('grant-expired');
