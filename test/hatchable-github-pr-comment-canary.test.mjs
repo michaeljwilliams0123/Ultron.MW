@@ -5,9 +5,12 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {verifyDelegatedGrant,reservePrCommentExecution}
  from '../cloud/hatchable/lib/security-adjudicator.js';
-import {preparePrCommentCanary,operationDigest,submitPrCommentCanary,
- reconcilePrCommentCanary}
- from '../cloud/hatchable/lib/github-pr-comment-canary.js';
+const canarySource=(await readFile(new URL('../cloud/hatchable/lib/github-pr-comment-canary.js',
+ import.meta.url),'utf8')).replace("'lib/rsa-pkcs1-sign.js'",
+ JSON.stringify(new URL('../cloud/hatchable/lib/rsa-pkcs1-sign.js',import.meta.url).href));
+const {preparePrCommentCanary,operationDigest,submitPrCommentCanary,
+ reconcilePrCommentCanary}=await import('data:text/javascript;base64,'+
+ Buffer.from(canarySource).toString('base64'));
 
 const MIGRATIONS=['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
  '0010_runtime_stop.sql','0013_continuum_outbox.sql',
