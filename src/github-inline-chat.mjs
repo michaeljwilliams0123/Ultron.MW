@@ -76,6 +76,16 @@ export async function runInlineChat({event,actor,repository,eventName,
       if (typeof generated!=='string' || !generated.trim() || generated.length>4000)
         throw Error('invalid local inference response');
       answer=generated.trim();
+      // Live canary #387: a small CPU model gave only "I can't assist" for a
+      // harmless GitHub routing question. Do not misreport that as help.
+      if (/^(?:i(?:'m| am) sorry,?\s*but\s*)?i (?:can't|cannot) (?:assist|help) with (?:that|this) request\.?$/i.test(answer)) {
+        answer=[
+          'The local CPU model returned a generic refusal, not a useful answer.',
+          'Verified routing: a GitHub mention notifies a collaborator; it does not open a ChatGPT conversation.',
+          'An explicit /codex run <registered-author> command enters the separate, read-only Codex provenance audit on an admitted task PR; GitHub audit success does not prove Codex execution.',
+          'This message is from github-actions[bot], not Destiny or ChatGPT Plus. I cannot read ChatGPT subscription limits or Codex credits from here.'
+        ].join(' ');
+      }
     } catch {
       answer='The public CPU model was unavailable. No paid fallback, Codex run, or source write was made.';
     }
