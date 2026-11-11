@@ -23,7 +23,6 @@ jobs:
     permissions:
       contents: read
       issues: write
-      # GitHub PR timeline comments require PR write in affected integrations.
       pull-requests: write
     steps:
       - name: Configure Git bare-repository policy
