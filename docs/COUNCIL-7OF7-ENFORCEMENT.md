@@ -57,10 +57,7 @@ then, source-level tests do not constitute repository-wide enforced policy.
 GitHub connection APIs in this environment do not currently expose a
 ruleset mutation operation. A full-admin owner session must activate it.
 
-The existing `council-debate.yml` also emits a `council-7of7` job and
-artifact. **Do not require only that PR-mutable job as a substitute for the
-trusted exact-head commit status**; the trusted workflow is the primary
-release enforcement surface.
+`council-debate.yml` remains an advisory review workflow; it does **not** run the newly added release-gate script before that script exists on trusted `main`. This avoids a self-deadlocking bootstrap (PR CI checking out main cannot import unmerged policy code). The trusted `ultron/council-7of7` status is the release enforcement surface; a green advisory Council workflow alone must **never** be used as the release requirement. The trusted workflow reacts both to Council workflow completion and to a fresh exact-head owner-override comment, so no manual re-review trigger is necessary.
 
 ## Review → repair → verify → re-review
 
