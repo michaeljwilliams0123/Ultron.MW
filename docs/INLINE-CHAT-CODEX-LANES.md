@@ -38,6 +38,10 @@ The [Codex code review settings](https://chatgpt.com/codex/settings/code-review)
 
 Destiny's ChatGPT Plus subscription is separate from the OpenAI API. Sign in with ChatGPT for participating apps can draw from included Work/Codex allowance, rather than creating an independent zero-credit GitHub bot.
 
+## Live PR #387 permission repair (November 10, 2026)
+
+Initial live canary workflow [42929091449](https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/42929091449) passed its unit tests and reached the PR comment operation but GitHub responded HTTP 403. The runner's observed `GITHUB_TOKEN` effective scope was `Contents: read; Issues: write`, with no Pull requests scope. The dedicated job now adds **Pull requests: write** solely for PR timeline replies; GitHub's regular comment endpoint may require both scopes on affected installations (see [upstream GitHub report](https://github.com/github/rest-api-description/issues/6994)). This remains narrower than Contents write and does not allow source pushes. A successful response must still be independently read back as an actual GitHub comment; token permission alone is not successful acceptance.
+
 ## Safety, limitations and rollback
 
 The public CPU workflow is limited to owner/secondary identity checks, open public PRs, a bounded exact `@ultron chat ` command, checkout from trusted `main`, repository read and issue-comment write, one answer, idempotency and independent GitHub readback. It cannot push, merge, deploy, authenticate to ChatGPT, charge a provider or change external Codex preferences. It invokes no OpenAI API and has no paid fallback. If inference cannot run, it posts an explicit unavailable response.

@@ -102,6 +102,8 @@ test('workflow is opt-in, non-paid, and limits permissions',async()=>{
   assert.match(yaml,/startsWith\(github\.event\.comment\.body, '@ultron chat '\)/);
   assert.match(yaml,/github\.event\.repository\.private == false/);
   assert.match(yaml,/github\.actor == 'michaeljwilliams0123ultron'/);
-  assert.match(yaml,/permissions:\n\s+contents: read\n\s+issues: write/);
-  assert.doesNotMatch(yaml,/OPENAI_API_KEY|contents: write|pull-requests: write|@codex/);
+  // GitHub PR timeline comments need both scopes on affected Actions tokens;
+  // PR #387 live canary returned HTTP 403 with Issues:write only.
+  assert.match(yaml,/permissions:\n\s+contents: read\n\s+issues: write\n\s+pull-requests: write/);
+  assert.doesNotMatch(yaml,/OPENAI_API_KEY|contents: write|@codex/);
 });
