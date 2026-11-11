@@ -45,7 +45,7 @@ function reader({stale=false,truncated=false,tampered=false,ci=false}={}){
     if(path.endsWith('/git/ref/heads/main'))
       return {object:{sha:stale&&++checks===2?'9'.repeat(40):MAIN}};
     if(path.endsWith('/git/commits/'+MAIN))return {tree:{sha:TREE}};
-    if(path.includes('/actions/runs?head_sha='))return ci?{
+    if(path.includes('/actions/workflows/verify.yml/runs?head_sha='))return ci?{
       total_count:1,workflow_runs:[{id:1901,name:'Ultron core verification',
         path:'.github/workflows/verify.yml',status:'completed',conclusion:'success',
         event:'push',head_sha:MAIN,head_branch:'main',run_attempt:1,
