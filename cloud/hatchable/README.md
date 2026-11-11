@@ -489,7 +489,11 @@ rows (`target_kind='branch'`, `grant_id` set, no receipt).
    `{"mode":"reconcile","prepared":<the prepared object>,"grantId":"<grant id>"}`.
    It sends only GETs to GitHub (installation-token exchange aside). What it
    writes locally, by outcome:
-   - Row `completed` -> `200 recovered_success`. No writes.
+   - Row `completed` -> repeat independent Task-5 provider readback and append
+     an audit event; return `200 recovered_success` only after the audit is
+     persisted with `providerReadbackStatus: matched`. On failure return 202
+     and stay held. The completed execution row and receipt are never changed,
+     and the GitHub commit/ref writes are never repeated.
    - Row `reserved` -> `200 reserved`, `dispatched:false`. No writes. No
      provider write was attempted (for example a token exchange denial).
    - Row `failed_before_write` or `abandoned` -> `200` with that status and

@@ -175,6 +175,33 @@ test('unknown ref ACK is reconciled by read-only readback with no blind retry',a
   grantId:'other-grant-123',appCredentials:APP,fetchImpl:gh.fetchImpl}),/intent-conflict/);
 });
 
+test('completed but unaudited branch stays held until reconciliation independently audits it',async t=>{
+ const h=await prepared(t),envelope=await sign(h.ownerGrantRequest);
+ let auditUnavailable=true;
+ const gh=github({onToken:permissions=>{
+  if(permissions.contents==='read'&&auditUnavailable)throw Error('read-token-unavailable');
+ }});
+ const result=await run(h,envelope,gh);
+ assert.deepEqual([result.http,result.status],[202,'completed-unaudited']);
+ const [before]=await state(h.db);
+ assert.equal(before.state,'completed');
+ const options={db:h.db,prepared:h.prepared,grantId:JSON.parse(envelope.payload).grantId,
+  appCredentials:APP,fetchImpl:gh.fetchImpl};
+ await assert.rejects(canary.reconcileBranchCanary(options),/audit-readback-unavailable/);
+ auditUnavailable=false;
+ const recovered=await canary.reconcileBranchCanary(options);
+ assert.equal(recovered.status,'recovered_success');
+ assert.equal(recovered.providerReadbackStatus,'matched');
+ assert.match(recovered.auditSha256,/^[a-f0-9]{64}$/);
+ assert.deepEqual((await state(h.db))[0],before,'completed ledger remains immutable');
+ assert.equal(gh.posts('/git/commits'),1);
+ assert.equal(gh.posts('/git/refs'),1);
+ const audited=(await h.db.query(`SELECT details FROM brain_events
+  WHERE event_type='github-branch-canary-audited'`)).rows;
+ assert.equal(audited.length,1);
+ assert.equal(audited[0].details.auditSha256,recovered.auditSha256);
+});
+
 test('lost commit ACK before any ref leaves the branch absent and unresolved',async t=>{
  const h=await prepared(t),gh=github({loseCommitAck:true}),envelope=await sign(h.ownerGrantRequest);
  const result=await run(h,envelope,gh);

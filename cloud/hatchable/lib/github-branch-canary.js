@@ -523,7 +523,9 @@ export async function runBranchCanary({db,prepared,envelope,publicJwk,appCredent
  * Reconciliation. Never sends a non-GET to GitHub, but it DOES write the local
  * ledger: in_flight -> reconcile_required on an absent/conflicting branch, and
  * -> completed (receipt) plus a brain_events audit row on a matching branch.
- * Terminal and reserved rows are reported without any write.
+ * Completed rows keep their immutable receipt but must independently pass
+ * Task 5 again before reporting recovered success. Reserved and non-completed
+ * terminal rows are reported without any write.
  */
 export async function reconcileBranchCanary({db,prepared,grantId,appCredentials,
  fetchImpl=globalThis.fetch,clock=Date.now}={}){
@@ -538,8 +540,14 @@ export async function reconcileBranchCanary({db,prepared,grantId,appCredentials,
  if(stored.operation_digest!==intent.operationDigest||
    stored.target_branch!==intent.targetBranch||stored.grant_id!==grantId)
   fail('intent-conflict');
- if(stored.state==='completed')
-  return Object.freeze({status:'recovered_success',receipt:stored.receipt});
+ if(stored.state==='completed'){
+  // Completion precedes Task 5. A failed/unpersisted audit cannot become
+  // success merely by retrying reconcile against a completed ledger row.
+  const audit=await createBranchAuditRecorder({db,sourceSha:intent.sourceSha,
+   readback:lineageReadback(fetchImpl,()=>identity.getReadToken())})(stored.receipt);
+  return Object.freeze({status:'recovered_success',receipt:stored.receipt,
+   auditSha256:audit.auditSha256,providerReadbackStatus:audit.providerReadbackStatus});
+ }
  if(stored.state==='reserved')
   return Object.freeze({status:'reserved',dispatched:false});
  if(stored.state==='failed_before_write'||stored.state==='abandoned')
