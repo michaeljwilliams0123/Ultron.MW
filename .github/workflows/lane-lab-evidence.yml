@@ -1,0 +1,51 @@
+name: Lane Lab Evidence (shadow, Generator)
+# Consolidated lane 'lab-evidence', owned by Council role Generator.
+# Hugging Face CPU labs, held-out evidence and C06 model release.
+# PHASE 1 SHADOW: read-only replay of the legacy workflows below. Legacy files
+# keep every trigger and side effect until the owner signs the retirement
+# checklist in docs/WORKFLOW-CONSOLIDATION.md. Manifest: src/workflow-consolidation.mjs
+# Absorbs:
+#   - hf-free-cpu-tournament.yml (absorb)
+#   - hf-heldout-cpu.yml (absorb)
+#   - hf-oidc-bridge.yml (anchor)
+#   - held-out-acceptance.yml (anchor)
+#   - c06-owner-model-release.yml (anchor)
+#   - c06-reconcile-publish.yml (retire)
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Days of legacy run history to replay (1-30)
+        required: false
+        default: 7
+        type: number
+permissions:
+  contents: read
+concurrency:
+  group: lane-shadow-lab-evidence
+  cancel-in-progress: true
+jobs:
+  shadow:
+    name: lab-evidence shadow replay
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      (github.event_name == 'schedule' || github.actor == 'michaeljwilliams0123')
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Static parity and read-only legacy replay (no writes)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LANE_DAYS: ${{ inputs.days || 7 }}
+        run: node scripts/workflow-shadow.mjs --lane lab-evidence --days "$LANE_DAYS"
