@@ -44,7 +44,7 @@ test('owner-signed capability authorizes one exact worker/objective/operation/re
   authorized:true,authorizedBy:'michaeljwilliams0123',grantId:base.grantId,actor:base.actor,
   objectiveId:base.objectiveId,operation:base.operation,resource:base.resource,
   policySha:base.policySha,profileVersion:5,stopVersion:3,
-  expiresAt:base.expiresAt,administrativeChange:false
+  notBefore:base.notBefore,expiresAt:base.expiresAt,administrativeChange:false
  });
  assert.equal('privateKey' in result,false);
  // Hatchable V8 can hash, but cannot import asymmetric WebCrypto keys.
