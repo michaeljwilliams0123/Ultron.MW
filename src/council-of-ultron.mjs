@@ -238,6 +238,33 @@ export function inferLanes(objective) {
   return Object.freeze(hits.length ? hits.map(hit => Object.freeze(hit)) : [Object.freeze({ lane: 'reasoning', weight: 1 })]);
 }
 
+/** Column contract for persisted scorecard rows (Phase 2, Hatchable
+ * `brain_council_scorecard_rows`). The migration and any store must use exactly
+ * these columns; `scorecardRows()` is the only producer. One row per member and
+ * lane, computed from one verified memory snapshot (`snapshot_sha256`). */
+export const SCORECARD_COLUMNS = freezeDeep([
+  { name: 'member_id', type: 'text', note: 'roster id, e.g. ultron-sentinel' },
+  { name: 'lane', type: 'text', note: 'one of LANE_IDS' },
+  { name: 'attempts', type: 'integer', note: 'non-held outcomes led by the member in this lane' },
+  { name: 'successes', type: 'integer', note: 'succeeded outcomes, <= attempts' },
+  { name: 'rate', type: 'numeric(5,4)', note: 'Laplace smoothed (successes + 1) / (attempts + 2)' },
+  { name: 'snapshot_sha256', type: 'text', note: 'sha256 of the memory snapshot the row was computed from' },
+]);
+export const SCORECARD_SCHEMA = 'ultron.council-scorecard.v1';
+
+/** Flatten a scorecard into SCORECARD_COLUMNS rows bound to one snapshot. */
+export function scorecardRows(card, snapshotSha256) {
+  if (!/^[a-f0-9]{64}$/.test(snapshotSha256 || '')) fail('scorecard-snapshot-invalid');
+  const rows = [];
+  for (const memberId of Object.keys(card).sort()) for (const lane of Object.keys(card[memberId]).sort()) {
+    const { attempts, successes, rate } = card[memberId][lane];
+    if (!LANE_IDS.includes(lane) || !Number.isSafeInteger(attempts) || !Number.isSafeInteger(successes) ||
+        successes < 0 || successes > attempts) fail('scorecard-row-invalid');
+    rows.push({ member_id: memberId, lane, attempts, successes, rate, snapshot_sha256: snapshotSha256 });
+  }
+  return freezeDeep(rows);
+}
+
 /** Track record per member and lane from recorded outcomes (Laplace smoothed). */
 export function councilScorecard(memory) {
   const card = {};
