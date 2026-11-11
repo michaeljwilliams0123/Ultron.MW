@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Ultron.MW — GitHub App canary</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}
+*{box-sizing:border-box}body{background:#0c1425;color:#e6f0ff;margin:0}
+main{max-width:900px;margin:auto;padding:30px 18px 70px}
+a{color:#aac9ff}.muted{color:#bac8db;line-height:1.6}
+section{border:1px solid #34465e;border-radius:13px;background:#13223a;margin:21px 0;padding:20px}
+label{display:block;margin:12px 0 5px;color:#c2d4ee;font-size:14px}
+input,textarea{width:100%;border:1px solid #587498;background:#182a45;color:#f2f7ff;border-radius:8px;padding:11px;font:inherit}
+textarea{min-height:100px;font:12px ui-monospace,monospace}
+button{padding:11px 15px;margin:12px 8px 0 0;border:0;border-radius:8px;background:#90b5ff;color:#081626;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}.status{padding:13px;border-radius:9px;background:#1d3351;color:#d7e7ff;overflow-wrap:anywhere}
+header{display:flex;justify-content:space-between;gap:20px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<main>
+<header><div><p class="muted">ULTRON CLOUD / OWNER AUTHORITY</p><h1>Coordinator App canary</h1></div><a href="/">Back to Command Center</a></header>
+<p class="muted">Prepare and authorize exactly one Coordinator-App-authored pull-request comment. Hatchable atomically reserves the owner grant and nonce before the write, reads the comment back without the App token, and stores an immutable PostgreSQL receipt. A lost response is reconciled by reads only.</p>
+<section>
+<h2>1. Prepare the exact comment</h2>
+<label for="pull-request">Open Ultron.MW pull request number</label>
+<input id="pull-request" type="number" min="1" max="999999999" value="399" inputmode="numeric">
+<button id="prepare">Prepare owner grant</button>
+<button id="copy" disabled>Copy signing request</button>
+<label for="comment">Exact comment body (read-only)</label>
+<textarea id="comment" readonly></textarea>
+<label for="signable">Exact owner-grant request (read-only)</label>
+<textarea id="signable" readonly></textarea>
+<p class="muted">Sign the copied request on the trusted device that holds your existing owner private JWK. Paste only the resulting short-lived JSON envelope below. Never paste or upload the private key.</p>
+</section>
+<section>
+<h2>2. Submit once or reconcile</h2>
+<label for="envelope">Owner-signed envelope</label>
+<textarea id="envelope" autocomplete="off" spellcheck="false" placeholder='{"payload":"...","signature":"..."}'></textarea>
+<button id="submit" disabled>Submit one App comment</button>
+<button id="reconcile" disabled>Read back existing attempt</button>
+<p class="status" id="status" role="status" aria-live="polite">No canary prepared. No GitHub write has been attempted.</p>
+</section>
+<p class="muted">Fixed scope: owner <code>michaeljwilliams0123</code>, repository ID <code>1424939667</code>, Coordinator App ID <code>5633654</code>, installation <code>179066535</code>, and an in-memory token limited to <code>metadata:read</code> plus <code>issues:write</code>. Paid spend: $0.</p>
+</main>
+<script src="./github-pr-comment-canary.js" defer></script>
+</body>
+</html>

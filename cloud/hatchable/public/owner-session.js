@@ -5,9 +5,16 @@ const link=document.getElementById('owner-session-link');
 const indicator=document.getElementById('owner-session-status');
 if(!link||!indicator)return;
 let inflight=false;
+// Build the sign-in href from the API's login_url (allowlisted, returns to
+// this page) when the shared helper is loaded; otherwise keep the default.
+function useLoginUrl(raw){
+ const safe=window.UltronSignIn&&window.UltronSignIn.safeLoginUrl;
+ const href=typeof safe==='function'?safe(raw):null;
+ if(href){link.href=href;link.removeAttribute('target');}
+}
 function report(state,message){
  window.ultronOwnerSessionState=state;
- link.hidden=state!=='guest';
+ link.hidden=state!=='guest'&&state!=='not-owner';
  indicator.textContent=message;
  window.dispatchEvent(new CustomEvent('ultron:owner-session-state',
   {detail:{state}}));
@@ -19,6 +26,13 @@ async function check(){
   const r=await fetch('/api/brain/session',{method:'GET',
    credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
   if(r.status===401||r.status===403){
+   let data={};
+   try{data=await r.json()||{}}catch{}
+   useLoginUrl(data.login_url);
+   // 403 from an authenticated non-owner is not the same as signed out.
+   if(r.status===403&&data.error!=='login_required'){
+    report('not-owner','Signed in, but not as the owner · switch accounts');return;
+   }
    report('guest','Owner sign-in required');return;
   }
   if(!r.ok){

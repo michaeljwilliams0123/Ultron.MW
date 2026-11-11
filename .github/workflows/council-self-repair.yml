@@ -1,0 +1,93 @@
+name: Council self-repair (Sentinel diagnoses, Builder repairs)
+# Report-only by default. Set repository variable ULTRON_SELF_REPAIR_MODE to
+# `act` to allow the allow-listed writes, or `off` to stop. Fixes are drafts;
+# merges, releases, deploys, secrets and permissions always go to the owner.
+# Folds into the ops-audit lane (src/workflow-consolidation.mjs) at cutover.
+on:
+  workflow_run:
+    workflows: ["Ultron core verification"]
+    types: [completed]
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Completed workflow run ID to diagnose (blank = sweep)
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: council-self-repair-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      vars.ULTRON_SELF_REPAIR_MODE != 'off' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'michaeljwilliams0123') ||
+       (github.event_name == 'workflow_run' &&
+        contains(fromJSON('["failure","timed_out","startup_failure"]'), github.event.workflow_run.conclusion) &&
+        (github.event.workflow_run.head_branch == 'main' ||
+         github.event.workflow_run.actor.login == 'michaeljwilliams0123' ||
+         github.event.workflow_run.actor.login == 'michaeljwilliams0123ultron')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+    outputs:
+      act: ${{ steps.plan.outputs.act }}
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Diagnose and plan (no writes)
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SELF_REPAIR_MODE: ${{ vars.ULTRON_SELF_REPAIR_MODE || 'report-only' }}
+          SELF_REPAIR_AGENT: ${{ vars.ULTRON_SELF_REPAIR_AGENT || 'none' }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+        run: |
+          if [ -n "$RUN_ID" ]; then node scripts/council-self-repair.mjs --run "$RUN_ID"
+          else node scripts/council-self-repair.mjs --sweep; fi
+  act:
+    needs: diagnose
+    if: needs.diagnose.outputs.act == 'true' && vars.ULTRON_SELF_REPAIR_MODE == 'act'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Execute allow-listed repairs (rerun once, diagnosis issue, draft handoff, update-branch)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SELF_REPAIR_MODE: act
+          SELF_REPAIR_AGENT: ${{ vars.ULTRON_SELF_REPAIR_AGENT || 'none' }}
+          SELF_REPAIR_ASSIGN_TOKEN: ${{ secrets.ULTRON_COPILOT_ASSIGN_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+        run: |
+          if [ -n "$RUN_ID" ]; then node scripts/council-self-repair.mjs --run "$RUN_ID" --execute
+          else node scripts/council-self-repair.mjs --sweep --execute; fi

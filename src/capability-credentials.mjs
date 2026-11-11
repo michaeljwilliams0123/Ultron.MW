@@ -43,10 +43,16 @@ export function verifyCapabilityToken(token,{key,audience,requiredScope='status:
       !/^[A-Za-z0-9_-]+$/.test(items[3]))return false;
     const message=items.slice(0,3).join('.');
     const expected=Buffer.from(signature(message,key),'base64url');
+    const payload=Buffer.from(items[2],'base64url');
     const actual=Buffer.from(items[3],'base64url');
-    if(expected.length!==actual.length||!timingSafeEqual(expected,actual))
+    // Node's decoder accepts non-canonical aliases whose unused trailing
+    // bits differ while the decoded bytes remain identical. Require the one
+    // canonical spelling so a changed token string is always rejected.
+    if(payload.toString('base64url')!==items[2]||
+      actual.toString('base64url')!==items[3]||
+      expected.length!==actual.length||!timingSafeEqual(expected,actual))
       return false;
-    const p=JSON.parse(Buffer.from(items[2],'base64url').toString('utf8'));
+    const p=JSON.parse(payload.toString('utf8'));
     return p?.iss==='ultron-runtime'&&p.aud===audience &&
       Number.isSafeInteger(p.iat)&&Number.isSafeInteger(p.exp)&&
       now>=p.iat&&now<p.exp&&p.exp-p.iat<=3600&&
