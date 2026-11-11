@@ -167,3 +167,39 @@ test('signed grant consumption is fenced to the current owner profile and stop v
  assert.deepEqual(result,{ok:false,error:'authority-denied'});
  assert.equal(queries,1);
 });
+
+
+test('C04: exact owner-signed PR comment grant is bound to one repository, PR, digest and five-minute expiry',async()=>{
+ const resource='github:pr-comment:michaeljwilliams0123/Ultron.MW:390:sha256:'+'b'.repeat(64);
+ const start='2026-11-10T20:00:00.000Z';
+ const grant={...base,grantId:'owner-c04-pr-comment-20261110',
+  actor:'worker:coordinator',objectiveId:'c04-pr-390-comment',
+  operation:'pr.comment',resource,
+  notBefore:start,expiresAt:'2026-11-10T20:04:59.000Z',
+  profileVersion:7,stopVersion:5,administrativeChange:false};
+ const scope={actor:grant.actor,objectiveId:grant.objectiveId,
+  operation:grant.operation,resource:grant.resource,administrativeChange:false};
+ const accepted=await check(grant,scope,'2026-11-10T20:01:00.000Z');
+ assert.equal(accepted.authorized,true);
+ assert.equal(accepted.operation,'pr.comment');
+ assert.equal(accepted.resource,resource);
+ assert.equal(accepted.profileVersion,7);
+ assert.equal(accepted.stopVersion,5);
+ for(const invalid of [
+  'github:pr-comment:michaeljwilliams0123/Ultron.MW:*:sha256:'+'b'.repeat(64),
+  'github:pr-comment:attacker/Ultron.MW:390:sha256:'+'b'.repeat(64),
+  'github:pr-comment:michaeljwilliams0123/Ultron.MW:0:sha256:'+'b'.repeat(64),
+  'github:pr-comment:michaeljwilliams0123/Ultron.MW:390:sha256:'+'B'.repeat(64),
+  'github:pr-comment:michaeljwilliams0123/Ultron.MW:390',
+  'michaeljwilliams0123/Ultron.MW'
+ ])await assert.rejects(check({...grant,resource:invalid},
+  {...scope,resource:invalid},'2026-11-10T20:01:00.000Z'),/invalid-grant-pr-comment-scope/);
+ await assert.rejects(check({...grant,administrativeChange:true},
+  {...scope,administrativeChange:true},'2026-11-10T20:01:00.000Z'),
+  /invalid-grant-pr-comment-scope/);
+ await assert.rejects(check({...grant,expiresAt:'2026-11-10T20:05:01.000Z'},
+  scope,'2026-11-10T20:01:00.000Z'),/grant-ttl-exceeded/);
+ await assert.rejects(check(grant,{...scope,resource:
+  'github:pr-comment:michaeljwilliams0123/Ultron.MW:391:sha256:'+'b'.repeat(64)},
+  '2026-11-10T20:01:00.000Z'),/grant-scope-mismatch/);
+});
