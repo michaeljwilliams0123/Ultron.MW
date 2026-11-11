@@ -93,3 +93,64 @@ test('eventually consistent GitHub ref and content reads recover without replayi
   assert.equal(f.state.calls.filter(x=>x[0]==='PATCH').length,1);
   assert.ok(f.state.calls.filter(x=>x[1]===ROOT+'/git/ref/heads/'+BRANCH).length>=5);
 });
+
+
+test('governance repair pilot atomically commits paired source and regression on PR branch only',async()=>{
+ const branch='governance/council-7of7-20261110',main='9'.repeat(40);
+ const source='Council source old behavior\n',regression='Council test old behavior\n';
+ const files={'src/council-members.mjs':source,'test/council-members.test.mjs':regression};
+ const changes=[
+  {path:'src/council-members.mjs',before:'old',after:'new'},
+  {path:'test/council-members.test.mjs',before:'old',after:'new'}
+ ];
+ const p={number:397,state:'open',
+  body:'<!-- ULTRON_COUNCIL_REPAIR_PR_V1 -->\nBounded source+test',
+  head:{ref:branch,sha:HEAD,repo:{id:1424939667,full_name:REPO}},
+  base:{ref:'main',sha:main,repo:{id:1424939667,full_name:REPO}}};
+ const state={sha:HEAD,blobs:[],updatedFiles:{},calls:[],newTree:null};
+ const get=async path=>{
+  state.calls.push(['GET',path]);
+  if(path===ROOT+'/git/ref/heads/main')return{object:{sha:main}};
+  if(path===ROOT+'/compare/'+main+'...'+HEAD)
+   return{status:'ahead',behind_by:0,merge_base_commit:{sha:main}};
+  if(path===ROOT+'/git/ref/heads/'+branch)return{object:{sha:state.sha}};
+  if(path===ROOT+'/git/commits/'+HEAD)return{tree:{sha:TREE}};
+  const m=path.match(/^\/repos\/michaeljwilliams0123\/Ultron\.MW\/contents\/([^?]+)\?ref=([a-f0-9]{40})$/);
+  if(m){const v=m[2]===NEXT?state.updatedFiles[m[1]]:files[m[1]];
+   if(typeof v!=='string')throw Error('mock read unknown file');
+   return{encoding:'base64',sha:'e'.repeat(40),content:Buffer.from(v).toString('base64')};}
+  throw Error('Unexpected GitHub get '+path);
+ };
+ const post=async (path,payload)=>{
+  state.calls.push(['POST',path]);
+  if(path.endsWith('/git/blobs')){
+   state.blobs.push(payload.content);
+   return{sha:'f'.repeat(40)};
+  }
+  if(path.endsWith('/git/trees')){
+   assert.equal(payload.base_tree,TREE);
+   state.updatedFiles=Object.fromEntries(payload.tree.map((v,i)=>[v.path,state.blobs[i]]));
+   return{sha:NEW_TREE};
+  }
+  if(path.endsWith('/git/commits')){
+   assert.deepEqual(payload.parents,[HEAD]);
+   return{sha:NEXT};
+  }
+  throw Error('Unexpected GitHub POST '+path);
+ };
+ const updateRef=async(path,payload)=>{
+  assert.equal(path,ROOT+'/git/refs/heads/'+branch);
+  assert.equal(payload.force,false);
+  assert.equal(payload.sha,NEXT);
+  state.sha=NEXT;return{object:{sha:NEXT}};
+ };
+ const result=await applyPrPatch({pr:p,manifest:JSON.stringify({
+   objective:'Repair Council source with matching regression',baseSha:HEAD,changes
+  }),get,post,updateRef,sleep:async()=>{}});
+ assert.equal(result.commitSha,NEXT);
+ assert.deepEqual(result.paths,changes.map(c=>c.path));
+ assert.equal(state.updatedFiles[changes[0].path],'Council source new behavior\n');
+ assert.equal(state.updatedFiles[changes[1].path],'Council test new behavior\n');
+ assert.equal(state.calls.filter(c=>c[0]==='POST'&&c[1].endsWith('/git/commits')).length,1);
+ assert.equal(state.calls.some(c=>c[1].endsWith('/refs/heads/main')),false);
+});
