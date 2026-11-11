@@ -23,7 +23,7 @@ async function loadRoute({config=CONFIG,lib={}}={}){
    `const spy=name=>async arg=>{globalThis.__branchRoute.calls.push({name,arg});
      return globalThis.__branchRoute.lib[name](arg);};
     const prepareBranchCanary=spy('prepare'),runBranchCanary=spy('run'),
-     reconcileBranchCanary=spy('reconcile');
+     reconcileBranchCanary=spy('reconcile'),abandonBranchCanary=spy('abandon');
     const validatePreparedBranchCanary=value=>{
      if(value?.taskId!==${JSON.stringify(prepared.taskId)})throw Error('invalid');return value;};`);
  assert.notEqual(replaced,source);
@@ -116,4 +116,28 @@ test('submit forwards lib status and never echoes the signed envelope',async()=>
  const hidden=await call(opaque.default,{body:{mode:'reconcile',prepared,grantId:'owner-412-test'}});
  assert.equal(Object.hasOwn(hidden.body,'reason'),false);
  assert.equal(JSON.stringify(hidden.body).includes('secret'),false);
+});
+
+test('abandon is an owner-only mode of the same route with exact body and fixed reasons',async()=>{
+ const body={mode:'abandon',prepared,grantId:'owner-412-test'};
+ const {module,calls}=await loadRoute({lib:{abandon:async()=>({status:'abandoned',changed:true})}});
+ const anon=await call(module.default,{handle:'some-member',body});
+ assert.deepEqual([anon.status,anon.body.error],[403,'owner-identity-required']);
+ for(const bad of [{...body,extra:1},{mode:'abandon',prepared},{...body,grantId:'x'}])
+  assert.equal((await call(module.default,{body:bad})).status,400);
+ assert.equal(calls.length,0);
+ const ok=await call(module.default,{body});
+ assert.deepEqual([ok.status,ok.body.status,ok.body.terminal,ok.body.changed],[200,'abandoned',true,true]);
+ assert.equal(calls[0].name,'abandon');
+ assert.equal(calls[0].arg.grantId,'owner-412-test');
+ const {module:present}=await loadRoute({lib:{abandon:async()=>{throw Error('github-branch-canary-abandon-branch-present');}}});
+ const refused=await call(present.default,{body});
+ assert.deepEqual([refused.status,refused.body.status,refused.body.reason],[409,'abandon-refused','abandon-branch-present']);
+ const {module:opaque}=await loadRoute({lib:{abandon:async()=>{throw Error('secret token text');}}});
+ const hidden=await call(opaque.default,{body});
+ assert.equal(hidden.status,503);
+ assert.equal(JSON.stringify(hidden.body).includes('secret'),false);
+ const {module:terminal}=await loadRoute({lib:{reconcile:async()=>({status:'failed_before_write',terminal:true})}});
+ const r=await call(terminal.default,{body:{mode:'reconcile',prepared,grantId:'owner-412-test'}});
+ assert.deepEqual([r.status,r.body.status,r.body.terminal],[200,'failed_before_write',true]);
 });

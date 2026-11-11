@@ -1,9 +1,10 @@
 import {db,config} from 'hatchable';
 import {prepareBranchCanary,validatePreparedBranchCanary,runBranchCanary,
- reconcileBranchCanary} from 'lib/github-branch-canary.js';
+ reconcileBranchCanary,abandonBranchCanary} from 'lib/github-branch-canary.js';
 
 // #412 Option A: owner-only, grant-bound branch canary for the master pipeline.
-// prepare/submit/reconcile mirror the C04 PR-comment canary. repair.branch.create
+// prepare/submit/reconcile mirror the C04 PR-comment canary; abandon is the
+// owner-only terminal exit for a row whose branch a fresh readback shows absent. repair.branch.create
 // stays denied until the owner selects it in the versioned autonomy profile.
 export const access='admin';
 export const methods=['POST'];
@@ -17,6 +18,10 @@ const RECONCILE_REASONS=['readback-not-found','readback-conflict','readback-unav
  'audit-readback-unavailable','token-exchange-denied','provider-outcome-unknown'];
 const PROVIDER_STATUS={'readback-conflict':'mismatch','audit-readback-mismatch':'mismatch',
  'readback-unavailable':'unavailable','audit-readback-unavailable':'unavailable'};
+const ABANDON_REASONS=['abandon-branch-present','abandon-state-in-flight',
+ 'abandon-state-completed','abandon-state-failed-before-write','intent-conflict',
+ 'readback-unavailable','ledger-readback-unavailable','abandon-persistence-unverified',
+ 'token-exchange-denied','provider-outcome-unknown'];
 function reply(res,status,value){
  res.setHeader('Cache-Control','private, no-store');
  return res.status(status).json({schema:SCHEMA,...value});
@@ -61,7 +66,7 @@ export default async function handler(req,res){
     plan:result.plan,ownerGrantRequest:result.ownerGrantRequest});
   }catch{return reply(res,403,{ok:false,error:'canary-prepare-denied'});}
  }
- if(!['submit','reconcile'].includes(mode))
+ if(!['submit','reconcile','abandon'].includes(mode))
   return reply(res,400,{ok:false,error:'canary-mode-invalid'});
  const valid=mode==='submit'
   ?exact(body,['mode','prepared','envelope'])&&exact(body.envelope,['payload','signature'])&&
@@ -84,7 +89,8 @@ export default async function handler(req,res){
     idempotencyKey:'ultron-task-'+prepared.taskId,
     ...(result.receipt?{receipt:result.receipt}:{}),
     ...(result.providerReadbackStatus?{providerReadbackStatus:result.providerReadbackStatus}:{}),
-    ...(result.dispatched===false?{dispatched:false}:{})});
+    ...(result.dispatched===false?{dispatched:false}:{}),
+    ...(result.terminal?{terminal:true}:{})});
   }catch(error){
    if(/configuration/.test(String(error?.message)))return unconfigured(res);
    // Only fixed, non-secret reason codes; see README "Clearing reconcile_required".
@@ -94,6 +100,21 @@ export default async function handler(req,res){
     idempotencyKey:'ultron-task-'+prepared.taskId,error:'provider-outcome-unresolved',
     ...(reason?{reason}:{}),
     ...(PROVIDER_STATUS[reason]?{providerReadbackStatus:PROVIDER_STATUS[reason]}:{})});
+  }
+ }
+ if(mode==='abandon'){
+  try{
+   const result=await abandonBranchCanary({db,prepared,grantId:body.grantId,
+    appCredentials:credentials});
+   return reply(res,200,{ok:true,status:'abandoned',terminal:true,
+    changed:result.changed,idempotencyKey:'ultron-task-'+prepared.taskId});
+  }catch(error){
+   if(/configuration/.test(String(error?.message)))return unconfigured(res);
+   const reason=ABANDON_REASONS.find(code=>
+    String(error?.message).endsWith('github-branch-canary-'+code));
+   const conflict=/^(abandon-branch-present|abandon-state-|intent-conflict)/.test(reason||'');
+   return reply(res,conflict?409:503,{ok:false,status:'abandon-refused',
+    idempotencyKey:'ultron-task-'+prepared.taskId,...(reason?{reason}:{})});
   }
  }
  let result;

@@ -43,3 +43,48 @@ ALTER TABLE brain_owner_autonomy_profile
  ADD CONSTRAINT brain_owner_autonomy_profile_allowed_operations_check
  CHECK (jsonb_typeof(allowed_operations)='array'
   AND jsonb_array_length(allowed_operations) BETWEEN 1 AND 24);
+
+-- Terminal, non-completed outcomes for grant-bound branch rows only:
+--  failed_before_write: the executor proved no non-GET provider request was
+--    sent (reserved -> failed_before_write).
+--  abandoned: an owner-authenticated abandon after a read-only provider
+--    readback confirmed the branch is absent (reserved|reconcile_required ->
+--    abandoned). Rows are never deleted; terminal rows are immutable.
+ALTER TABLE github_idempotent_executions
+  DROP CONSTRAINT github_idempotent_executions_state_check;
+ALTER TABLE github_idempotent_executions
+  ADD CONSTRAINT github_idempotent_executions_state_check
+  CHECK (state IN ('reserved','in_flight','reconcile_required','completed',
+    'failed_before_write','abandoned'));
+ALTER TABLE github_idempotent_executions
+  ADD CONSTRAINT github_idempotent_executions_terminal_branch_check
+  CHECK (state NOT IN ('failed_before_write','abandoned') OR
+    (target_kind='branch' AND grant_id IS NOT NULL AND receipt IS NULL));
+
+-- Same identity/immutability rules as 0041, plus the two terminal states.
+CREATE OR REPLACE FUNCTION github_idempotent_executions_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'github-idempotent-immutable'; END IF;
+  IF OLD.state='completed' THEN RAISE EXCEPTION 'github-idempotent-completed-immutable'; END IF;
+  IF OLD.state IN ('failed_before_write','abandoned') THEN
+    RAISE EXCEPTION 'github-idempotent-terminal-immutable'; END IF;
+  IF NEW.idempotency_key<>OLD.idempotency_key OR
+     NEW.operation_digest<>OLD.operation_digest OR
+     NEW.repository<>OLD.repository OR
+     NEW.target_kind<>OLD.target_kind OR
+     NEW.target_branch IS DISTINCT FROM OLD.target_branch OR
+     NEW.target_number IS DISTINCT FROM OLD.target_number OR
+     NEW.body_sha256 IS DISTINCT FROM OLD.body_sha256 OR
+     NEW.grant_id IS DISTINCT FROM OLD.grant_id OR
+     (OLD.provider_comment_id IS NOT NULL AND
+       (NEW.provider_comment_id,NEW.provider_url,NEW.provider_actor,NEW.provider_app_id)
+       IS DISTINCT FROM
+       (OLD.provider_comment_id,OLD.provider_url,OLD.provider_actor,OLD.provider_app_id)) OR
+     (OLD.state='reconcile_required' AND NEW.state NOT IN ('completed','abandoned')) OR
+     (OLD.state='in_flight' AND NEW.state NOT IN ('completed','reconcile_required')) OR
+     (OLD.state='reserved' AND NEW.state NOT IN
+       ('in_flight','completed','reconcile_required','failed_before_write','abandoned'))
+  THEN RAISE EXCEPTION 'github-idempotent-transition-denied'; END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;

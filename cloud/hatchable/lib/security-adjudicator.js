@@ -1,4 +1,4 @@
-import {createVerify} from 'node:crypto';
+import {createHash,createVerify} from 'node:crypto';
 // Delegated owner-authority verifier. The sole repository owner controls the
 // signing key; workers hold ONLY the pinned public verification key.
 // This module cannot mint credentials, grant itself privileges, or change policy.
@@ -20,6 +20,9 @@ const SHA256=/^[a-f0-9]{64}$/;
 const PR_COMMENT_RESOURCE=/^github:pr-comment:michaeljwilliams0123\/Ultron\.MW:[1-9][0-9]{0,8}:sha256:[a-f0-9]{64}$/;
 // #412: one canonical canary branch and the exact signed-plan SHA-256 digest.
 const BRANCH_RESOURCE=/^github:branch:michaeljwilliams0123\/Ultron\.MW:ultron\/canary-[a-z0-9][a-z0-9-]{2,63}:sha256:[a-f0-9]{64}$/;
+// #412: the only policy a repair.branch.create grant may be signed under.
+export const BRANCH_POLICY_SHA=createHash('sha256')
+ .update('ultron.412.owner-signed-hatchable-branch-canary.v1').digest('hex');
 const GRANT_ID=/^[A-Za-z0-9_.:-]{8,128}$/;
 const MAX_TTL_MS=15*60*1000;
 function refuse(message){throw Error(message);}
@@ -99,6 +102,8 @@ export async function verifyDelegatedGrant({
    (typeof grant.resource!=='string'||!BRANCH_RESOURCE.test(grant.resource)||
     grant.administrativeChange!==false))
   refuse('invalid-grant-branch-scope');
+ if(grant.operation==='repair.branch.create'&&grant.policySha!==BRANCH_POLICY_SHA)
+  refuse('invalid-grant-branch-policy');
  const versioned=Object.hasOwn(grant,'profileVersion')||
   Object.hasOwn(grant,'stopVersion');
  if(versioned&&(!Number.isSafeInteger(grant.profileVersion)||
@@ -139,6 +144,9 @@ export async function verifyDelegatedGrant({
 // never consumed into fresh authority.
 export async function consumeDelegatedGrant({db,verifiedGrant}={}){
  if(!db?.query||!VERIFIED.has(verifiedGrant))refuse('invalid-verified-grant');
+ // #412: branch grants are consumed only by reserveBranchExecution.
+ if(verifiedGrant.operation==='repair.branch.create')
+  return {ok:false,error:'operation-requires-dedicated-reservation'};
  if(!Number.isSafeInteger(verifiedGrant.profileVersion)||
    verifiedGrant.profileVersion<1||
    !Number.isSafeInteger(verifiedGrant.stopVersion)||

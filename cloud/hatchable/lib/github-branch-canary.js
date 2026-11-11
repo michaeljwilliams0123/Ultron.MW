@@ -10,7 +10,7 @@
 import {createHash,createSign,randomBytes} from 'node:crypto';
 import {runMasterPipeline,createCanaryCommitOperation,createCanaryLineageVerifier}
  from 'lib/master-pipeline.js';
-import {verifyDelegatedGrant,reserveBranchExecution,isVerifiedBranchGrant}
+import {verifyDelegatedGrant,reserveBranchExecution,isVerifiedBranchGrant,BRANCH_POLICY_SHA}
  from 'lib/security-adjudicator.js';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -28,6 +28,7 @@ const OBJECTIVE='Owner-signed Hatchable branch canary (#412): one branch at the 
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const json=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
 const POLICY_SHA=hash('ultron.412.owner-signed-hatchable-branch-canary.v1');
+if(POLICY_SHA!==BRANCH_POLICY_SHA)throw Error('github-branch-canary-policy-drift');
 const ACTOR='worker:builder';
 const PERSONA=Object.freeze({role:'Builder',authorName:'Ultron.MW [Builder]',
  authorEmail:'ultron-mw-builder@system.local'});
@@ -233,6 +234,54 @@ async function hold(db,intent){
    AND state IN ('reserved','in_flight')`,[intent.idempotencyKey,intent.operationDigest]);}
  catch{/* A lost acknowledgement is resolved by read-only reconcile. */}
 }
+// Known-not-written terminal outcome: only from 'reserved', i.e. the write
+// guard proved no non-GET provider request was ever sent for this row.
+async function failBeforeWrite(db,intent,reason,now){
+ let updated;
+ try{updated=await db.query(`UPDATE github_idempotent_executions
+  SET state='failed_before_write',updated_at=now()
+  WHERE idempotency_key=$1 AND operation_digest=$2 AND state='reserved'
+  RETURNING idempotency_key`,[intent.idempotencyKey,intent.operationDigest]);}
+ catch{return false;}
+ if(updated?.rows?.length!==1)return false;
+ try{await db.query(`INSERT INTO brain_events(event_type,details)
+  VALUES('github-branch-canary-failed-before-write',$1::jsonb)`,
+ [JSON.stringify({idempotencyKey:intent.idempotencyKey,branch:intent.targetBranch,
+  operationDigest:intent.operationDigest,reason,nonGetRequestsSent:0,
+  timestamp:new Date(now).toISOString()})]);}
+ catch{/* The ledger state is authoritative. */}
+ return true;
+}
+
+/**
+ * Wraps the provider fetch handed to the pipeline. Every non-GET request is
+ * refused unless the executor has armed the guard, and each one first awaits
+ * the armed gate (a fresh stop/pause/grant authorization re-check). The status
+ * records whether any non-GET request was ever handed to the provider, which
+ * is the only basis for a known-not-written classification.
+ */
+export function createProviderWriteGuard(fetchImpl){
+ if(typeof fetchImpl!=='function')fail('service-invalid');
+ let gate=null;
+ const status={nonGetSent:0,blocked:false,blockedReason:null};
+ const guarded=async(url,options={})=>{
+  const method=String(options?.method??'GET').toUpperCase();
+  if(method!=='GET'){
+   try{
+    if(typeof gate!=='function')fail('write-guard-unarmed');
+    await gate();
+   }catch(error){
+    status.blocked=true;status.blockedReason=String(error?.message||'denied');
+    throw error;
+   }
+   status.nonGetSent++;
+  }
+  return fetchImpl(url,options);
+ };
+ return Object.freeze({fetch:guarded,status,
+  arm(fn){gate=fn;},disarm(){gate=null;}});
+}
+
 async function complete(db,intent,status,sha,now){
  const receipt={idempotencyKey:intent.idempotencyKey,status,
   details:{repository:intent.repository,branch:intent.targetBranch,
@@ -253,45 +302,74 @@ async function complete(db,intent,status,sha,now){
 }
 
 /**
- * Task 4 for a pre-reserved, grant-bound row: verify -> CAS claim -> verify ->
- * exactly one provider operation -> independent readback -> durable receipt.
- * Any uncertainty after the claim holds the row as reconcile_required.
+ * Task 4 for a pre-reserved, grant-bound row: verify -> provider GETs ->
+ * [before EVERY non-GET: verify; the first one also CAS-claims the row and
+ * verifies again] -> independent readback -> durable receipt.
+ * The stop version, pause flag and grant are therefore re-checked immediately
+ * before each provider mutation, not only once before the operation starts.
+ * A failure with no non-GET sent is terminal (failed_before_write); any failure
+ * once a non-GET may have been sent, or a revoked authorization, holds the row
+ * as reconcile_required (never retried blindly).
  */
 export async function executeBranchWrite(task,token,persona,gitOperation,services={}){
  if(typeof services?.db?.query!=='function'||
    typeof services?.authorization?.verify!=='function'||
-   typeof services?.inspect!=='function')fail('trusted-adapters-required');
+   typeof services?.inspect!=='function'||
+   typeof services?.writeGuard?.arm!=='function'||
+   typeof services?.writeGuard?.status!=='object')fail('trusted-adapters-required');
  if(typeof gitOperation!=='function'||typeof token!=='string'||token.length<8)
   fail('invalid-operation');
  if(String(persona?.role||'').toLowerCase()!=='builder'||task?.stage!=='prepared'||
    !TASK.test(task.taskId||'')||task.targetBranch!=='ultron/canary-'+task.taskId||
    !SHA40.test(task.sourceSha||'')||!SHA256.test(task.operationDigest||''))
   fail('invalid-context');
- const db=services.db,clock=services.clock??Date.now;
+ const db=services.db,clock=services.clock??Date.now,guard=services.writeGuard;
  const intent=Object.freeze({idempotencyKey:'ultron-task-'+task.taskId,
   operationDigest:task.operationDigest,repository:REPO,
   targetBranch:task.targetBranch,personaRole:'builder',sourceSha:task.sourceSha});
  await requireAuthorization(services,intent,clock);
- let claimed;
- try{claimed=await db.query(`UPDATE github_idempotent_executions
-  SET state='in_flight',updated_at=now()
-  WHERE idempotency_key=$1 AND operation_digest=$2 AND target_branch=$3
-   AND state='reserved' RETURNING idempotency_key`,
- [intent.idempotencyKey,intent.operationDigest,intent.targetBranch]);}
- catch{services.onPhase?.('dispatched');await hold(db,intent);fail('dispatch-claim-uncertain');}
- if(claimed?.rows?.length!==1)fail('dispatch-not-admitted');
- services.onPhase?.('dispatched');
- // Re-check immediately before the external mutation (stop/expiry may change).
- try{await requireAuthorization(services,intent,clock);}
- catch(error){await hold(db,intent);throw error;}
+ let claimed=false,claimUncertain=false;
+ guard.arm(async()=>{
+  await requireAuthorization(services,intent,clock);
+  if(claimed)return;
+  let result;
+  try{result=await db.query(`UPDATE github_idempotent_executions
+   SET state='in_flight',updated_at=now()
+   WHERE idempotency_key=$1 AND operation_digest=$2 AND target_branch=$3
+    AND state='reserved' RETURNING idempotency_key`,
+  [intent.idempotencyKey,intent.operationDigest,intent.targetBranch]);}
+  catch{claimUncertain=true;fail('dispatch-claim-uncertain');}
+  if(result?.rows?.length!==1)fail('dispatch-not-admitted');
+  claimed=true;services.onPhase?.('dispatched');
+  // Re-check once more after the claim, immediately before the first write.
+  await requireAuthorization(services,intent,clock);
+ });
  let created;
  try{
   created=await gitOperation({token,persona:SAFE_PERSONA,
    targetBranch:intent.targetBranch,idempotencyKey:intent.idempotencyKey,
    operationDigest:intent.operationDigest,
    operationMarker:'Ultron-Operation-Digest: '+intent.operationDigest});
- }catch{await hold(db,intent);fail('provider-outcome-unknown');}
- if(created?.branch!==intent.targetBranch||!SHA40.test(created?.sha||'')){
+ }catch(error){
+  guard.disarm();
+  if(guard.status.blocked&&!claimed&&!claimUncertain&&
+    /dispatch-not-admitted$/.test(guard.status.blockedReason))
+   fail('dispatch-not-admitted');
+  if(guard.status.blocked){
+   // Stop/pause/grant changed (or the claim was uncertain) before a write:
+   // hold, do not retry. The owner resolves via reconcile or abandon.
+   await hold(db,intent);
+   throw outcome(202,'write-authorization-revoked','reconcile-required');
+  }
+  if(guard.status.nonGetSent===0&&!claimed){
+   const reason=String(error?.message||'').replace(/^canary-/,'').slice(0,80);
+   if(await failBeforeWrite(db,intent,reason,clock()))
+    throw outcome(409,'failed-before-write','failed_before_write');
+  }
+  await hold(db,intent);fail('provider-outcome-unknown');
+ }
+ guard.disarm();
+ if(!claimed||created?.branch!==intent.targetBranch||!SHA40.test(created?.sha||'')){
   await hold(db,intent);fail('provider-response-invalid');}
  try{await services.inspect({token,intent,commitSha:created.sha});}
  catch{await hold(db,intent);fail('readback-mismatch');}
@@ -383,7 +461,8 @@ export async function runBranchCanary({db,prepared,envelope,publicJwk,appCredent
   try{verified=await verifyDelegatedGrant({envelope,publicJwk:trusted.publicJwk,
    request:branchGrantRequest(prepared),now:new Date(clock()).toISOString()});}
   catch{throw outcome(403,'authority-not-verified');}
-  if(verified.grantId!==grantId)throw outcome(403,'authority-not-verified');
+  if(verified.grantId!==grantId||verified.policySha!==POLICY_SHA)
+   throw outcome(403,'authority-not-verified');
   let reservation;
   try{reservation=await reserveBranchExecution({db,verifiedGrant:verified,
    idempotencyKey,targetBranch:prepared.branch,operationDigest:prepared.planSha256});}
@@ -395,21 +474,24 @@ export async function runBranchCanary({db,prepared,envelope,publicJwk,appCredent
   const token=await client.getTokenForScope(OPERATION);
   return Object.freeze({authorized:true,token,executionPayload:plan,persona:PERSONA});
  };
- const lineage=createCanaryLineageVerifier({fetchImpl});
+ // Every provider request the pipeline makes goes through the write guard;
+ // only GETs pass unchecked. (The installation-token exchange is identity's.)
+ const writeGuard=createProviderWriteGuard(fetchImpl);
+ const lineage=createCanaryLineageVerifier({fetchImpl:writeGuard.fetch});
  try{
   const result=await runMasterPipeline(operationRequest,{
    createVerifiedGitHubClient:async()=>identity,
    enforceSignedApprovalAndTagPersona:approve,
    dispatchHeadlessTask:prepareOnlyDispatcher(),
    executeIdempotentGitHubWrite:(task,token,persona,operation,services)=>
-    executeBranchWrite(task,token,persona,operation,{...services,clock,
+    executeBranchWrite(task,token,persona,operation,{...services,clock,writeGuard,
      onPhase:phase=>{state.phase=phase;},
      inspect:({token:t,intent,commitSha})=>lineage({token:t,branch:intent.targetBranch,
       sourceSha:intent.sourceSha,commitSha,operationDigest:intent.operationDigest})}),
    verifyPostConditionsAndStoreReceipt:createBranchAuditRecorder({db,
     sourceSha:prepared.sourceSha,
-    readback:lineageReadback(fetchImpl,()=>identity.getReadToken())}),
-   gitOperation:createCanaryCommitOperation({fetchImpl}),
+    readback:lineageReadback(writeGuard.fetch,()=>identity.getReadToken())}),
+   gitOperation:createCanaryCommitOperation({fetchImpl:writeGuard.fetch}),
    verifyRemoteLineage:lineage,
    trustedApproval:{publicJwk},
    durableServices:{db,authorization:createBranchAuthorizationVerifier({db,clock,
@@ -437,7 +519,12 @@ export async function runBranchCanary({db,prepared,envelope,publicJwk,appCredent
  }
 }
 
-/** Read-only reconciliation. Never POSTs; an absent branch stays unresolved. */
+/**
+ * Reconciliation. Never sends a non-GET to GitHub, but it DOES write the local
+ * ledger: in_flight -> reconcile_required on an absent/conflicting branch, and
+ * -> completed (receipt) plus a brain_events audit row on a matching branch.
+ * Terminal and reserved rows are reported without any write.
+ */
 export async function reconcileBranchCanary({db,prepared,grantId,appCredentials,
  fetchImpl=globalThis.fetch,clock=Date.now}={}){
  prepared=validatePreparedBranchCanary(prepared);
@@ -455,6 +542,8 @@ export async function reconcileBranchCanary({db,prepared,grantId,appCredentials,
   return Object.freeze({status:'recovered_success',receipt:stored.receipt});
  if(stored.state==='reserved')
   return Object.freeze({status:'reserved',dispatched:false});
+ if(stored.state==='failed_before_write'||stored.state==='abandoned')
+  return Object.freeze({status:stored.state,terminal:true});
  const token=await identity.getReadToken();
  const response=await provider(fetchImpl,`${API}/repos/${REPO}/git/ref/heads/${intent.targetBranch}`,{
   headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
@@ -474,4 +563,48 @@ export async function reconcileBranchCanary({db,prepared,grantId,appCredentials,
   readback})(receipt);
  return Object.freeze({status:'reconciled_success',receipt,auditSha256:audit.auditSha256,
   providerReadbackStatus:audit.providerReadbackStatus});
+}
+
+/**
+ * Owner abandon of a reserved or reconcile_required row. A fresh read-only
+ * provider readback must show the branch ABSENT; only then is the row moved to
+ * the terminal 'abandoned' state and one brain_events row recorded. Nothing is
+ * deleted and no non-GET request is sent. A present branch must be reconciled.
+ */
+export async function abandonBranchCanary({db,prepared,grantId,appCredentials,
+ fetchImpl=globalThis.fetch,clock=Date.now}={}){
+ prepared=validatePreparedBranchCanary(prepared);
+ if(typeof db?.query!=='function'||typeof fetchImpl!=='function'||
+   typeof clock!=='function'||!GRANT.test(grantId||''))fail('service-invalid');
+ const identity=createBranchIdentity({appCredentials,fetchImpl,clock});
+ const intent=Object.freeze({idempotencyKey:'ultron-task-'+prepared.taskId,
+  operationDigest:prepared.planSha256,targetBranch:prepared.branch});
+ const stored=await row(db,intent.idempotencyKey);
+ if(stored.operation_digest!==intent.operationDigest||
+   stored.target_branch!==intent.targetBranch||stored.grant_id!==grantId)
+  fail('intent-conflict');
+ if(stored.state==='abandoned')return Object.freeze({status:'abandoned',changed:false});
+ if(!['reserved','reconcile_required'].includes(stored.state))
+  fail('abandon-state-'+stored.state.replace(/_/g,'-'));
+ const token=await identity.getReadToken();
+ const response=await provider(fetchImpl,`${API}/repos/${REPO}/git/ref/heads/${intent.targetBranch}`,{
+  headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
+   'X-GitHub-Api-Version':'2022-11-28'}});
+ if(response?.status===200)fail('abandon-branch-present');
+ if(response?.status!==404)fail('readback-unavailable');
+ let updated;
+ try{updated=await db.query(`UPDATE github_idempotent_executions
+  SET state='abandoned',updated_at=now()
+  WHERE idempotency_key=$1 AND operation_digest=$2 AND grant_id=$3
+   AND state IN ('reserved','reconcile_required') RETURNING idempotency_key`,
+ [intent.idempotencyKey,intent.operationDigest,grantId]);}
+ catch{fail('abandon-persistence-unverified');}
+ if(updated?.rows?.length!==1)fail('abandon-persistence-unverified');
+ const details={idempotencyKey:intent.idempotencyKey,branch:intent.targetBranch,
+  operationDigest:intent.operationDigest,grantId,previousState:stored.state,
+  providerReadback:'branch-absent',timestamp:new Date(clock()).toISOString()};
+ try{await db.query(`INSERT INTO brain_events(event_type,details)
+  VALUES('github-branch-canary-abandoned',$1::jsonb)`,[JSON.stringify(details)]);}
+ catch{/* The terminal ledger state is authoritative. */}
+ return Object.freeze({status:'abandoned',changed:true,previousState:stored.state});
 }

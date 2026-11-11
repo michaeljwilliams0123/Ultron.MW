@@ -64,7 +64,7 @@ test('repair.branch.create is off by default: prepare and reservation both deny'
  const p=canary.validatePreparedBranchCanary((await canary.prepareBranchCanary({
   db:{query:async()=>({rows:[{profile_version:7,stop_version:5,paused:false,max_paid_cents:0,allowed:true}]})},
   sourceSha:SOURCE})).prepared);
- const request={...canary.branchGrantRequest(p),policySha:'a'.repeat(64),profileVersion:7,stopVersion:5};
+ const request={...canary.branchGrantRequest(p),policySha:adjudicator.BRANCH_POLICY_SHA,profileVersion:7,stopVersion:5};
  const gh=github();
  const result=await canary.runBranchCanary({db,prepared:p,envelope:await sign(request),
   publicJwk,appCredentials:APP,fetchImpl:gh.fetchImpl});
