@@ -78,6 +78,17 @@ test('CPU inference failure produces honest bounded fallback without using paid 
   assert.equal(f.state.posts.length,1);
 });
 
+test('uninformative CPU refusal yields a truthful lane explanation, never an invented ChatGPT reply',async()=>{
+  const f=fixture();
+  const result=await f.run({infer:async()=>"I'm sorry, but I can't assist with that request."});
+  assert.equal(result.status,'replied');
+  assert.match(f.state.posts[0].body,/local CPU model returned a generic refusal/i);
+  assert.match(f.state.posts[0].body,/GitHub mention/);
+  assert.match(f.state.posts[0].body,/\/codex run/);
+  assert.match(f.state.posts[0].body,/not Destiny.*ChatGPT Plus/i);
+  assert.equal(f.state.posts.length,1);
+});
+
 test('unverified event and spoofed comment never publish',async()=>{
   const f=fixture();f.state.comments[0].body='changed after trigger';
   await assert.rejects(f.run(),/Originating GitHub actor/);
