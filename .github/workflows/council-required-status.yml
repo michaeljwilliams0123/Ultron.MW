@@ -1,0 +1,170 @@
+name: Ultron trusted Council release status
+# Runs the policy code on default main, not an untrusted PR branch.
+# Publishes a status on the exact PR SHA; a ruleset must REQUIRE this context.
+on:
+  workflow_run:
+    workflows: [Ultron Council Multi-Agent Debate Loop]
+    types: [completed]
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+concurrency:
+  group: trusted-council-${{ github.event.workflow_run.head_sha || github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  trusted-council-status:
+    if: >-
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) ||
+       (github.event_name == 'issue_comment' &&
+        github.actor == 'michaeljwilliams0123' &&
+        github.event.comment.user.id == 308995719 &&
+        github.event.issue.pull_request != null))
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Resolve live exact-head PR and authenticated owner exception
+        id: prepare
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path');
+            const {owner,repo}=context.repo;
+            let pr;
+            if(context.eventName==='workflow_run'){
+              const run=context.payload.workflow_run||{};
+              if(!/^[a-f0-9]{40}$/.test(run.head_sha||'') ||
+                 run.head_repository?.full_name!=='michaeljwilliams0123/Ultron.MW'){
+                core.setOutput('skip','true');return;
+              }
+              const candidates=await github.paginate(github.rest.pulls.list,{
+                owner,repo,head:owner+':'+String(run.head_branch||''),
+                state:'open',per_page:100
+              });
+              pr=candidates.find(p=>
+                p.head?.sha===run.head_sha &&
+                p.head?.repo?.full_name==='michaeljwilliams0123/Ultron.MW');
+              if(!pr){core.setOutput('skip','true');return;}
+            }else if(context.eventName==='issue_comment'){
+              const c=context.payload.comment||{};
+              if(c.user?.login!=='michaeljwilliams0123' ||
+                 c.user?.id!==308995719 ||
+                 typeof c.body!=='string' ||
+                 !c.body.startsWith('/council override ')){
+                core.setOutput('skip','true');return;
+              }
+              const r=await github.rest.pulls.get({
+                owner,repo,pull_number:context.issue.number
+              });
+              pr=r.data;
+            }else{core.setOutput('skip','true');return;}
+            if(pr.state!=='open' ||
+               pr.head?.repo?.full_name!=='michaeljwilliams0123/Ultron.MW' ||
+               !/^[a-f0-9]{40}$/.test(pr.head?.sha||'') ||
+               !/^[a-f0-9]{40}$/.test(pr.base?.sha||'')){
+              core.setOutput('skip','true');return;
+            }
+            // Refresh source and base once more to fence races.
+            const fresh=(await github.rest.pulls.get({
+              owner,repo,pull_number:pr.number
+            })).data;
+            if(fresh.head.sha!==pr.head.sha||fresh.base.sha!==pr.base.sha)
+              throw Error('Council PR head/base changed during readback');
+            const comments=await github.paginate(github.rest.issues.listComments,{
+              owner,repo,issue_number:pr.number,per_page:100
+            });
+            const override=[...comments].reverse().find(c=>
+              c.user?.login==='michaeljwilliams0123' &&
+              c.user?.id===308995719 &&
+              typeof c.body==='string' &&
+              c.body.startsWith('/council override '))||null;
+            const dir=path.join(process.env.RUNNER_TEMP,'trusted-council');
+            fs.mkdirSync(dir,{recursive:true});
+            const title=path.join(dir,'title.txt');
+            const body=path.join(dir,'body.txt');
+            const ownerComment=path.join(dir,'override.json');
+            fs.writeFileSync(title,String(pr.title||'').slice(0,240));
+            fs.writeFileSync(body,String(pr.body||'').slice(0,8000));
+            fs.writeFileSync(ownerComment,JSON.stringify(override));
+            core.exportVariable('TITLE_FILE',title);
+            core.exportVariable('BODY_FILE',body);
+            core.exportVariable('COUNCIL_OVERRIDE_FILE',ownerComment);
+            core.exportVariable('ITEM_NUMBER',String(pr.number));
+            core.exportVariable('TARGET_SOURCE_SHA',pr.head.sha);
+            core.exportVariable('TARGET_BASE_SHA',pr.base.sha);
+            core.exportVariable('IS_PR','true');
+            core.exportVariable('OWNER_MODE',pr.user?.id===308995719?'1':'0');
+            const risk=['secret','credential','token','password',
+              'bypass security','fail-open','delete main','force push'];
+            const input=(String(pr.title||'')+' '+String(pr.body||'')).toLowerCase();
+            core.exportVariable('ORIGINAL_SECURITY_SIGNAL',
+              risk.some(term=>input.includes(term))?'1':'0');
+            core.setOutput('skip','false');
+      - name: Reassess exact PR evidence using trusted default-branch Council
+        if: steps.prepare.outputs.skip == 'false'
+        env:
+          GEMINI_API_KEY: ''
+          GROQ_API_KEY: ''
+        run: |
+          set -euo pipefail
+          TITLE="$(cat "$TITLE_FILE")"
+          BODY="$(cat "$BODY_FILE")"
+          export TITLE BODY
+          node scripts/council-debate.mjs
+      - name: Apply exact seven-of-seven policy or explicit owner exception
+        if: steps.prepare.outputs.skip == 'false'
+        continue-on-error: true
+        run: node scripts/enforce-council-acceptance.mjs
+      - name: Publish trusted required commit status to exact PR SHA
+        if: always() && steps.prepare.outputs.skip == 'false'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs=require('node:fs');
+            const {owner,repo}=context.repo;
+            const sha=process.env.TARGET_SOURCE_SHA;
+            const base=process.env.TARGET_BASE_SHA;
+            const number=Number(process.env.ITEM_NUMBER);
+            if(!/^[a-f0-9]{40}$/.test(sha||'')||!Number.isSafeInteger(number))
+              throw Error('Council trusted status target invalid');
+            const live=(await github.rest.pulls.get({
+              owner,repo,pull_number:number
+            })).data;
+            if(live.state!=='open'||live.head?.sha!==sha||live.base?.sha!==base)
+              throw Error('Council trusted status stale; refused to write');
+            let result=null;
+            try{result=JSON.parse(fs.readFileSync('council-release-gate.json','utf8'));}
+            catch{result=null;}
+            const pass=result?.sourceSha===sha &&
+              result?.baseSha===base && result?.prNumber===number &&
+              (result?.status==='accepted'&&result?.approvedCount===7 ||
+               result?.status==='owner-overridden'&&result?.overrideUsed===true);
+            const description=pass?(result.status==='accepted'?
+              '7/7 Council role approvals; exact PR evidence' :
+              'Exact-head owner exception #'+result.overrideCommentId+'; standard CI required') :
+              'Council HOLD; seven unanimous role approvals required';
+            await github.rest.repos.createCommitStatus({
+              owner,repo,sha,context:'ultron/council-7of7',
+              state:pass?'success':'failure',
+              description:description.slice(0,140),
+              target_url:'https://github.com/'+owner+'/'+repo+
+                '/actions/runs/'+context.runId
+            });
+            core.info('Published '+(pass?'PASS':'HOLD')+' Council status on '+sha);
