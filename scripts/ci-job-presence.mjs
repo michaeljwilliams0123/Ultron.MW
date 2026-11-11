@@ -23,8 +23,8 @@ if(run.event==='pull_request'&&!number){
 }
 if(run.event==='pull_request'&&number){
   pullRequest=await get('/pulls/'+number);
-  // A later push moves the PR head; classify against the run's own head.
-  if(pullRequest.head?.sha!==run.head_sha)pullRequest={...pullRequest,head:{...pullRequest.head,sha:run.head_sha}};
+  // Skeptic L4: never rewrite the PR head to the run head. A later push makes
+  // this run stale evidence; the classifier reports it as invalid/staleHead.
 }
 const annotations=[];
 if(run.check_suite_id){
@@ -38,4 +38,5 @@ if(run.check_suite_id){
 }
 const result=classifyVerifyRun({run,jobs,pullRequest,annotations});
 console.log(JSON.stringify(result,null,2));
+if(result.staleHead)console.error('stale head: run '+result.headSha+' != PR head '+result.pullRequestHeadSha+'; not evidence for the current head');
 process.exitCode=result.state==='green'?0:1;

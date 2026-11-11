@@ -34,7 +34,7 @@ export function isServiceSideError(messages=[]){
   return (Array.isArray(messages)?messages:[]).some(m=>
     /\bInternal server error\b/i.test(String(m||'')));
 }
-function invalid(reason){return Object.freeze({schema:'ultron.ci-job-presence.v1',state:'invalid',reason});}
+function invalid(reason,extra={}){return Object.freeze({schema:'ultron.ci-job-presence.v1',state:'invalid',reason,...extra});}
 /**
  * @param run  GET /repos/{repo}/actions/runs/{id}
  * @param jobs GET /repos/{repo}/actions/runs/{id}/jobs?filter=all
@@ -53,23 +53,34 @@ export function classifyVerifyRun({run,jobs,pullRequest,annotations=[]}={}){
     return invalid('job page incomplete'); // partial pages never prove absence
   const expected=expectedVerifyJobs({event:run.event,pullRequest});
   if(!expected)return invalid('unsupported event '+run.event);
+  // Skeptic L4: a run on an older head is never evidence for the current PR head.
   if(run.event==='pull_request'&&pullRequest?.head?.sha!==run.head_sha)
-    return invalid('pull request head does not match run head');
+    return invalid('pull request head does not match run head',
+      {staleHead:true,headSha:run.head_sha,pullRequestHeadSha:pullRequest?.head?.sha??null});
   const attempt=run.run_attempt;
+  // Skeptic L5: attempt must be explicit on the run and on every counted job.
+  if(!Number.isSafeInteger(attempt)||attempt<1)return invalid('run attempt incomplete');
   const byName=new Map();
-  for(const job of jobs.jobs)
-    if(job?.run_attempt===undefined||job.run_attempt===attempt)byName.set(job?.name,job);
+  for(const job of jobs.jobs)if(job?.run_attempt===attempt){
+    if(byName.has(job.name))return invalid('duplicate job name '+job.name); // fail closed
+    byName.set(job.name,job);
+  }
   const missing=expected.filter(n=>!byName.has(n));
   const skipped=expected.filter(n=>byName.get(n)?.conclusion==='skipped');
   const failed=expected.filter(n=>FAILED.has(byName.get(n)?.conclusion));
   const pending=expected.filter(n=>byName.has(n)&&byName.get(n).status!=='completed');
+  // Skeptic L5: green is allow-listed; neutral/null/unknown conclusions are not success.
+  const notSuccess=expected.filter(n=>byName.has(n)&&byName.get(n).conclusion!=='success'&&
+    byName.get(n).conclusion!=='skipped'&&!failed.includes(n));
   const serviceError=isServiceSideError(annotations);
   let state,reason;
   if(failed.length){state='red';reason='expected job concluded '+failed.map(n=>n+'='+byName.get(n).conclusion).join(', ');}
   else if(run.status!=='completed'||pending.length){state='pending';reason='run or job not terminal';}
   else if(missing.length||skipped.length){state='unknown-missing';
     reason='expected job never created or skipped; not a test result and not green';}
-  else if(run.conclusion==='success'){state='green';reason='all expected jobs created and succeeded';}
+  else if(notSuccess.length){state='unknown-missing';
+    reason='expected job concluded '+notSuccess.map(n=>n+'='+byName.get(n).conclusion).join(', ')+'; not success';}
+  else if(run.conclusion==='success'&&expected.every(n=>byName.get(n).conclusion==='success')){state='green';reason='all expected jobs created and succeeded';}
   else{state='unknown-missing';reason='aggregate '+run.conclusion+' with every expected job green';}
   return Object.freeze({
     schema:'ultron.ci-job-presence.v1',state,reason,

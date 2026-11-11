@@ -127,3 +127,40 @@ test('verify.yml defines exactly the jobs the presence classifier expects, with 
   // Top-level permissions stay read-only.
   assert.match(workflow,/^permissions:\n  contents: read\njobs:/m);
 });
+
+// Skeptic review of #401 (refs #401).
+const STALE='b'.repeat(40);
+test('Skeptic L4: a run on a stale head is reported invalid/staleHead, and the CLI never rewrites the PR head',()=>{
+  const x=classifyVerifyRun({run:run({head_sha:STALE,conclusion:'success'}),pullRequest:pr,
+    jobs:page([job('test'),job('fixed-comparison'),job('attested-receipt')])});
+  assert.equal(x.state,'invalid');
+  assert.equal(x.staleHead,true);
+  assert.equal(x.headSha,STALE);
+  assert.equal(x.pullRequestHeadSha,HEAD);
+  const cli=readFileSync(new URL('../scripts/ci-job-presence.mjs',import.meta.url),'utf8');
+  assert.doesNotMatch(cli,/sha:\s*run\.head_sha/);
+  assert.doesNotMatch(cli,/pullRequest\s*=\s*\{\s*\.\.\.pullRequest/);
+  assert.match(cli,/process\.exitCode=result\.state==='green'\?0:1/);
+});
+test('Skeptic L5: green requires success for every expected job, unique names, and an exact attempt',()=>{
+  const ok=[job('test'),job('fixed-comparison'),job('attested-receipt')];
+  for(const c of ['neutral',null,'stale','success '])
+    assert.notEqual(classifyVerifyRun({run:run({conclusion:'success'}),pullRequest:pr,
+      jobs:page([job('test',c),job('fixed-comparison'),job('attested-receipt')])}).state,'green',String(c));
+  // Duplicate names fail closed in either order.
+  for(const list of [[job('test','failure'),...ok],[...ok,job('test','failure')],[...ok,job('test')]]){
+    const x=classifyVerifyRun({run:run({conclusion:'success'}),pullRequest:pr,jobs:page(list)});
+    assert.equal(x.state,'invalid');
+    assert.match(x.reason,/duplicate job name test/);
+  }
+  // Earlier-attempt jobs with the same name are not duplicates of the current attempt.
+  assert.equal(classifyVerifyRun({run:run({run_attempt:2,conclusion:'success'}),pullRequest:pr,
+    jobs:page([job('test','failure'),...ok.map(j=>({...j,run_attempt:2}))])}).state,'green');
+  // undefined run_attempt never matches.
+  const undef=ok.map(j=>({...j,run_attempt:undefined}));
+  assert.equal(classifyVerifyRun({run:run({run_attempt:2,conclusion:'success'}),pullRequest:pr,
+    jobs:page(undef)}).state,'unknown-missing');
+  assert.equal(classifyVerifyRun({run:run({run_attempt:undefined,conclusion:'success'}),pullRequest:pr,
+    jobs:page(undef)}).state,'invalid');
+  assert.equal(classifyVerifyRun({run:run({conclusion:'success'}),pullRequest:pr,jobs:page(ok)}).state,'green');
+});
