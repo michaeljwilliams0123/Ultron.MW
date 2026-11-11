@@ -9,6 +9,15 @@ const repository={
 };
 const mockGet=async path=>path.includes('/actions/runs')?
   {workflow_runs:[{id:2,head_sha:'a'.repeat(40),status:'completed',conclusion:'success'}]}:repository;
+const B64URL='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+function noncanonicalSignatureAlias(token){
+  const parts=token.split('.'),last=parts[3].at(-1);
+  const index=B64URL.indexOf(last);
+  // A SHA-256 digest has 32 bytes, so its final Base64URL character has two
+  // unused bits. Change only those bits: the text differs, decoded bytes do not.
+  parts[3]=parts[3].slice(0,-1)+B64URL[(index&~3)|((index+1)&3)];
+  return parts.join('.');
+}
 
 test('self-owned short-lived bearer tokens have scope, audience and expiry',()=>{
   const key=createSigningKey();
@@ -21,7 +30,11 @@ test('self-owned short-lived bearer tokens have scope, audience and expiry',()=>
   assert.equal(verifyCapabilityToken(token,{key,audience:'ultronapi',now:401}),false);
   assert.equal(verifyCapabilityToken(token,{key,audience:'ultronapi',now:200,
     requiredScope:'ci:read'}),false);
-  assert.equal(verifyCapabilityToken(token.slice(0,-2)+'zz',{
+  const parts=token.split('.');
+  parts[3]=(parts[3][0]==='A'?'B':'A')+parts[3].slice(1);
+  assert.equal(verifyCapabilityToken(parts.join('.'),{
+    key,audience:'ultronapi',now:200}),false);
+  assert.equal(verifyCapabilityToken(noncanonicalSignatureAlias(token),{
     key,audience:'ultronapi',now:200}),false);
   assert.equal(verifyCapabilityToken(token,{key:createSigningKey(),
     audience:'ultronapi',now:200}),false);
