@@ -22,6 +22,9 @@ footer{font-size:.82rem;color:#aabbd4;margin-top:25px}
 </style>
 </head>
 <body>
+<!-- shared-nav:v1 --><nav class="shared-nav" aria-label="Ultron pages" style="display:flex;flex-wrap:wrap;gap:8px;max-width:1024px;margin:0 auto;padding:12px 16px;font:600 13px/1.2 system-ui,sans-serif"><a href="/council-room.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Council room · start here</a><a href="/workspace.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Workspace</a><a href="/" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Cloud controls</a><a href="/passkey-owner.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Owner passkeys</a><a href="/connectors.html" aria-current="page" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;background:#274c70;">Connectors</a><a href="/repair-operations.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Repair operations</a><a href="/github-pr-comment-canary.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">GitHub App canary</a></nav>
+<div data-sign-in-card></div>
+
 <main>
 <header><a href="/">Ultron Cloud Brain</a><a href="https://hatchable.com/console/projects/ultron-mw-cloud" target="_blank" rel="noopener noreferrer">Hatchable setup</a></header>
 <h1>Connector readiness</h1>
@@ -47,5 +50,6 @@ footer{font-size:.82rem;color:#aabbd4;margin-top:25px}
 <footer>Read-only diagnostics · $0 incremental paid usage · No auth codes, installation tokens or private keys displayed</footer>
 </main>
 <script src="/connectors.js" defer></script>
+<script src="./sign-in.js" defer></script>
 </body>
 </html>

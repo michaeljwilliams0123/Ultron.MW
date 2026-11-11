@@ -138,7 +138,8 @@ test('Council Room runner returns seven role replies with private Mahoraga evide
   "import {observeMahoragaMain} from '"+mahoragaUrl+"';")
  .replace("import {inspectOpenIssue} from 'lib/council-issues.js';",
   'const inspectOpenIssue=globalThis.__councilIssueHelpers?.inspectOpenIssue|| (async()=>null);')
- .replace("from 'lib/issue-council-plan.js'","from '"+planUrl+"'");
+ .replace("from 'lib/issue-council-plan.js'","from '"+planUrl+"'")
+ .replace("from 'lib/council-front-door.js'","from '"+new URL('lib/council-front-door.js',root).href+"'");
  assert.notEqual(transformed,coreSource);
  const originalFetch=globalThis.fetch;
  const privateToken='github_pat_this_is_a_test_credential_value';
@@ -171,6 +172,13 @@ test('Council Room runner returns seven role replies with private Mahoraga evide
   assert.equal(result.cloudflareRole,'optional-browser-only');
   assert.equal(JSON.stringify(result).includes(privateToken),false);
   assert.doesNotMatch(JSON.stringify(result),/github_pat_[A-Za-z0-9_]{20,}/);
+  assert.equal(result.frontDoor,'companion-first-v1');
+  assert.equal(result.companion.lead,true);
+  assert.deepEqual(result.approvalCards,[]);
+  const gated=await core.buildCouncilRoomResult({
+   message:{id:21,body:'Merge PR 401 once checks pass.',mentions:[]}});
+  assert.deepEqual(gated.approvalCards.map(c=>[c.op,c.state,c.executes]),[['pr.merge','requested',false]]);
+  assert.match(gated.companion.body,/click Approve/);
  }finally{
   globalThis.fetch=originalFetch;
   delete globalThis.__councilRoomConfig;
@@ -190,7 +198,8 @@ test('issue remediation plan rereads live issue data and gives role-specific bou
    "import {observeMahoragaMain} from '"+mahoragaUrl+"';")
   .replace("import {inspectOpenIssue} from 'lib/council-issues.js';",
    'const inspectOpenIssue=globalThis.__councilIssueHelpers.inspectOpenIssue;')
-  .replace("from 'lib/issue-council-plan.js'","from '"+planUrl+"'");
+  .replace("from 'lib/issue-council-plan.js'","from '"+planUrl+"'")
+ .replace("from 'lib/council-front-door.js'","from '"+new URL('lib/council-front-door.js',root).href+"'");
  const originalFetch=globalThis.fetch;
  globalThis.__councilRoomConfig={async get(){throw Error('private evidence not requested')}};
  globalThis.__councilIssueHelpers={async inspectOpenIssue(number){
