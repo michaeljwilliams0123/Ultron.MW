@@ -80,9 +80,17 @@ async function inspectWorkflow(fetchGithub,item){
 }
 // Transition: the newest run wins across the legacy file and the consolidated
 // lab lane. A lane run counts only with its exact path, name and run title.
+// A lane run is shown only when it is an owner workflow_dispatch on main
+// (Skeptic L1): a branch or bot run must never pose as the newest lab result.
+const OWNER={login:'michaeljwilliams0123',id:308995719};
+export function eligibleLaneRun(run,key){
+ return labLaneRunKey(run)===key&&run.head_branch==='main'&&
+  run.event==='workflow_dispatch'&&run.actor?.login===OWNER.login&&
+  run.actor?.id===OWNER.id;
+}
 function newest(item,legacy,lane){
  const laneRun=lane.status==='fulfilled'?
-  lane.value.find(run=>labLaneRunKey(run)===item.key):undefined;
+  lane.value.find(run=>eligibleLaneRun(run,item.key)):undefined;
  if(legacy.status!=='fulfilled'){
   if(laneRun)return observedRun(item,laneRun,LAB_LANE_FILE);
   throw legacy.reason;

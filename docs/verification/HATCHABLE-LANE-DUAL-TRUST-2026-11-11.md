@@ -6,7 +6,7 @@ consolidated lane identities. Nothing is removed. Workflows are unchanged.
 
 | Hatchable module | Legacy identity (still trusted) | Lane identity (new) |
 | --- | --- | --- |
-| `lib/council-oidc.js` worker | `council-worker.yml@refs/heads/main` | `lane-governed-task.yml@refs/heads/main` (own identity; not shared with council/cloud-pr) |
+| `lib/council-oidc.js` worker | `council-worker.yml@refs/heads/main` | `lane-governed-task.yml@refs/heads/main` (dedicated single-job worker file, no `workflow_call`; a parity test in #418 enforces this because GitHub OIDC has no job claim) |
 | `lib/hf-github-receipts.js` | `hf-heldout-cpu.yml`, `hf-free-cpu-tournament.yml`, `c06-owner-model-release.yml` (path) | `lane-lab-evidence.yml` + workflow name `Ultron lab evidence` + run title `Ultron lab evidence: <task>` |
 | `lib/hf-lab-view.js` | per-file latest run | newest of legacy run and exact-identity lane run |
 | `lib/heldout-evidence.js` | `held-out-acceptance.yml` + `Ultron held-out acceptance` | `lane-lab-evidence.yml` + `Ultron lab evidence`; frozen `workflowBlobSha` must be that same file's blob |
@@ -23,8 +23,15 @@ already covers the same receipts.
 
 A lane run is never identified by path alone: one lane file runs several legacy
 jobs, so the receipt key comes from the exact (path, workflow name, run title)
-triple and the run title is fixed by the lane's `run-name` from an owner-only
-dispatch input.
+triple. The run title comes from the lane's `run-name` and a `choice` input.
+Any repository writer can dispatch the lane; the jobs themselves are
+owner-only, so a non-owner dispatch produces a skipped run. Receipts are
+admitted only for the owner actor (the bot actor is no longer trusted for lab
+receipts), and reconciliation verifies that the run's commit is on `main`
+through `GET /compare/{sha}...main` before a receipt becomes `verified`. A
+`head_branch` of `main` alone is not trusted (it can also be a tag named
+`main`). The lab view shows a lane run only if it is an owner
+`workflow_dispatch` on `main`.
 
 ## Live-only files now in source
 
