@@ -1,11 +1,15 @@
 const REPO='michaeljwilliams0123/Ultron.MW';
 const ROOT='/repos/'+REPO;
 const SHA=/^[a-f0-9]{40}$/;
+const VERIFY_PATH='.github/workflows/verify.yml';
 const CONCLUSIONS=new Set(['success','failure','cancelled','timed_out','action_required','neutral','skipped']);
 /**
  * Independently reads only completed Verify runs on the exact current main
  * source. The input list is treated as untrusted until checked against GitHub
  * workflow identity, source SHA, repository, branch, and terminal conclusion.
+ * Identity is the workflow file path, never the run name: verify.yml's
+ * `run-name:` makes the API report the PR title or head commit message as
+ * `name`, so a name match would never find main CI (see ci-job-presence.mjs).
  */
 export function selectVerifiedMainCi(body,mainSha){
   if(!SHA.test(mainSha||'')||!Array.isArray(body?.workflow_runs)||
@@ -13,8 +17,7 @@ export function selectVerifiedMainCi(body,mainSha){
      body.total_count!==body.workflow_runs.length||body.total_count>=100)
     return null;
   const matches=body.workflow_runs.filter(x=>
-    x?.name==='Ultron core verification'&&
-    x?.path==='.github/workflows/verify.yml'&&
+    x?.path===VERIFY_PATH&&
     x?.head_sha===mainSha&&x?.head_branch==='main'&&
     x?.head_repository?.full_name===REPO&&
     ['push','workflow_dispatch'].includes(x?.event)&&
@@ -33,7 +36,10 @@ export function selectVerifiedMainCi(body,mainSha){
 export async function readVerifiedMainCi({get,mainSha}={}){
   if(typeof get!=='function'||!SHA.test(mainSha||''))return null;
   try{
-    const body=await get(ROOT+'/actions/runs?head_sha='+mainSha+'&per_page=100');
+    // Scope to verify.yml on main: the repo-wide runs list for one SHA mixes
+    // every workflow and routinely exceeds one page, which fails closed.
+    const body=await get(ROOT+'/actions/workflows/verify.yml/runs?head_sha='+
+      mainSha+'&branch=main&per_page=100');
     return selectVerifiedMainCi(body,mainSha);
   }catch{return null;} // Unknown is not a failed check or a passing check.
 }
