@@ -77,7 +77,8 @@ function comment(prepared,id=6783990001){
 function provider(prepared,{lost=false}={}){
  const calls=[];let created=null;
  const fetchImpl=async(url,options={})=>{
-  const method=options.method||'GET';calls.push({url,method,body:options.body});
+  const method=options.method||'GET';calls.push({url,method,body:options.body,
+   authorization:options.headers?.Authorization});
   if(url.endsWith('/app/installations/179066535/access_tokens')){
    const body=JSON.parse(options.body);
    assert.deepEqual(body,{repository_ids:[1424939667],
@@ -92,8 +93,10 @@ function provider(prepared,{lost=false}={}){
    if(lost)throw Error('lost response after commit');
    return response(201,created);
   }
-  if(method==='GET'&&url.includes(`/issues/${prepared.pullRequest}/comments?`))
+  if(method==='GET'&&url.includes(`/issues/${prepared.pullRequest}/comments?`)){
+   assert.doesNotMatch(url,/[?&](sort|direction)=/);
    return response(200,created?[created]:[]);
+  }
   if(method==='GET'&&url.endsWith('/issues/comments/6783990001'))
    return response(200,created);
   throw Error('unexpected '+method+' '+url);
@@ -235,4 +238,53 @@ test('comment ledger rejects foreign repositories, deletes and identity changes'
   idempotency_key,operation_digest,repository,target_number,body_sha256,grant_id)
   VALUES('ultron-task-c04-pr9-${'0'.repeat(24)}','${'1'.repeat(64)}','Ultron-MW/Ultron.MW',9,
    '${'2'.repeat(64)}',$1)`,[grant]),/check|violat/i);
+});
+
+test('provider writes and readbacks carry the scoped installation token',async t=>{
+ const h=await admitted(t),github=provider(h.prepared);
+ await submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl:github.fetchImpl});
+ const [exchange,...rest]=github.calls;
+ assert.match(exchange.authorization,/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
+ assert.deepEqual(rest.map(c=>[c.method,c.authorization]),
+  [['POST','Bearer test-scoped-token'],['GET','Bearer test-scoped-token']]);
+});
+
+test('reconcile with App credentials reads with the token, scoped to after the reservation',async t=>{
+ const h=await admitted(t),github=provider(h.prepared,{lost:true});
+ await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl:github.fetchImpl}));
+ const before=github.calls.length;
+ const result=await reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl:github.fetchImpl});
+ assert.equal(result.status,'reconciled_success');
+ const calls=github.calls.slice(before);
+ assert.match(calls[0].url,/\/access_tokens$/);
+ const list=calls.find(c=>c.url.includes('/comments?'));
+ const since=new URL(list.url).searchParams.get('since');
+ const reserved=(await h.db.query('SELECT created_at FROM github_pr_comment_executions')).rows[0].created_at;
+ assert.equal(Date.parse(since),new Date(reserved).getTime()-60000);
+ for(const c of calls.slice(1))assert.equal(c.authorization,'Bearer test-scoped-token');
+ assert.equal(github.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,1);
+});
+
+test('token exchange accepts GitHub expiry stamped after our clock read, within bounded skew',async t=>{
+ const now=1_800_000_000_000;
+ const attempt=async expiresAt=>{
+  const h=await admitted(t);
+  const fetchImpl=async(url,options={})=>{
+   if(url.endsWith('/access_tokens'))return response(201,{token:'test-scoped-token',
+    permissions:{issues:'write',metadata:'read'},
+    repositories:[{id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'}],
+    expires_at:new Date(expiresAt).toISOString()});
+   throw Error('stop-after-exchange');
+  };
+  return submitPrCommentCanary({db:h.db,prepared:h.prepared,operationDigest:h.digest,
+   appCredentials:APP,fetchImpl,clock:()=>now}).then(()=>'ok',e=>e.message);
+ };
+ // Real GitHub responses: server time + 3600s, a few hundred ms after our read.
+ assert.doesNotMatch(await attempt(now+3600000+850),/token-response-invalid/);
+ assert.doesNotMatch(await attempt(now+3600000+4*60000),/token-response-invalid/);
+ assert.match(await attempt(now+3600000+6*60000),/token-response-invalid/);
+ assert.match(await attempt(now-1000),/token-response-invalid/);
 });

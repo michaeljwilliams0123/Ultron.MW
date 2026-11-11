@@ -32,6 +32,7 @@ async function database(t,files){
  return db;
 }
 const configFrom=values=>async name=>values[name];
+const ON={ULTRON_PR_COMMENT_CANARY_ENABLED:'true'};
 const FULL={[PR_COMMENT_CANARY_CONFIG.appId]:'5633654',
  [PR_COMMENT_CANARY_CONFIG.installationId]:'179066535',
  [PR_COMMENT_CANARY_CONFIG.privateKey]:PKCS1,
@@ -80,10 +81,11 @@ test('signer rejects unusable keys without echoing key material',()=>{
 
 test('canary readiness reports not-configured while 0041 is absent and credentials are absent',async t=>{
  const db=await database(t,BASE);
- const none=await prCommentCanaryReadiness({db,readConfig:configFrom({})});
- assert.deepEqual({...none,missing:[...none.missing]},{configured:false,status:'not-configured',
+ const none=await prCommentCanaryReadiness({db,readConfig:configFrom(ON)});
+ assert.deepEqual({...none,missing:[...none.missing]},{enabled:true,prerequisitesReady:false,
+  configured:false,status:'not-configured',reason:'canary-not-configured',
   missing:['github-app-credentials','owner-authority-public-jwk','migration-0041']});
- const creds=await prCommentCanaryReadiness({db,readConfig:configFrom(FULL)});
+ const creds=await prCommentCanaryReadiness({db,readConfig:configFrom({...FULL,...ON})});
  assert.deepEqual([...creds.missing],['migration-0041']);
  assert.equal(JSON.stringify(creds).includes('PRIVATE KEY'),false);
  const throwing=await prCommentCanaryReadiness({db,readConfig:async()=>{throw Error('down');}});
@@ -94,13 +96,27 @@ test('canary readiness reports not-configured while 0041 is absent and credentia
 
 test('canary readiness is configured only with exact App ids, a usable key, the owner JWK and 0041',async t=>{
  const db=await database(t,[...BASE,...HELD]);
- assert.equal((await prCommentCanaryReadiness({db,readConfig:configFrom(FULL)})).configured,true);
+ assert.equal((await prCommentCanaryReadiness({db,readConfig:configFrom({...FULL,...ON})})).configured,true);
  const wrongApp=await prCommentCanaryReadiness({db,readConfig:configFrom({...FULL,
   [PR_COMMENT_CANARY_CONFIG.appId]:'1'})});
  assert.deepEqual([...wrongApp.missing],['github-app-credentials-mismatch']);
  const badKey=await prCommentCanaryReadiness({db,readConfig:configFrom({...FULL,
   [PR_COMMENT_CANARY_CONFIG.privateKey]:'-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----'})});
  assert.deepEqual([...badKey.missing],['github-app-private-key-unusable']);
+});
+
+test('canary readiness is disabled unless the opt-in flag is exactly the string true',async t=>{
+ const db=await database(t,[...BASE,...HELD]);
+ for(const flag of [undefined,null,'','false','TRUE','True','1','yes',' true',true]){
+  const r=await prCommentCanaryReadiness({db,readConfig:configFrom({...FULL,
+   ULTRON_PR_COMMENT_CANARY_ENABLED:flag})});
+  assert.deepEqual({...r,missing:[...r.missing]},{enabled:false,prerequisitesReady:true,
+   configured:false,status:'disabled',reason:'canary-disabled',missing:[]},String(flag));
+  assert.equal(JSON.stringify(r).includes('PRIVATE KEY'),false);
+ }
+ const throwing=await prCommentCanaryReadiness({db,readConfig:async name=>{
+  if(name==='ULTRON_PR_COMMENT_CANARY_ENABLED')throw Error('down');return FULL[name];}});
+ assert.equal(throwing.status,'disabled');
 });
 
 test('the App JWT the canary sends verifies against the App public key',async t=>{
@@ -141,7 +157,10 @@ test('canary sources no longer need node:crypto signing and gate every mode on r
    assert.deepEqual(m[1].split(',').map(x=>x.trim()).filter(Boolean),['createHash']);
   assert.doesNotMatch(code(src),/\bcreateSign\b|\brandomBytes\(|subtle\.(sign|importKey)/);
  }
+ const killSwitch=api.indexOf('if(!(await prCommentCanaryEnabled(readConfig)))return disabled(res);');
+ assert.ok(killSwitch>0);
  const gate=api.indexOf('if(!readiness.configured)return notConfigured(res,readiness);');
+ assert.ok(killSwitch<gate);
  assert.ok(gate>0);
  for(const mode of ["mode==='prepare'","mode==='reconcile'","mode!=='submit'"])
   assert.ok(api.indexOf(mode)>gate,mode+' must come after the readiness gate');
