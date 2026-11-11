@@ -51,7 +51,7 @@ reruns or pushes. It never defines a job called `test`, so it cannot satisfy or
 shadow the required check. Cost: one short run per day plus any manual runs.
 
 First replay (comment-router, last 14 days, run locally through `gh`):
-legacy red runs **33**, lane would report red **4**. The other 29 were
+legacy red runs **36**, lane would report red **4**. The other 32 were
 unadmitted PR comments (would be skipped), one `/codex run` with nothing
 admitted (neutral) and four runs where GitHub created no jobs (rerun once).
 

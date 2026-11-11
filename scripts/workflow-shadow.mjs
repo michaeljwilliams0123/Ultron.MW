@@ -38,7 +38,7 @@ async function getJson(path,token,{text=false}={}){
 export async function replayLane(lane,{get,repo,since,maxRuns=300,maxLogs=60}={}){
   const rows=[];let logs=0;
   for(const legacy of legacyByLane(lane)){
-    const counts={success:0,failure:0,skipped:0,cancelled:0,other:0};
+    const counts={success:0,failure:0,startup_failure:0,skipped:0,cancelled:0,other:0};
     const projected={red:0,skipped:0,neutral:0,rerun:0};
     const examples=[];
     let runs=[];
@@ -66,7 +66,7 @@ export async function replayLane(lane,{get,repo,since,maxRuns=300,maxLogs=60}={}
     }
     rows.push({workflow:legacy.file,disposition:legacy.disposition,runs:runs.length,counts,projected,examples});
   }
-  const legacyRed=rows.reduce((n,r)=>n+r.counts.failure,0);
+  const legacyRed=rows.reduce((n,r)=>n+r.counts.failure+r.counts.startup_failure,0);
   const laneRed=rows.reduce((n,r)=>n+r.projected.red,0);
   return {lane,owner:LANES[lane].owner,rows,legacyRed,laneRed};
 }
@@ -82,7 +82,7 @@ export function renderSummary(parity,results){
       '| legacy workflow | disposition | runs | success | failure | skipped | lane red | lane skip | lane neutral | rerun |',
       '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
     for(const row of r.rows)out.push('| `'+row.workflow+'` | '+row.disposition+' | '+row.runs+' | '+
-      row.counts.success+' | '+row.counts.failure+' | '+row.counts.skipped+' | '+row.projected.red+' | '+
+      row.counts.success+' | '+(row.counts.failure+row.counts.startup_failure)+' | '+row.counts.skipped+' | '+row.projected.red+' | '+
       row.projected.skipped+' | '+row.projected.neutral+' | '+row.projected.rerun+' |');
     for(const row of r.rows)for(const e of row.examples)out.push('- '+e.projected+': '+e.run+' ('+e.reason+')');
   }
