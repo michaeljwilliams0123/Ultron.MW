@@ -3,7 +3,8 @@
  * Importable master pipeline (#167): side-effect free; the CLI entrypoint
  * remains scripts/run-canary-pipeline.mjs.
  * Hatchable copy (#412) of src/engine/master-pipeline.mjs. Only the repository
- * import is inlined; test/hatchable-master-pipeline-parity.test.mjs fails on drift.
+ * import is inlined and loadLiveDependencies is a throwing stub;
+ * test/hatchable-master-pipeline-parity.test.mjs fails on any other drift.
  */
 import {createHash} from 'node:crypto';
 const ULTRON_REPOSITORY='michaeljwilliams0123/Ultron.MW';
@@ -239,16 +240,7 @@ export async function runMasterPipeline(operationRequest,{
 }
 
 export async function loadLiveDependencies(){
-  const [a,b,c,d,e]=await Promise.all([
-    import('../auth/identity-factory.mjs'),
-    import('../middleware/enforce-signed-approval.mjs'),
-    import('../../scripts/execute-autonomous-task.mjs'),
-    import('./durable-executor.mjs'),
-    import('../../scripts/verify-post-conditions.mjs'),
-  ]);
-  return {createVerifiedGitHubClient:a.createVerifiedGitHubClient,
-    enforceSignedApprovalAndTagPersona:b.enforceSignedApprovalAndTagPersona,
-    dispatchHeadlessTask:c.dispatchHeadlessTask,
-    executeIdempotentGitHubWrite:d.executeIdempotentGitHubWrite,
-    verifyPostConditionsAndStoreReceipt:e.verifyPostConditionsAndStoreReceipt};
+  // Hatchable deploys only cloud/hatchable; the src/scripts live chain is
+  // absent there. lib/github-branch-canary.js injects native adapters instead.
+  throw Error('canary-live-dependencies-unavailable-on-hatchable');
 }

@@ -436,7 +436,49 @@ profile/stop versions, not-paused, the $0 ceiling and `repair.branch.create`,
 consumes the 0037 nonce, records the grant and creates the 0039/0044 branch
 reservation and event. One commit plus ref write with the pinned App
 credentials follows, then independent readback and a `brain_events` audit.
+The audit keeps the pipeline-level `remoteReadbackVerified:false`, meaning the
+pipeline's own Task-5 local git-diff readback is not performed on Hatchable.
+The separate provider readback of ref, commit, parent and tree is reported as
+`providerReadbackStatus` (`matched`, `mismatch` or `unavailable`). Only
+`matched` writes `github-branch-canary-audited`. Anything else writes
+`github-branch-canary-audit-held` and fails closed.
 `reconcile` is read-only. Migration `0044_github_branch_grant_executions.sql`
 is required. `repair.branch.create` is in no default profile. App 5633654
 `contents:write` is unconfirmed. This source does not establish deployment or
 live authorization.
+
+#### Clearing `reconcile_required` branch-canary rows
+
+Never resubmit the same prepared canary, never retry a provider write blindly,
+and never delete or rewrite `github_idempotent_executions` or `brain_events`
+rows. The 0039/0041 guard trigger rejects deletes and only allows
+`reconcile_required` -> `completed`.
+
+1. Run read-only reconcile: `POST /api/brain/github-branch-canary` with
+   `{"mode":"reconcile","prepared":<the prepared object>,"grantId":"<grant id>"}`.
+   It never POSTs to GitHub.
+   - `200 recovered_success` or `200 reconciled_success`: the branch was
+     verified (ref -> commit, single parent = signed source SHA, same tree,
+     `Ultron-Operation-Digest` trailer). The row is now `completed`. Done.
+   - `200 reserved` with `dispatched:false`: no provider write was attempted,
+     because the failure came before the claim, for example a token exchange
+     denial.
+   - `202` with `reason:"readback-not-found"`: the branch ref does not exist.
+   - `202` with `reason:"readback-conflict"` (`providerReadbackStatus:"mismatch"`):
+     a ref exists but does not match the signed lineage.
+   - `202` with `reason:"readback-unavailable"` or no reason: read failed; try
+     reconcile again later.
+2. Confirm independently on GitHub whether `ultron/canary-<taskId>` exists
+   and what it points to. Use the GitHub UI or
+   `gh api repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/ultron/canary-<taskId>`.
+3. Terminal handling. There is no "abandon" endpoint or state:
+   - If the branch is verified, reconcile has already marked the row
+     `completed`. That is the only terminal transition the code supports.
+   - If it is absent (`readback-not-found`), or the row is `reserved` and was
+     never dispatched, leave the row as the retained audit record. The grant
+     and nonce are spent and nothing can dispatch it again. Then `prepare` a
+     fresh canary, which creates a new task ID and branch name, and sign a new
+     grant.
+   - If it conflicts, treat it as an owner investigation. Do not adopt the
+     branch. Any cleanup of the GitHub branch is a separate manual owner
+     decision, and the ledger row stays as recorded.

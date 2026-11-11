@@ -12,6 +12,11 @@ const OWNER='michaeljwilliams0123';
 const ORIGIN='https://ultron-mw-cloud.hatchable.site';
 const SHA=/^[a-f0-9]{40}$/;
 const GRANT=/^[A-Za-z0-9_.:-]{8,128}$/;
+const RECONCILE_REASONS=['readback-not-found','readback-conflict','readback-unavailable',
+ 'intent-conflict','ledger-readback-unavailable','audit-readback-mismatch',
+ 'audit-readback-unavailable','token-exchange-denied','provider-outcome-unknown'];
+const PROVIDER_STATUS={'readback-conflict':'mismatch','audit-readback-mismatch':'mismatch',
+ 'readback-unavailable':'unavailable','audit-readback-unavailable':'unavailable'};
 function reply(res,status,value){
  res.setHeader('Cache-Control','private, no-store');
  return res.status(status).json({schema:SCHEMA,...value});
@@ -78,11 +83,17 @@ export default async function handler(req,res){
    return reply(res,200,{ok:true,status:result.status,
     idempotencyKey:'ultron-task-'+prepared.taskId,
     ...(result.receipt?{receipt:result.receipt}:{}),
+    ...(result.providerReadbackStatus?{providerReadbackStatus:result.providerReadbackStatus}:{}),
     ...(result.dispatched===false?{dispatched:false}:{})});
   }catch(error){
    if(/configuration/.test(String(error?.message)))return unconfigured(res);
+   // Only fixed, non-secret reason codes; see README "Clearing reconcile_required".
+   const reason=RECONCILE_REASONS.find(code=>
+    String(error?.message).endsWith('github-branch-canary-'+code));
    return reply(res,202,{ok:false,status:'reconcile-required',
-    idempotencyKey:'ultron-task-'+prepared.taskId,error:'provider-outcome-unresolved'});
+    idempotencyKey:'ultron-task-'+prepared.taskId,error:'provider-outcome-unresolved',
+    ...(reason?{reason}:{}),
+    ...(PROVIDER_STATUS[reason]?{providerReadbackStatus:PROVIDER_STATUS[reason]}:{})});
   }
  }
  let result;

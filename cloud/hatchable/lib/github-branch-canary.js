@@ -309,17 +309,30 @@ export function createBranchAuditRecorder({db,readback,sourceSha}={}){
   if(!exact(d,['repository','branch','operationDigest','sha','remoteVerified','personaRole'])||
     d.repository!==REPO||d.remoteVerified!==true||!SHA40.test(d.sha||'')||
     !SHA256.test(d.operationDigest||''))fail('audit-receipt-invalid');
+  let providerReadbackStatus='matched';
   try{await readback({branch:d.branch,sourceSha,commitSha:d.sha,
    operationDigest:d.operationDigest});}
-  catch{fail('audit-readback-mismatch');}
+  catch(error){
+   providerReadbackStatus=/lineage-(invalid|scope-invalid)$/.test(String(error?.message))
+    ?'mismatch':'unavailable';
+  }
   const details={schema:'ultron.task5.local-audit.v1',
    idempotencyKey:receipt.idempotencyKey,executionStatus:receipt.status,
-   // The audit row is not itself remote proof; providerReadback records the
-   // separate commit/parent/tree/ref readback performed above.
+   // Pipeline-level contract: remoteReadbackVerified:false means the pipeline's
+   // own Task-5 readback (the src local git-diff audit) is NOT performed on
+   // Hatchable. The separate provider readback above is reported only by
+   // providerReadbackStatus ('matched' | 'mismatch' | 'unavailable').
    status:'REMOTE_READBACK_REQUIRED',remoteReadbackVerified:false,
-   providerReadback:'matched',branch:d.branch,commitSha:d.sha,sourceSha,
+   providerReadbackStatus,branch:d.branch,commitSha:d.sha,sourceSha,
    operationDigest:d.operationDigest,
    executionReceiptDigest:hash(JSON.stringify(receipt))};
+  if(providerReadbackStatus!=='matched'){
+   // Record the held audit for the operator, then fail closed.
+   try{await db.query(`INSERT INTO brain_events(event_type,details)
+    VALUES('github-branch-canary-audit-held',$1::jsonb)`,[JSON.stringify(details)]);}
+   catch{/* The thrown hold below is authoritative. */}
+   fail('audit-readback-'+providerReadbackStatus);
+  }
   const auditSha256=hash(JSON.stringify(details));
   let inserted;
   try{inserted=await db.query(`INSERT INTO brain_events(event_type,details)
@@ -404,6 +417,7 @@ export async function runBranchCanary({db,prepared,envelope,publicJwk,appCredent
   });
   return Object.freeze({ok:true,http:201,status:'success',idempotencyKey,
    branch:result.branch,commitSha:result.commitSha,auditSha256:result.auditSha256,
+   remoteReadbackVerified:false,providerReadbackStatus:'matched',
    productionAccepted:false});
  }catch(error){
   if(error?.canary)return Object.freeze({ok:false,http:error.canary.http,
@@ -413,8 +427,12 @@ export async function runBranchCanary({db,prepared,envelope,publicJwk,appCredent
    status:'reserved',error:'canary-dispatch-unavailable',idempotencyKey});
   if(state.phase==='dispatched')return Object.freeze({ok:false,http:202,
    status:'reconcile-required',error:'provider-outcome-unresolved',idempotencyKey});
-  if(state.phase==='completed')return Object.freeze({ok:false,http:202,
-   status:'completed-unaudited',error:'post-conditions-unverified',idempotencyKey});
+  if(state.phase==='completed'){
+   const held=/audit-readback-(mismatch|unavailable)$/.exec(String(error?.message));
+   return Object.freeze({ok:false,http:202,status:'completed-unaudited',
+    error:'post-conditions-unverified',idempotencyKey,
+    ...(held?{providerReadbackStatus:held[1]}:{})});
+  }
   return Object.freeze({ok:false,http:403,error:'authority-not-verified',idempotencyKey});
  }
 }
@@ -454,5 +472,6 @@ export async function reconcileBranchCanary({db,prepared,grantId,appCredentials,
  const receipt=await complete(db,intent,'reconciled_success',commitSha,clock());
  const audit=await createBranchAuditRecorder({db,sourceSha:intent.sourceSha,
   readback})(receipt);
- return Object.freeze({status:'reconciled_success',receipt,auditSha256:audit.auditSha256});
+ return Object.freeze({status:'reconciled_success',receipt,auditSha256:audit.auditSha256,
+  providerReadbackStatus:audit.providerReadbackStatus});
 }

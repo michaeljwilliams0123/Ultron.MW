@@ -37,7 +37,11 @@ test('happy path: owner grant, atomic reservation, one branch write, readback an
   WHERE event_type LIKE 'github-branch-canary-%' ORDER BY id`)).rows;
  assert.deepEqual(events.map(e=>e.event_type),
   ['github-branch-canary-reserved','github-branch-canary-audited']);
- assert.equal(events[1].details.providerReadback,'matched');
+ assert.equal(events[1].details.providerReadbackStatus,'matched');
+ assert.equal(events[1].details.remoteReadbackVerified,false);
+ assert.equal(Object.hasOwn(events[1].details,'providerReadback'),false);
+ assert.equal(result.providerReadbackStatus,'matched');
+ assert.equal(result.remoteReadbackVerified,false);
  assert.equal(events[1].details.auditSha256,result.auditSha256);
  // Token scopes: one contents:write for the write, one contents:read for Task 5.
  const tokens=gh.calls.filter(c=>c.url.endsWith('/access_tokens')).length;
@@ -261,4 +265,26 @@ test('0044 permits grant-bound branch rows only for a matching repair.branch.cre
   [JSON.stringify(ops)]);
  await assert.rejects(db.query(`UPDATE brain_owner_autonomy_profile SET allowed_operations=$1::jsonb WHERE id=1`,
   [JSON.stringify([...ops,'op.24'])]),/allowed_operations_check/);
+});
+
+test('Task 5 audit reports providerReadbackStatus mismatch or unavailable and fails closed',async t=>{
+ const db=await database(t);
+ const receipt={idempotencyKey:'ultron-task-hb-'+'a'.repeat(24),status:'success',details:{
+  repository:REPO,branch:'ultron/canary-hb-'+'a'.repeat(24),operationDigest:'d'.repeat(64),
+  sha:'c'.repeat(40),remoteVerified:true,personaRole:'builder'}};
+ const cases=[[()=>{throw Error('canary-remote-lineage-invalid');},'mismatch'],
+  [()=>{throw Error('canary-remote-lineage-unavailable');},'unavailable'],
+  [()=>{throw Error('github-branch-canary-token-exchange-denied');},'unavailable']];
+ for(const [readback,status] of cases){
+  const audit=canary.createBranchAuditRecorder({db,sourceSha:SOURCE,readback});
+  await assert.rejects(audit(receipt),new RegExp('audit-readback-'+status+'$'));
+ }
+ const held=(await db.query(`SELECT details FROM brain_events
+  WHERE event_type='github-branch-canary-audit-held' ORDER BY id`)).rows;
+ assert.deepEqual(held.map(r=>r.details.providerReadbackStatus),['mismatch','unavailable','unavailable']);
+ assert.ok(held.every(r=>r.details.remoteReadbackVerified===false));
+ assert.equal((await db.query(`SELECT count(*)::int AS n FROM brain_events
+  WHERE event_type='github-branch-canary-audited'`)).rows[0].n,0);
+ const ok=await canary.createBranchAuditRecorder({db,sourceSha:SOURCE,readback:async()=>({})})(receipt);
+ assert.equal(ok.providerReadbackStatus,'matched');
 });

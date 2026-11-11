@@ -107,5 +107,13 @@ test('submit forwards lib status and never echoes the signed envelope',async()=>
  assert.deepEqual([pending.status,pending.body.status],[202,'reconcile-required']);
  const {module:broken}=await loadRoute({lib:{reconcile:async()=>{throw Error('github-branch-canary-readback-not-found');}}});
  const unresolved=await call(broken.default,{body:{mode:'reconcile',prepared,grantId:'owner-412-test'}});
- assert.deepEqual([unresolved.status,unresolved.body.status],[202,'reconcile-required']);
+ assert.deepEqual([unresolved.status,unresolved.body.status,unresolved.body.reason],
+  [202,'reconcile-required','readback-not-found']);
+ const {module:conflict}=await loadRoute({lib:{reconcile:async()=>{throw Error('github-branch-canary-readback-conflict');}}});
+ const mismatch=await call(conflict.default,{body:{mode:'reconcile',prepared,grantId:'owner-412-test'}});
+ assert.deepEqual([mismatch.body.reason,mismatch.body.providerReadbackStatus],['readback-conflict','mismatch']);
+ const {module:opaque}=await loadRoute({lib:{reconcile:async()=>{throw Error('secret token text');}}});
+ const hidden=await call(opaque.default,{body:{mode:'reconcile',prepared,grantId:'owner-412-test'}});
+ assert.equal(Object.hasOwn(hidden.body,'reason'),false);
+ assert.equal(JSON.stringify(hidden.body).includes('secret'),false);
 });
