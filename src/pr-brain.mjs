@@ -3,6 +3,8 @@ import { readFile, appendFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { githubRequest } from './cloud-pr.mjs';
 import { applyPrPatch } from './pr-brain-patch.mjs';
+import {isCouncilGovernanceRepairPr,assertCouncilRepairPaths}
+  from './council-governance-repair-admission.mjs';
 import { generateAndApply } from './pr-brain-model.mjs';
 import { selectPrInference } from './pr-brain-inference.mjs';
 import { parseMultiFileRequest, generateAndApplyMulti } from './pr-brain-multifile.mjs';
@@ -268,24 +270,32 @@ export async function handlePrConversation({event,eventName,actor,repository,get
   // Closed/superseded PR discussions are ordinary no-ops, not failed agents.
   if(pr?.number===turn.number && pr.state==='closed')
     return {status:'ignored-closed',prNumber:turn.number,created:false};
+  const councilRepair=isCouncilGovernanceRepairPr(pr);
   // Owner review comments on unrelated repository branches are not instructions
   // to this special-purpose agent. Do not turn that expected no-op into red CI.
   if(pr?.number===turn.number && pr.state==='open' &&
-    typeof pr.head?.ref==='string' && !pr.head.ref.startsWith('ultron/'))
+    typeof pr.head?.ref==='string' && !pr.head.ref.startsWith('ultron/') &&
+    !councilRepair)
     return {status:'ignored-unmanaged',prNumber:turn.number,created:false};
   if(pr?.number!==turn.number||pr.state!=='open'||pr.base?.ref!=='main'||
     pr.base?.repo?.full_name!==REPO||pr.head?.repo?.full_name!==REPO||
-    !pr.head?.ref?.startsWith('ultron/')||!SHA.test(pr.head?.sha||''))
+    (!pr.head?.ref?.startsWith('ultron/')&&!councilRepair)||
+    !SHA.test(pr.head?.sha||''))
     throw Error('PR must be an open same-repo Ultron branch into main');
   if(!pr.body?.startsWith('<!-- ULTRON_SELF_SCAN_PR_V1 -->')&&
     !pr.body?.includes('Manifest digest: ')&&
     !pr.body?.includes('## Ultron issue #')&&
-    !pr.head.ref.startsWith('ultron/framework-'))
+    !pr.head.ref.startsWith('ultron/framework-')&&!councilRepair)
     throw Error('Unadmitted PR cannot access Ultron brain');
   const comments=await listComments(get,turn.number,turn.inline);
   const source=comments.find(x=>x.id===turn.commentId);
   if(!source||source.user?.login!==OWNER||source.body!==turn.raw)
     throw Error('Originating owner comment cannot be reverified');
+  // This extra scope is available only to the numeric primary owner, not a
+  // collaborator with a similar login or a Council-generated action board.
+  if(councilRepair&&(source.user?.id!==308995719||
+     event?.comment?.user?.id!==308995719))
+    throw Error('Council governance owner identity not verified');
   const prior=comments.filter(x=>x.id!==turn.commentId).slice(-12);
   const priorReceipt=comments.find(x=>x.user?.login==='github-actions[bot]'&&
     x.body?.startsWith(MARK+turn.commentId+' -->'));
@@ -293,6 +303,14 @@ export async function handlePrConversation({event,eventName,actor,repository,get
     replyId:priorReceipt.id,created:false};
   const intent=routePrTurn(turn.body,prior);
   if(!intent)return {status:'ignored',prNumber:turn.number,created:false};
+  if(councilRepair){
+   // No single-file vote rewrites, framework generation, or bypass commands.
+   // A source change needs its matching regression in the same atomic commit.
+   if(!['implement-multi','patch','verify','regress','status','findings'].includes(intent.kind))
+    return {status:'ignored-unmanaged',prNumber:turn.number,created:false};
+   if(intent.kind==='implement-multi')
+    assertCouncilRepairPaths(pr,intent.paths);
+  }
   let report=null;
   if(pr.head.ref.startsWith('ultron/self-scan-')){
     report=await get(ROOT+'/contents/reports/self-scan/current.md?ref='+
