@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script src="/front-door-route.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
@@ -41,7 +42,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 <link rel="stylesheet" href="./hf-lab.css">
 </head>
 <body>
-<nav class="unified-nav" aria-label="Primary Ultron workspace"><a href="/workspace.html">Workspace · Brain / Learning / Systems</a><a href="/" aria-current="page">Cloud controls</a><a href="/council-room.html">Council room</a><a href="/repair-operations.html">Repair operations</a><a href="/passkey-owner.html">Owner passkeys</a><a href="/github-pr-comment-canary.html">GitHub App canary</a></nav>
+<nav class="unified-nav" aria-label="Primary Ultron workspace"><a href="/council-room.html">Council room · start here</a><a href="/workspace.html">Workspace · Brain / Learning / Systems</a><a href="/" aria-current="page">Cloud controls</a><a href="/repair-operations.html">Repair operations</a><a href="/passkey-owner.html">Owner passkeys</a><a href="/github-pr-comment-canary.html">GitHub App canary</a></nav>
 <main class="shell">
 <section class="connectivity" aria-labelledby="connection-heading">
  <div class="connectivity-titlebar">
@@ -369,10 +370,12 @@ refresh();
 <script src="/__hatchable/events.js" defer></script>
 <script src="./connectivity.js" defer></script>
 <script src="./council-readiness.js" defer></script>
+<script src="./sign-in.js" defer></script>
 <script src="./owner-session.js" defer></script>
 <script src="./owner-live.js" defer></script>
 <script src="./hf-lab.js" defer></script>
 <script src="./c06-live.js" defer></script>
 <script src="./cloud-gitlab.js" defer></script>
+<script src="./nav-guard.js" defer></script>
 </body>
 </html>

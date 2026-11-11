@@ -2,6 +2,7 @@ import {config} from 'hatchable';
 import {observeMahoragaMain} from 'lib/mahoraga-actions.js';
 import {inspectOpenIssue} from 'lib/council-issues.js';
 import {makeIssueCouncilPlan} from 'lib/issue-council-plan.js';
+import {detectOwnerDecisions,approvalCards,companionLead} from 'lib/council-front-door.js';
 
 const ROLES = Object.freeze([
  ['builder','Builder','Execution path'],
@@ -101,8 +102,16 @@ export async function buildCouncilRoomResult({message}){
    ...(assessment?{action:assessment.action,evidence:assessment.evidenceRequired,
     evidenceStatus:'not-yet-verified',executionStatus:'not-started'}:{})};
  });
+ // Companion-first front door: plain-language lead reply plus approval cards
+ // that only request an owner decision (never executed from chat text).
+ const messageId=Number(message.id);
+ const ownerOps=issue?[]:detectOwnerDecisions(String(message.body||''));
+ const cards=Number.isSafeInteger(messageId)&&messageId>0?
+  approvalCards({taskKey:'room:'+messageId,ops:ownerOps}):[];
+ const companion=companionLead({prompt,members,observed,cards,issue});
  return {
   objective:'council.room',at:new Date().toISOString(),
+  frontDoor:'companion-first-v1',companion,approvalCards:cards,ownerDecisionsDetected:ownerOps,
   source:'hatchable-council-room',prompt,
   summary:issue?'Issue #'+issue.number+' is open; Council prepared an advisory remediation plan.':
    'Council completed '+members.length+' member responses with Ultron.MW and Mahoraga evidence.',
