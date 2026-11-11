@@ -149,14 +149,17 @@ test('explicit leading tags build the existing owner-confirmed call envelope', (
     assert.throws(() => parseCodexObjective(text));
 });
 
-test('only documented exact bare tags count as owner PR triggers, never short aliases',()=>{
-  for(const tag of ['@michaeljwilliams0123ultron','@ultron-codex','@destiny-codex'])
-    assert.equal(isCodexRunCommand(tag,'destiny-codex'),true,tag);
-  for(const tag of ['@ultron','@destiny','@mike-codex','@unregistered',
+test('only explicit /codex run is an owner PR trigger; bare aliases notify users',()=>{
+  for(const tag of ['@michaeljwilliams0123ultron','@ultron-codex','@destiny-codex',
+    '@ultron','@destiny','@mike-codex','@unregistered',
     '@ultron-codex do something','@ultron-codex ','@destiny-codex\n'])
     assert.equal(isCodexRunCommand(tag,'destiny-codex'),false,tag);
-  assert.equal(isCodexRunCommand('/codex run ultron','destiny-codex'),true);
-  assert.equal(isCodexRunCommand('/codex run mike-codex','destiny-codex'),false);
+  for(const command of ['/codex run destiny-codex',
+    '/codex run michaeljwilliams0123ultron','/codex run ultron'])
+    assert.equal(isCodexRunCommand(command,'destiny-codex'),true,command);
+  for(const command of ['/codex run mike-codex','/codex run destiny-codex extra',
+    ' /codex run destiny-codex','/codex run destiny-codex\n'])
+    assert.equal(isCodexRunCommand(command,'destiny-codex'),false,command);
 });
 
 test('console Codex router preserves explicit registered tags and rejects unbound substitution',()=>{
