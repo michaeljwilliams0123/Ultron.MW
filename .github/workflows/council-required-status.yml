@@ -222,6 +222,8 @@ jobs:
       - name: Apply exact seven-of-seven policy or explicit owner exception
         if: steps.prepare.outputs.skip == 'false'
         continue-on-error: true
+        env:
+          ULTRON_OWNER_SIGNING_PUBLIC_JWK: ${{ vars.ULTRON_OWNER_SIGNING_PUBLIC_JWK }}
         run: node scripts/enforce-council-acceptance.mjs
       - name: Publish trusted required commit status to exact PR SHA
         if: always() && steps.prepare.outputs.skip == 'false'
