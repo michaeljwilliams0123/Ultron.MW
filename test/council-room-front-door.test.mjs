@@ -188,3 +188,82 @@ test('README counts seven council profiles',async()=>{
  assert.match(readme,/Seven fixed cognitive profiles/);
  assert.doesNotMatch(readme,/Three fixed cognitive profiles/);
 });
+
+import vm from 'node:vm';
+const pub=name=>readFile(new URL('public/'+name,root),'utf8');
+
+test('shared sign-in helper allowlists hatchable.com and returns to the current page',async()=>{
+ const sandbox={URL,location:{origin:'https://ultron-mw-cloud.hatchable.site',pathname:'/connectors.html'},
+  window:{},document:{readyState:'complete',querySelectorAll:()=>[]},fetch:async()=>{throw Error('no fetch')}};
+ vm.runInNewContext(await pub('sign-in.js'),sandbox);
+ const safe=sandbox.window.UltronSignIn.safeLoginUrl;
+ const login='https://hatchable.com/console/login?redirect='+encodeURIComponent(
+  'https://ultron-mw-cloud.hatchable.site/__hatchable/auth/callback?next=%2F')+'&app=Ultron';
+ const out=new URL(safe(login));
+ assert.equal(out.hostname,'hatchable.com');
+ assert.equal(new URL(out.searchParams.get('redirect')).searchParams.get('next'),'/connectors.html');
+ for(const bad of ['http://hatchable.com/x','https://evil.example/login','https://hatchable.com.evil.example/','javascript:alert(1)',''])
+  assert.equal(safe(bad),null,bad);
+});
+
+async function ownerSession(status,body){
+ const link={hidden:true,href:'https://hatchable.com/console/projects/ultron-mw-cloud',removeAttribute(){}},indicator={textContent:''};
+ const sandbox={URL,location:{origin:'https://ultron-mw-cloud.hatchable.site',pathname:'/'},
+  window:{addEventListener(){},dispatchEvent(){}},CustomEvent:class{constructor(t,o){this.type=t;this.detail=o?.detail}},
+  document:{readyState:'complete',querySelectorAll:()=>[],getElementById:id=>id==='owner-session-link'?link:id==='owner-session-status'?indicator:null},
+  fetch:async()=>({ok:status===200,status,json:async()=>body})};
+ vm.runInNewContext(await pub('sign-in.js'),sandbox);
+ vm.runInNewContext(await pub('owner-session.js'),sandbox);
+ for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));
+ return {link,indicator,state:sandbox.window.ultronOwnerSessionState};
+}
+
+test('Mission Control sign-in uses login_url and separates signed-out from not-owner',async()=>{
+ const login='https://hatchable.com/console/login?redirect='+encodeURIComponent('https://ultron-mw-cloud.hatchable.site/__hatchable/auth/callback?next=%2F');
+ const guest=await ownerSession(401,{error:'login_required',login_url:login});
+ assert.equal(guest.state,'guest');
+ assert.equal(guest.link.hidden,false);
+ assert.match(guest.link.href,/^https:\/\/hatchable\.com\/console\/login\?/);
+ const other=await ownerSession(403,{schema:'ultron.owner-session.v1',authenticated:false,reason:'owner-identity-required'});
+ assert.equal(other.state,'not-owner');
+ assert.match(other.indicator.textContent,/not as the owner/);
+ assert.equal(other.link.hidden,false);
+ const evil=await ownerSession(401,{error:'login_required',login_url:'https://evil.example/login'});
+ assert.equal(evil.link.href,'https://hatchable.com/console/projects/ultron-mw-cloud','non-allowlisted login_url is ignored');
+});
+
+test('unknown paths served by the index fallback go to the Council Room',async()=>{
+ const src=await pub('front-door-route.js');
+ const run=pathname=>{const calls=[];vm.runInNewContext(src,{location:{pathname,replace:u=>calls.push(u)}});return calls};
+ assert.deepEqual(run('/login'),['/council-room.html']);
+ assert.deepEqual(run('/signin'),['/council-room.html']);
+ assert.deepEqual(run('/'),[]);
+ assert.deepEqual(run('/index.html'),[]);
+ assert.deepEqual(run('/__hatchable/auth/callback'),[]);
+ assert.match(await pub('index.html'),/<head>\n<script src="\/front-door-route\.js"><\/script>/);
+});
+
+test('every page carries the shared nav; passkeys and connectors reuse the sign-in card',async()=>{
+ for(const f of ['passkey-owner.html','connectors.html','workspace.html','browser-write-acceptance.html','execution-canary.html']){
+  const html=await pub(f);
+  assert.match(html,/shared-nav:v1/,f);
+  assert.match(html,/href="\/council-room\.html"[^>]*>Council room · start here/,f);
+  assert.doesNotMatch(html.slice(html.indexOf('shared-nav:v1'),html.indexOf('</nav>',html.indexOf('shared-nav:v1'))),/<script/,f+' nav must not need script (strict CSP pages)');
+ }
+ for(const f of ['passkey-owner.html','connectors.html']){
+  const html=await pub(f);
+  assert.match(html,/data-sign-in-card/);
+  assert.match(html,/src="\.\/sign-in\.js" defer/);
+ }
+});
+
+test('Council Room: composer disabled when signed out, live pill bound to room state, accessible composer',async()=>{
+ const [html,js,css]=await Promise.all(['council-room.html','council-room.js','council-room.css'].map(pub));
+ assert.match(js,/composerEnabled\(false\);pill\('signin'\)/);
+ assert.match(js,/composerEnabled\(true\)/);
+ assert.match(html,/id="system-pill"[^>]*role="status"/);
+ assert.doesNotMatch(html,/<span><\/span> Hatchable live<\/div>/);
+ assert.match(html,/id="composer-body" aria-label="Message the council"/);
+ assert.match(css,/textarea:focus-visible/);
+ assert.doesNotMatch(css,/\.activity-panel\{display:none\}/);
+});

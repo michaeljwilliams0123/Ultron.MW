@@ -5,6 +5,18 @@ const $=id=>document.getElementById(id);
 const roleInitials={builder:'BU',skeptic:'SK',steward:'ST',predictor:'PR',generator:'GE',sentinel:'SE',companion:'CO',council:'UC','michaeljwilliams0123':'MW'};
 const names={owner:'Michael',system:'Ultron Council'};
 function status(text,bad=false){$('room-status').textContent=text;$('room-status').classList.toggle('error',bad)}
+// The header pill mirrors the room's real connection state (not a static label).
+function pill(state){
+ const el=$('system-pill');if(!el)return;
+ const label={live:'Hatchable live',signin:'Sign in needed',offline:'Room offline'}[state]||'Connecting…';
+ el.dataset.state=state;el.lastChild.textContent=' '+label;el.setAttribute('aria-label','Room status: '+label);
+}
+// Signed out: the composer is disabled so nothing looks sendable.
+function composerEnabled(on){
+ for(const id of ['composer-body','send','include-mahoraga','attachment-url'])if($(id))$(id).disabled=!on;
+ document.querySelectorAll('#mention-row input').forEach(x=>x.disabled=!on);
+ $('composer-body').placeholder=on?'Ask the council to inspect, plan, compare, explain, or prepare the next action…':'Sign in to message the Council.';
+}
 function timeLabel(value){try{return new Intl.DateTimeFormat(undefined,{hour:'numeric',minute:'2-digit',month:'short',day:'numeric'}).format(new Date(value))}catch{return ''}}
 function node(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;if(text!==undefined)x.textContent=text;return x}
 function renderMembers(){
@@ -132,7 +144,7 @@ function showSignIn(data,code){
  }
  const href=safeLoginUrl(data.login_url);
  button.hidden=!href;if(href)button.href=href;
- card.hidden=false;
+ card.hidden=false;composerEnabled(false);pill('signin');
  status(href?'Sign in to open the Council Room.':'Sign-in required. Open Hatchable and sign in, then refresh this page.',true);
 }
 async function load(before=null){
@@ -142,14 +154,16 @@ async function load(before=null){
   const data=await response.json().catch(()=>({}));
   if(response.status===401||(response.status===403&&data.error==='owner-required')||data.error==='login_required')
    return showSignIn(data,response.status);
-  $('sign-in-card').hidden=true;
+  $('sign-in-card').hidden=true;composerEnabled(true);
   if(!response.ok||!data.ok)throw Error(data.error||('HTTP '+response.status));
   state.members=data.members||[];state.jobs=data.jobs||[];state.nextCursor=data.nextCursor;
   state.messages=before?[...(data.messages||[]),...state.messages]:(data.messages||[]);
   renderMembers();renderMessages();renderJobs();
   $('load-more').hidden=!state.nextCursor;
+  pill('live');
   status('Live room connected · '+state.messages.length+' entries · paid spend ceiling $0'+(state.draft?' · your draft is in the composer, not sent yet':''));
  }catch(error){
+  pill('offline');
   status('Council room unavailable: '+String(error.message||error),true);
  }
 }

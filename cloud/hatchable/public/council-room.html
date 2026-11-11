@@ -24,7 +24,7 @@
   <a href="/repair-operations.html">Repair operations</a>
   <a href="/github-pr-comment-canary.html">GitHub App canary</a>
  </nav>
- <div class="system-pill"><span></span> Hatchable live</div>
+ <div class="system-pill" id="system-pill" data-state="connecting" role="status" aria-label="Room status: connecting"><span></span> Connecting…</div>
 </header>
 
 <main class="room-layout">
@@ -82,7 +82,7 @@
    <span>Message the council</span>
    <span id="char-count">0 / 6000</span>
   </div>
-  <textarea id="composer-body" maxlength="6000" rows="4" placeholder="Ask the council to inspect, plan, compare, explain, or prepare the next action…"></textarea>
+  <textarea id="composer-body" aria-label="Message the council" maxlength="6000" rows="4" placeholder="Ask the council to inspect, plan, compare, explain, or prepare the next action…"></textarea>
   <div class="mention-row" id="mention-row" aria-label="Choose council members"></div>
   <div class="composer-options">
    <label><input id="include-mahoraga" type="checkbox" checked> Include Mahoraga evidence</label>

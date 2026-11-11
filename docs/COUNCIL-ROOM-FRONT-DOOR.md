@@ -15,6 +15,12 @@ pages, routes and the Council's seven-member replies keep working.
 | `/` nav | Council room third | "Council room · start here" first |
 | Workspace and GitHub Pages console | "Send to Ultron" opens a GitHub task only | Adds **Ask the Council instead**: carries the typed text as a *draft* (URL fragment, never sent to a server) into the Council Room composer. It is never auto-sent. |
 | Nav links to pages the deployment doesn't serve | 404 | `nav-guard.js` marks them "(not deployed)" instead of linking to a dead end |
+| Mission Control "Owner sign-in" | Hard-coded console URL; 401 and 403 both shown as guest | Built from the API `login_url` (https://*.hatchable.com only, `next` = current page). A 403 shows "Signed in, but not as the owner" |
+| Signed out in the Council Room | Composer looked usable | Composer disabled; the header pill shows the real room state (live / sign in needed / offline) |
+| Unknown paths (`/login`, `/signin`, …) | Cloud controls HTML with 200 | `front-door-route.js` sends them to the Council Room. `/` stays Cloud controls (see decision below) |
+| Passkeys, Connectors, Workspace, browser-write-acceptance, execution-canary | No shared nav | One shared static nav (works under strict CSP). Passkeys and Connectors reuse the sign-in card (`sign-in.js`) |
+| Workspace on Hatchable | "Send to Ultron" relies on `/api/*` calls that 404 on this host | "Ask the Council" is the primary call to action above the composer |
+| Accessibility | — | `aria-label` on the composer, `:focus-visible` outlines, Activity panel stacks below 1050px instead of hiding |
 
 ## Approval cards: what a click means
 
@@ -38,10 +44,14 @@ pages, routes and the Council's seven-member replies keep working.
 because the deployed Hatchable site is not the current source. They resolve
 once the public files are deployed. Until then, `nav-guard.js` labels them.
 
-**Drift warning:** the live site also serves `local-workbooks.html` and a
-`connectors.html` link that are **not** in `main`. A full deploy of
-`cloud/hatchable/public/` from this branch could drop them. Reconcile that
-first (commit the live files to source or confirm they should go).
+**Drift warning (corrected):** `connectors.html` *is* on `main`. The live site
+has drifted from `main` in the other direction. It serves `local-workbooks.html`,
+`local-workbooks.js` and `vendor/fflate`, which `main` lacks, plus a footer link
+to `/connectors.html`. A full deploy of `cloud/hatchable/public/` from this
+branch would **drop local-workbooks**. Deploy only the files listed below, or
+first commit the live local-workbooks files to source. Do not delete anything
+live. Also, `local-workbooks.html` links to the old `github.com/Ultron-MW` org.
+Since that page isn't in source, fix the link when it's brought into the repo.
 
 ## Deploy steps (owner)
 
@@ -49,7 +59,10 @@ first (commit the live files to source or confirm they should go).
 2. Deploy the Hatchable **static and API files only**:
    `public/council-room.{html,js,css}`, `public/index.html`,
    `public/workspace.html`, `public/nav-guard.js`,
-   `public/council-front-door.js`, `public/repair-operations.{html,js}`,
+   `public/council-front-door.js`, `public/sign-in.js`, `public/front-door-route.js`,
+   `public/owner-session.js`, `public/passkey-owner.html`, `public/connectors.html`,
+   `public/browser-write-acceptance.html`, `public/execution-canary.html`,
+   `public/repair-operations.{html,js}`,
    `public/github-pr-comment-canary.{html,js}`,
    `lib/council-front-door.js`, `lib/council-room-core.js`,
    `api/brain/council-room.js`, `api/brain/council-room-approval.js`.
@@ -67,3 +80,16 @@ first (commit the live files to source or confirm they should go).
 5. GitHub Pages picks up `docs/council-front-door.js` on the next Pages build.
 
 No new secrets or environment variables are required.
+
+## Decisions for Michael
+
+- **Should `/` itself redirect to the Council Room?** Today `/` stays Cloud
+  controls, because the existing UI contract (`UI-CUTOVER-01`) pins the "Cloud
+  controls" link to `/`. Only unknown paths redirect. To make `/` the Council
+  Room, Cloud controls would move to `/index.html` and that contract would be
+  updated.
+- **Scheduler routes:** `/api/brain/run`, `/tick` and `/hf-github-reconcile`
+  are `access='scheduler'`, POST-only routes. A public GET returning 404 is
+  consistent with Hatchable's scheduler-only edge denial. They are still worth
+  a check: confirm the runner actually wakes, meaning Council Room tasks move
+  `queued → done` and the hourly cron `17 * * * *` produces task updates.
