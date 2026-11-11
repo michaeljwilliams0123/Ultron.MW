@@ -42,7 +42,7 @@ jobs:
       github.actor == 'michaeljwilliams0123'
       )
     concurrency:
-      group: ultron-hf-heldout-${{ github.ref }}-heldout-evaluation
+      group: ultron-hf-heldout-${{ github.ref }}-heldout-evaluation-${{ matrix.profile }}-${{ matrix.shard }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -94,7 +94,7 @@ jobs:
       github.actor == 'michaeljwilliams0123'
       )
     concurrency:
-      group: ultron-hf-free-cpu-${{ github.ref }}-cpu-evaluation
+      group: ultron-hf-free-cpu-${{ github.ref }}-cpu-evaluation-${{ matrix.profile }}-${{ matrix.shard }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
