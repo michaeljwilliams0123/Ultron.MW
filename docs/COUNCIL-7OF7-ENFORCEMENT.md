@@ -5,23 +5,46 @@
 Default: **seven of seven** distinct Council role verdicts must be `proceed` on the
 exact live PR source SHA. Every role must be present exactly once, with evidence,
 no unresolved unknowns or dissent, and the governor must also proceed. Missing,
-stale, duplicated, failed, or unparseable evidence **HOLDS**. An advisory model
-response does not override deterministic holds. Seven role labels are **not**
-seven independently authenticated GitHub App identities.
+stale, duplicated, failed, or unparseable evidence **HOLDS**. Builder, Skeptic
+and Sentinel also require *real* free-tier model-backed `proceed` verdicts,
+without unresolved disagreements; their `hold`, `revise`, or missing provider
+receipt **HOLDS** even if seven deterministic role labels are green. The
+release-status worker reads the actual completed Council run's bounded JSON
+artifact, never a credential-free recomputation that silently loses dissent.
+Seven role labels are **not** seven independently authenticated GitHub Apps.
 
-Owner exception: a comment authored by the canonical owner
-`michaeljwilliams0123` (GitHub user ID 308995719) on the exact open PR:
+Owner exception: a GitHub comment authenticated as the canonical owner
+`michaeljwilliams0123` (GitHub user ID 308995719) **and** carrying a detached
+owner-held P-256 signature over this exact canonical payload:
 
 ```text
-/council override HEAD_SHA BASE_SHA -- Specific reason of at least twenty characters
+ULTRON-COUNCIL-OVERRIDE-v1
+michaeljwilliams0123/Ultron.MW
+PR_NUMBER
+HEAD_SHA
+BASE_SHA
+NONCE_32_LOWER_HEX
+REASON
 ```
 
-Use the full 40-character current PR head SHA and 40-character current base SHA.
-The comment must be unedited, at most 24 hours old, and the reason must be
-20–240 printable characters. A normal "approved", earlier-chat authorization, a
-Council vote, or a bot comment is **NOT** an override. A new commit, base change,
-or comment edit invalidates the exception. The evaluation publishes
-`owner-overridden` with the actual failing role count and an audit comment ID.
+The payload includes a trailing newline. The owner posts exactly:
+
+```text
+/council override PR_NUMBER HEAD_SHA BASE_SHA NONCE_32_LOWER_HEX -- REASON
+signature:p256:BASE64URL_DER_ECDSA_SIGNATURE
+```
+
+The trusted workflow reads the pinned public P-256 verification JWK from the
+GitHub Actions variable `ULTRON_OWNER_SIGNING_PUBLIC_JWK`. It **never receives
+or persists the owner's private key**. If the variable is absent or invalid,
+owner override is unavailable (HOLD), never silently downgraded to GitHub
+comment authentication alone. A valid owner comment must be unedited and no
+older than 24 hours; the reason is 20–240 ASCII characters. A normal "approved",
+chat permission, unsigned GitHub comment or bot action is **NOT** an override.
+A new commit, base change, PR change, edited comment, wrong public key,
+modified payload, or missing nonce invalidates the signature. A verified
+exception remains auditable as `owner-overridden` with held roles, model dissent,
+source comment ID, and `overrideSignatureVerified=true`.
 This exception affects **only** the Council gate; it never overrides repository
 checks, high-risk external-write signatures, replay protection, or deployment
 controls.
@@ -31,8 +54,9 @@ controls.
 `.github/workflows/council-required-status.yml` is defined on default `main`
 and runs on **completed Council workflow runs**, or on the owner's exact override
 comment. It checks out only `main`; it never executes PR code with privileged
-credentials. It re-fetches the current PR head and base, evaluates the seven
-roles using the trusted source implementation, then publishes the exact
+credentials. It re-fetches the current PR head and base, downloads **only**
+the JSON receipts from the matching completed Council workflow, checks
+bounded artifact sizes and actual model dissent, then publishes the exact
 commit-status context:
 
 `ultron/council-7of7`
@@ -54,8 +78,12 @@ protection or other required checks.
 the trusted status workflow has landed on `main` and has emitted a status
 at least once, or GitHub may not list the check in its selector. Until
 then, source-level tests do not constitute repository-wide enforced policy.
-GitHub connection APIs in this environment do not currently expose a
-ruleset mutation operation. A full-admin owner session must activate it.
+A **disabled** repository ruleset was created through the connected owner
+administration API: [Ultron — Mandatory Council 7-of-7](https://github.com/michaeljwilliams0123/Ultron.MW/rules/26999141).
+It requires `test` and `ultron/council-7of7` with strict up-to-date
+checks and no bypass actors. Do **not** activate until the trusted status
+workflow is merged on `main` and independently produces a correct current-head
+status. The GitHub owner administration connector can update its enforcement.
 
 `council-debate.yml` remains an advisory review workflow; it does **not** run the newly added release-gate script before that script exists on trusted `main`. This avoids a self-deadlocking bootstrap (PR CI checking out main cannot import unmerged policy code). The trusted `ultron/council-7of7` status is the release enforcement surface; a green advisory Council workflow alone must **never** be used as the release requirement. The trusted workflow reacts both to Council workflow completion and to a fresh exact-head owner-override comment, so no manual re-review trigger is necessary.
 
