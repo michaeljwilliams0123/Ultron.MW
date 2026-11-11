@@ -6,7 +6,7 @@ const REPOSITORY = 'michaeljwilliams0123/Ultron.MW';
 const REPOSITORY_ID = '1424939667';
 const WORKFLOW = REPOSITORY + '/.github/workflows/council-debate.yml@refs/heads/main';
 // The council worker runs in the governed-task lane, which keeps a workflow
-// identity of its own (26 -> 8 step 3: legacy council-worker.yml ref removed).
+// identity of its own (26 -> 8 step 3: the legacy worker ref was removed).
 const WORKER_LANE_WORKFLOW = REPOSITORY + '/.github/workflows/lane-governed-task.yml@refs/heads/main';
 const ROOM_ROUTER_WORKFLOW = REPOSITORY + '/.github/workflows/owner-comment-router.yml@refs/heads/main';
 const ROOM_EXECUTION_WORKFLOW = REPOSITORY + '/.github/workflows/cloud-pr.yml@refs/heads/main';
