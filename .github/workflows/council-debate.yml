@@ -4,7 +4,7 @@ on:
   issues:
     types: [opened, labeled, edited]
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
   workflow_call:
   workflow_dispatch:
     inputs:
@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   council-debate:
+    name: council-7of7
     if: >-
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       (
@@ -80,10 +81,12 @@ jobs:
             let originalIssueBody = '';
             let securitySignal = false;
             let targetSourceSha = '';
+            let targetBaseSha = '';
             const riskWords = ['secret','credential','token','password','bypass security','fail-open','delete main','force push'];
             if (context.eventName === 'pull_request') {
               const pr = context.payload.pull_request || {};
               targetSourceSha = String(pr.head?.sha || '');
+              targetBaseSha = String(pr.base?.sha || '');
               title = String(pr.title || '');
               body = String(pr.body || '');
               itemNumber = Number(pr.number) || 0;
@@ -113,7 +116,10 @@ jobs:
                 ? await github.rest.pulls.get({...selector,pull_number:itemNumber})
                 : await github.rest.issues.get({...selector,issue_number:itemNumber});
               const target = response.data;
-              if (isPr === 'true') targetSourceSha = String(target.head?.sha || '');
+              if (isPr === 'true') {
+                targetSourceSha = String(target.head?.sha || '');
+                targetBaseSha = String(target.base?.sha || '');
+              }
               if (isPr === 'false' && target.pull_request)
                 throw Error('Council dispatch target type mismatch');
               if (target.state !== 'open') throw Error('Council dispatch target not open');
@@ -166,6 +172,7 @@ jobs:
             core.exportVariable('IS_PR', isPr);
             core.exportVariable('ITEM_NUMBER', String(itemNumber));
             core.exportVariable('TARGET_SOURCE_SHA', targetSourceSha);
+            core.exportVariable('TARGET_BASE_SHA', targetBaseSha);
             core.exportVariable('TITLE_FILE', path.join(dir, 'title.txt'));
             core.exportVariable('BODY_FILE', path.join(dir, 'body.txt'));
 
@@ -264,6 +271,42 @@ jobs:
           COUNCIL_LEDGER_REQUIRED: ${{ vars.COUNCIL_LEDGER_REQUIRED }}
         run: node scripts/council-act.mjs
 
+      - name: Read exact owner Council exception (never infer approval)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path');
+            const number=Number(process.env.ITEM_NUMBER);
+            if(!Number.isSafeInteger(number)||number<1)
+              throw Error('Council override PR invalid');
+            // Actor identity comes from GitHub REST, not PR body, labels, or model.
+            const comments=await github.paginate(github.rest.issues.listComments,{
+              owner:context.repo.owner,repo:context.repo.repo,
+              issue_number:number,per_page:100
+            });
+            const selected=[...comments].reverse().find(c=>
+              c.user?.login==='michaeljwilliams0123' &&
+              c.user?.id===308995719 &&
+              typeof c.body==='string' &&
+              c.body.startsWith('/council override '))||null;
+            const dir=path.join(process.env.RUNNER_TEMP,'ultron-council');
+            fs.mkdirSync(dir,{recursive:true});
+            const dest=path.join(dir,'owner-override.json');
+            fs.writeFileSync(dest,JSON.stringify(selected));
+            core.exportVariable('COUNCIL_OVERRIDE_FILE',dest);
+
+      - name: Enforce exact-head Council seven of seven
+        if: github.event_name == 'pull_request'
+        env:
+          ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
+          TARGET_SOURCE_SHA: ${{ env.TARGET_SOURCE_SHA }}
+          TARGET_BASE_SHA: ${{ env.TARGET_BASE_SHA }}
+          COUNCIL_OVERRIDE_FILE: ${{ env.COUNCIL_OVERRIDE_FILE }}
+        run: node scripts/enforce-council-acceptance.mjs
+
       - name: Upload receipt artifact
         if: always() && steps.debate.outputs.skipped != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -278,5 +321,6 @@ jobs:
             council-members.json
             council-execution-ledger.json
             council-execution-receipts.json
+            council-release-gate.json
           if-no-files-found: ignore
           retention-days: 30
