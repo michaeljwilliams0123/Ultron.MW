@@ -249,6 +249,8 @@ writeFileSync('council-receipt.json', JSON.stringify({
   actions,
   dialogue,
   publication,
+  // Preserve real provider provenance and dissent for trusted release evaluation.
+  modelReview:reasoning,
 }, null, 2));
 
 console.log(status);
