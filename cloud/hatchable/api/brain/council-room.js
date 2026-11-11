@@ -29,7 +29,17 @@ function publicTask(row){
   result:row.last_result||null
  };
 }
-function flatten(rows){
+function cardsWithDecisions(cards,decisions){
+ if(!Array.isArray(cards))return [];
+ return cards.slice(0,8).map(c=>{
+  const d=decisions?.[c.id];
+  return {id:String(c.id||''),op:String(c.op||''),title:String(c.title||''),
+   reason:String(c.reason||''),choices:['approve','decline'],executes:false,
+   state:d?d.decision:decisions===null?'decision-recording-unavailable':'requested',
+   decidedAt:d?.recordedAt||null};
+ });
+}
+function flatten(rows,decisions={}){
  const messages=[];
  for(const row of rows){
   messages.push({
@@ -39,6 +49,17 @@ function flatten(rows){
    createdAt:row.created_at,job:row.job_id?publicTask(row):null
   });
   const result=row.last_result;
+  if(row.task_status==='done'&&result?.companion?.lead===true){
+   // Companion replies first, in plain language, with any approval cards.
+   messages.push({
+    id:'lead:'+row.task_id,messageKey:'lead:'+row.task_key,
+    authorType:'member',authorId:'companion',authorRole:'Companion',
+    kind:'result',body:String(result.companion.body||'').slice(0,1200),
+    mentions:[],context:{taskId:row.task_id,lead:true,
+     approvalCards:cardsWithDecisions(result.approvalCards,decisions)},
+    createdAt:result.at||row.task_updated_at,job:null
+   });
+  }
   if(row.task_status==='done'&&Array.isArray(result?.members)){
    for(let i=0;i<result.members.length;i++){
     const m=result.members[i];
@@ -73,6 +94,22 @@ function flatten(rows){
   String(a.id).localeCompare(String(b.id)));
 }
 
+// Owner decisions on approval cards. Returns null (cards shown as
+// "decision recording unavailable") until migration 0042 is applied, so the
+// room keeps working on an older schema.
+async function readDecisions(page){
+ const ids=[...new Set(page.filter(r=>Array.isArray(r.last_result?.approvalCards)&&
+  r.last_result.approvalCards.length).map(r=>Number(r.task_id)))];
+ if(!ids.length)return {};
+ try{
+  const rows=(await db.query(`SELECT card_id,decision,created_at FROM council_room_approvals
+    WHERE task_id=ANY($1::bigint[])`,[ids])).rows;
+  const out={};
+  for(const r of rows)out[r.card_id]={decision:r.decision,recordedAt:r.created_at};
+  return out;
+ }catch{return null}
+}
+
 async function snapshot(res,req){
  const limit=Math.min(Math.max(Number(req.query?.limit)||50,10),100);
  const cursor=Number(req.query?.before)||null;
@@ -89,13 +126,15 @@ async function snapshot(res,req){
  const page=rows.slice(0,limit);
  const nextCursor=rows.length>limit?page[page.length-1].id:null;
  const jobs=page.filter(x=>x.job_id).map(publicTask);
+ const decisions=await readDecisions(page);
+ const flat=flatten(page,decisions);
  const lastByRole={};
- for(const item of flatten(page))if(item.authorType==='member'&&!lastByRole[item.authorId])
+ for(const item of flat)if(item.authorType==='member'&&!lastByRole[item.authorId])
   lastByRole[item.authorId]=item.createdAt;
  return reply(res,200,{ok:true,room:{id:'owner-main',title:'Ultron Council Room'},
   members:COUNCIL_ROOM_ROLES.map(x=>({...x,status:lastByRole[x.id]?'active':'standby',
    lastActiveAt:lastByRole[x.id]||null})),
-  messages:flatten(page),jobs,nextCursor,
+  messages:flat,jobs,nextCursor,frontDoor:'companion-first-v1',
   integrations:{hatchable:'system-of-record',github:'source-ci-and-execution-adapter',
    mahoraga:'evidence-source',cloudflare:'optional-browser-only'},paidSpendCeiling:0});
 }
