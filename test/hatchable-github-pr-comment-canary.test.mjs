@@ -5,15 +5,18 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {verifyDelegatedGrant,reservePrCommentExecution}
  from '../cloud/hatchable/lib/security-adjudicator.js';
-import {preparePrCommentCanary,operationDigest,submitPrCommentCanary,
- reconcilePrCommentCanary}
- from '../cloud/hatchable/lib/github-pr-comment-canary.js';
+const canarySource=(await readFile(new URL('../cloud/hatchable/lib/github-pr-comment-canary.js',
+ import.meta.url),'utf8')).replace("'lib/rsa-pkcs1-sign.js'",
+ JSON.stringify(new URL('../cloud/hatchable/lib/rsa-pkcs1-sign.js',import.meta.url).href));
+const {preparePrCommentCanary,operationDigest,submitPrCommentCanary,
+ reconcilePrCommentCanary}=await import('data:text/javascript;base64,'+
+ Buffer.from(canarySource).toString('base64'));
 
 const MIGRATIONS=['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
  '0010_runtime_stop.sql','0013_continuum_outbox.sql',
  '0016_owner_autonomy_profile.sql','0033_owner_passkey_authority.sql',
  '0034_owner_passkey_enrollment.sql','0037_github_approval_nonces.sql',
- '0039_github_idempotent_executions.sql','0040_ultron_org_transfer.sql',
+ '0039_github_idempotent_executions.sql',
  '0041_github_pr_comment_executions.sql'];
 const RSA=generateKeyPairSync('rsa',{modulusLength:2048});
 const APP={appId:'5633654',installationId:'179066535',
@@ -120,7 +123,7 @@ test('owner-signed Coordinator comment completes with independent readback and o
   (SELECT count(*)::int FROM brain_github_approval_nonces) AS nonces,
   (SELECT count(*)::int FROM brain_authority_grants
    WHERE operation='pr.comment') AS grants,
-  (SELECT count(*)::int FROM github_idempotent_executions) AS executions`)).rows[0];
+  (SELECT count(*)::int FROM github_pr_comment_executions) AS executions`)).rows[0];
  assert.deepEqual(counts,{nonces:1,grants:1,executions:1});
  const replay=await reservePrCommentExecution({db:h.db,verifiedGrant:h.verified,
   idempotencyKey:h.prepared.idempotencyKey,pullRequest:h.prepared.pullRequest,
@@ -142,7 +145,7 @@ test('reservation requires an active owner passkey without consuming authority',
   (SELECT count(*)::int FROM brain_github_approval_nonces) AS nonces,
   (SELECT count(*)::int FROM brain_authority_grants
    WHERE operation='pr.comment') AS grants,
-  (SELECT count(*)::int FROM github_idempotent_executions) AS executions`)).rows[0];
+  (SELECT count(*)::int FROM github_pr_comment_executions) AS executions`)).rows[0];
  assert.deepEqual(counts,{nonces:0,grants:0,executions:0});
 });
 
@@ -151,7 +154,7 @@ test('lost POST response is reconciled by public readback without a second write
  await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
   operationDigest:h.digest,appCredentials:APP,fetchImpl:github.fetchImpl}),
   /provider-outcome-unknown/);
- assert.equal((await h.db.query(`SELECT state FROM github_idempotent_executions`))
+ assert.equal((await h.db.query(`SELECT state FROM github_pr_comment_executions`))
   .rows[0].state,'reconcile_required');
  const result=await reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
   operationDigest:h.digest,fetchImpl:github.fetchImpl});
@@ -160,8 +163,30 @@ test('lost POST response is reconciled by public readback without a second write
   call.url.endsWith('/comments')).length,1);
 });
 
-test('migration preserves historical branch receipt shape and immutability',async t=>{
- const db=await database(t),digest=createHash('sha256').update('branch').digest('hex');
+const SCHEMA_SNAPSHOT=`SELECT
+ (SELECT json_agg(json_build_array(column_name,data_type,is_nullable,column_default)
+   ORDER BY ordinal_position) FROM information_schema.columns
+   WHERE table_name='github_idempotent_executions') AS columns,
+ (SELECT json_agg(json_build_array(constraint_name,check_clause) ORDER BY constraint_name)
+   FROM information_schema.check_constraints
+   WHERE constraint_name LIKE 'github_idempotent_executions%') AS checks,
+ (SELECT json_agg(json_build_array(constraint_name,constraint_type) ORDER BY constraint_name)
+   FROM information_schema.table_constraints
+   WHERE table_name='github_idempotent_executions') AS constraints`;
+async function migrated(t,names){
+ const db=new PGlite();
+ for(const migration of names)await db.exec(await readFile(
+  new URL('../cloud/hatchable/migrations/'+migration,import.meta.url),'utf8'));
+ t.after(()=>db.close());
+ return db;
+}
+
+test('0041 is additive: the 0039 branch ledger is unchanged and existing rows stay valid and immutable',async t=>{
+ const before=MIGRATIONS.slice(0,-1);
+ assert.equal(MIGRATIONS.at(-1),'0041_github_pr_comment_executions.sql');
+ assert.equal(MIGRATIONS.includes('0040_ultron_org_transfer.sql'),false,'0041 must not need 0040');
+ const db=await migrated(t,before);
+ const digest=createHash('sha256').update('branch').digest('hex');
  const receipt={idempotencyKey:'ultron-task-historical',status:'success',details:{
   repository:'michaeljwilliams0123/Ultron.MW',branch:'ultron/canary-old',
   operationDigest:digest,sha:'a'.repeat(40),remoteVerified:true,
@@ -170,7 +195,44 @@ test('migration preserves historical branch receipt shape and immutability',asyn
   idempotency_key,operation_digest,repository,target_branch,persona_role,state,receipt)
   VALUES('ultron-task-historical',$1,'michaeljwilliams0123/Ultron.MW',
    'ultron/canary-old','builder','completed',$2::jsonb)`,[digest,JSON.stringify(receipt)]);
+ const snapshot=(await db.query(SCHEMA_SNAPSHOT)).rows[0];
+ const sql=await readFile(new URL('../cloud/hatchable/migrations/0041_github_pr_comment_executions.sql',
+  import.meta.url),'utf8');
+ await db.exec(sql);
+ await db.exec(sql); // idempotent re-run
+ assert.deepEqual((await db.query(SCHEMA_SNAPSHOT)).rows[0],snapshot);
+ assert.deepEqual((await db.query('SELECT state,receipt FROM github_idempotent_executions')).rows,
+  [{state:'completed',receipt}]);
  await assert.rejects(db.query(`UPDATE github_idempotent_executions
   SET target_branch='ultron/canary-changed' WHERE idempotency_key='ultron-task-historical'`),
   /immutable|transition/i);
+ // Branch rows still need a branch; the 0039 contract is not relaxed.
+ await assert.rejects(db.query(`INSERT INTO github_idempotent_executions(
+  idempotency_key,operation_digest,repository,target_branch,persona_role)
+  VALUES('ultron-task-nobranch',$1,'michaeljwilliams0123/Ultron.MW',NULL,'builder')`,[digest]),
+  /null/i);
+});
+
+test('0041 source never alters, drops or rewrites pre-existing objects',async()=>{
+ const sql=(await readFile(new URL('../cloud/hatchable/migrations/0041_github_pr_comment_executions.sql',
+  import.meta.url),'utf8')).replace(/--.*$/gm,'');
+ assert.doesNotMatch(sql,/\bALTER\s+\w+|\bUPDATE\s+\w+\s+SET\b|\bDELETE\s+FROM\b|\bTRUNCATE\b|\bINSERT\s+INTO\b/i);
+ assert.doesNotMatch(sql,/github_idempotent_executions/);
+ for(const m of sql.matchAll(/\bDROP\s+(\w+)\s+(?:IF\s+EXISTS\s+)?(\w+)/gi))
+  assert.deepEqual([m[1].toUpperCase(),m[2]],['TRIGGER','github_pr_comment_executions_guard_trg']);
+ assert.match(sql,/CREATE TABLE IF NOT EXISTS github_pr_comment_executions/);
+});
+
+test('comment ledger rejects foreign repositories, deletes and identity changes',async t=>{
+ const h=await admitted(t);
+ await assert.rejects(h.db.query(`DELETE FROM github_pr_comment_executions`),/immutable/);
+ await assert.rejects(h.db.query(`UPDATE github_pr_comment_executions SET target_number=target_number+1`),
+  /transition/);
+ await assert.rejects(h.db.query(`UPDATE github_pr_comment_executions SET state='completed'`),
+  /check|violat/i);
+ const grant=(await h.db.query('SELECT grant_id FROM github_pr_comment_executions')).rows[0].grant_id;
+ await assert.rejects(h.db.query(`INSERT INTO github_pr_comment_executions(
+  idempotency_key,operation_digest,repository,target_number,body_sha256,grant_id)
+  VALUES('ultron-task-c04-pr9-${'0'.repeat(24)}','${'1'.repeat(64)}','Ultron-MW/Ultron.MW',9,
+   '${'2'.repeat(64)}',$1)`,[grant]),/check|violat/i);
 });

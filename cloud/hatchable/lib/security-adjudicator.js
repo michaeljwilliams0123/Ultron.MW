@@ -211,10 +211,13 @@ export async function reservePrCommentExecution({
   FOR SHARE
  ), existing AS MATERIALIZED (
   SELECT idempotency_key,state,operation_digest,body_sha256,target_number
-  FROM github_idempotent_executions
+  FROM github_pr_comment_executions
   WHERE idempotency_key=$1 OR
    (repository='michaeljwilliams0123/Ultron.MW' AND
-    target_kind='pull_request_comment' AND target_number=$12 AND body_sha256=$13)
+    target_number=$12 AND body_sha256=$13)
+  UNION ALL
+  SELECT idempotency_key,state,operation_digest,NULL::text,NULL::bigint
+  FROM github_idempotent_executions WHERE idempotency_key=$1
  ), nonce AS (
   INSERT INTO brain_github_approval_nonces(
    nonce,operation,target_resource,approval_timestamp,expires_at)
@@ -229,11 +232,11 @@ export async function reservePrCommentExecution({
   SELECT $2,$6,$7,'pr.comment',$3,$8,$5::timestamptz FROM nonce
   RETURNING grant_id
  ), execution AS (
-  INSERT INTO github_idempotent_executions(
-   idempotency_key,operation_digest,repository,target_kind,target_branch,
+  INSERT INTO github_pr_comment_executions(
+   idempotency_key,operation_digest,repository,
    target_number,body_sha256,grant_id,persona_role,state)
-  SELECT $1,$9,'michaeljwilliams0123/Ultron.MW','pull_request_comment',
-   NULL,$12,$13,grant_id,'builder','reserved' FROM admitted
+  SELECT $1,$9,'michaeljwilliams0123/Ultron.MW',
+   $12,$13,grant_id,'builder','reserved' FROM admitted
   RETURNING idempotency_key,state
  ), receipt AS (
   INSERT INTO brain_events(event_type,details)
