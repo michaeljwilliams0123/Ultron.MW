@@ -9,25 +9,9 @@ Source of truth: `src/workflow-consolidation.mjs` (manifest),
 `src/workflow-lane-rules.mjs` (lane bug fixes), `scripts/workflow-shadow.mjs`
 (shadow replay), `test/workflow-consolidation.test.mjs` (parity contract).
 
-## Activation step (needs the owner)
-
-The lane files are committed under `.github/workflow-lanes/` (staged, not
-run by GitHub). The box's GitHub token has no `workflow` scope, and GitHub
-refuses pushes that create files under `.github/workflows/` without it. They
-are already linted by `scripts/lint-workflows.sh` and checked by the parity
-test in both locations. To activate the shadow lanes:
-
-```bash
-git mv .github/workflow-lanes/*.yml .github/workflows/
-```
-
-pushed by a token with the `workflow` scope (or `gh auth refresh -s workflow`
-on the box, then push). Nothing else changes; the test accepts either location
-and fails if a lane exists in both.
-
 ## The 8 lanes
 
-| Lane | Owner | Lane file (phase 1, shadow; staged) | Legacy workflows it absorbs |
+| Lane | Owner | Lane file (phase 1, shadow) | Legacy workflows it absorbs |
 | --- | --- | --- | --- |
 | ci | Skeptic | `lane-ci.yml` | `verify.yml` (anchor), `reef-runtime-probe.yml` |
 | comment-router | Companion | `lane-comment-router.yml` | `owner-comment-router.yml` (anchor), `codex-trigger-audit.yml`, `inline-pr-chat.yml`, `pr-brain.yml` |

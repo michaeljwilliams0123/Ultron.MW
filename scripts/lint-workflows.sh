@@ -25,7 +25,3 @@ case "$archive" in
   *) tar --no-same-owner -xzf "$lint_tmp/$archive" -C "$lint_tmp" "$binary" ;;
 esac
 "$lint_tmp/$binary" -color
-# Staged (not yet active) consolidated lane workflows get the same lint.
-shopt -s nullglob
-staged=(.github/workflow-lanes/*.yml)
-if ((${#staged[@]})); then "$lint_tmp/$binary" -color "${staged[@]}"; fi

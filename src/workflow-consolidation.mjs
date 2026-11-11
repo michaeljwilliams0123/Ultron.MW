@@ -113,9 +113,8 @@ export const LEGACY_WORKFLOWS=Object.freeze([
 export const NON_LEGACY_WORKFLOWS=Object.freeze(['council-self-repair.yml']);
 
 export function laneFiles(){return Object.values(LANES).map(l=>l.file);}
-/** Lane files are staged under .github/workflow-lanes/ until an owner token
- * with the `workflow` scope moves them into .github/workflows/ (activation).
- * Either location satisfies parity; a file in both is drift. */
+/** Lane files live in .github/workflows/. A staged copy under
+ * .github/workflow-lanes/ is also accepted; a file in both is drift. */
 export const LANE_DIRS=Object.freeze({active:'.github/workflows/',staged:'.github/workflow-lanes/'});
 export function legacyByLane(lane){return LEGACY_WORKFLOWS.filter(w=>w.lane===lane);}
 
