@@ -4,7 +4,7 @@
  * Export: the in-repo `ultron.council-memory.v1` snapshot (tamper-evident).
  * Mirrors (designed, disabled by default): GitLab for git-backed snapshots and
  * GitBook for the human-readable journal. Both go through files committed to
- * GitHub `main` by PR, so the existing gitlab-mirror.yml workflow and GitBook
+ * GitHub `main` by PR, so the existing GitLab mirror job (lane-ops-audit.yml) and GitBook
  * Git Sync (gitbook/ directory) carry them. No adapter writes to GitLab or
  * GitBook directly, and no new credential is needed.
  *
@@ -79,7 +79,7 @@ function verified(sealed, rawKey) {
   return pg.openSealed(sealed, pg.hmacKey(rawKey));
 }
 
-/** GitLab mirror plan: a file for a GitHub PR; gitlab-mirror.yml carries it after Verify. */
+/** GitLab mirror plan: a file for a GitHub PR; the lane-ops-audit.yml mirror job carries it after Verify. */
 export function planGitLabMirror(sealed, rawKey) {
   verified(sealed, rawKey);
   const s = sealed.snapshot;
@@ -87,7 +87,7 @@ export function planGitLabMirror(sealed, rawKey) {
     adapter: 'gitlab-mirror', enabled: false, executes: false,
     path: 'evidence/council-memory/' + s.sha256 + '.json',
     content: JSON.stringify(sealed, null, 2) + '\n',
-    route: 'Commit by PR to GitHub main; the existing gitlab-mirror.yml fast-forwards GitLab after Verify (needs ULTRON_GITLAB_MIRROR_ENABLED=true and ULTRON_GITLAB_MIRROR_TOKEN, both already defined).',
+    route: 'Commit by PR to GitHub main; the existing lane-ops-audit.yml mirror job fast-forwards GitLab after Verify (needs ULTRON_GITLAB_MIRROR_ENABLED=true and ULTRON_GITLAB_MIRROR_TOKEN, both already defined).',
   });
 }
 

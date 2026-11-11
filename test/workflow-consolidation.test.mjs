@@ -132,3 +132,34 @@ test('shadow replay only issues reads and reports projected lane outcomes',async
   assert.ok(calls.every(c=>!/rerun|dispatches|comments|labels/.test(c)));
   assert.match(renderSummary(checkParity({readFile:read,listWorkflows:list,listStaged:staged}),[r]),/Shadow mode: no comment/);
 });
+
+// Callers must not point at a deleted workflow file. Exceptions are explicit:
+// the manifest itself, historical log classification, immutable historical run
+// evidence, the retired C06 replay toolchain list, and (until step 3) the
+// Hatchable dual-trust transition pins.
+const LEGACY_REFERENCE_ALLOWED=new Map([
+  ['src/workflow-consolidation.mjs','manifest'],
+  ['src/workflow-lane-rules.mjs','historical log classification'],
+  ['cloud/hatchable/lib/c06-live-evidence.js','immutable historical run path'],
+  ['src/c06-replay-admission.mjs','retired replay toolchain path list'],
+  ['cloud/hatchable/lib/council-oidc.js','dual-trust transition (removed in step 3)'],
+  ['cloud/hatchable/lib/hf-github-receipts.js','dual-trust transition (removed in step 3)'],
+  ['cloud/hatchable/lib/hf-lab-view.js','dual-trust transition (removed in step 3)'],
+  ['cloud/hatchable/lib/heldout-evidence.js','dual-trust transition (removed in step 3)'],
+  ['cloud/hatchable/lib/github-oidc-bridge.js','retired bridge (deleted in step 3)'],
+]);
+test('no runtime source references a deleted workflow file outside the explicit exceptions',()=>{
+  const gone=LEGACY_WORKFLOWS.filter(w=>w.disposition!=='lane').map(w=>w.file);
+  const pattern=new RegExp('(?:^|[^a-z0-9-])('+gone.map(f=>f.replace(/[.]/g,'\\.')).join('|')+')','m');
+  const roots=['src','scripts','cloud/hatchable/lib','cloud/hatchable/api','cloud/hatchable/mcp',
+    'cloud/hatchable/public','docs/core'];
+  const files=[];
+  const walk=dir=>{for(const e of readdirSync(new URL(dir+'/',root),{withFileTypes:true})){
+    const p=dir+'/'+e.name;
+    if(e.isDirectory())walk(p);else if(/\.(m?js|html)$/.test(e.name))files.push(p);}};
+  for(const r of roots)walk(r);
+  files.push('docs/app.js','docs/index.html');
+  const hits=files.filter(f=>!LEGACY_REFERENCE_ALLOWED.has(f)&&pattern.test(read(f)))
+    .map(f=>f+': '+read(f).match(pattern)[1]);
+  assert.deepEqual(hits,[]);
+});
