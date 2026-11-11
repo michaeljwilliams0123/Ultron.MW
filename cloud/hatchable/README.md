@@ -423,3 +423,20 @@ second batch cannot schedule another continuation. Focused tests exercise both
 paths, including the absence of inline work in the hourly tick. These source
 changes are not evidence that production v2 has been updated or that live
 PostgreSQL recovery has passed.
+
+### Grant-bound GitHub branch canary (#412 Option A, source only)
+
+`POST /api/brain/github-branch-canary` (`access='admin'`, owner handle and
+origin checked) runs the verbatim master pipeline (`lib/master-pipeline.js`,
+parity-tested against `src/engine/master-pipeline.mjs`) with Hatchable-native
+adapters. `prepare` returns the exact owner grant request. `submit` verifies the
+`ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK` grant and calls
+`reserveBranchExecution`, which in one SQL statement checks the passkey,
+profile/stop versions, not-paused, the $0 ceiling and `repair.branch.create`,
+consumes the 0037 nonce, records the grant and creates the 0039/0044 branch
+reservation and event. One commit plus ref write with the pinned App
+credentials follows, then independent readback and a `brain_events` audit.
+`reconcile` is read-only. Migration `0044_github_branch_grant_executions.sql`
+is required. `repair.branch.create` is in no default profile. App 5633654
+`contents:write` is unconfirmed. This source does not establish deployment or
+live authorization.

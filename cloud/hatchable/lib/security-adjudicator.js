@@ -9,7 +9,7 @@ const OPERATIONS=new Set([
  'pr.comment',
  'webhook.configure','cloud.note.create','mcp.queue.submit','mcp.task.control',
  'graph.workbook.cell.write','github.issue.write','gitlab.branch.create',
- 'owner.passkey.enroll'
+ 'owner.passkey.enroll','repair.branch.create'
 ]);
 const GRANT_SCHEMA='ultron.security-grant.v1';
 const ISSUER='ultron-owner-authority';
@@ -18,6 +18,8 @@ const AUDIENCE='ultron-cloud-brain';
 const SHA256=/^[a-f0-9]{64}$/;
 // C04: one canonical PR number and the exact SHA-256 comment-body digest.
 const PR_COMMENT_RESOURCE=/^github:pr-comment:michaeljwilliams0123\/Ultron\.MW:[1-9][0-9]{0,8}:sha256:[a-f0-9]{64}$/;
+// #412: one canonical canary branch and the exact signed-plan SHA-256 digest.
+const BRANCH_RESOURCE=/^github:branch:michaeljwilliams0123\/Ultron\.MW:ultron\/canary-[a-z0-9][a-z0-9-]{2,63}:sha256:[a-f0-9]{64}$/;
 const GRANT_ID=/^[A-Za-z0-9_.:-]{8,128}$/;
 const MAX_TTL_MS=15*60*1000;
 function refuse(message){throw Error(message);}
@@ -93,6 +95,10 @@ export async function verifyDelegatedGrant({
    (typeof grant.resource!=='string'||!PR_COMMENT_RESOURCE.test(grant.resource)||
     grant.administrativeChange!==false))
   refuse('invalid-grant-pr-comment-scope');
+ if(grant.operation==='repair.branch.create'&&
+   (typeof grant.resource!=='string'||!BRANCH_RESOURCE.test(grant.resource)||
+    grant.administrativeChange!==false))
+  refuse('invalid-grant-branch-scope');
  const versioned=Object.hasOwn(grant,'profileVersion')||
   Object.hasOwn(grant,'stopVersion');
  if(versioned&&(!Number.isSafeInteger(grant.profileVersion)||
@@ -100,7 +106,8 @@ export async function verifyDelegatedGrant({
   grant.stopVersion<1))refuse('invalid-grant-versions');
  const begin=parseTime(grant.notBefore),end=parseTime(grant.expiresAt);
  if(end<=begin||end-begin>MAX_TTL_MS||
-   (grant.operation==='pr.comment'&&end-begin>5*60*1000))
+   (grant.operation==='pr.comment'&&end-begin>5*60*1000)||
+   (grant.operation==='repair.branch.create'&&end-begin>5*60*1000))
   refuse('grant-ttl-exceeded');
  const current=parseTime(now);
  if(current<begin)refuse('grant-not-yet-valid');
@@ -265,4 +272,99 @@ export async function reservePrCommentExecution({
  if(row?.passkey_enrolled===false)return {ok:false,error:'owner-passkey-required'};
  return {ok:false,error:Date.parse(verifiedGrant.expiresAt)<=Date.now()
   ?'grant-expired':'authority-or-replay-denied'};
+}
+
+// #412 Option A: the branch sibling of reservePrCommentExecution. One SQL
+// statement binds the verified owner grant, its one-use 0037 nonce, a grant
+// record and the 0039/0044 grant-bound branch reservation plus an event.
+// The provider write is forbidden until this returns `reserved`.
+export async function reserveBranchExecution({
+ db,verifiedGrant,idempotencyKey,targetBranch,operationDigest
+}={}){
+ if(!db?.query||!VERIFIED.has(verifiedGrant))refuse('invalid-verified-grant');
+ if(verifiedGrant.operation!=='repair.branch.create'||
+   verifiedGrant.administrativeChange!==false||
+   !/^ultron-task-[A-Za-z0-9][A-Za-z0-9_-]{0,90}$/.test(idempotencyKey||'')||
+   !/^ultron\/canary-[a-z0-9][a-z0-9-]{2,63}$/.test(targetBranch||'')||
+   !SHA256.test(operationDigest||'')||
+   verifiedGrant.resource!==`github:branch:michaeljwilliams0123/Ultron.MW:${targetBranch}:sha256:${operationDigest}`)
+  refuse('invalid-branch-execution');
+ if(!Number.isSafeInteger(verifiedGrant.profileVersion)||verifiedGrant.profileVersion<1||
+   !Number.isSafeInteger(verifiedGrant.stopVersion)||verifiedGrant.stopVersion<1)
+  return {ok:false,error:'grant-unbound'};
+ const sql=`WITH passkey AS MATERIALIZED (
+  SELECT 1 AS enrolled FROM brain_owner_passkeys
+  WHERE revoked_at IS NULL
+  ORDER BY created_at LIMIT 1
+ ), authority AS MATERIALIZED (
+  SELECT 1 FROM brain_owner_autonomy_profile a
+  JOIN brain_runtime_control c ON c.id=1
+  WHERE a.id=1 AND a.owner='michaeljwilliams0123'
+    AND a.preset IN ('build','release') AND a.version=$10 AND c.version=$11
+    AND NOT c.paused AND a.max_paid_cents=0
+    AND jsonb_exists(a.allowed_operations,'repair.branch.create')
+    AND EXISTS(SELECT 1 FROM passkey)
+  FOR SHARE
+ ), existing AS MATERIALIZED (
+  SELECT idempotency_key,state FROM github_idempotent_executions
+  WHERE idempotency_key=$1 OR
+   (repository='michaeljwilliams0123/Ultron.MW' AND target_branch=$12)
+ ), nonce AS (
+  INSERT INTO brain_github_approval_nonces(
+   nonce,operation,target_resource,approval_timestamp,expires_at)
+  SELECT $2,'repair.branch.create',$3,$4::timestamptz,$5::timestamptz
+  WHERE $5::timestamptz>clock_timestamp()
+    AND EXISTS(SELECT 1 FROM authority)
+    AND NOT EXISTS(SELECT 1 FROM existing)
+  ON CONFLICT(nonce) DO NOTHING RETURNING nonce
+ ), admitted AS (
+  INSERT INTO brain_authority_grants(
+   grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
+  SELECT $2,$6,$7,'repair.branch.create',$3,$8,$5::timestamptz FROM nonce
+  ON CONFLICT(grant_id) DO NOTHING
+  RETURNING grant_id
+ ), execution AS (
+  INSERT INTO github_idempotent_executions(
+   idempotency_key,operation_digest,repository,target_kind,target_branch,
+   grant_id,persona_role,state)
+  SELECT $1,$9,'michaeljwilliams0123/Ultron.MW','branch',$12,
+   grant_id,'builder','reserved' FROM admitted
+  RETURNING idempotency_key,state
+ ), receipt AS (
+  INSERT INTO brain_events(event_type,details)
+  SELECT 'github-branch-canary-reserved',jsonb_build_object(
+   'grantId',$2::text,'idempotencyKey',$1::text,'operationDigest',$9::text,
+   'branch',$12::text)
+  FROM execution RETURNING id
+ )
+ SELECT 'reserved' AS outcome,e.idempotency_key,e.state,r.id AS receipt_id,
+  true AS passkey_enrolled
+ FROM execution e JOIN receipt r ON true
+ UNION ALL
+ SELECT 'existing',x.idempotency_key,x.state,NULL,
+  EXISTS(SELECT 1 FROM passkey) FROM existing x
+ WHERE NOT EXISTS(SELECT 1 FROM execution)
+ UNION ALL
+ SELECT 'denied',NULL,NULL,NULL,EXISTS(SELECT 1 FROM passkey)
+ WHERE NOT EXISTS(SELECT 1 FROM execution) AND NOT EXISTS(SELECT 1 FROM existing)`;
+ const result=await db.query(sql,[idempotencyKey,verifiedGrant.grantId,
+  verifiedGrant.resource,verifiedGrant.notBefore,verifiedGrant.expiresAt,
+  verifiedGrant.objectiveId,verifiedGrant.actor,verifiedGrant.policySha,
+  operationDigest,verifiedGrant.profileVersion,verifiedGrant.stopVersion,
+  targetBranch]);
+ const row=result?.rows?.[0];
+ if(row?.outcome==='reserved')return {ok:true,status:'reserved',
+  idempotencyKey,receiptId:row.receipt_id};
+ if(row?.outcome==='existing')return {ok:false,error:'execution-already-reserved',
+  status:row.state};
+ if(row?.passkey_enrolled===false)return {ok:false,error:'owner-passkey-required'};
+ return {ok:false,error:Date.parse(verifiedGrant.expiresAt)<=Date.now()
+  ?'grant-expired':'authority-or-replay-denied'};
+}
+
+// Branch grants are verified only by the module that holds VERIFIED; callers
+// (the #412 authorization adapter) cannot present a forged grant object.
+export function isVerifiedBranchGrant(verifiedGrant){
+ return VERIFIED.has(verifiedGrant)&&
+  verifiedGrant.operation==='repair.branch.create';
 }
