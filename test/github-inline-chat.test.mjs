@@ -6,7 +6,7 @@ const REPO='michaeljwilliams0123/Ultron.MW';
 const OWNER='michaeljwilliams0123';
 const ALT='michaeljwilliams0123ultron';
 const ROOT='/repos/'+REPO;
-const command='@ultron chat What does this PR change?';
+const command='@ultron chat How should I organize release notes?';
 function event(body=command,actor=OWNER,id=999){
   return {action:'created',comment:{id,user:{login:actor},body},
     issue:{number:387,state:'open',pull_request:{url:'https://api.github.com/repos/'+REPO+'/pulls/387'}}};
@@ -29,7 +29,7 @@ function fixture(actor=OWNER){
     assert.equal(messages.length,2);
     assert.equal(messages[0].role,'system');
     assert.match(messages[0].content,/NOT Destiny/);
-    assert.match(messages[1].content,/What does this PR change/);
+    assert.match(messages[1].content,/How should I organize release notes/);
     return 'The diff must be inspected before making a claim.';};
   const run=(override={})=>runInlineChat({event:e,actor,repository:REPO,eventName:'issue_comment',get,post,infer,
     env:{ULTRON_PUBLIC_CPU_INFERENCE:'enabled'},...override});
@@ -37,7 +37,7 @@ function fixture(actor=OWNER){
 }
 
 test('only explicit chat command is parsed, and no ordinary GitHub tag is Codex or inline chat',()=>{
-  assert.equal(parseInlineChat(command),'What does this PR change?');
+  assert.equal(parseInlineChat(command),'How should I organize release notes?');
   for(const value of ['@michaeljwilliams0123ultron','@destiny-codex',
     '@codex review','/codex run destiny-codex','@ultron chat ',
     '@ultron chat a', '@ultron chat '+ 'x'.repeat(901),
