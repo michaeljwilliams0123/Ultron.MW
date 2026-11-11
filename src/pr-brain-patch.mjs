@@ -1,4 +1,6 @@
 import { githubRequest } from './cloud-pr.mjs';
+import {isCouncilGovernanceRepairPr,assertCouncilRepairManifest}
+  from './council-governance-repair-admission.mjs';
 
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
@@ -26,10 +28,13 @@ export async function applyPrPatch({pr,manifest,get,post,
     typeof patch.objective!=='string'||!patch.objective.trim()||
     patch.objective.length>300||!SHA.test(patch.baseSha||'')||
     !Array.isArray(patch.changes)||patch.changes.length<1||
-    patch.changes.length>6||!pr?.head?.ref?.startsWith('ultron/')||
+    patch.changes.length>6||
+    (!pr?.head?.ref?.startsWith('ultron/')&&!isCouncilGovernanceRepairPr(pr))||
     pr.head.repo?.full_name!=='michaeljwilliams0123/Ultron.MW'||
     pr.base.ref!=='main'||patch.baseSha!==pr.head.sha)
     throw Error('PR patch requires exact head, objective and 1-6 source edits');
+  if(isCouncilGovernanceRepairPr(pr))
+   assertCouncilRepairManifest(pr,patch);
   const branch=pr.head.ref,head=pr.head.sha;
   const ref=ROOT+'/git/ref/heads/'+branch;
   const mainRef=ROOT+'/git/ref/heads/main';
