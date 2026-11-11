@@ -49,10 +49,13 @@ function fixture({freezeId=700,frozenAt='2026-10-26T10:00:00Z',titleBase=BASE}={
    {sha:GENERATOR,...encoded(casesSource)},
   ['/contents/.github/workflows/held-out-acceptance.yml?ref='+HEAD]:
    {sha:WORKFLOW_BLOB,...encoded('workflow')},
+  // Transition: the lab lane evaluator is fetched too (absent here).
+  ['/contents/.github/workflows/lane-lab-evidence.yml?ref='+HEAD]:null,
   ['/contents/cloud/hatchable/lib/acceptance-evidence.js?ref='+BASE]:null,
   ['/contents/cloud/hatchable/lib/acceptance-evidence.js?ref='+HEAD]:encoded(adapterSource),
   ['/actions/runs?head_sha='+MAIN+'&event=workflow_dispatch&per_page=100']:{
    total_count:1,workflow_runs:[{id:40310000001,name:'Ultron held-out acceptance',
+    path:'.github/workflows/held-out-acceptance.yml',
     display_title:'Ultron held-out acceptance '+titleBase+'..'+HEAD,
     event:'workflow_dispatch',head_sha:MAIN,status:'completed',conclusion:'success',
     created_at:'2026-10-26T10:10:00Z'}]},
