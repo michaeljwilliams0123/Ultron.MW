@@ -8,6 +8,7 @@ import {COUNCIL_ROLES} from './council-publication.mjs';
 
 const SHA=/^[a-f0-9]{40}$/;
 const OWNER={login:'michaeljwilliams0123',id:308995719};
+const MODEL_ROLES=Object.freeze(['Builder','Skeptic','Sentinel']);
 const OVERRIDE=/^\/council override ([a-f0-9]{40}) ([a-f0-9]{40}) -- ([^\r\n]{20,240})$/;
 const EXPECTED=new Map(COUNCIL_ROLES.map(id=>[id,id.slice(7).replace(/^./,c=>c.toUpperCase())]));
 
@@ -29,7 +30,7 @@ export function validateOwnerOverride(comment,{sourceSha,baseSha,now}={}){
 function held(reason,approvedCount=0,holdRoles=[],details={}){
  return Object.freeze({schema:'ultron.council-release-gate.v1',status:'held',
   reason,approvedCount,requiredCount:7,holdRoles:Object.freeze([...holdRoles]),
-  overrideUsed:false,...details});
+  modelHoldRoles:Object.freeze([]),overrideUsed:false,...details});
 }
 export function evaluateCouncilAcceptance({report,receipt,sourceSha,baseSha,
  prNumber,overrideComment=null,now=new Date().toISOString()}={}){
@@ -65,21 +66,31 @@ export function evaluateCouncilAcceptance({report,receipt,sourceSha,baseSha,
     Array.isArray(published.evidenceRefs)&&published.evidenceRefs.length>0;
   if(valid)approvedCount++;else holdRoles.push(name);
  }
+ // Model-backed reasoning is not interchangeable with the seven deterministic
+ // role labels. A real model HOLD/REVISE, model outage, or unresolved concern
+ // must block default acceptance rather than be disguised as 7/7 approval.
+ const modelHoldRoles=MODEL_ROLES.filter(role=>{
+  const m=receipt.modelReview?.results?.[role];
+  return m?.source!=='model'||m?.modelInvoked!==true||
+    m?.verdict!=='proceed'||!Array.isArray(m?.disagreements)||
+    m.disagreements.length!==0;
+ });
  const consensus=approvedCount===7&&report.hold===false&&
-  receipt.decision==='proceed';
+  receipt.decision==='proceed'&&modelHoldRoles.length===0;
  if(consensus)return Object.freeze({
   schema:'ultron.council-release-gate.v1',status:'accepted',reason:null,
   approvedCount,requiredCount:7,holdRoles:Object.freeze([]),overrideUsed:false,
-  sourceSha,baseSha,prNumber
+  modelHoldRoles:Object.freeze([]),sourceSha,baseSha,prNumber
  });
  const override=validateOwnerOverride(overrideComment,{sourceSha,baseSha,now});
  if(override)return Object.freeze({
   schema:'ultron.council-release-gate.v1',status:'owner-overridden',
   reason:'explicit-exact-commit-owner-override',approvedCount,requiredCount:7,
-  holdRoles:Object.freeze(holdRoles),overrideUsed:true,
+  holdRoles:Object.freeze(holdRoles),modelHoldRoles:Object.freeze(modelHoldRoles),
+  overrideUsed:true,
   overrideCommentId:override.commentId,overrideReason:override.reason,
   sourceSha,baseSha,prNumber
  });
  return held('council-not-unanimous',approvedCount,holdRoles,
-  {sourceSha,baseSha,prNumber});
+  {modelHoldRoles:Object.freeze(modelHoldRoles),sourceSha,baseSha,prNumber});
 }
