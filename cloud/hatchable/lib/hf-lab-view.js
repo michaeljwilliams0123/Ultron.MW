@@ -1,4 +1,5 @@
 import {mergeVerifiedWorkflow} from './hf-github-receipts.js';
+import {LAB_LANE_FILE,labLaneRunKey} from './workflow-lanes.js';
 /** Read-only Hugging Face evaluation lane, backed by GitHub Actions and durable cache.
  * Zero new paid inference calls. Never interpret a workflow green as model promotion.
  */
@@ -49,15 +50,17 @@ function emptySnapshot(observedAt){
   workflows:WORKFLOWS.map(x=>emptyWorkflow(x)),
   benchmark:frozenEvidence,release};
 }
-async function inspectWorkflow(fetchGithub,item){
- const url=GH+'/actions/workflows/'+item.file+'/runs?per_page=1&event=workflow_dispatch';
+async function listRuns(fetchGithub,file,perPage){
+ const url=GH+'/actions/workflows/'+file+'/runs?per_page='+perPage+'&event=workflow_dispatch';
  const response=await fetchGithub(url,{method:'GET',cache:'no-store',
   headers:{Accept:'application/vnd.github+json','User-Agent':'Ultron-HF-Lab'},
   signal:AbortSignal.timeout(6500)});
  if(!response?.ok)throw Error('github-http-'+String(response?.status||'unknown'));
  const body=await response.json();
  if(!Array.isArray(body?.workflow_runs))throw Error('invalid-actions-response');
- const run=body.workflow_runs[0];
+ return body.workflow_runs;
+}
+function observedRun(item,run,file){
  if(!run)return emptyWorkflow(item,'no-run',null);
  const valid=Number.isSafeInteger(run.id)&&run.id>0&&SHA.test(run.head_sha||'')&&
   ['queued','in_progress','completed','requested','waiting','pending'].includes(run.status);
@@ -65,19 +68,41 @@ async function inspectWorkflow(fetchGithub,item){
  const conclusion=run.status==='completed'&&typeof run.conclusion==='string'?
   run.conclusion.slice(0,32):null;
  return {key:item.key,label:item.label,
-  workflowUrl:BROWSER+'/actions/workflows/'+item.file,
+  workflowUrl:BROWSER+'/actions/workflows/'+file,
   state:'observed',reason:null,runId:run.id,status:run.status,
   conclusion,headSha:run.head_sha,
   runUrl:BROWSER+'/actions/runs/'+run.id,
   startedAt:date(run.created_at)};
 }
+async function inspectWorkflow(fetchGithub,item){
+ const runs=await listRuns(fetchGithub,item.file,1);
+ return observedRun(item,runs[0],item.file);
+}
+// Transition: the newest run wins across the legacy file and the consolidated
+// lab lane. A lane run counts only with its exact path, name and run title.
+function newest(item,legacy,lane){
+ const laneRun=lane.status==='fulfilled'?
+  lane.value.find(run=>labLaneRunKey(run)===item.key):undefined;
+ if(legacy.status!=='fulfilled'){
+  if(laneRun)return observedRun(item,laneRun,LAB_LANE_FILE);
+  throw legacy.reason;
+ }
+ const legacyRun=legacy.value;
+ if(laneRun&&(!legacyRun?.runId||laneRun.id>legacyRun.runId))
+  return observedRun(item,laneRun,LAB_LANE_FILE);
+ return legacyRun;
+}
 export async function collectHfRuns({fetchGithub=fetch,now=()=>new Date().toISOString()}={}){
- const observedAt=now(),settled=await Promise.allSettled(
-  WORKFLOWS.map(item=>inspectWorkflow(fetchGithub,item)));
+ const observedAt=now();
+ const [lane,...settled]=await Promise.allSettled([
+  listRuns(fetchGithub,LAB_LANE_FILE,30),
+  ...WORKFLOWS.map(item=>inspectWorkflow(fetchGithub,item))]);
  const result=emptySnapshot(observedAt);
- result.workflows=settled.map((v,i)=>v.status==='fulfilled'?v.value:
-  emptyWorkflow(WORKFLOWS[i],'unavailable',
-   String(v.reason?.message||'provider-unavailable').slice(0,65)));
+ result.workflows=settled.map((v,i)=>{
+  try{return newest(WORKFLOWS[i],v,lane);}
+  catch(error){return emptyWorkflow(WORKFLOWS[i],'unavailable',
+   String(error?.message||'provider-unavailable').slice(0,65));}
+ });
  return result;
 }
 function present(snapshot,state,at,reason=null,verified=[]){

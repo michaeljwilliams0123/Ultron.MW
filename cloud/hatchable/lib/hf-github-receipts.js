@@ -1,6 +1,7 @@
 /** GitHub workflow_run admission: no LLM output, no external writes, no paid work.
  * Caller MUST authenticate raw bytes with GitHub's HMAC-SHA256 before validation.
  */
+import {labLaneRunKey} from './workflow-lanes.js';
 const REPO='michaeljwilliams0123/Ultron.MW';
 const ACTOR_IDS=Object.freeze({
  'michaeljwilliams0123':308995719,
@@ -9,6 +10,7 @@ const ACTOR_IDS=Object.freeze({
 const SHA=/^[a-f0-9]{40}$/;
 const DIGEST=/^sha256:[a-f0-9]{64}$/;
 const DELIVERY=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Legacy single-purpose workflow files (transition: still trusted).
 const FIXED=Object.freeze({
  'hf-heldout-cpu.yml':'heldout',
  'hf-free-cpu-tournament.yml':'tournament',
@@ -19,7 +21,9 @@ const STATUS=new Set(['success','failure','cancelled','timed_out','action_requir
 function nope(){throw Error('untrusted-github-workflow');}
 function shape(r){
  const file=typeof r?.path==='string'?r.path.match(PATH)?.[1]:null;
- if(!file||!Object.hasOwn(FIXED,file))nope();
+ // Consolidated lab lane: exact path + workflow name + allowlisted run title.
+ const laneKey=labLaneRunKey(r);
+ if(!laneKey&&(!file||!Object.hasOwn(FIXED,file)))nope();
  if(!Number.isSafeInteger(r.id)||r.id<=0||
     !Number.isSafeInteger(r.run_attempt)||r.run_attempt<1||
     r.event!=='workflow_dispatch'||r.status!=='completed'||
@@ -28,7 +32,7 @@ function shape(r){
     ACTOR_IDS[r.actor?.login]!==r.actor.id||
     r.repository?.full_name!==REPO||r.repository?.private!==false)
   nope();
- return {workflowKey:FIXED[file],path:r.path,
+ return {workflowKey:laneKey||FIXED[file],path:r.path,
   runId:r.id,runAttempt:r.run_attempt,sourceSha:r.head_sha,
   actorLogin:r.actor.login,actorId:r.actor.id,
   conclusion:r.conclusion};

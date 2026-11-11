@@ -12,6 +12,7 @@ const response=body=>({ok:true,status:200,json:async()=>body});
 const mockFetch=async url=>{
  urls.push(url);
  const u=String(url);
+ if(u.includes('lane-lab-evidence.yml'))return response({workflow_runs:[]});
  if(u.includes('hf-heldout-cpu.yml'))return response(successful(41764422463));
  if(u.includes('hf-free-cpu-tournament.yml'))return response(successful(41756754075));
  if(u.includes('c06-owner-model-release.yml'))return response({workflow_runs:[
@@ -29,7 +30,7 @@ test('HF-LAB-01: separately observed workflow status cannot misrepresent failed 
  assert.equal(result.release.productionAccepted,false);
  assert.equal(result.release.autoPromotion,false);
  assert.equal(result.paidBudgetCents,0);
- assert.equal(urls.length,3);
+ assert.equal(urls.length,4);
  assert.ok(urls.every(x=>String(x).startsWith('https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/actions/workflows/')));
 });
 test('HF-LAB-02: historical scores are source-pinned and 3B remains research-only',async()=>{
@@ -79,7 +80,7 @@ test('HF-LAB-04: shared PostgreSQL cache avoids repeated rate-limit API calls',a
  const second=await getHfLabView({db,fetchGithub,now});
  assert.equal(first.cache.state,'refreshed');
  assert.equal(second.cache.state,'fresh');
- assert.equal(calls.length,3);
+ assert.equal(calls.length,4);
  assert.equal(second.workflows.find(x=>x.key==='c06').conclusion,'failure');
 });
 test('HF-LAB-05: allowlisted owner route and MCP share the same observation helper',()=>{
@@ -101,4 +102,28 @@ test('HF-LAB-05: allowlisted owner route and MCP share the same observation help
  assert.doesNotMatch(js,/innerHTML\s*=/);
  assert.doesNotMatch(js,/setInterval|new EventSource|new WebSocket/);
  assert.match(migration,/CREATE TABLE IF NOT EXISTS hf_lab_cache/);
+});
+
+test('LANE-LAB-01: transition reads the lab lane and only an exact lane run supersedes legacy',async()=>{
+ const lane=(id,task,extra={})=>({id,head_sha:HEAD,status:'completed',conclusion:'success',
+  event:'workflow_dispatch',created_at:'2026-11-11T05:00:00Z',name:'Ultron lab evidence',
+  path:'.github/workflows/lane-lab-evidence.yml',display_title:'Ultron lab evidence: '+task,...extra});
+ const fetchGithub=async url=>{
+  const u=String(url);
+  if(u.includes('lane-lab-evidence.yml'))return response({workflow_runs:[
+   lane(50000000003,'c06-owner-model-release',{name:'Forged lane'}),
+   lane(50000000002,'hf-heldout-cpu'),
+   lane(50000000001,'hf-free-cpu-tournament',{display_title:'Ultron lab evidence: tournament'})]});
+  if(u.includes('c06-owner-model-release.yml'))return {ok:false,status:404,json:async()=>({})};
+  return mockFetch(url);
+ };
+ const result=await collectHfRuns({fetchGithub});
+ const by=key=>result.workflows.find(x=>x.key===key);
+ assert.equal(by('heldout').runId,50000000002);
+ assert.match(by('heldout').workflowUrl,/lane-lab-evidence\.yml$/);
+ assert.equal(by('tournament').runId,41756754075);
+ assert.equal(by('c06').state,'unavailable');
+ const laneDown=await collectHfRuns({fetchGithub:async url=>String(url).includes('lane-lab-evidence.yml')?
+  {ok:false,status:503,json:async()=>({})}:mockFetch(url)});
+ assert.equal(laneDown.workflows.find(x=>x.key==='c06').runId,41771806146);
 });

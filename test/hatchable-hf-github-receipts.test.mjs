@@ -133,3 +133,22 @@ test('GH-HF-09: Ultron admin actor is allowed only with exact immutable GitHub u
   {login:'michaeljwilliams0123',id:354634860}
  ])assert.throws(()=>validateGithubWorkflowPayload(payload({workflow_run:run({actor})})));
 });
+
+test('LANE-GH-HF-01: lab lane runs are keyed by exact path, workflow name and run title',()=>{
+ const lane=(task,extra={})=>run({path:'.github/workflows/lane-lab-evidence.yml',
+  name:'Ultron lab evidence',display_title:'Ultron lab evidence: '+task,...extra});
+ assert.equal(validateGithubWorkflowPayload(payload({workflow_run:lane('hf-heldout-cpu')})).workflowKey,'heldout');
+ assert.equal(validateGithubWorkflowPayload(payload({workflow_run:lane('hf-free-cpu-tournament')})).workflowKey,'tournament');
+ assert.equal(validateGithubWorkflowPayload(payload({workflow_run:lane('c06-owner-model-release')})).workflowKey,'c06');
+ for(const bad of [lane('held-out-acceptance'),lane('c06-owner-model-release',{name:'Other'}),
+  lane('hf-heldout-cpu',{display_title:'Ultron lab evidence: hf-heldout-cpu '}),
+  lane('hf-heldout-cpu',{path:'.github/workflows/lane-ci.yml'}),
+  lane('c06',{}),lane('hf-heldout-cpu',{display_title:undefined})])
+  assert.throws(()=>validateGithubWorkflowPayload(payload({workflow_run:bad})));
+ // Legacy paths stay trusted during the transition.
+ assert.equal(validateGithubWorkflowPayload(payload()).workflowKey,'c06');
+ // A lane receipt does not verify against a legacy readback of a different key.
+ const trusted=validateGithubWorkflowPayload(payload({workflow_run:lane('hf-heldout-cpu')}));
+ assert.equal(compareGithubRun(trusted,lane('hf-heldout-cpu')).verified,true);
+ assert.equal(compareGithubRun(trusted,lane('hf-free-cpu-tournament')).verified,false);
+});
