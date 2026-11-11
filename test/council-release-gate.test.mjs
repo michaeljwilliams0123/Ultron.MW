@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {generateKeyPairSync,sign} from 'node:crypto';
 import {evaluateCouncilAcceptance,validateOwnerOverride} from '../src/council-release-gate.mjs';
 
 const HEAD='a'.repeat(40),BASE='b'.repeat(40),PR=456;
+const keyPair=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+const OWNER_PUBLIC_JWK=keyPair.publicKey.export({format:'jwk'});
+const NONCE='c'.repeat(32);
+const REASON='Owner explicitly authorizes this exact Council exception after security review.';
 const names=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
 const roles=names.map(name=>'ultron-'+name.toLowerCase());
 function facts(){
@@ -17,15 +22,21 @@ function facts(){
  };
 }
 const evaluate=(patch={},extra={})=>evaluateCouncilAcceptance({
- ...facts(),prNumber:PR,sourceSha:HEAD,baseSha:BASE,now:'2026-11-10T21:00:00.000Z',
+ ...facts(),prNumber:PR,sourceSha:HEAD,baseSha:BASE,
+ ownerPublicJwk:OWNER_PUBLIC_JWK,now:'2026-11-10T21:00:00.000Z',
  ...patch,...extra
 });
 function owner(body){
  return {id:9876,user:{login:'michaeljwilliams0123',id:308995719},
    body,created_at:'2026-11-10T20:45:00Z',updated_at:'2026-11-10T20:45:00Z'};
 }
-const overrideBody=(head=HEAD,base=BASE)=>
- '/council override '+head+' '+base+' -- Owner explicitly authorizes this exact Council exception after security review.';
+function overrideBody(head=HEAD,base=BASE,pr=PR,nonce=NONCE,reason=REASON){
+ const message=['ULTRON-COUNCIL-OVERRIDE-v1','michaeljwilliams0123/Ultron.MW',
+  String(pr),head,base,nonce,reason,''].join('\n');
+ const signature=sign('sha256',Buffer.from(message),keyPair.privateKey).toString('base64url');
+ return '/council override '+pr+' '+head+' '+base+' '+nonce+' -- '+reason+
+  '\nsignature:p256:'+signature;
+}
 test('all seven exact roles must approve on the same PR head with full evidence',()=>{
  const result=evaluate();
  assert.equal(result.status,'accepted');
@@ -76,8 +87,8 @@ test('comment authored by a bot or collaborator is not a valid owner override',(
                     {login:'michaeljwilliams0123',id:999},
                     {login:'github-actions[bot]',id:308995719}]){
   const c=owner(overrideBody());c.user=user;
-  assert.equal(validateOwnerOverride(c,{sourceSha:HEAD,baseSha:BASE,
-     now:'2026-11-10T21:00:00.000Z'}),null);
+  assert.equal(validateOwnerOverride(c,{sourceSha:HEAD,baseSha:BASE,prNumber:PR,
+     ownerPublicJwk:OWNER_PUBLIC_JWK,now:'2026-11-10T21:00:00.000Z'}),null);
  }
 });
 test('no implicit override: exact syntax, SHA, base, immutable comment and freshness mandatory',()=>{
@@ -91,7 +102,8 @@ test('no implicit override: exact syntax, SHA, base, immutable comment and fresh
   {...owner(overrideBody()),created_at:'2026-11-11T21:00:00Z',updated_at:'2026-11-11T21:00:00Z'},
  ];
  for(const c of cases)assert.equal(validateOwnerOverride(c,{sourceSha:HEAD,
-   baseSha:BASE,now:'2026-11-10T21:00:00.000Z'}),null);
+   baseSha:BASE,prNumber:PR,ownerPublicJwk:OWNER_PUBLIC_JWK,
+   now:'2026-11-10T21:00:00.000Z'}),null);
 });
 test('owner override never overwrites Council role evidence',()=>{
  const f=facts();f.report.memberAssessments[2].verdict='hold';
@@ -126,4 +138,25 @@ test('owner override preserves actual model-backed dissent and audit metadata',(
  assert.deepEqual(r.modelHoldRoles,['Skeptic']);
  assert.equal(r.approvedCount,7);
  assert.equal(r.overrideCommentId,9876);
+});
+
+
+test('GitHub-account-only override is denied without a separate valid P-256 signature',()=>{
+ const c=owner('/council override '+PR+' '+HEAD+' '+BASE+' '+NONCE+
+  ' -- '+REASON);
+ assert.equal(validateOwnerOverride(c,{sourceSha:HEAD,baseSha:BASE,prNumber:PR,
+  ownerPublicJwk:OWNER_PUBLIC_JWK,now:'2026-11-10T21:00:00.000Z'}),null);
+});
+test('signed owner override fails for another PR, modified body, stolen key or absent JWK',()=>{
+ const valid=owner(overrideBody());
+ const base={sourceSha:HEAD,baseSha:BASE,prNumber:PR,
+  ownerPublicJwk:OWNER_PUBLIC_JWK,now:'2026-11-10T21:00:00.000Z'};
+ assert.equal(validateOwnerOverride(valid,{...base,prNumber:457}),null);
+ assert.equal(validateOwnerOverride({...valid,body:valid.body.replace(REASON,'Altered '+REASON)},base),null);
+ assert.equal(validateOwnerOverride(valid,{...base,ownerPublicJwk:null}),null);
+ const badKey=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+ assert.equal(validateOwnerOverride(valid,{...base,
+  ownerPublicJwk:badKey.publicKey.export({format:'jwk'})}),null);
+ assert.equal(validateOwnerOverride(valid,{...base,
+  ownerPublicJwk:{...OWNER_PUBLIC_JWK,crv:'P-384'}}),null);
 });
