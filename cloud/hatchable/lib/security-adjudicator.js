@@ -196,13 +196,18 @@ export async function reservePrCommentExecution({
  if(!Number.isSafeInteger(verifiedGrant.profileVersion)||verifiedGrant.profileVersion<1||
    !Number.isSafeInteger(verifiedGrant.stopVersion)||verifiedGrant.stopVersion<1)
   return {ok:false,error:'grant-unbound'};
- const sql=`WITH authority AS MATERIALIZED (
+ const sql=`WITH passkey AS MATERIALIZED (
+  SELECT 1 AS enrolled FROM brain_owner_passkeys
+  WHERE revoked_at IS NULL
+  ORDER BY created_at LIMIT 1
+ ), authority AS MATERIALIZED (
   SELECT 1 FROM brain_owner_autonomy_profile a
   JOIN brain_runtime_control c ON c.id=1
   WHERE a.id=1 AND a.owner='michaeljwilliams0123'
     AND a.preset IN ('build','release') AND a.version=$10 AND c.version=$11
     AND NOT c.paused AND a.max_paid_cents=0
     AND jsonb_exists(a.allowed_operations,'pr.comment')
+    AND EXISTS(SELECT 1 FROM passkey)
   FOR SHARE
  ), existing AS MATERIALIZED (
   SELECT idempotency_key,state,operation_digest,body_sha256,target_number
@@ -237,13 +242,15 @@ export async function reservePrCommentExecution({
    'pullRequest',$12::bigint,'bodySha256',$13::text)
   FROM execution RETURNING id
  )
- SELECT 'reserved' AS outcome,e.idempotency_key,e.state,r.id AS receipt_id
+ SELECT 'reserved' AS outcome,e.idempotency_key,e.state,r.id AS receipt_id,
+  true AS passkey_enrolled
  FROM execution e JOIN receipt r ON true
  UNION ALL
- SELECT 'existing',x.idempotency_key,x.state,NULL FROM existing x
+ SELECT 'existing',x.idempotency_key,x.state,NULL,
+  EXISTS(SELECT 1 FROM passkey) FROM existing x
  WHERE NOT EXISTS(SELECT 1 FROM execution)
  UNION ALL
- SELECT 'denied',NULL,NULL,NULL
+ SELECT 'denied',NULL,NULL,NULL,EXISTS(SELECT 1 FROM passkey)
  WHERE NOT EXISTS(SELECT 1 FROM execution) AND NOT EXISTS(SELECT 1 FROM existing)`;
  const result=await db.query(sql,[idempotencyKey,verifiedGrant.grantId,
   verifiedGrant.resource,verifiedGrant.notBefore,verifiedGrant.expiresAt,
@@ -255,6 +262,7 @@ export async function reservePrCommentExecution({
   idempotencyKey,receiptId:row.receipt_id};
  if(row?.outcome==='existing')return {ok:false,error:'execution-already-reserved',
   status:row.state};
+ if(row?.passkey_enrolled===false)return {ok:false,error:'owner-passkey-required'};
  return {ok:false,error:Date.parse(verifiedGrant.expiresAt)<=Date.now()
   ?'grant-expired':'authority-or-replay-denied'};
 }

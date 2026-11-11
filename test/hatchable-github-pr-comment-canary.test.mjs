@@ -11,7 +11,8 @@ import {preparePrCommentCanary,operationDigest,submitPrCommentCanary,
 
 const MIGRATIONS=['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
  '0010_runtime_stop.sql','0013_continuum_outbox.sql',
- '0016_owner_autonomy_profile.sql','0037_github_approval_nonces.sql',
+ '0016_owner_autonomy_profile.sql','0033_owner_passkey_authority.sql',
+ '0034_owner_passkey_enrollment.sql','0037_github_approval_nonces.sql',
  '0039_github_idempotent_executions.sql','0040_ultron_org_transfer.sql',
  '0041_github_pr_comment_executions.sql'];
 const RSA=generateKeyPairSync('rsa',{modulusLength:2048});
@@ -20,13 +21,25 @@ const APP={appId:'5633654',installationId:'179066535',
 const subtle=webcrypto.subtle;
 const response=(status,body)=>({status,ok:status>=200&&status<300,
  json:async()=>structuredClone(body)});
-async function database(t){
+async function database(t,{passkey=true}={}){
  const db=new PGlite();
  for(const migration of MIGRATIONS)await db.exec(await readFile(
   new URL('../cloud/hatchable/migrations/'+migration,import.meta.url),'utf8'));
  await db.query(`UPDATE brain_owner_autonomy_profile SET preset='release',version=7
   WHERE id=1`);
  await db.query(`UPDATE brain_runtime_control SET version=5 WHERE id=1`);
+ if(passkey){
+  await db.query(`INSERT INTO brain_authority_grants(
+   grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
+   VALUES('owner-passkey-bootstrap-test','owner-passkey-test','michaeljwilliams0123',
+    'owner.passkey.enroll','sha256:${'a'.repeat(64)}','${'b'.repeat(64)}',
+    now()+interval '1 hour')`);
+  await db.query(`INSERT INTO brain_owner_passkeys(
+   credential_id,public_key_spki,label,enrollment_key,enrollment_fingerprint,
+   enrolled_grant_id) VALUES($1,$2,'Test owner passkey','owner-passkey-test',
+   $3,'owner-passkey-bootstrap-test')`,[
+    'credential-'+'c'.repeat(32),'d'.repeat(120),'e'.repeat(64)]);
+ }
  t.after(()=>db.close());
  return db;
 }
@@ -105,7 +118,8 @@ test('owner-signed Coordinator comment completes with independent readback and o
   call.url.endsWith('/comments')).length,1);
  const counts=(await h.db.query(`SELECT
   (SELECT count(*)::int FROM brain_github_approval_nonces) AS nonces,
-  (SELECT count(*)::int FROM brain_authority_grants) AS grants,
+  (SELECT count(*)::int FROM brain_authority_grants
+   WHERE operation='pr.comment') AS grants,
   (SELECT count(*)::int FROM github_idempotent_executions) AS executions`)).rows[0];
  assert.deepEqual(counts,{nonces:1,grants:1,executions:1});
  const replay=await reservePrCommentExecution({db:h.db,verifiedGrant:h.verified,
@@ -114,6 +128,22 @@ test('owner-signed Coordinator comment completes with independent readback and o
  assert.deepEqual(replay,{ok:false,error:'execution-already-reserved',status:'completed'});
  assert.equal(github.calls.filter(call=>call.method==='POST'&&
   call.url.endsWith('/comments')).length,1);
+});
+
+test('reservation requires an active owner passkey without consuming authority',async t=>{
+ const db=await database(t,{passkey:false});
+ const prepared=await preparePrCommentCanary({db,pullRequest:398});
+ const {verified}=await signed(prepared),digest=operationDigest(prepared,verified.grantId);
+ const reservation=await reservePrCommentExecution({db,verifiedGrant:verified,
+  idempotencyKey:prepared.idempotencyKey,pullRequest:prepared.pullRequest,
+  bodySha256:prepared.bodySha256,operationDigest:digest});
+ assert.deepEqual(reservation,{ok:false,error:'owner-passkey-required'});
+ const counts=(await db.query(`SELECT
+  (SELECT count(*)::int FROM brain_github_approval_nonces) AS nonces,
+  (SELECT count(*)::int FROM brain_authority_grants
+   WHERE operation='pr.comment') AS grants,
+  (SELECT count(*)::int FROM github_idempotent_executions) AS executions`)).rows[0];
+ assert.deepEqual(counts,{nonces:0,grants:0,executions:0});
 });
 
 test('lost POST response is reconciled by public readback without a second write',async t=>{
