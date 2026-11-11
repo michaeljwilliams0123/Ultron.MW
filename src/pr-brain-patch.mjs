@@ -36,6 +36,18 @@ export async function applyPrPatch({pr,manifest,get,post,
   if(isCouncilGovernanceRepairPr(pr))
    assertCouncilRepairManifest(pr,patch);
   const branch=pr.head.ref,head=pr.head.sha;
+  // A governance repair's PR body/branch are data, never standing write
+  // authority. Re-read exact current PR state before any Git blob mutation
+  // and again before moving the branch ref to prevent close/marker/head races.
+  const assertLiveCouncilTarget=async()=>{
+   if(!isCouncilGovernanceRepairPr(pr))return;
+   const live=await get(ROOT+'/pulls/'+pr.number);
+   if(!isCouncilGovernanceRepairPr(live)||
+      live.number!==pr.number||live.head.sha!==head||
+      live.head.ref!==branch||live.base.sha!==pr.base.sha)
+    throw Error('Council governance PR changed or unverified');
+  };
+  await assertLiveCouncilTarget();
   const ref=ROOT+'/git/ref/heads/'+branch;
   const mainRef=ROOT+'/git/ref/heads/main';
   const mainSha=(await get(mainRef))?.object?.sha;
@@ -92,6 +104,7 @@ export async function applyPrPatch({pr,manifest,get,post,
     (await get(mainRef))?.object?.sha!==mainSha)
     throw Error('PR source or main advanced; leave patch commit unreferenced');
   // GitHub uses singular /git/ref for reads but plural /git/refs for updates.
+  await assertLiveCouncilTarget();
   const updatePath=ROOT+'/git/refs/heads/'+branch;
   const updated=await updateRef(updatePath,{sha:next.sha,force:false});
   // GitHub ref and contents reads can lag a successful write. Re-read, never
