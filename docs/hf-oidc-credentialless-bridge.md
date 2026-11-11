@@ -1,5 +1,7 @@
 # Credentialless Hugging Face workflow evidence bridge
 
+> **Historical, retired (26 → 8 consolidation, step 3).** The `hf-oidc-bridge.yml` workflow, `scripts/hf-oidc-publish.mjs`, `cloud/hatchable/lib/github-oidc-bridge.js` and the `/api/brain/hf-oidc-event` route are deleted. The bridge never succeeded (403, then Hatchable readback 503). Lab receipts arrive only through the signed `workflow_run` webhook (`api/brain/github-workflow-webhook.js`). The Hatchable deploy of this step must delete the route; see the deploy runbook.
+
 ## Purpose
 Avoid the manual secret-pairing blocker in #269 while retaining the old GitHub HMAC webhook as a separate, **disabled until configured** option. This path uses GitHub's existing OIDC identity service, short-lived tokens and read-only API calls. It adds **no** Hugging Face paid jobs, model inference, long-lived tokens, new hosting service or owner account.
 
