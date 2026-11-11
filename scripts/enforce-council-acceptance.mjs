@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Fail-closed release check on trusted main; never imports or executes PR source.
 import {readFileSync,writeFileSync,appendFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {evaluateCouncilAcceptance} from '../src/council-release-gate.mjs';
 
 function read(path){
@@ -10,8 +11,9 @@ function read(path){
 const sourceSha=process.env.TARGET_SOURCE_SHA;
 const baseSha=process.env.TARGET_BASE_SHA;
 const prNumber=Number(process.env.ITEM_NUMBER);
-const report=read('council-members.json');
-const receipt=read('council-receipt.json');
+const dir=process.env.COUNCIL_EVIDENCE_DIRECTORY||'.';
+const report=read(join(dir,'council-members.json'));
+const receipt=read(join(dir,'council-receipt.json'));
 const overrideComment=read(process.env.COUNCIL_OVERRIDE_FILE);
 const result=evaluateCouncilAcceptance({report,receipt,sourceSha,baseSha,
  prNumber,overrideComment});
@@ -24,6 +26,7 @@ const summary=[
  '**Base:** '+String(baseSha),
  '**Role approvals:** '+result.approvedCount+'/7',
  '**Held roles:** '+(result.holdRoles.join(', ')||'none'),
+ '**Model-backed hold/unavailable:** '+(result.modelHoldRoles?.join(', ')||'none'),
  '**Override:** '+(result.overrideUsed?
    'OWNER EXACT-COMMIT EXCEPTION #'+result.overrideCommentId:
    'none'),
