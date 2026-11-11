@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {chooseSourceForObjective,selectTargetLine,extractModelPatch,generateAndApply,
   explicitRewriteGoal,rewriteGoalMet} from '../src/pr-brain-model.mjs';
 import {routePrTurn} from '../src/pr-brain.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const SHA='a'.repeat(40),TREE='b'.repeat(40),COMMIT='c'.repeat(40);
 const PR={head:{ref:'ultron/test-repair',sha:SHA},base:{ref:'main'}};
@@ -60,7 +61,7 @@ test('injected CPU model can propose a real patch for exact PR head without paid
   assert.equal(result.generatedBy,'public-CPU-ONNX-inference');
 });
 test('public CPU inference remains default; paid provider requires an explicit variable',async()=>{
-  const flow=await readFile(new URL('../.github/workflows/pr-brain.yml',import.meta.url),'utf8');
+  const flow=legacyView('pr-brain.yml');
   assert.match(flow,/github.event.repository.private == false/);
   assert.match(flow,/needsPrModelRuntime/);
   assert.match(flow,/npm ci --ignore-scripts --no-audit --no-fund/);

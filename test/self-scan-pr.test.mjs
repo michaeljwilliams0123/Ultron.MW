@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { publishSelfScanPr, selfScanSignature, renderScanReport,
   reportSignature, SELF_SCAN_MARKER, SELF_SCAN_PATH } from '../src/self-scan-pr.mjs';
 import { createCloudTaskUrl } from '../docs/core/cloud-submit.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const ROOT='/repos/'+REPO;
@@ -109,14 +110,14 @@ function args(mock,report=scanReport()){
 test('Self scan and slash command handoff open Actions workflow, not Issues',async()=>{
   for(const phrase of ['/self scan','scan yourself']) {
     const url=new URL(createCloudTaskUrl(phrase));
-    assert.equal(url.pathname,'/michaeljwilliams0123/Ultron.MW/actions/workflows/self-scan-pr.yml');
+    assert.equal(url.pathname,'/michaeljwilliams0123/Ultron.MW/actions/workflows/lane-ops-audit.yml');
     assert.ok(!url.pathname.includes('/issues'));
     assert.equal(url.searchParams.has('token'),false);
   }
   assert.throws(()=>createCloudTaskUrl('scan yourself and inspect repo'),/separately/);
   const app=await readFile(new URL('../docs/app.js',import.meta.url),'utf8');
-  const legacy=await readFile(new URL('../.github/workflows/cloud-objective.yml',import.meta.url),'utf8');
-  const workflow=await readFile(new URL('../.github/workflows/self-scan-pr.yml',import.meta.url),'utf8');
+  const legacy=legacyView('cloud-objective.yml');
+  const workflow=legacyView('self-scan-pr.yml');
   assert.match(app,/Self-scan/);
   assert.doesNotMatch(legacy,/cron:/);
   assert.match(workflow,/cron: '17 \* \* \* \*'/);

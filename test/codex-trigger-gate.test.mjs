@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCodexCall, formatCodexCall } from '../src/codex-call.mjs';
 import { assessCodexTrigger } from '../src/codex-trigger-gate.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
 const OWNER='michaeljwilliams0123';
@@ -95,7 +96,7 @@ test('invalid comment counts cannot be admitted as a first trigger',()=>{
 test('owner Codex command has its own GitHub event audit, not generic PR conversation',async()=>{
   const {readFile}=await import('node:fs/promises');
   const owner=await readFile(new URL('../.github/workflows/owner-comment-router.yml',import.meta.url),'utf8');
-  const audit=await readFile(new URL('../.github/workflows/codex-trigger-audit.yml',import.meta.url),'utf8');
+  const audit=legacyView('codex-trigger-audit.yml');
   assert.match(owner,/!startsWith\(github\.event\.comment\.body, '\/codex run '\)/);
   assert.match(audit,/issue_comment:/);
   assert.match(audit,/node scripts\/codex-trigger-audit\.mjs/);

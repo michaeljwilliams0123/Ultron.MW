@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {generateKeyPairSync,verify} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {diagnoseCouncilAppInstallation} from '../src/security/council-app-installation-diagnostic.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
 const pem=privateKey.export({type:'pkcs1',format:'pem'});
@@ -103,7 +104,7 @@ test('retired organization installation or wrong app id never passes',async()=>{
 });
 
 test('Council workflow publishes sanitized diagnostics even when installation is absent',async()=>{
- const yaml=await readFile(new URL('../.github/workflows/council-principal-proof.yml',import.meta.url),'utf8');
+ const yaml=legacyView('council-principal-proof.yml');
  assert.match(yaml,/node scripts\/diagnose-council-installation\.mjs/);
  assert.match(yaml,/artifacts\/council-app-installation-diagnostic\.json/);
  assert.ok(yaml.indexOf('node scripts/diagnose-council-installation.mjs') <

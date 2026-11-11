@@ -6,15 +6,38 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_call:
+  schedule:
+    # Continuum supervisor: scans open roadmap issues hourly; dispatches at most two advisory reviews per pass.
+    - cron: '19 * * * *'
   workflow_dispatch:
     inputs:
+      council_task:
+        description: Council task (debate is the default used by dispatchers)
+        required: false
+        type: choice
+        default: debate
+        options:
+          - debate
+          - continuum-supervisor
+          - identity-proof
+          - principal-proof
       item_number:
-        description: 'Issue or PR number'
-        required: true
+        description: 'debate: issue or PR number'
+        required: false
       is_pr:
-        description: 'true if PR'
+        description: 'debate: true if PR'
         required: true
         default: 'false'
+      role:
+        description: 'identity-proof: logical Council role attributed to the one verified Coordinator App'
+        required: false
+        type: choice
+        options: [BUILDER, SKEPTIC, STEWARD, PREDICTOR, GENERATOR, SENTINEL, COMPANION]
+        default: BUILDER
+      issue_number:
+        description: 'identity-proof: issue or PR number to receive the proof comment'
+        required: false
+        type: number
 
 permissions:
   contents: read
@@ -26,6 +49,8 @@ concurrency:
 jobs:
   council-debate:
     if: >-
+      (github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.council_task == 'debate' || inputs.council_task == '')) &&
+      (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -39,6 +64,7 @@ jobs:
         (github.event_name == 'issue_comment' &&
           github.event.comment.user.login == 'michaeljwilliams0123' &&
           contains(github.event.comment.body, '/council'))
+      )
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -280,3 +306,237 @@ jobs:
             council-execution-receipts.json
           if-no-files-found: ignore
           retention-days: 30
+
+  reconcile:
+    if: >-
+      (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.council_task == 'continuum-supervisor')) &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW'
+      )
+    concurrency:
+      group: continuum-council-supervisor-reconcile
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: read
+      actions: write
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Configure Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Select outstanding issues and dispatch bounded council reviews
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const {pathToFileURL}=require('node:url');
+            const path=require('node:path');
+            const {CONTINUUM_ISSUES,selectCouncilReviews,readCouncilActivity}=await import(
+              pathToFileURL(path.join(process.env.GITHUB_WORKSPACE,'src/continuum-supervisor.mjs')).href
+            );
+            const owner=context.repo.owner;
+            const repo=context.repo.repo;
+            const master=await github.rest.issues.get({owner,repo,issue_number:182});
+            if(master.data.state!=='open'){
+              core.info('Continuum master issue closed; no additional dispatch.');
+              return;
+            }
+            const inputs=[];
+            for(const issue_number of CONTINUUM_ISSUES){
+              try {
+                const {data:issue}=await github.rest.issues.get({owner,repo,issue_number});
+                const activity=await readCouncilActivity({
+                  issue,owner,
+                  fetchIssue:async()=>(await github.rest.issues.get({owner,repo,issue_number})).data,
+                  fetchPage:async page=>(await github.rest.issues.listComments({
+                    owner,repo,issue_number,per_page:100,page
+                  })).data
+                });
+                if(!activity.complete){
+                  core.warning('Incomplete council comment history for #'+issue_number+
+                    '; skip rather than duplicate review dispatch.');
+                  continue;
+                }
+                inputs.push({number:issue_number,state:issue.state,
+                  lastReviewAt:activity.lastReviewAt,
+                  lastMeaningfulAt:activity.lastMeaningfulAt});
+              } catch {
+                // An unreadable issue is not evidence that no review is due.
+                // Fail closed for this issue and keep checking later issues.
+                core.warning('Council history unavailable for #'+issue_number+
+                  '; skip its dispatch without failing the remaining scan.');
+              }
+            }
+            const picked=selectCouncilReviews(inputs,{now:new Date().toISOString(),limit:2,refreshHours:24});
+            const dispatched=[];
+            for(const issue_number of picked){
+              // The initial scan is advisory. Revalidate the selected issue
+              // immediately before dispatch: a new report may have arrived
+              // while later roadmap issues were being scanned.
+              try {
+                const {data:latestIssue}=await github.rest.issues.get({owner,repo,issue_number});
+                const latestActivity=await readCouncilActivity({
+                  issue:latestIssue,owner,
+                  fetchIssue:async()=>(await github.rest.issues.get({owner,repo,issue_number})).data,
+                  fetchPage:async page=>(await github.rest.issues.listComments({
+                    owner,repo,issue_number,per_page:100,page
+                  })).data
+                });
+                const stillDue=latestActivity.complete&&selectCouncilReviews([{
+                  number:issue_number,state:latestIssue.state,
+                  lastReviewAt:latestActivity.lastReviewAt,
+                  lastMeaningfulAt:latestActivity.lastMeaningfulAt
+                }],{now:new Date().toISOString(),limit:1,refreshHours:24}).length>0;
+                if(!stillDue){
+                  core.info('Council activity changed for #'+issue_number+'; skip stale dispatch.');
+                  continue;
+                }
+              } catch {
+                core.warning('Council revalidation unavailable for #'+issue_number+
+                  '; skip its dispatch without replay.');
+                continue;
+              }
+              await github.rest.actions.createWorkflowDispatch({
+                owner,repo,workflow_id:'council-debate.yml',ref:'main',
+                inputs:{item_number:String(issue_number),is_pr:'false'}
+              });
+              dispatched.push(issue_number);
+              core.info('Dispatched advisory council review on #'+issue_number);
+            }
+            await core.summary.addHeading('Continuum Council Supervisor')
+              .addRaw('Open roadmap: #182; monitored: '+inputs.filter(x=>x.state==='open').length+
+                '; council reviews dispatched: '+dispatched.length+'; issue numbers: '+dispatched.join(', '))
+              .write();
+
+  prove:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.council_task == 'identity-proof' && inputs.issue_number != '') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.repository_id == 1424939667 &&
+      github.repository_owner_id == 308995719 &&
+      github.ref == 'refs/heads/main'
+      )
+    permissions:
+      contents: read
+    concurrency:
+      group: council-identity-proof-${{ inputs.role }}-prove
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Mint short-lived installation token for this role only
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.ULTRON_BUILDER_CLIENT_ID }}
+          private-key: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+          repositories: Ultron.MW
+          permission-issues: write
+          permission-contents: read
+      - name: Verify minted App provenance before any write
+        env:
+          ACTUAL_APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          test "$ACTUAL_APP_SLUG" = "ultron-coordinator" ||
+            { echo 'Coordinator App slug mismatch'; exit 1; }
+      - name: Post proof comment as the App and verify authorship by readback
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          ROLE_UPPER: ${{ inputs.role }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: |
+          role_lower="${ROLE_UPPER,,}"
+          export COUNCIL_ROLE="${role_lower^}"
+          node scripts/council-identity-proof.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: council-identity-proof-${{ inputs.role }}
+          path: council-identity-proof.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+  verify-principal:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.council_task == 'principal-proof') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main'
+      )
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Diagnose Coordinator App and repository installation
+        env:
+          ULTRON_GITHUB_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
+          ULTRON_BUILDER_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+        run: node scripts/diagnose-council-installation.mjs
+      - name: Discover Ultron Coordinator installation
+        id: coordinator
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.ULTRON_BUILDER_CLIENT_ID }}
+          private-key: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+          permission-metadata: read
+      - name: Assert authenticated Coordinator app identity
+        env:
+          ACTUAL_APP_SLUG: ${{ steps.coordinator.outputs.app-slug }}
+          EXPECTED_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
+        run: |
+          if [ "$ACTUAL_APP_SLUG" != "ultron-coordinator" ]; then
+            echo "Coordinator app slug mismatch"
+            exit 1
+          fi
+          if [ "$EXPECTED_APP_ID" != "5633654" ]; then
+            echo "Coordinator numeric App ID mismatch"
+            exit 1
+          fi
+      - name: Verify one installed App principal and seven logical role labels
+        env:
+          ULTRON_GITHUB_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
+          ULTRON_GITHUB_INSTALLATION_ID: ${{ steps.coordinator.outputs.installation-id }}
+          ULTRON_GITHUB_APP_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+        run: node scripts/verify-council-fleet.mjs
+      - name: Retain sanitized proof or held reason
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: council-principal-readback-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            artifacts/council-app-installation-diagnostic.json
+            artifacts/council-principal-proof.json
+          if-no-files-found: warn
+          retention-days: 7

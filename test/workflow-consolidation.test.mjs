@@ -15,24 +15,39 @@ const list=()=>readdirSync(new URL('.github/workflows/',root)).filter(n=>/\.ya?m
 const staged=()=>{try{return readdirSync(new URL('.github/workflow-lanes/',root)).filter(n=>/\.ya?ml$/.test(n));}catch{return [];}};
 const laneSource=file=>list().includes(file)?read('.github/workflows/'+file):read('.github/workflow-lanes/'+file);
 
-test('every legacy workflow job maps to exactly one consolidated lane, and every pin is real',()=>{
+const LEGACY_FILES=['verify.yml','reef-runtime-probe.yml','owner-comment-router.yml','codex-trigger-audit.yml',
+  'inline-pr-chat.yml','pr-brain.yml','council-debate.yml','continuum-council-supervisor.yml',
+  'council-identity-proof.yml','council-principal-proof.yml','owner-actions-canary.yml','owner-canary-matrix.yml',
+  'mahoraga-connection1026.yml','hf-free-cpu-tournament.yml','hf-heldout-cpu.yml','hf-oidc-bridge.yml',
+  'held-out-acceptance.yml','c06-owner-model-release.yml','c06-reconcile-publish.yml','live-acceptance-audit.yml',
+  'self-scan-pr.yml','gitlab-mirror.yml','cloud-objective.yml','cloud-pr.yml','council-worker.yml',
+  'governed-execution.yml','council-self-repair.yml'];
+
+test('phase 2: exactly eight workflow files; every legacy job lives once in its lane; every pin is real',()=>{
   const parity=checkParity({readFile:read,listWorkflows:list,listStaged:staged});
   assert.deepEqual(parity.problems,[]);
-  assert.equal(parity.legacyCount,26);
+  assert.equal(parity.legacyCount,27,'26 legacy files plus council-self-repair (#411)');
+  assert.deepEqual(LEGACY_WORKFLOWS.map(w=>w.file).sort(),[...LEGACY_FILES].sort());
   assert.equal(parity.laneCount,8);
-  const keys=parity.mapped.map(m=>m.workflow+'#'+m.job);
-  assert.equal(new Set(keys).size,keys.length,'a legacy job is mapped twice');
-  assert.equal(keys.length,LEGACY_WORKFLOWS.reduce((n,w)=>n+w.jobs.length,0));
+  const keys=parity.mapped.map(m=>m.lane+'#'+m.job);
+  assert.equal(new Set(keys).size,keys.length,'a job is mapped twice');
+  assert.deepEqual(list().filter(f=>f!=='council-required-status.yml').sort(),[...new Set(laneFiles())].sort());
+  assert.equal(cutoverFileCount(),8);
+  assert.deepEqual(staged(),[],'shadow lane copies are removed');
+  assert.deepEqual(LEGACY_WORKFLOWS.filter(w=>w.disposition==='retired').map(w=>w.file).sort(),
+    ['c06-reconcile-publish.yml','governed-execution.yml','hf-oidc-bridge.yml']);
 });
 
-test('parity check catches an unmapped workflow, a drifted job and a removed pin',()=>{
-  const files=[...list(),'new-thing.yml'];
-  const drifted=path=>path.endsWith('reef-runtime-probe.yml')?
-    read(path).replace('  reef-runtime-probe:','  reef-runtime-probe-2:'):
+test('parity check catches an unmapped workflow, a leftover legacy file, a lost job and a removed pin',()=>{
+  const files=[...list(),'new-thing.yml','gitlab-mirror.yml'];
+  const drifted=path=>path.endsWith('lane-ops-audit.yml')?
+    read(path).replace('\n  reef-runtime-probe:','\n  reef-runtime-probe-2:'):
     path.endsWith('council-oidc.js')?'':read(path);
   const parity=checkParity({readFile:drifted,listWorkflows:()=>files,listStaged:staged});
-  assert.ok(parity.problems.includes('unmapped legacy workflow new-thing.yml'));
-  assert.ok(parity.problems.some(p=>p.startsWith('reef-runtime-probe.yml: jobs drifted')));
+  assert.ok(parity.problems.includes('unmapped workflow new-thing.yml'));
+  assert.ok(parity.problems.includes('gitlab-mirror.yml: absorbed legacy workflow still present'));
+  assert.ok(parity.problems.includes('reef-runtime-probe.yml: job reef-runtime-probe missing from lane-ops-audit.yml'));
+  assert.ok(parity.problems.includes('lane-ops-audit.yml: unmapped job reef-runtime-probe-2'));
   assert.ok(parity.problems.some(p=>p.startsWith('owner-comment-router.yml: pin no longer present')));
 });
 
@@ -43,35 +58,27 @@ test('lanes are owned by distinct Council roles (seven members plus Ultron Core)
   for(const role of COUNCIL_APP_ROLES)assert.ok(owners.includes(role),role+' owns no lane');
 });
 
-test('phase 1 lane workflows are shadow-only: no side-effect triggers, no writes, no required-check names',()=>{
-  for(const file of laneFiles()){
-    const source=laneSource(file);
-    const scan=scanWorkflow(source);
-    assert.match(scan.name,/\(shadow, /,file);
-    const allowed=file==='lane-ops-audit.yml'?['workflow_dispatch','schedule']:['workflow_dispatch'];
-    assert.deepEqual(scan.triggers,allowed,file+' triggers');
-    assert.deepEqual(scan.jobs,['shadow'],file);
-    assert.ok(scan.permissions.every(p=>!p.endsWith(':write')),file+' must not request write');
-    assert.doesNotMatch(source,/^\s+test:\s*$/m,file+' must not define a job named test');
-    assert.doesNotMatch(source,/secrets\.(?!GITHUB_TOKEN\b)/,file+' must not read repository secrets');
-    assert.doesNotMatch(source,/pull_request_target|workflow_run|issue_comment|continue-on-error/,file);
-    assert.match(source,/node scripts\/workflow-shadow\.mjs --lane /,file);
-    // Staged lanes must already satisfy the repository-wide workflow rules.
-    assert.match(source,/- name: Configure Git bare-repository policy\n        run: git config --global safe\.bareRepository explicit\n      - uses: actions\/checkout@[a-f0-9]{40}/,file);
-    assert.match(source,/persist-credentials: false/,file);
-    for(const [,action] of source.matchAll(/\buses:\s*([^\s#]+)/g))assert.match(action,/^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/,file);
-  }
-});
-
-test('legacy workflows are untouched: required check `test` still lives only in verify.yml',()=>{
+test('required check `test` is still produced only by verify.yml, unchanged',()=>{
   assert.deepEqual(scanWorkflow(read('.github/workflows/verify.yml')).jobs,
     ['test','attested-receipt','fixed-comparison']);
   assert.match(read('.github/workflows/verify.yml'),/^name: Ultron core verification$/m);
+  for(const file of list().filter(f=>f!=='verify.yml'))
+    assert.doesNotMatch(read('.github/workflows/'+file),/^  test:\s*$/m,file+' must not define a job named test');
 });
 
-test('Hatchable trust pins mean 11 files remain unless Hatchable pins are updated, 8 if they are',()=>{
-  assert.equal(cutoverFileCount(),11);
-  assert.equal(cutoverFileCount({hatchablePinsUpdated:true}),8);
+test('every moved job keeps its original trigger behind a job-level gate',()=>{
+  const gated={'lane-lab-evidence.yml':/inputs\.lab_task == /,'lane-owner-canary.yml':/inputs\.canary_task == /,
+    'lane-ops-audit.yml':/github\.event_name == /,'lane-governed-task.yml':/github\.event_name == |inputs\.governed_task == /};
+  for(const [file,gate] of Object.entries(gated)){
+    const yml=read('.github/workflows/'+file);
+    for(const job of scanWorkflow(yml).jobs){
+      const body=yml.split('\n  '+job+':\n')[1].split(/\n  [A-Za-z0-9_-]+:\n/)[0];
+      assert.match(body,/^    if: >-/m,file+'#'+job+' has no gate');
+      assert.match(body,gate,file+'#'+job);
+      assert.match(body,/^    permissions:/m,file+'#'+job+' must declare its own permissions');
+    }
+    assert.match(yml,/^permissions:\n  contents: read\njobs:/m,file+' workflow default must stay read-only');
+  }
 });
 
 const SHA='a'.repeat(40);

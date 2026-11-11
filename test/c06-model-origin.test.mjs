@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {admitC06, evaluateC06Function, buildC06Artifacts, verifyC06Files,
   C06_CASES, C06_PATHS} from '../src/c06-model-origin.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const sha='a'.repeat(40);
 const allowed={repository:'michaeljwilliams0123/Ultron.MW',actor:'michaeljwilliams0123',
@@ -106,7 +107,7 @@ test('C06-06 no deterministic substitution may rescue failed model output',async
 });
 
 test('C06-07 workflow separates read-only inference from write-capable publishing',async()=>{
- const file=await readFile(new URL('../.github/workflows/c06-owner-model-release.yml',import.meta.url),'utf8');
+ const file=legacyView('c06-owner-model-release.yml');
  assert.match(file,/workflow_dispatch:/);
  assert.match(file,/runs-on:\s*ubuntu-24\.04/);
  assert.match(file,/node scripts\/c06-run-model\.mjs/);

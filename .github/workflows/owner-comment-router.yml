@@ -1,26 +1,36 @@
 name: Ultron owner comment router
+# Council lane 'comment-router' (Companion). One front door for owner
+# comments. Also absorbs codex-trigger-audit.yml, inline-pr-chat.yml and
+# pr-brain.yml (inline here; pull_request_review_comment kept).
 on:
   issue_comment:
+    types: [created]
+  pull_request_review_comment:
     types: [created]
 permissions:
   contents: read
 jobs:
   cloud-feedback:
     if: >-
+      (github.event_name == 'issue_comment') &&
+      (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.event.comment.user.login == 'michaeljwilliams0123' &&
       github.event.issue.user.login == 'michaeljwilliams0123' &&
       startsWith(github.event.comment.body, 'ULTRON_FEEDBACK_V1') &&
       startsWith(github.event.issue.body, 'ULTRON_CLOUD_V1')
+      )
     permissions:
       contents: read
       issues: write
-    uses: ./.github/workflows/cloud-objective.yml
+      id-token: write
+    uses: ./.github/workflows/lane-governed-task.yml
     secrets: inherit
 
   pr-conversation:
     if: >-
+      (github.event_name == 'pull_request_review_comment' || (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.event.comment.user.login == 'michaeljwilliams0123' &&
@@ -33,16 +43,84 @@ jobs:
       github.event.comment.body != '@michaeljwilliams0123ultron' &&
       github.event.comment.body != '@ultron-codex' &&
       github.event.comment.body != '@destiny-codex'
+      )) &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event.comment.user.login == 'michaeljwilliams0123' &&
+      !startsWith(github.event.comment.body, '@coderabbitai') &&
+      !startsWith(github.event.comment.body, '@ultron chat ') &&
+      ((github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        github.event.issue.state == 'open') ||
+       (github.event_name == 'pull_request_review_comment' &&
+        github.event.pull_request.number > 0 &&
+        github.event.pull_request.state == 'open'))
+      )
+    concurrency:
+      group: ultron-pr-brain-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}-pr-conversation
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
     permissions:
       contents: write
       pull-requests: write
       issues: write
       actions: write
-    uses: ./.github/workflows/pr-brain.yml
-    secrets: inherit
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Validate PR conversation source
+        run: |
+          node --check src/pr-brain.mjs
+          node --check src/pr-brain-patch.mjs
+          node --check src/pr-brain-model.mjs
+          node --check src/pr-brain-inference.mjs
+          node --check src/pr-brain-multifile.mjs
+          node --check src/observability.mjs
+          node --check src/provider-authority.mjs
+          node --check src/framework-builder.mjs
+          node --check src/framework-integration-runtime.mjs
+          node --check src/capability-credentials.mjs
+      - name: Detect optional CPU model request
+        id: model-request
+        env:
+          ULTRON_COMMENT_BODY: ${{ github.event.comment.body }}
+        run: >-
+          node --input-type=module -e
+          "import {needsPrModelRuntime} from './src/pr-brain.mjs';
+          process.stdout.write('needed='+needsPrModelRuntime(process.env.ULTRON_COMMENT_BODY));"
+          >> "$GITHUB_OUTPUT"
+      - name: Install locked CPU inference runtime for explicit owner implementation requests
+        if: >-
+          github.event.repository.private == false &&
+          vars.ULTRON_MODEL_PROVIDER != 'openai' &&
+          steps.model-request.outputs.needed == 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Route PR comment through Ultron brain
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ULTRON_PUBLIC_CPU_INFERENCE: ${{ github.event.repository.private == false && 'enabled' || 'disabled' }}
+          ULTRON_MODEL_PROVIDER: ${{ vars.ULTRON_MODEL_PROVIDER || 'local-cpu' }}
+          ULTRON_MODEL: ${{ vars.ULTRON_MODEL || 'gpt-6.1-sol' }}
+          OPENAI_API_KEY: ${{ secrets.ULTRON_OPENAI_API_KEY }}
+          ULTRON_CAPACITY: ${{ vars.ULTRON_CAPACITY || 'standard' }}
+          ULTRON_ENABLE_DATADOG: ${{ vars.ULTRON_ENABLE_DATADOG || '0' }}
+          ULTRON_DATADOG_SITE: ${{ vars.ULTRON_DATADOG_SITE || 'datadoghq.com' }}
+          ULTRON_DATADOG_API_KEY: ${{ secrets.ULTRON_DATADOG_API_KEY }}
+        run: node src/pr-brain.mjs
 
   issue-implementation:
     if: >-
+      (github.event_name == 'issue_comment') &&
+      (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.event.comment.user.login == 'michaeljwilliams0123' &&
@@ -50,6 +128,7 @@ jobs:
       github.event.issue.state == 'open' &&
       github.event.issue.pull_request == null &&
       startsWith(github.event.comment.body, '@ultron implement ')
+      )
     permissions:
       contents: write
       pull-requests: write
@@ -60,14 +139,95 @@ jobs:
 
   council-command:
     if: >-
+      (github.event_name == 'issue_comment') &&
+      (
       github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.actor == 'michaeljwilliams0123' &&
       github.event.comment.user.login == 'michaeljwilliams0123' &&
       startsWith(github.event.comment.body, '/council')
+      )
     permissions:
       contents: read
       issues: write
       pull-requests: write
+      actions: write
       id-token: write
     uses: ./.github/workflows/council-debate.yml
     secrets: inherit
+
+  codex-trigger-audit:
+    if: >-
+      (github.event_name == 'issue_comment') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.event.comment.user.login == 'michaeljwilliams0123' &&
+      github.event.issue.pull_request != null &&
+      github.event.issue.state == 'open' &&
+      startsWith(github.event.comment.body, '/codex run ')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Audit exact owner request and branch evidence without external dispatch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/codex-trigger-audit.mjs
+
+  public-chat:
+    if: >-
+      (github.event_name == 'issue_comment') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.event.repository.private == false &&
+      (github.actor == 'michaeljwilliams0123' ||
+       github.actor == 'michaeljwilliams0123ultron') &&
+      github.event.comment.user.login == github.actor &&
+      github.event.issue.pull_request != null &&
+      github.event.issue.state == 'open' &&
+      startsWith(github.event.comment.body, '@ultron chat ')
+      )
+    concurrency:
+      group: ultron-public-chat-${{ github.event.issue.number || github.run_id }}-public-chat
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Install pinned public CPU inference dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check handler and regression tests
+        run: |
+          node --check src/github-inline-chat.mjs
+          node --test test/github-inline-chat.test.mjs
+      - name: Reply via free CPU only (never invoke Codex or OpenAI API)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ULTRON_PUBLIC_CPU_INFERENCE: enabled
+        run: node src/github-inline-chat.mjs

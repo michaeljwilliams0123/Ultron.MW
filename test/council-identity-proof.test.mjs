@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {judgeIdentityProof,proveIdentity,expectedIdentity} from '../scripts/council-identity-proof.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const marker='council-identity-proof:builder:abc';
 const good={id:7,body:'x <!-- '+marker+' -->',user:{login:'ultron-mw-builder-v2[bot]',type:'Bot',id:9},
@@ -44,7 +45,7 @@ test('proveIdentity posts then reads back; http failure throws',async()=>{
  await assert.rejects(proveIdentity({role:'Builder',issueNumber:1}),/input-invalid/);
 });
 test('workflow is owner-gated and SHA-pinned, shares only the Coordinator App identity',()=>{
- const y=readFileSync(new URL('../.github/workflows/council-identity-proof.yml',import.meta.url),'utf8');
+ const y=legacyView('council-identity-proof.yml');
  assert.match(y,/create-github-app-token@[0-9a-f]{40}/);
  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(y,/vars\.ULTRON_BUILDER_CLIENT_ID/);

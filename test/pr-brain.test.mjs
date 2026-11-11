@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { admitPrTurn,routePrTurn,handlePrConversation,
   needsPrModelRuntime } from '../src/pr-brain.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const OWNER='michaeljwilliams0123',REPO=OWNER+'/Ultron.MW',ROOT='/repos/'+REPO;
 const SHA='a'.repeat(40),OTHER='b'.repeat(40);
@@ -129,7 +130,8 @@ test('address evidence gap dispatches exact-head Verify without inventing pass',
 test('rescan uses no Issue, and explicit patch queues head verification',async()=>{
   const m=fixture();
   const ev=event('@ultron rescan');m.add(ev);await m.invoke(ev);
-  assert.ok(m.state.posts.some(x=>x.path===ROOT+'/actions/workflows/self-scan-pr.yml/dispatches'));
+  assert.ok(m.state.posts.some(x=>x.path===ROOT+'/actions/workflows/lane-ops-audit.yml/dispatches'&&
+    x.body?.inputs?.ops_task==='self-scan-pr'&&x.body?.ref==='main'));
   const patch=event('@ultron patch\n{"objective":"fix","baseSha":"'+SHA+'","changes":[]}',false,99);
   m.add(patch);
   const outcome=await m.invoke(patch);
@@ -140,7 +142,7 @@ test('rescan uses no Issue, and explicit patch queues head verification',async()
 });
 
 test('workflow executes only from trusted main and keeps bot reactions out',async()=>{
-  const text=await readFile(new URL('../.github/workflows/pr-brain.yml',import.meta.url),'utf8');
+  const text=legacyView('pr-brain.yml');
   assert.match(text,/pull_request_review_comment/);
   assert.match(text,/issue_comment/);
   assert.match(text,/github.actor == 'michaeljwilliams0123'/);
@@ -394,6 +396,6 @@ test('an explicit Ultron command on a controlled branch still posts a source-ver
  assert.equal(m.state.posts.filter(x=>x.path===ROOT+'/issues/24/comments').length,1);
 });
 test('workflow prevents review bots from starting the owner PR brain job',async()=>{
- const yaml=await readFile(new URL('../.github/workflows/pr-brain.yml',import.meta.url),'utf8');
+ const yaml=legacyView('pr-brain.yml');
  assert.match(yaml,/!startsWith\(github\.event\.comment\.body, '@coderabbitai'\)/);
 });

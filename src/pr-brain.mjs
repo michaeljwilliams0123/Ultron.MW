@@ -306,7 +306,9 @@ export async function handlePrConversation({event,eventName,actor,repository,get
     intent.code==='ci-head-unobserved'){
     action={requested:true,verify:await observeVerify({get,post,branch:pr.head.ref,headSha:pr.head.sha})};
   }else if(intent.kind==='rescan'){
-    await post(ROOT+'/actions/workflows/self-scan-pr.yml/dispatches',{ref:'main'});
+    // Self-scan runs in the ops-audit lane (26 -> 8 consolidation).
+    await post(ROOT+'/actions/workflows/lane-ops-audit.yml/dispatches',
+      {ref:'main',inputs:{ops_task:'self-scan-pr'}});
     action={requested:true};
   }else if(intent.kind==='implement'||intent.kind==='implement-multi'){
     try{

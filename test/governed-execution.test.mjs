@@ -36,13 +36,15 @@ test('repository workflows never interpolate untrusted expressions into run shel
  assert.deepEqual(shellExpressions('steps:\n  - run: |\n      echo $'+'{{ github.event.issue.body }}'),[3]);
 });
 
-test('harness passes raw input through env, never interpolated into shell',async()=>{
- const yaml=await readFile(new URL('../.github/workflows/governed-execution.yml',import.meta.url),'utf8');
- assert.match(yaml,/UNTRUSTED_PAYLOAD:\s*\$\{\{ inputs\.raw_payload \}\}/);
- assert.match(yaml,/permissions:\n  contents: read\n  actions: read/);
- assert.match(yaml,/persist-credentials: false/);
- assert.match(yaml,/run: node src\/governed-execution\.mjs/);
- assert.doesNotMatch(yaml,/contents: write|secrets\.HITL_HMAC_SECRET|pull_request_target/);
+test('retired governed-execution.yml (owner-approved, never ran) leaves no workflow running the harness',async()=>{
+ const {readdir}=await import('node:fs/promises');
+ const dir=new URL('../.github/workflows/',import.meta.url);
+ const files=await readdir(dir);
+ assert.equal(files.includes('governed-execution.yml'),false);
+ for(const name of files){
+  const yaml=await readFile(new URL(name,dir),'utf8');
+  assert.doesNotMatch(yaml,/src\/governed-execution\.mjs|inputs\.raw_payload/,name);
+ }
 });
 
 test('only owner main-branch dispatches and owner-triggered reruns are allowed',()=>{
