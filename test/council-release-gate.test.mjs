@@ -11,7 +11,9 @@ function facts(){
     memberAssessments:names.map(name=>({identity:{role:name},verdict:'proceed'}))},
   receipt:{decision:'proceed',publication:{members:roles.map(roleId=>({
     roleId,conclusion:'proceed',unknowns:[],dissentTags:[],evidenceRefs:['case:exact-head']
-  }))}}
+  }))},modelReview:{results:Object.fromEntries(['Builder','Skeptic','Sentinel'].map(role=>[role,{
+    role,source:'model',modelInvoked:true,verdict:'proceed',confidence:0.9,disagreements:[],rationale:'Falsifiable evidence confirmed'
+  }]))}}
  };
 }
 const evaluate=(patch={},extra={})=>evaluateCouncilAcceptance({
@@ -97,4 +99,31 @@ test('owner override never overwrites Council role evidence',()=>{
  assert.equal(r.approvedCount,6);
  assert.deepEqual(r.holdRoles,['Steward']);
  assert.equal(r.status,'owner-overridden');
+});
+
+
+test('a live Skeptic HOLD blocks 7 green deterministic labels',()=>{
+ const f=facts();f.receipt.modelReview.results.Skeptic.verdict='hold';
+ const r=evaluate(f);
+ assert.equal(r.status,'held');
+ assert.deepEqual(r.modelHoldRoles,['Skeptic']);
+ assert.equal(r.approvedCount,7);
+});
+test('model reasoning is mandatory for Builder, Skeptic and Sentinel unless exact owner exception',()=>{
+ for(const mutate of [
+  f=>{delete f.receipt.modelReview;},
+  f=>{delete f.receipt.modelReview.results.Sentinel;},
+  f=>{f.receipt.modelReview.results.Builder.source='deterministic-fallback';},
+  f=>{f.receipt.modelReview.results.Sentinel.modelInvoked=false;},
+  f=>{f.receipt.modelReview.results.Skeptic.verdict='revise';},
+  f=>{f.receipt.modelReview.results.Skeptic.disagreements=['unresolved risk'];},
+ ]){const f=facts();mutate(f);assert.equal(evaluate(f).status,'held');}
+});
+test('owner override preserves actual model-backed dissent and audit metadata',()=>{
+ const f=facts();f.receipt.modelReview.results.Skeptic.verdict='hold';
+ const r=evaluate({...f,overrideComment:owner(overrideBody())});
+ assert.equal(r.status,'owner-overridden');
+ assert.deepEqual(r.modelHoldRoles,['Skeptic']);
+ assert.equal(r.approvedCount,7);
+ assert.equal(r.overrideCommentId,9876);
 });
