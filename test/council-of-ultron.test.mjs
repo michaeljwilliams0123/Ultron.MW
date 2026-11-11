@@ -115,17 +115,21 @@ test('owner-only operations, unknown operations and governance work escalate to 
   assert.ok(gov.escalations.some(e => e.reason === 'governance-lane-requires-owner-decision'));
 });
 
-test('recorded outcomes change future routing (evidence-based improvement loop)', () => {
+test('recorded outcomes change future routing only once their evidence is verified', () => {
   const memory = createCouncilMemory({ now: clock });
   const task = n => ({ id: 'task-p-' + n, objective: 'Forecast and analyze the likely outcome', lanes: ['predictive', 'reasoning'] });
   const before = routeCouncilTask(task(0), { memory });
   assert.equal(before.lead, 'ultron-skeptic');
-  for (let n = 1; n <= 4; n++) {
-    const r = routeCouncilTask(task(n), { memory });
-    const o = recordCouncilOutcome(memory, r, { status: r.lead === 'ultron-skeptic' ? 'failed' : 'succeeded', evidence: [EV + '#' + n] });
-    memory.recordOutcome({ ...o, evidenceVerified: true }); // Skeptic L1: only verified outcomes score; stands in for the verifier
-  }
+  // Skeptic L1: outcomes recorded by the router are unverified references and never move routing.
+  for (let n = 1; n <= 4; n++)
+    recordCouncilOutcome(memory, routeCouncilTask(task(n), { memory }), { status: 'failed', evidence: [EV + '#' + n] });
+  assert.deepEqual(Object.keys(councilScorecard(memory)), []);
+  assert.equal(routeCouncilTask(task(5), { memory }).lead, 'ultron-skeptic');
+  // An outcome explicitly recorded with evidenceVerified:true does.
+  memory.recordOutcome({ routing: snapshotSha({ verified: 'task-p-6' }), taskId: 'task-p-6', lead: 'ultron-skeptic',
+    lanes: ['predictive', 'reasoning'], status: 'failed', evidence: [EV + '#6'], evidenceVerified: true });
   const card = councilScorecard(memory);
+  assert.equal(card['ultron-skeptic'].predictive.attempts, 1);
   assert.ok(card['ultron-skeptic'].predictive.rate < 0.5);
   const after = routeCouncilTask(task(9), { memory });
   assert.equal(after.lead, 'ultron-predictor');
@@ -180,7 +184,7 @@ const resealMemory = (snap, patch) => { const { sha256, ...b } = structuredClone
 test('Skeptic M1: inflections, plurals, zero-width, homoglyph and hyphen tricks still escalate to the owner', () => {
   for (const objective of ['rotate the secrets and tokens', 'change permissions on the repo', 'merging the branch now',
     'merged it', 'publish to production', 'mer\u200bge it', 'm\u0435rge the branch', 'me-rge it', 'm\u0259rge it',
-    'r\u0435l\u0435ase v2', 'deploying credentials']) {
+    'r\u0435l\u0435ase v2', 'deploying credentials', 'm.e.r.g.e it', 'rotate the s.e.c.r.e.t', 'm e r g e now']) {
     const r = routeCouncilTask({ id: 'task-m1', objective });
     assert.equal(r.decision, 'escalate-to-owner', objective);
     assert.ok(r.escalations.some(e => e.reason === 'governance-lane-requires-owner-decision'), objective);
@@ -228,7 +232,6 @@ test('Skeptic M4: restored memory cannot pollute prototypes or bypass write-path
     () => ({ shared: [{ at: '2026-11-10T00:00:00Z', by: 'ultron-core', fact: 'fine', evidence: ['not-a-link'] }] }),
     () => ({ shared: [{ at: '2026-11-10T00:00:00Z', by: 'ultron-intruder', fact: 'fine', evidence: [EV] }] }),
     b => { b.members['ultron-intruder'] = { namespace: 'council/intruder', profile: {}, journal: [] }; },
-    () => ({ outcomes: [{ ...outcome, evidenceVerified: 'yes' }] }),
   ]) {
     assert.throws(() => restoreCouncilMemory(resealMemory(snap, patch)), /snapshot-state-invalid|credential-like|evidence-invalid/);
     assert.equal(({}).lanes, undefined);
@@ -267,4 +270,17 @@ test('Skeptic L3: actions.dispatch and computer.* escalate to the owner by defau
     assert.deepEqual(r.escalations[0], { to: 'owner', op, reason: 'owner-confirmation-by-default' });
     assert.equal(companionReply(r).cards[0].op, op);
   }
+});
+
+test('Skeptic restore: Phase 1 outcomes without evidenceVerified load as unverified and do not score', () => {
+  const snap = createCouncilMemory({ now: clock }).snapshot();
+  const outcome = { routing: 'b'.repeat(64), taskId: 'task-p1', lead: 'ultron-builder', lanes: ['agentic'], status: 'failed',
+    evidence: [EV], at: '2026-11-10T00:00:00.000Z' };
+  for (const extra of [{}, { evidenceVerified: 'true' }, { evidenceVerified: 1 }, { evidenceVerified: null }]) {
+    const restored = restoreCouncilMemory(resealMemory(snap, () => ({ outcomes: [{ ...outcome, ...extra }] })));
+    assert.equal(restored.outcomes()[0].evidenceVerified, false, JSON.stringify(extra));
+    assert.deepEqual(Object.keys(councilScorecard(restored)), []);
+  }
+  const verified = restoreCouncilMemory(resealMemory(snap, () => ({ outcomes: [{ ...outcome, evidenceVerified: true }] })));
+  assert.equal(councilScorecard(verified)['ultron-builder'].agentic.attempts, 1);
 });

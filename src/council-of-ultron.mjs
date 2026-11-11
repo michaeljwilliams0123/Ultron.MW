@@ -244,7 +244,9 @@ export function restoreCouncilMemory(snapshot, options = {}) {
   const { sha256, ...body } = snapshot;
   if (snapshotSha(body) !== sha256) fail('snapshot-digest-mismatch');
   validateMemoryState(body, validateRoster(options.roster ?? COUNCIL_ROSTER));
-  return createCouncilMemory({ ...options, state: body });
+  // Phase 1 snapshots may lack evidenceVerified: anything but literal true restores as unverified.
+  const outcomes = body.outcomes.map(o => ({ ...o, evidenceVerified: o.evidenceVerified === true }));
+  return createCouncilMemory({ ...options, state: { ...body, outcomes } });
 }
 
 /** Skeptic M4: the digest is unkeyed, so a restored snapshot re-runs every write-path check. */
@@ -282,7 +284,7 @@ function validateMemoryState(body, members) {
   }
   for (const entry of body.outcomes) {
     if (!plain(entry) || !/^[a-f0-9]{64}$/.test(entry.routing || '') || !Array.isArray(entry.lanes) || !entry.lanes.length ||
-        entry.lanes.some(l => !LANE_IDS.includes(l)) || typeof entry.evidenceVerified !== 'boolean') bad();
+        entry.lanes.some(l => !LANE_IDS.includes(l))) bad();
     member(entry.lead); outcome(entry.status); if (entry.status === null) bad(); at(entry.at); cleanEvidence(entry.evidence);
   }
 }
@@ -300,7 +302,9 @@ function laneHits(objective) {
   const { raw, text } = signalText(objective);
   const joined = text.replace(/(\p{L})[-\u2010\u2011](?=\p{L})/gu, '$1'); // 'me-rge' -> 'merge'
   const has = pattern => pattern.test(text) || pattern.test(joined);
-  const stems = GOVERNANCE_STEMS.filter(stem => has(new RegExp('(^|[^a-z])' + stem)));
+  // Single letters separated by dots/spaces ('m.e.r.g.e', 's e c r e t') are joined for governance stems only.
+  const dotted = joined.replace(/(?<!\p{L})\p{L}(?:[.\s_*\u00b7]+\p{L}(?!\p{L})){2,}/gu, run => run.replace(/[^\p{L}]/gu, ''));
+  const stems = GOVERNANCE_STEMS.filter(stem => has(new RegExp('(^|[^a-z])' + stem)) || new RegExp('(^|[^a-z])' + stem).test(dotted));
   // A signal-like word that still carries non-ASCII letters is treated as an evasion attempt.
   const disguised = (raw.match(/[\p{L}\p{M}-]+/gu) || []).some(word => /[^\x00-\x7f]/.test(word) && /[a-z]/.test(word) &&
     GOVERNANCE_STEMS.some(stem => [...word.replace(/-/g, '').slice(0, stem.length)].every((ch, i) => ch === stem[i] || /[^\x00-\x7f]/.test(ch)) &&
