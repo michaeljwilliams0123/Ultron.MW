@@ -63,6 +63,27 @@ function rawEcdsaToDer(raw){
  const r=component(raw.slice(0,32)),s=component(raw.slice(32));
  return Uint8Array.from([0x30,4+r.length+s.length,2,r.length,...r,2,s.length,...s]);
 }
+// Hatchable's host-bridged createVerify only needs update() and verify().
+// Do not depend on Node stream-only end(): the bridge need not implement it.
+// Verification still consumes the exact signed payload and DER-encoded ES256.
+export function verifyOwnerSignatureWithProvider({
+ payload,signatureRaw,publicJwk,createVerifier=createVerify
+}={}){
+ if(typeof payload!=='string'||!(signatureRaw instanceof Uint8Array)||
+  signatureRaw.length!==64||!publicJwk)
+  refuse('invalid-grant-signature');
+ let verifier;
+ try{verifier=createVerifier('SHA256');}
+ catch{refuse('grant-signature-provider-unavailable');}
+ let pem,der;
+ try{pem=keyFromJwk(publicJwk);der=rawEcdsaToDer(signatureRaw);}
+ catch{refuse('invalid-grant-signature');}
+ try{
+  verifier.update(new TextEncoder().encode(payload));
+  return verifier.verify(pem,der)===true;
+ }catch{refuse('grant-signature-provider-error');}
+}
+
 export async function verifyDelegatedGrant({
  envelope,publicJwk,request,now=new Date().toISOString(),
  subtle=globalThis.crypto?.subtle
@@ -72,17 +93,8 @@ export async function verifyDelegatedGrant({
  if(!envelope||typeof envelope.payload!=='string'||envelope.payload.length>4096||
     !envelope.payload.length)refuse('invalid-grant-payload');
  const signature=decodeSignature(envelope.signature);
- let ok=false;
- let verifier;
- try{verifier=createVerify('SHA256');}
- catch{refuse('grant-signature-provider-unavailable');}
- let pem,der;
- try{pem=keyFromJwk(publicJwk);der=rawEcdsaToDer(signature);}
- catch{refuse('invalid-grant-signature');}
- try{
-  verifier.update(new TextEncoder().encode(envelope.payload));verifier.end();
-  ok=verifier.verify(pem,der);
- }catch{refuse('grant-signature-provider-error');}
+ const ok=verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:signature,publicJwk});
  if(!ok)refuse('invalid-grant-signature');
  let grant;
  try{grant=JSON.parse(envelope.payload);}
