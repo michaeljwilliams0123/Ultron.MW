@@ -120,6 +120,7 @@ export async function prepareOwnerPasskey({db,request}={}){
   return HELD('enrollment-key-or-version-denied');
  return {ok:true,status:'prepared',key,grantRequest:grantRequest(row),
   challenge:row.challenge,rpId:'ultron-mw-cloud.hatchable.site',
+  expiresAt:row.expiresAt,
   userId:base64url(crypto.getRandomValues(new Uint8Array(16)))};
 }
 export async function finishOwnerPasskey({db,config,key,envelope,attestation}={}){

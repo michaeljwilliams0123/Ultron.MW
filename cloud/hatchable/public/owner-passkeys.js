@@ -6,6 +6,9 @@ const encode=x=>btoa(String.fromCharCode(...new Uint8Array(x))).replace(/\+/g,'-
 const decode=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+
  '='.repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
 const newKey=()=>('owner-'+crypto.randomUUID()).slice(0,41);
+// Windows Hello may take up to 120 seconds. Keep a 30-second network margin
+// so an authorization cannot expire between the user gesture and submission.
+const MIN_ENROLLMENT_REMAINING_MS=150000;
 let enrollment=null,prepared=null,submitted=false,processing=false;
 el('enroll-key').value=newKey();
 el('action-key').value=newKey();
@@ -44,38 +47,75 @@ async function keys(){
  text('action-status',r.credentials.length+' enrolled owner passkeys found. No GitLab mutation yet.');
 }
 const prepareEnroll=async()=>{
+ // A previous request may be expired or already signed for another challenge.
+ // Never reuse its key or carry its signed envelope into a new ceremony.
+ enrollment=null;
+ el('enroll-copy').disabled=true;el('enroll-finish').disabled=true;
+ el('envelope').value='';el('signable').value='';
  const p=await profile();
  if(!p.allowedOperations?.includes('owner.passkey.enroll'))
   throw Error('owner-enrollment-operation-not-enabled');
- const request={key:el('enroll-key').value,label:el('label').value.trim(),
+ const request={key:newKey(),label:el('label').value.trim(),
   expectedProfileVersion:p.version,expectedStopVersion:p.stopVersion};
+ el('enroll-key').value=request.key;
  const r=await json('/api/brain/owner-passkeys',{mode:'prepare',request});
+ if(typeof r.expiresAt!=='string'||!Number.isFinite(Date.parse(r.expiresAt)))
+  throw Error('enrollment-expiry-unavailable');
  enrollment={key:request.key,grantRequest:r.grantRequest,challenge:r.challenge,
-  userId:r.userId,rpId:r.rpId};
+  userId:r.userId,rpId:r.rpId,expiresAt:r.expiresAt};
  el('signable').value=JSON.stringify(r.grantRequest,null,2);
  el('enroll-copy').disabled=false;el('enroll-finish').disabled=false;
- text('enroll-status','One-time owner-signed grant requested. Sign the exact JSON using your offline owner key, paste the envelope, then create your passkey.');
+ text('enroll-status','Fresh enrollment prepared. Copy the exact request for local signing, then paste its signed envelope. Do not use a previous grant.');
 };
 prepareEnroll.stage='enroll';
 el('enroll-prepare').addEventListener('click',safe(prepareEnroll));
-el('enroll-copy').addEventListener('click',safe(async()=>{
+const copyEnroll=async()=>{
  if(!enrollment)throw Error('prepare-first');
  await navigator.clipboard.writeText(el('signable').value);
- text('enroll-status','Signing request copied. Do not paste your private key into this site.');
-}));
-const finishEnroll=async()=>{
+ text('enroll-status','Signing request copied. Only paste the signed envelope into this site; never paste your private key.');
+};
+copyEnroll.stage='enroll';
+el('enroll-copy').addEventListener('click',safe(copyEnroll));
+function parseSignedEnrollment(raw){
  if(!enrollment)throw Error('prepare-first');
- const envelope=JSON.parse(el('envelope').value);
+ let envelope,payload;
+ try{envelope=JSON.parse(raw);payload=JSON.parse(envelope?.payload);}
+ catch{throw Error('invalid-owner-envelope');}
  if(!envelope||typeof envelope.payload!=='string'||typeof envelope.signature!=='string'||
   Object.keys(envelope).sort().join(',')!=='payload,signature')
   throw Error('invalid-owner-envelope');
- const payload=JSON.parse(envelope.payload);
  const g=enrollment.grantRequest;
  if(payload.operation!==g.operation||payload.objectiveId!==g.objectiveId||
   payload.resource!==g.resource||payload.policySha!==g.policySha||
   payload.profileVersion!==g.profileVersion||payload.stopVersion!==g.stopVersion||
   payload.authorizedBy!=='michaeljwilliams0123')
   throw Error('signed-envelope-does-not-match-request');
+ const remaining=Date.parse(payload.expiresAt)-Date.now();
+ const enrollmentRemaining=Date.parse(enrollment.expiresAt)-Date.now();
+ if(!Number.isFinite(remaining)||!Number.isFinite(enrollmentRemaining))
+  throw Error('enrollment-expiry-unavailable');
+ if(Date.parse(payload.notBefore)>Date.now()+5000)
+  throw Error('signed-grant-not-yet-valid');
+ if(remaining<MIN_ENROLLMENT_REMAINING_MS)
+  throw Error('signed-grant-too-close-to-expiry-prepare-fresh');
+ if(enrollmentRemaining<MIN_ENROLLMENT_REMAINING_MS)
+  throw Error('enrollment-too-close-to-expiry-prepare-fresh');
+ return {envelope,remaining};
+}
+const pasteEnroll=async()=>{
+ if(!enrollment)throw Error('prepare-first');
+ if(!navigator.clipboard?.readText)throw Error('clipboard-unavailable-use-Ctrl-V');
+ const raw=await navigator.clipboard.readText();
+ const checked=parseSignedEnrollment(raw);
+ el('envelope').value=raw;
+ text('enroll-status','Signed grant ready ('+Math.floor(checked.remaining/1000)+
+  ' seconds remain). Create your passkey on this device now.');
+};
+pasteEnroll.stage='enroll';
+el('enroll-paste').addEventListener('click',safe(pasteEnroll));
+const finishEnroll=async()=>{
+ if(!enrollment)throw Error('prepare-first');
+ const {envelope}=parseSignedEnrollment(el('envelope').value);
  if(!window.PublicKeyCredential||!navigator.credentials?.create)
   throw Error('passkeys-unavailable-in-this-browser');
  const existing=await json('/api/brain/owner-passkeys');
