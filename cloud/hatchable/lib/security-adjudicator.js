@@ -363,9 +363,9 @@ export async function reserveBranchExecution({
   RETURNING grant_id
  ), execution AS (
   INSERT INTO github_idempotent_executions(
-   idempotency_key,operation_digest,repository,target_kind,target_branch,
+   idempotency_key,operation_digest,repository,target_branch,
    grant_id,persona_role,state)
-  SELECT $1,$9,'michaeljwilliams0123/Ultron.MW','branch',$12,
+  SELECT $1,$9,'michaeljwilliams0123/Ultron.MW',$12,
    grant_id,'builder','reserved' FROM admitted
   RETURNING idempotency_key,state
  ), receipt AS (

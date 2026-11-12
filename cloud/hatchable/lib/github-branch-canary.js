@@ -171,7 +171,7 @@ const VERIFY_SQL=`SELECT e.idempotency_key,e.operation_digest,e.repository,
  ) AS authority_live
  FROM github_idempotent_executions e
  JOIN brain_authority_grants g ON g.grant_id=e.grant_id
- WHERE e.idempotency_key=$1 AND e.target_kind='branch'`;
+ WHERE e.idempotency_key=$1`;
 /**
  * durableServices.authorization adapter. Proof is derived only from the
  * module-verified grant and its durable reservation, re-read on every call,
@@ -220,7 +220,7 @@ async function requireAuthorization(services,intent,clock){
 
 const ROW_SQL=`SELECT idempotency_key,state,operation_digest,repository,target_branch,
  persona_role,grant_id,receipt FROM github_idempotent_executions
- WHERE idempotency_key=$1 AND target_kind='branch'`;
+ WHERE idempotency_key=$1`;
 async function row(db,key){
  let result;
  try{result=await db.query(ROW_SQL,[key]);}catch{fail('ledger-readback-unavailable');}

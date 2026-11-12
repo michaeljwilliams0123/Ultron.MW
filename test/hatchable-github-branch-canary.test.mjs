@@ -264,8 +264,8 @@ test('0044 permits grant-bound branch rows only for a matching repair.branch.cre
  const db=await database(t);
  const digest='d'.repeat(64),branch='ultron/canary-migration';
  const insert=(key,grant,target=branch)=>db.query(`INSERT INTO github_idempotent_executions(
-  idempotency_key,operation_digest,repository,target_kind,target_branch,grant_id,persona_role)
-  VALUES($1,$2,$3,'branch',$4,$5,'builder')`,[key,digest,REPO,target,grant]);
+  idempotency_key,operation_digest,repository,target_branch,grant_id,persona_role)
+  VALUES($1,$2,$3,$4,$5,'builder')`,[key,digest,REPO,target,grant]);
  const grant=(id,operation,resource)=>db.query(`INSERT INTO brain_authority_grants(
   grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
   VALUES($1,'objective',$2,$3,$4,$5,now()+interval '5 minutes')`,
@@ -279,14 +279,15 @@ test('0044 permits grant-bound branch rows only for a matching repair.branch.cre
  await insert('ultron-task-bound','grant-branch-ok');
  await assert.rejects(db.query(`UPDATE github_idempotent_executions SET grant_id=NULL
   WHERE idempotency_key='ultron-task-bound'`),/transition-denied/);
- await assert.rejects(db.query(`INSERT INTO github_idempotent_executions(
-  idempotency_key,operation_digest,repository,target_kind,target_branch,body_sha256,persona_role)
-  VALUES('ultron-task-shape',$1,$2,'branch','ultron/canary-shape',$1,'builder')`,[digest,REPO]),
-  /target_shape_check/);
- await assert.rejects(db.query(`INSERT INTO github_idempotent_executions(
-  idempotency_key,operation_digest,repository,target_kind,target_number,body_sha256,persona_role)
-  VALUES('ultron-task-pr-nogrant',$1,$2,'pull_request_comment',7,$1,'builder')`,[digest,REPO]),
-  /target_shape_check/);
+ // #420 / 0041 split: the branch table remains branch-only; C04 comments
+ // stay in their own independently constrained ledger.
+ const columns=(await db.query("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name IN ('github_idempotent_executions','github_pr_comment_executions')")).rows;
+ const branchCols=columns.filter(c=>c.table_name==='github_idempotent_executions').map(c=>c.column_name);
+ const commentCols=columns.filter(c=>c.table_name==='github_pr_comment_executions').map(c=>c.column_name);
+ for(const column of ['target_branch','grant_id']) assert.ok(branchCols.includes(column),'branch ledger missing '+column);
+ for(const column of ['target_kind','target_number','body_sha256']) assert.equal(branchCols.includes(column),false,'unexpected branch ledger '+column);
+ for(const column of ['target_number','body_sha256','grant_id']) assert.ok(commentCols.includes(column),'C04 ledger missing '+column);
+ await assert.rejects(db.query("INSERT INTO github_idempotent_executions(idempotency_key,operation_digest,repository,target_branch,persona_role) VALUES('ultron-task-null-branch',$1,$2,NULL,'builder')",[digest,REPO]),/null value|not-null constraint/);
  const ops=Array.from({length:24},(_,i)=>'op.'+i);
  await db.query(`UPDATE brain_owner_autonomy_profile SET allowed_operations=$1::jsonb WHERE id=1`,
   [JSON.stringify(ops)]);

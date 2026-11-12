@@ -196,5 +196,5 @@ test('0044 ledger guard: terminal states are branch-only, reachable only from re
  await assert.rejects(h.db.query(`DELETE FROM github_idempotent_executions`),/immutable/);
  const migration=await readFile(new URL('../cloud/hatchable/migrations/0044_github_branch_grant_executions.sql',import.meta.url),'utf8');
  assert.match(migration,/OLD\.state='in_flight' AND NEW\.state NOT IN \('completed','reconcile_required'\)/);
- assert.match(migration,/target_kind='branch' AND grant_id IS NOT NULL AND receipt IS NULL/);
+ assert.match(migration,/grant_id IS NOT NULL AND receipt IS NULL/);
 });
