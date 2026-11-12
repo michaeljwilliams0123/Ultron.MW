@@ -117,14 +117,27 @@ export async function finishOwnerPasskey({db,config,key,envelope,attestation}={}
  catch{return UNCERTAIN('enrollment-readback-unavailable');}
  if(!row||row.usedAt||Date.parse(row.expiresAt)<=Date.now())
   return HELD('enrollment-expired-or-used');
- let grant,credential;
+ // Distinguish the signer grant from browser attestation; neither stage can
+ // persist owner credentials until both independently succeed.
+ let grant;
  try{
   const pinned=JSON.parse(await config.get('ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK'));
   grant=await verifyDelegatedGrant({envelope,publicJwk:pinned,request:grantRequest(row)});
-  if(grant.profileVersion!==row.profileVersion||grant.stopVersion!==row.stopVersion||
-   grant.policySha!==row.policySha)throw Error('enrollment-grant-mismatch');
+ }catch{return HELD('enrollment-owner-grant-verification-failed');}
+ if(grant.profileVersion!==row.profileVersion||grant.stopVersion!==row.stopVersion||
+    grant.policySha!==row.policySha)
+  return HELD('enrollment-owner-grant-binding-mismatch');
+ let credential;
+ try{
   credential=await verifyOwnerPasskeyRegistration({...attestation,challenge:row.challenge});
- }catch{return HELD('enrollment-cryptographic-verification-failed');}
+ }catch(error){
+  // Expose only internal enumerated verifier categories to this owner-only
+  // endpoint; never send authenticator data, signatures, or raw error details.
+  const reason=typeof error?.message==='string'?error.message:'';
+  const detail=/^passkey-[a-z0-9-]{3,60}$/.test(reason)?
+   reason.slice('passkey-'.length):'verification-failed';
+  return HELD('enrollment-webauthn-'+detail);
+ }
  try{
   await db.query(COMMIT,[row.key,row.fingerprint,row.challenge,grant.grantId,
    grant.policySha,grant.resource,grant.expiresAt,row.profileVersion,row.stopVersion,

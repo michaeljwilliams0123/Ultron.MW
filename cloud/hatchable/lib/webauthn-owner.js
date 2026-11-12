@@ -115,6 +115,14 @@ function readCbor(data,cursor,depth=0){
   len=new DataView(data.buffer,data.byteOffset+cursor.i,4).getUint32(0,false);cursor.i+=4;}
  else refuse('attestation-invalid');
  if(len>16384)refuse('attestation-invalid');
+ // COSE extension maps may contain CBOR booleans (e.g. credProps.rk).
+ // Support only defined, bounded simple values; reject floats and breaks.
+ if(major===7){
+  if(info===20)return false;
+  if(info===21)return true;
+  if(info===22)return null;
+  refuse('attestation-invalid');
+ }
  if(major===0||major===1)return major===0?len:-1-len;
  if(major===2||major===3){
   if(cursor.i+len>data.length)refuse('attestation-invalid');
@@ -174,7 +182,7 @@ export async function verifyOwnerPasskeyRegistration({
  if(!equal(auth.slice(0,32),rpHash))refuse('rp-mismatch');
  const flags=auth[32];
  if((flags&0x01)===0||(flags&0x04)===0)refuse('user-verification-required');
- if((flags&0x40)===0||(flags&0x80)!==0)refuse('authenticator-data-invalid');
+ if((flags&0x40)===0)refuse('authenticator-data-invalid');
  const signCount=new DataView(auth.buffer,auth.byteOffset+33,4).getUint32(0,false);
  const credentialLength=(auth[53]<<8)|auth[54];
  if(credentialLength<16||credentialLength>1024||55+credentialLength>=auth.length)
@@ -183,6 +191,12 @@ export async function verifyOwnerPasskeyRegistration({
  if(!equal(attestedId,rawId))refuse('credential-mismatch');
  const cosePos={i:55+credentialLength};
  const cose=readCbor(auth,cosePos);
+ // WebAuthn Level 3 permits a CBOR authenticator extension map after COSE.
+ // Parse it only when ED is set, and always consume the entire authData.
+ if((flags&0x80)!==0){
+  const extensions=readCbor(auth,cosePos);
+  if(!(extensions instanceof Map))refuse('extensions-invalid');
+ }
  if(cosePos.i!==auth.length||!(cose instanceof Map)||
   cose.get(1)!==2||cose.get(3)!==-7||cose.get(-1)!==1||
   !(cose.get(-2) instanceof Uint8Array)||cose.get(-2).length!==32||
