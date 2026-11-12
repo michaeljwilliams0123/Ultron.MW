@@ -131,3 +131,43 @@ test('enrollment provides safe grant-versus-attestation failure categories',asyn
   assert.equal((await enroller.listOwnerPasskeys({db:h.db})).length,0);
  }finally{await h.db.close();}
 });
+
+test('owner-only expired enrollment diagnostic proves a valid expired grant cryptographically',async()=>{
+ const h=await setup();
+ try{
+  const request={key:'owner-grant-expired-diag-001',label:'Diagnostic',
+   expectedProfileVersion:7,expectedStopVersion:5};
+  const prepared=await enroller.prepareOwnerPasskey({db:h.db,request});
+  assert.equal(prepared.ok,true);
+  const prior=await signedGrant(h.issuer.privateKey,prepared.grantRequest);
+  const claims=JSON.parse(prior.payload);
+  claims.notBefore=new Date(Date.now()-420000).toISOString();
+  claims.expiresAt=new Date(Date.now()-300000).toISOString();
+  const payload=JSON.stringify(claims);
+  const sig=await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},
+   h.issuer.privateKey,txt(payload));
+  const expired={payload,signature:b64(sig)};
+  await h.db.query("UPDATE brain_owner_passkey_enrollments SET expires_at=now()-interval '1 second' WHERE enrollment_key=$1",[request.key]);
+  const result=await enroller.diagnoseExpiredOwnerGrant({
+   db:h.db,config:h.config,key:request.key,envelope:expired});
+  assert.deepEqual(result,{ok:true,status:'diagnosed',reason:'grant-expired'});
+  const corrupted={...expired,signature:'!'+expired.signature.slice(1)};
+  const rejected=await enroller.diagnoseExpiredOwnerGrant({
+   db:h.db,config:h.config,key:request.key,envelope:corrupted});
+  assert.deepEqual(rejected,{ok:true,status:'diagnosed',reason:'invalid-grant-signature'});
+  assert.equal((await enroller.listOwnerPasskeys({db:h.db})).length,0);
+ }finally{await h.db.close();}
+});
+test('diagnostic is unavailable for live enrollment and cannot mutate passkey registry',async()=>{
+ const h=await setup();
+ try{
+  const request={key:'owner-grant-current-diag-001',label:'Current enrollment',
+   expectedProfileVersion:7,expectedStopVersion:5};
+  const prepared=await enroller.prepareOwnerPasskey({db:h.db,request});
+  const signed=await signedGrant(h.issuer.privateKey,prepared.grantRequest);
+  const result=await enroller.diagnoseExpiredOwnerGrant({
+   db:h.db,config:h.config,key:request.key,envelope:signed});
+  assert.deepEqual(result,{ok:false,status:'held',reason:'diagnostic-expired-only'});
+  assert.equal((await enroller.listOwnerPasskeys({db:h.db})).length,0);
+ }finally{await h.db.close();}
+});
