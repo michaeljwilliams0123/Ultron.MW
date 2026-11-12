@@ -114,11 +114,13 @@ test('authorized branch submission sends exactly one mutation request',async()=>
  await h.click('gh-check');await h.click('gh-prepare');await h.click('gh-copy');
  assert.match(h.clipboard(),/repair.branch.create/);
  h.setClipboard(h.signed());await h.click('gh-paste');
- await h.click('gh-submit');await h.click('gh-submit');
+ await h.click('gh-submit');
+ assert.match(h.element('gh-status-text').textContent,/independent|readback|receipt/i);
+ await h.click('gh-submit');
+ assert.match(h.element('gh-status-text').textContent,/already submitted/i);
  assert.equal(h.requests.filter(x=>x.body.mode==='submit').length,1);
  assert.equal(h.confirmations(),1);
  assert.equal(h.element('gh-submit').disabled,true);
- assert.match(h.element('gh-status-text').textContent,/independent|readback|receipt/i);
 });
 test('ambiguous GitHub response never blindly resubmits; owner can reconcile read-only',async()=>{
  const h=fixture({submitOutcome:'ambiguous'});
