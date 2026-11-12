@@ -238,7 +238,7 @@ test('Hatchable ECDSA verifier bridge accepts a minimal update/verify provider w
  assert.throws(()=>mod.verifyOwnerSignatureWithProvider({
   payload:envelope.payload,signatureRaw:raw,publicJwk,
   createVerifier:()=>({update(){throw Error('provider-side-effect')},verify(){return true}})}),
- /grant-signature-provider-error/);
+ /grant-signature-provider-update-error/);
 });
 
 test('Hatchable crypto bridge verifies string UTF-8 payload and base64 DER signature',async()=>{
