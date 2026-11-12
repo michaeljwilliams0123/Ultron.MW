@@ -1,4 +1,6 @@
 import { githubRequest } from './cloud-pr.mjs';
+import {isCouncilGovernanceRepairPr,assertCouncilRepairManifest}
+  from './council-governance-repair-admission.mjs';
 
 const ROOT='/repos/michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
@@ -26,11 +28,26 @@ export async function applyPrPatch({pr,manifest,get,post,
     typeof patch.objective!=='string'||!patch.objective.trim()||
     patch.objective.length>300||!SHA.test(patch.baseSha||'')||
     !Array.isArray(patch.changes)||patch.changes.length<1||
-    patch.changes.length>6||!pr?.head?.ref?.startsWith('ultron/')||
+    patch.changes.length>6||
+    (!pr?.head?.ref?.startsWith('ultron/')&&!isCouncilGovernanceRepairPr(pr))||
     pr.head.repo?.full_name!=='michaeljwilliams0123/Ultron.MW'||
     pr.base.ref!=='main'||patch.baseSha!==pr.head.sha)
     throw Error('PR patch requires exact head, objective and 1-6 source edits');
+  if(isCouncilGovernanceRepairPr(pr))
+   assertCouncilRepairManifest(pr,patch);
   const branch=pr.head.ref,head=pr.head.sha;
+  // A governance repair's PR body/branch are data, never standing write
+  // authority. Re-read exact current PR state before any Git blob mutation
+  // and again before moving the branch ref to prevent close/marker/head races.
+  const assertLiveCouncilTarget=async()=>{
+   if(!isCouncilGovernanceRepairPr(pr))return;
+   const live=await get(ROOT+'/pulls/'+pr.number);
+   if(!isCouncilGovernanceRepairPr(live)||
+      live.number!==pr.number||live.head.sha!==head||
+      live.head.ref!==branch||live.base.sha!==pr.base.sha)
+    throw Error('Council governance PR changed or unverified');
+  };
+  await assertLiveCouncilTarget();
   const ref=ROOT+'/git/ref/heads/'+branch;
   const mainRef=ROOT+'/git/ref/heads/main';
   const mainSha=(await get(mainRef))?.object?.sha;
@@ -87,6 +104,7 @@ export async function applyPrPatch({pr,manifest,get,post,
     (await get(mainRef))?.object?.sha!==mainSha)
     throw Error('PR source or main advanced; leave patch commit unreferenced');
   // GitHub uses singular /git/ref for reads but plural /git/refs for updates.
+  await assertLiveCouncilTarget();
   const updatePath=ROOT+'/git/refs/heads/'+branch;
   const updated=await updateRef(updatePath,{sha:next.sha,force:false});
   // GitHub ref and contents reads can lag a successful write. Re-read, never

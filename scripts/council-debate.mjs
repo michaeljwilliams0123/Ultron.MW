@@ -8,6 +8,7 @@ import {buildCouncilPublication} from '../src/council-publication.mjs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
 import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
 import {assessCouncil} from '../src/council-members.mjs';
+import {buildCouncilExactHeadEvidence} from '../src/council-exact-head-evidence.mjs';
 import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mjs';
 import {runReasoningRound} from '../src/council-reasoning.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
@@ -89,8 +90,19 @@ const roleLabels={
   'ultron-companion':'Companion'
 };
 const itemNumber=Number(item)||0;
+// Caller is trusted main-workflow GitHub REST readback; never PR text.
+// Absent, partial or stale evidence remains unverified (no advisory softening).
+let reviewEvidence=null;
+try{
+ const path=process.env.COUNCIL_REVIEW_EVIDENCE_FILE;
+ if(path&&isPr){
+  const data=JSON.parse(readFileSync(path,'utf8'));
+  reviewEvidence=buildCouncilExactHeadEvidence(data);
+ }
+}catch{reviewEvidence=null;}
 const memberAssessments=assessCouncil({
   title,body,isPr,itemNumber,sourceSha,flags,ownerMode,
+  reviewEvidence:reviewEvidence?.sourceSha===sourceSha?reviewEvidence:null,
   governorPositions:receipt.positions
 });
 const icon=v=>v==='proceed'?'✅':'⛔';
@@ -249,6 +261,8 @@ writeFileSync('council-receipt.json', JSON.stringify({
   actions,
   dialogue,
   publication,
+  // Preserve real provider provenance and dissent for trusted release evaluation.
+  modelReview:reasoning,
 }, null, 2));
 
 console.log(status);

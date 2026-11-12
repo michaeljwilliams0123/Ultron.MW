@@ -1,0 +1,162 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {generateKeyPairSync,sign} from 'node:crypto';
+import {evaluateCouncilAcceptance,validateOwnerOverride} from '../src/council-release-gate.mjs';
+
+const HEAD='a'.repeat(40),BASE='b'.repeat(40),PR=456;
+const keyPair=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+const OWNER_PUBLIC_JWK=keyPair.publicKey.export({format:'jwk'});
+const NONCE='c'.repeat(32);
+const REASON='Owner explicitly authorizes this exact Council exception after security review.';
+const names=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
+const roles=names.map(name=>'ultron-'+name.toLowerCase());
+function facts(){
+ return {
+  report:{itemNumber:PR,isPr:true,sourceSha:HEAD,hold:false,
+    memberAssessments:names.map(name=>({identity:{role:name},verdict:'proceed'}))},
+  receipt:{decision:'proceed',publication:{members:roles.map(roleId=>({
+    roleId,conclusion:'proceed',unknowns:[],dissentTags:[],evidenceRefs:['case:exact-head']
+  }))},modelReview:{results:Object.fromEntries(['Builder','Skeptic','Sentinel'].map(role=>[role,{
+    role,source:'model',modelInvoked:true,verdict:'proceed',confidence:0.9,disagreements:[],rationale:'Falsifiable evidence confirmed'
+  }]))}}
+ };
+}
+const evaluate=(patch={},extra={})=>evaluateCouncilAcceptance({
+ ...facts(),prNumber:PR,sourceSha:HEAD,baseSha:BASE,
+ ownerPublicJwk:OWNER_PUBLIC_JWK,now:'2026-11-10T21:00:00.000Z',
+ ...patch,...extra
+});
+function owner(body){
+ return {id:9876,user:{login:'michaeljwilliams0123',id:308995719},
+   body,created_at:'2026-11-10T20:45:00Z',updated_at:'2026-11-10T20:45:00Z'};
+}
+function overrideBody(head=HEAD,base=BASE,pr=PR,nonce=NONCE,reason=REASON){
+ const message=['ULTRON-COUNCIL-OVERRIDE-v1','michaeljwilliams0123/Ultron.MW',
+  String(pr),head,base,nonce,reason,''].join('\n');
+ const signature=sign('sha256',Buffer.from(message),keyPair.privateKey).toString('base64url');
+ return '/council override '+pr+' '+head+' '+base+' '+nonce+' -- '+reason+
+  '\nsignature:p256:'+signature;
+}
+test('all seven exact roles must approve on the same PR head with full evidence',()=>{
+ const result=evaluate();
+ assert.equal(result.status,'accepted');
+ assert.equal(result.approvedCount,7);
+ assert.equal(result.overrideUsed,false);
+ assert.deepEqual(result.holdRoles,[]);
+});
+test('one hold makes the decision HOLD, even if six approve',()=>{
+ const f=facts();f.report.memberAssessments[1].verdict='hold';
+ const result=evaluate(f);
+ assert.equal(result.status,'held');
+ assert.equal(result.approvedCount,6);
+ assert.deepEqual(result.holdRoles,['Skeptic']);
+});
+test('missing, duplicate, unknown and fake roles never reach 7/7',()=>{
+ for(const mutate of [
+  f=>f.report.memberAssessments.pop(),
+  f=>f.report.memberAssessments[6].identity.role='Builder',
+  f=>f.receipt.publication.members[6].roleId='ultron-pretender',
+  f=>f.receipt.publication.members.pop()
+ ]){const f=facts();mutate(f);assert.equal(evaluate(f).status,'held');}
+});
+test('source drift, governor HOLD, open unknown or dissent hold even at 7 vote labels',()=>{
+ const bad=[
+  f=>{f.report.sourceSha='c'.repeat(40);},
+  f=>{f.report.hold=true;},
+  f=>{f.receipt.decision='hold';},
+  f=>{f.receipt.publication.members[0].unknowns=['not-verified'];},
+  f=>{f.receipt.publication.members[0].dissentTags=['security'];},
+  f=>{f.receipt.publication.members[0].evidenceRefs=[];},
+ ];
+ for(const mutate of bad){const f=facts();mutate(f);assert.equal(evaluate(f).status,'held');}
+});
+test('missing report is never accepted, even with an owner override comment',()=>{
+ assert.equal(evaluate({report:null,overrideComment:owner(overrideBody())}).status,'held');
+});
+test('explicit owner override is allowed only on exact current head/base and is auditable',()=>{
+ const f=facts();f.report.memberAssessments[1].verdict='hold';
+ const result=evaluate({...f,overrideComment:owner(overrideBody())});
+ assert.equal(result.status,'owner-overridden');
+ assert.equal(result.approvedCount,6);
+ assert.equal(result.overrideUsed,true);
+ assert.equal(result.overrideCommentId,9876);
+ assert.ok(result.holdRoles.includes('Skeptic'));
+});
+test('comment authored by a bot or collaborator is not a valid owner override',()=>{
+ for(const user of [{login:'michaeljwilliams0123ultron',id:354634860},
+                    {login:'michaeljwilliams0123',id:999},
+                    {login:'github-actions[bot]',id:308995719}]){
+  const c=owner(overrideBody());c.user=user;
+  assert.equal(validateOwnerOverride(c,{sourceSha:HEAD,baseSha:BASE,prNumber:PR,
+     ownerPublicJwk:OWNER_PUBLIC_JWK,now:'2026-11-10T21:00:00.000Z'}),null);
+ }
+});
+test('no implicit override: exact syntax, SHA, base, immutable comment and freshness mandatory',()=>{
+ const cases=[
+  owner('/council approve '+HEAD),
+  owner('/council override '+HEAD+' -- missing base'),
+  owner(overrideBody('c'.repeat(40))),
+  owner(overrideBody(HEAD,'c'.repeat(40))),
+  {...owner(overrideBody()),updated_at:'2026-11-10T20:47:00Z'},
+  {...owner(overrideBody()),created_at:'2026-11-07T21:00:00Z',updated_at:'2026-11-07T21:00:00Z'},
+  {...owner(overrideBody()),created_at:'2026-11-11T21:00:00Z',updated_at:'2026-11-11T21:00:00Z'},
+ ];
+ for(const c of cases)assert.equal(validateOwnerOverride(c,{sourceSha:HEAD,
+   baseSha:BASE,prNumber:PR,ownerPublicJwk:OWNER_PUBLIC_JWK,
+   now:'2026-11-10T21:00:00.000Z'}),null);
+});
+test('owner override never overwrites Council role evidence',()=>{
+ const f=facts();f.report.memberAssessments[2].verdict='hold';
+ const r=evaluate({...f,overrideComment:owner(overrideBody())});
+ assert.equal(r.approvedCount,6);
+ assert.deepEqual(r.holdRoles,['Steward']);
+ assert.equal(r.status,'owner-overridden');
+});
+
+
+test('a live Skeptic HOLD blocks 7 green deterministic labels',()=>{
+ const f=facts();f.receipt.modelReview.results.Skeptic.verdict='hold';
+ const r=evaluate(f);
+ assert.equal(r.status,'held');
+ assert.deepEqual(r.modelHoldRoles,['Skeptic']);
+ assert.equal(r.approvedCount,7);
+});
+test('model reasoning is mandatory for Builder, Skeptic and Sentinel unless exact owner exception',()=>{
+ for(const mutate of [
+  f=>{delete f.receipt.modelReview;},
+  f=>{delete f.receipt.modelReview.results.Sentinel;},
+  f=>{f.receipt.modelReview.results.Builder.source='deterministic-fallback';},
+  f=>{f.receipt.modelReview.results.Sentinel.modelInvoked=false;},
+  f=>{f.receipt.modelReview.results.Skeptic.verdict='revise';},
+  f=>{f.receipt.modelReview.results.Skeptic.disagreements=['unresolved risk'];},
+ ]){const f=facts();mutate(f);assert.equal(evaluate(f).status,'held');}
+});
+test('owner override preserves actual model-backed dissent and audit metadata',()=>{
+ const f=facts();f.receipt.modelReview.results.Skeptic.verdict='hold';
+ const r=evaluate({...f,overrideComment:owner(overrideBody())});
+ assert.equal(r.status,'owner-overridden');
+ assert.deepEqual(r.modelHoldRoles,['Skeptic']);
+ assert.equal(r.approvedCount,7);
+ assert.equal(r.overrideCommentId,9876);
+});
+
+
+test('GitHub-account-only override is denied without a separate valid P-256 signature',()=>{
+ const c=owner('/council override '+PR+' '+HEAD+' '+BASE+' '+NONCE+
+  ' -- '+REASON);
+ assert.equal(validateOwnerOverride(c,{sourceSha:HEAD,baseSha:BASE,prNumber:PR,
+  ownerPublicJwk:OWNER_PUBLIC_JWK,now:'2026-11-10T21:00:00.000Z'}),null);
+});
+test('signed owner override fails for another PR, modified body, stolen key or absent JWK',()=>{
+ const valid=owner(overrideBody());
+ const base={sourceSha:HEAD,baseSha:BASE,prNumber:PR,
+  ownerPublicJwk:OWNER_PUBLIC_JWK,now:'2026-11-10T21:00:00.000Z'};
+ assert.equal(validateOwnerOverride(valid,{...base,prNumber:457}),null);
+ assert.equal(validateOwnerOverride({...valid,body:valid.body.replace(REASON,'Altered '+REASON)},base),null);
+ assert.equal(validateOwnerOverride(valid,{...base,ownerPublicJwk:null}),null);
+ const badKey=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+ assert.equal(validateOwnerOverride(valid,{...base,
+  ownerPublicJwk:badKey.publicKey.export({format:'jwk'})}),null);
+ assert.equal(validateOwnerOverride(valid,{...base,
+  ownerPublicJwk:{...OWNER_PUBLIC_JWK,crv:'P-384'}}),null);
+});

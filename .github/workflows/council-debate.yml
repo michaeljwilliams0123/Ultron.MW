@@ -66,6 +66,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      checks: read
       issues: write
       pull-requests: write
       id-token: write
@@ -190,6 +191,42 @@ jobs:
             core.exportVariable('TARGET_SOURCE_SHA', targetSourceSha);
             core.exportVariable('TITLE_FILE', path.join(dir, 'title.txt'));
             core.exportVariable('BODY_FILE', path.join(dir, 'body.txt'));
+
+            // Execute read-only CI validation within this *trusted* extraction
+            // step. Council runs from main; no PR-supplied code is executed.
+            if (isPr === 'true') {
+              let observed = {};
+              try {
+                const sha = targetSourceSha;
+                if (!/^[a-f0-9]{40}$/.test(sha||'') ||
+                    !Number.isSafeInteger(itemNumber) || itemNumber<1)
+                  throw Error('invalid-exact-head-pr-target');
+                const current = (await github.rest.pulls.get({
+                  owner:context.repo.owner,repo:context.repo.repo,
+                  pull_number:itemNumber
+                })).data;
+                if (current.state!=='open'||current.head?.sha!==sha)
+                  throw Error('council-head-drift');
+                const [checks,comparison] = await Promise.all([
+                  github.rest.checks.listForRef({
+                    owner:context.repo.owner,repo:context.repo.repo,
+                    ref:sha,per_page:100
+                  }),
+                  github.rest.repos.compareCommits({
+                    owner:context.repo.owner,repo:context.repo.repo,
+                    base:current.base.sha,head:sha
+                  })
+                ]);
+                if (checks.data?.total_count>100)
+                  throw Error('check-inventory-truncated');
+                observed={pr:current,comparison:comparison.data,checkRuns:checks.data};
+              } catch (error) {
+                core.warning?.('Council CI evidence remains unverified: '+error.message);
+              }
+              const source=path.join(dir,'exact-head-ci.json');
+              fs.writeFileSync(source,JSON.stringify(observed));
+              core.exportVariable('COUNCIL_REVIEW_EVIDENCE_FILE',source);
+            }
 
       - name: Run owner-first council debate
         id: debate

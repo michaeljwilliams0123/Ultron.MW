@@ -1,0 +1,7 @@
+{
+  "schema": "ultron.council-owner-signing-key.v1",
+  "owner": "michaeljwilliams0123",
+  "ownerId": 308995719,
+  "note": "Public P-256 JWK only (kty, crv, x, y). Never a private key. null keeps the owner override unavailable (fail-closed). Changing this file requires a reviewed PR to main.",
+  "publicJwk": null
+}

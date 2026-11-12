@@ -399,3 +399,55 @@ test('workflow prevents review bots from starting the owner PR brain job',async(
  const yaml=legacyView('pr-brain.yml');
  assert.match(yaml,/!startsWith\(github\.event\.comment\.body, '@coderabbitai'\)/);
 });
+
+
+test('Council governance PR pilot admits an exact owner-authored multi-file source+regression request',async()=>{
+ const m=fixture();m.pr.head.ref='governance/council-7of7-20261110';
+ m.pr.head.repo.id=1424939667;
+ m.pr.base.repo.id=1424939667;
+ m.pr.base.sha='9'.repeat(40);
+ m.pr.body='<!-- ULTRON_COUNCIL_REPAIR_PR_V1 -->\nScope: source and paired tests only.';
+ const ev=event('@ultron implement files src/council-members.mjs, test/council-members.test.mjs: Repair source-evidence false positives with a paired regression',false,990);
+ ev.comment.user.id=308995719;m.add(ev);
+ let applied=null;
+ const out=await handlePrConversation({event:ev,eventName:'issue_comment',
+  actor:OWNER,repository:REPO,get:m.get,post:m.post,patch:async()=>{throw Error('manual patch not expected');},
+  selectInference:()=>({provider:'local-cpu',model:'public-free-cpu',generatedBy:'public-CPU-ONNX-inference',run:async()=>''}),
+  generateMulti:async ({pr,paths,objective})=>{
+   applied={head:pr.head.sha,paths,objective};
+   return {commitSha:OTHER,paths,generatedBy:'public-CPU-ONNX-inference',model:'test-cpu'};
+  },
+  observeVerify:async()=>({state:'pending',conclusion:null})});
+ assert.equal(out.status,'replied');
+ assert.equal(out.intent,'implement-multi');
+ assert.deepEqual(applied.paths,['src/council-members.mjs','test/council-members.test.mjs']);
+ assert.equal(applied.head,SHA);
+ assert.ok(m.state.posts.some(x=>x.path===ROOT+'/issues/24/comments'));
+});
+test('governance repair requires primary owner numeric identity, not merely matching login',async()=>{
+ const m=fixture();m.pr.head.ref='governance/council-7of7-20261110';
+ m.pr.head.repo.id=1424939667;m.pr.base.repo.id=1424939667;
+ m.pr.base.sha='9'.repeat(40);
+ m.pr.body='<!-- ULTRON_COUNCIL_REPAIR_PR_V1 -->';
+ const ev=event('@ultron implement files src/council-members.mjs, test/council-members.test.mjs: Fix genuine source false positives',false,991);
+ ev.comment.user.id=354634860;m.add(ev);
+ await assert.rejects(()=>handlePrConversation({
+  event:ev,eventName:'issue_comment',actor:OWNER,repository:REPO,
+  get:m.get,post:m.post,patch:async()=>{},
+  generateMulti:async()=>{throw Error('must not run generated repair')}
+ }),/owner|identity|admission|verified/i);
+ assert.equal(m.state.posts.length,0);
+});
+test('governance repair cannot use single-file automatic rewrite on Council verdict code',async()=>{
+ const m=fixture();m.pr.head.ref='governance/council-7of7-20261110';
+ m.pr.head.repo.id=1424939667;m.pr.base.repo.id=1424939667;
+ m.pr.base.sha='9'.repeat(40);
+ m.pr.body='<!-- ULTRON_COUNCIL_REPAIR_PR_V1 -->';
+ const ev=event('@ultron implement src/council-members.mjs loosen all security holds',false,992);
+ ev.comment.user.id=308995719;m.add(ev);
+ const out=await handlePrConversation({event:ev,eventName:'issue_comment',
+  actor:OWNER,repository:REPO,get:m.get,post:m.post,patch:async()=>{},
+  generate:async()=>{throw Error('single-file vote rewrite must not be invoked')}});
+ assert.equal(out.status,'ignored-unmanaged');
+ assert.equal(m.state.posts.length,0);
+});

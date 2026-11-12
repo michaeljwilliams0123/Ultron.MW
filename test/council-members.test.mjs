@@ -222,3 +222,41 @@ test('comment writes carry an execution marker that readback finds, minting a re
   assert.equal(unattributed.executor,'github-actions[bot]');
   assert.equal(await probeCouncilEffect(actor,'tok',{op:'issue.label',number:3,executionKey,caseSha},fetchImpl),null);
 });
+
+
+test('verified exact-head CI never lifts a security hold for any role (Skeptic H1)',()=>{
+ const evidence={
+  schema:'ultron.council-exact-head-evidence.v1',verified:true,
+  sourceSha:SHA,prNumber:397,repositoryId:1424939667,providerAppId:15368,
+  checks:['test','fixed-comparison','attested-receipt'],
+  baseUpToDate:true
+ };
+ const out=assessCouncil(ctx({
+  title:'Security workflow acceptance tests',body:'Test credential denial and safe owner override',
+  itemNumber:397,isPr:true,ownerMode:true,flags:{security:true,multiFile:true,infra:true},
+  reviewEvidence:evidence
+ }));
+ for(const role of ['Builder','Predictor','Sentinel','Companion','Skeptic','Steward'])
+  assert.equal(out.find(m=>m.identity.role===role).verdict,'hold',
+   role+' must keep the security HOLD despite green CI');
+ assert.ok(out.find(m=>m.identity.role==='Sentinel').reasons.some(r=>/advisory only/.test(r)));
+});
+test('stale or unverified CI evidence cannot soften any security-language hold',()=>{
+ for(const evidence of [
+  undefined,
+  {schema:'ultron.council-exact-head-evidence.v1',verified:false,sourceSha:SHA},
+  {schema:'ultron.council-exact-head-evidence.v1',verified:true,
+   sourceSha:'b'.repeat(40),prNumber:397,repositoryId:1424939667,providerAppId:15368,
+   checks:['test','fixed-comparison','attested-receipt'],baseUpToDate:true},
+  {schema:'ultron.council-exact-head-evidence.v1',verified:true,
+   sourceSha:SHA,prNumber:397,repositoryId:1424939667,providerAppId:15368,
+   checks:['test'],baseUpToDate:true}
+ ]){
+  const out=assessCouncil(ctx({title:'Security workflow tests',
+   body:'Fix token validation and verify negative cases',itemNumber:397,isPr:true,
+   ownerMode:true,flags:{security:true,multiFile:true,infra:true},reviewEvidence:evidence}));
+  for(const role of ['Builder','Predictor','Sentinel','Companion','Skeptic','Steward'])
+   assert.equal(out.find(m=>m.identity.role===role).verdict,'hold',
+    role+' must reject unverified evidence');
+ }
+});

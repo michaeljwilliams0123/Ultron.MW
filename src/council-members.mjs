@@ -84,6 +84,21 @@ export function changeProfile(text){
 }
 
 const has=(text,words)=>words.some(w=>text.includes(w));
+// Advisory classification ONLY, never a release permission, independent review,
+// or a reason to lift a security hold (Skeptic H1 on #397).
+// Caller must obtain this evidence by trusted GitHub provider readback; the
+// 7/7 release gate separately requires real model consent and exact-head CI.
+function hasVerifiedReviewEvidence(c){
+ const e=c.reviewEvidence;
+ return c.isPr===true&&c.ownerMode===true&&
+  /^[a-f0-9]{40}$/.test(c.sourceSha||'')&&
+  e?.schema==='ultron.council-exact-head-evidence.v1'&&
+  e.verified===true&&e.sourceSha===c.sourceSha&&
+  e.prNumber===c.itemNumber&&e.repositoryId===1424939667&&
+  e.providerAppId===15368&&e.baseUpToDate===true&&
+  Array.isArray(e.checks)&&
+  ['test','fixed-comparison','attested-receipt'].every(k=>e.checks.includes(k));
+}
 const act=(op,why,extra={})=>({op,why,...extra});
 
 /** Each brain: mandate + assess(ctx) -> {verdict,confidence,headline,reasons,actions}.
@@ -153,6 +168,8 @@ const BRAINS={
       const infra=(c.flags.infra||c.profile.workflow)&&!c.profile.docsOnly;
       const reasons=[infra?'Touches CI/deploy; run Verify before anything merges.':c.profile.docsOnly?'Docs-only: no runtime or CI impact; exact-head checks still gate merge.':'No infrastructure impact detected.'];
       const hold=c.flags.security||(infra&&c.isPr&&!c.sourceSha);
+      // Green exact-head CI is reported, never used to lift a security hold.
+      if(c.exactHeadEvidence)reasons.push('Exact-head CI verified by trusted readback (advisory only; does not lift security holds).');
       return{verdict:hold?'hold':'proceed',headline:hold?'Alert: verify first.':'Operationally quiet.',reasons,
         actions:infra||(c.isPr&&!c.profile.docsOnly)?[act('actions.dispatch','Run Verify on main.',{workflow:'verify.yml',ref:'main'}),act('mahoraga.repo.inspect','Plan-only: read the Mahoraga mirror for drift against this change.')]:[]};
     }
@@ -168,10 +185,11 @@ const BRAINS={
   }
 };
 
-export function assessAsMember(role,{title='',body='',isPr=false,itemNumber=0,sourceSha='',flags={},ownerMode=false,governorPosition}={}){
+export function assessAsMember(role,{title='',body='',isPr=false,itemNumber=0,sourceSha='',flags={},ownerMode=false,governorPosition,reviewEvidence}={}){
   if(!Object.hasOwn(BRAINS,role))throw Error('council-role-invalid');
   const brain=BRAINS[role];
   const ctx={title,body,isPr,itemNumber,sourceSha,flags,ownerMode,
+   exactHeadEvidence:hasVerifiedReviewEvidence({isPr,ownerMode,sourceSha,itemNumber,reviewEvidence}),
     text:(title+'\n'+body).toLowerCase(),profile:changeProfile(title+'\n'+body),
     governor:{conclusion:governorPosition?.conclusion==='proceed'?'proceed':'hold',
       confidence:governorPosition?.confidence??0,unknowns:governorPosition?.unknowns??[]}};
