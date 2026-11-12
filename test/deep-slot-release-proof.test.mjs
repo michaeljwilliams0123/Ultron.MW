@@ -66,3 +66,22 @@ test('SLOT-05 Node and Hatchable classifier match byte-for-byte',()=>{
  assert.equal(readFileSync(new URL('../src/scheduler/slot-ledger.mjs',import.meta.url),'utf8'),
   readFileSync(new URL('../cloud/hatchable/lib/slot-ledger.js',import.meta.url),'utf8'));
 });
+
+test('SLOT-06 cloud tick records pickup and never marks queued work as done',()=>{
+ const source=readFileSync(new URL('../cloud/hatchable/api/brain/tick.js',import.meta.url),'utf8');
+ assert.match(source,/classifySlot\(/);
+ assert.match(source,/recordSlot\(\{db,slot\}\)/);
+ assert.match(source,/completionStatus:'pending'/);
+ assert.match(source,/slot_evidence:slotEvidence/);
+});
+test('RELEASE-04 owner route exposes unknown release honestly',()=>{
+ const source=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8');
+ assert.match(source,/access='admin'/);
+ assert.match(source,/methods=\['GET'\]/);
+ assert.match(source,/councilChecks:\[\],expectedAppIds:\{\},deployment:\{\}/);
+});
+test('RELEASE-05 source and Hatchable proof policies stay byte-identical',()=>{
+ const node=readFileSync(new URL('../src/evidence/release-proof.mjs',import.meta.url),'utf8');
+ const hatch=readFileSync(new URL('../cloud/hatchable/lib/release-proof.js',import.meta.url),'utf8');
+ assert.equal(node,hatch);
+});

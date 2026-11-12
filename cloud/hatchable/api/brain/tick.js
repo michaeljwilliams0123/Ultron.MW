@@ -1,10 +1,21 @@
 import { db,scheduler,events } from 'hatchable';
 import {notifyOwner} from 'lib/owner-live-events.js';
 import {recoverMissedHours} from 'lib/scheduler-recovery.js';
+import {classifySlot,recordSlot} from 'lib/slot-ledger.js';
 export const access='scheduler';
 export const methods=['POST'];
 export default async function(req,res){
  const now=new Date();
+ // Report the actual pickup of the existing hourly tick. This is telemetry,
+ // not an extra scheduler or a replacement for recovery.
+ let slotEvidence={recorded:false,pickupLagSeconds:null,sloBreach:null};
+ try{
+  const slot=classifySlot({scheduledHour:now.toISOString().slice(0,13)+':00Z',
+   actualPickupAt:now.toISOString(),declaredMinute:17,completionStatus:'pending'});
+  const recorded=await recordSlot({db,slot});
+  slotEvidence={recorded:recorded.created||recorded.existingClassification!=='unknown',
+   pickupLagSeconds:slot.pickupLagSeconds,sloBreach:slot.sloBreach};
+ }catch{/* unavailable telemetry must not turn a recovered tick into a fake successful SLO */}
  const invocationTrigger=typeof req.headers?.['x-hatchable-trigger']==='string'
   ?req.headers['x-hatchable-trigger']:'unknown';
  const hour=now.toISOString().slice(0,13).replace(/[^0-9]/g,'');
@@ -60,5 +71,5 @@ export default async function(req,res){
  return res.json({trigger:'hourly',processed:0,scheduled_count:admitted.rows.length,pending,mahoraga_pending,
    continuation_scheduled,hf_pending,hf_reconciliation_scheduled,
    recovered_count:recovery.recoveredCount,recovery_window_hours:recovery.windowHours,
-   invocation_trigger:invocationTrigger,mode:'dispatch-only'});
+   invocation_trigger:invocationTrigger,mode:'dispatch-only',slot_evidence:slotEvidence});
 }
