@@ -1,4 +1,5 @@
-name: Ultron owner comment router
+patched ok 0 -> 1
+ comment router
 # Council lane 'comment-router' (Companion). One front door for owner
 # comments. Also absorbs codex-trigger-audit.yml, inline-pr-chat.yml and
 # pr-brain.yml (inline here; pull_request_review_comment kept) and the hosted
@@ -184,6 +185,7 @@ jobs:
       )
     permissions:
       contents: read
+      checks: read
       issues: write
       pull-requests: write
       id-token: write
