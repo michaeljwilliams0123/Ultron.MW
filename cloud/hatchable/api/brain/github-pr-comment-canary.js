@@ -3,7 +3,7 @@ import {verifyDelegatedGrant,reservePrCommentExecution}
  from 'lib/security-adjudicator.js';
 import {preparePrCommentCanary,validatePreparedCanary,operationDigest,
  submitPrCommentCanary,reconcilePrCommentCanary,prCommentCanaryReadiness,
- prCommentCanaryEnabled}
+ prCommentCanaryEnabled,classifyPrCommentFailure}
  from 'lib/github-pr-comment-canary.js';
 
 export const access='admin';
@@ -94,8 +94,12 @@ export default async function handler(req,res){
     operationDigest:digest,appCredentials:await appCredentials()});
    return reply(res,200,{ok:true,status:result.status,
     idempotencyKey:prepared.idempotencyKey,receipt:result.receipt});
-  }catch{return reply(res,202,{ok:false,status:'reconcile-required',
-   idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved'});}
+  }catch(error){
+   const failure=classifyPrCommentFailure(error);
+   return reply(res,202,{ok:false,status:'reconcile-required',
+    idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved',
+    reason:failure.reason,stage:failure.stage});
+  }
  }
  if(mode!=='submit')return reply(res,400,{ok:false,error:'canary-mode-invalid'});
  let credentials,jwk,verified,digest;
@@ -122,11 +126,15 @@ export default async function handler(req,res){
   return reply(res,201,{ok:true,status:result.status,
    idempotencyKey:prepared.idempotencyKey,receipt:result.receipt});
  }catch(error){
-  if(/(?:token-exchange|token-response|configuration|clock|dispatch-not-admitted)/
-    .test(String(error?.message)))
+  // Never echo the raw exception: it can contain provider payloads or secrets.
+  // A pre-dispatch failure is distinguishable from an ambiguous remote effect.
+  const failure=classifyPrCommentFailure(error);
+  if(failure.dispatched===false)
    return reply(res,503,{ok:false,status:'reserved',
-    idempotencyKey:prepared.idempotencyKey,error:'canary-dispatch-unavailable'});
+    idempotencyKey:prepared.idempotencyKey,error:'canary-dispatch-unavailable',
+    reason:failure.reason,stage:failure.stage,dispatched:false});
   return reply(res,202,{ok:false,status:'reconcile-required',
-   idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved'});
+   idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved',
+   reason:failure.reason,stage:failure.stage,dispatched:null});
  }
 }
