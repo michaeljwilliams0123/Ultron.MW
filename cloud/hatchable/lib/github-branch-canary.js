@@ -7,7 +7,8 @@
  * brain_events audit with an independent provider readback (Task 5).
  * $0 spend, no model invocation, no fs/git, and no automatic provider retry.
  */
-import {createHash,createSign,randomBytes} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
+import {signRs256,base64url} from 'lib/rsa-pkcs1-sign.js';
 import {runMasterPipeline,createCanaryCommitOperation,createCanaryLineageVerifier}
  from 'lib/master-pipeline.js';
 import {verifyDelegatedGrant,reserveBranchExecution,isVerifiedBranchGrant,BRANCH_POLICY_SHA}
@@ -125,8 +126,7 @@ async function installationToken(c,permissions,fetchImpl,clock){
  const unsigned=json({alg:'RS256',typ:'JWT'})+'.'+
   json({iat:seconds-30,exp:seconds+540,iss:String(c.appId)});
  let jwt;
- try{jwt=unsigned+'.'+createSign('RSA-SHA256').update(unsigned).end()
-  .sign(c.privateKey).toString('base64url');}
+ try{jwt=unsigned+'.'+base64url(signRs256(c.privateKey,unsigned));}
  catch{fail('configuration-invalid');}
  const response=await provider(fetchImpl,
   `${API}/app/installations/${c.installationId}/access_tokens`,{
