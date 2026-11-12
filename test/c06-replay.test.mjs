@@ -14,7 +14,8 @@ test('C06-R01 requires verified original ancestor, identical generator and no du
  assert.equal(approved.mainSha,latest);
  assert.equal(approved.runId,'41775971062');
  assert.ok(C06_REPLAY_PINNED_PATHS.includes('src/c06-model-origin.mjs'));
- assert.ok(C06_REPLAY_PINNED_PATHS.includes('.github/workflows/c06-owner-model-release.yml'));
+ assert.ok(C06_REPLAY_PINNED_PATHS.includes('.github/workflows/lane-lab-evidence.yml'));
+ assert.ok(!C06_REPLAY_PINNED_PATHS.includes('.github/workflows/c06-owner-model-release.yml'));
  for(const patch of [{actor:'attacker'},{repository:'another/repo'},
   {sourceSha:'main'},{mainSha:'main'},{runId:'x123'},
   {isOriginalAncestor:false},{alreadyPublished:true},
@@ -30,19 +31,15 @@ test('C06-R02 strict source revision or changed untrusted toolchain cannot be wa
   assert.throws(()=>admitC06Replay({...valid,changedModelToolchainPaths:bad}),/c06-replay-admission-denied/);
  }
 });
-test('C06-R03 replay workflow must be owner-only and copy generated files, never run them with write token',async()=>{
- const wf=await readFile(new URL('../.github/workflows/c06-reconcile-publish.yml',import.meta.url),'utf8');
- assert.match(wf,/workflow_dispatch:/);
- assert.match(wf,/needs: verify/);
- assert.match(wf,/actions\/download-artifact@/);
- assert.match(wf,/run-id:/);
- assert.match(wf,/node scripts\/c06-verify-replay\.mjs/);
- assert.match(wf,/pull-requests: write/);
- assert.match(wf,/contents: read/);
- assert.match(wf,/github\.actor == 'michaeljwilliams0123'/);
- assert.match(wf,/git diff --cached --check/);
- assert.match(wf,/git merge-base --is-ancestor/);
- assert.doesNotMatch(wf,/HF_TOKEN|OPENAI_API_KEY|gpu-|github_pat_|force-push/);
+test('C06-R03 replay publish workflow is retired (owner-approved, never ran) and nothing runs the replay with a write token',async()=>{
+ const {readdir}=await import('node:fs/promises');
+ const dir=new URL('../.github/workflows/',import.meta.url);
+ const files=await readdir(dir);
+ assert.equal(files.includes('c06-reconcile-publish.yml'),false);
+ for(const name of files){
+  const wf=await readFile(new URL(name,dir),'utf8');
+  assert.doesNotMatch(wf,/c06-verify-replay\.mjs/,name);
+ }
 });
 test('C06-R04 replay source verifier performs immutable hash/lineage check only',async()=>{
  const script=await readFile(new URL('../scripts/c06-verify-replay.mjs',import.meta.url),'utf8');
@@ -75,4 +72,14 @@ test('C06-R07 replay must compare full generated file bytes, not reject all pree
  const s=await readFile(new URL('../scripts/c06-verify-replay.mjs',import.meta.url),'utf8');
  assert.match(s,/hasNovelC06Outputs/);
  assert.doesNotMatch(s,/!!alreadyInMain/);
+});
+
+test('C06-R06 every pinned replay toolchain path exists, and the pinned workflow holds the C06 jobs',async()=>{
+ const {existsSync}=await import('node:fs');
+ for(const path of C06_REPLAY_PINNED_PATHS)
+  assert.ok(existsSync(new URL('../'+path,import.meta.url)),'pinned path missing: '+path);
+ const lane=await readFile(new URL('../.github/workflows/lane-lab-evidence.yml',import.meta.url),'utf8');
+ assert.match(lane,/^  generate:$/m);
+ assert.match(lane,/^  publish:$/m);
+ assert.match(lane,/inputs\.lab_task == 'c06-owner-model-release'/);
 });

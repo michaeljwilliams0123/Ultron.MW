@@ -1,0 +1,294 @@
+name: Ultron lab evidence
+run-name: "${{ inputs.lab_task == 'held-out-acceptance' && format('Ultron held-out acceptance {0}..{1}', inputs.baseline_sha, inputs.candidate_sha) || format('Ultron lab evidence: {0}', inputs.lab_task) }}"
+# Council lane 'lab-evidence' (Generator). Consolidates hf-heldout-cpu.yml,
+# hf-free-cpu-tournament.yml, held-out-acceptance.yml and
+# c06-owner-model-release.yml. Each legacy job runs only for its own lab_task.
+# Hatchable keys receipts by this file + workflow name + run title, so keep the
+# name and run-name above byte-stable (cloud/hatchable/lib/workflow-lanes.js).
+on:
+  workflow_dispatch:
+    inputs:
+      lab_task:
+        description: Lab task to run (one legacy workflow per task)
+        required: true
+        type: choice
+        options:
+          - hf-heldout-cpu
+          - hf-free-cpu-tournament
+          - c06-owner-model-release
+          - held-out-acceptance
+      objective:
+        description: 'c06-owner-model-release: fixed owner-authorized public C06 test objective'
+        required: false
+        default: 'owner-effect-gate'
+        type: string
+      baseline_sha:
+        description: 'held-out-acceptance: frozen baseline commit SHA'
+        required: false
+        type: string
+      candidate_sha:
+        description: 'held-out-acceptance: frozen reviewed candidate commit SHA'
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  heldout-evaluation:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.lab_task == 'hf-heldout-cpu') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.event.repository.private == false &&
+      github.actor == 'michaeljwilliams0123'
+      )
+    concurrency:
+      group: ultron-hf-heldout-${{ github.ref }}-heldout-evaluation-${{ matrix.profile }}-${{ matrix.shard }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        profile: [baseline, coder-small, coder-medium, coder-large]
+        shard: [0, 1]
+    env:
+      ULTRON_REPOSITORY_PUBLIC: 'true'
+      ULTRON_RUNNER_LABEL: ubuntu-24.04
+      ULTRON_HF_PROFILE: ${{ matrix.profile }}
+      ULTRON_HF_SHARD: ${{ matrix.shard }}
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Install audited locked CPU model runtime
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node scripts/verify-audited-lockfile.mjs
+      - name: Execute frozen multi-line repair cases with no paid fallback
+        run: node scripts/hf-heldout-cpu.mjs
+      - name: Preserve immutable model and behavior scoring evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hf-heldout-${{ matrix.profile }}-s${{ matrix.shard }}-${{ github.sha }}
+          path: artifacts/hf-heldout/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  cpu-evaluation:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.lab_task == 'hf-free-cpu-tournament') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.event.repository.private == false &&
+      github.actor == 'michaeljwilliams0123'
+      )
+    concurrency:
+      group: ultron-hf-free-cpu-${{ github.ref }}-cpu-evaluation-${{ matrix.profile }}-${{ matrix.shard }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        profile: [baseline, coder-small, coder-medium, coder-large]
+        shard: [0, 1]
+    env:
+      ULTRON_REPOSITORY_PUBLIC: 'true'
+      ULTRON_RUNNER_LABEL: ubuntu-24.04
+      ULTRON_HF_PROFILE: ${{ matrix.profile }}
+      ULTRON_HF_SHARD: ${{ matrix.shard }}
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Install audited locked CPU model runtime
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node scripts/verify-audited-lockfile.mjs
+      - name: Run pinned two-case shard with no paid fallback
+        run: node scripts/hf-free-cpu-benchmark.mjs
+      - name: Preserve exact-source, exact-model evaluation receipt
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hf-cpu-${{ matrix.profile }}-s${{ matrix.shard }}-${{ github.sha }}
+          path: artifacts/hf-free-cpu/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  generate:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.lab_task == 'c06-owner-model-release') &&
+      (
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.event.repository.private == false &&
+      github.actor == 'michaeljwilliams0123' &&
+      inputs.objective == 'owner-effect-gate'
+      )
+    concurrency:
+      group: ultron-c06-issue245-${{ github.ref }}-generate
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      ULTRON_REPOSITORY_PUBLIC: 'true'
+      ULTRON_RUNNER_LABEL: ubuntu-24.04
+      ULTRON_PAID_BUDGET_CENTS: '0'
+      ULTRON_C06_ISSUE: '245'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Install locked no-paid CPU inference runtime
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node scripts/verify-audited-lockfile.mjs
+      - name: Generate model-authored source, test cases and docs and independently test
+        run: node scripts/c06-run-model.mjs
+      - name: Preserve immutable success or held receipt without credential exposure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: c06-model-output-${{ github.run_id }}
+          path: c06-output/**
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: generate
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.lab_task == 'c06-owner-model-release') &&
+      (
+      needs.generate.result == 'success' &&
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.event.repository.private == false &&
+      github.actor == 'michaeljwilliams0123' &&
+      inputs.objective == 'owner-effect-gate'
+      )
+    concurrency:
+      group: ultron-c06-issue245-${{ github.ref }}-publish
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      ULTRON_REPOSITORY_PUBLIC: 'true'
+      ULTRON_PAID_BUDGET_CENTS: '0'
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: c06-model-output-${{ github.run_id }}
+          path: c06-output
+      - name: Independently verify immutable artifact and exact source, without running model code
+        run: node scripts/c06-verify-output.mjs
+      - name: Publish exact model-created files to one feature PR without replay
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="ultron/c06-model-${GITHUB_RUN_ID}"
+          git fetch origin main --no-tags
+          main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if [[ "$main_sha" != "$GITHUB_SHA" ]]; then
+            echo 'HOLD: main changed after source admission, no model publish'
+            exit 1
+          fi
+          if [[ -n "$(git ls-remote --heads origin "refs/heads/$branch")" ]]; then
+            echo 'HOLD: branch already exists, reconcile before attempting another write'
+            exit 1
+          fi
+          git switch -c "$branch"
+          mkdir -p lib test docs evidence
+          cp -- c06-output/lib/c06-model-candidate.js lib/c06-model-candidate.js
+          cp -- c06-output/test/c06-model-generated.test.mjs test/c06-model-generated.test.mjs
+          cp -- c06-output/docs/c06-model-generated.md docs/c06-model-generated.md
+          cp -- c06-output/evidence/c06-model-origin.json evidence/c06-model-origin.json
+          git add -- lib/c06-model-candidate.js test/c06-model-generated.test.mjs docs/c06-model-generated.md evidence/c06-model-origin.json
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "feat(c06): real local-CPU model-authored owner effect candidate run ${GITHUB_RUN_ID}"
+          encoded="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $encoded" push origin "HEAD:refs/heads/$branch"
+          if ! gh pr create --base main --head "$branch" \
+            --title "feat(c06): independently scored Ultron model-generated 3-file candidate" \
+            --body "Refs #245. Model-generated Apache-2.0 1.5B code, tests and docs. Exact run ${GITHUB_RUN_ID}; source ${GITHUB_SHA}. SHA-scored on no-credential public CPU; this PR requires normal protected tests, review, and separately verified Hatchable runtime deployment. No model-driven merge or paid spend."; then
+            echo 'HOLD: branch is published; PR creation result uncertain or denied. Reconcile manually, do not repeat push.'
+            exit 1
+          fi
+
+  held-out:
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.lab_task == 'held-out-acceptance' && inputs.baseline_sha != '' && inputs.candidate_sha != ''
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Evaluate post-freeze seeded cases
+        env:
+          ULTRON_BASELINE_SHA: ${{ inputs.baseline_sha }}
+          ULTRON_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          ULTRON_EVALUATION_SEED: ${{ github.run_id }}
+          ULTRON_EVALUATION_REPORT: artifacts/seeded-held-out.json
+        run: node scripts/held-out-acceptance-evaluation.mjs
+      - name: Preserve seeded case outcomes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: seeded-held-out-${{ github.run_id }}
+          path: artifacts/seeded-held-out.json
+          if-no-files-found: error
+          retention-days: 30

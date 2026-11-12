@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {verifyCouncilFleet} from '../src/security/council-fleet-verification.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const repo={id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'};
 const now=()=>Date.parse('2026-11-10T07:00:00.000Z');
@@ -25,7 +26,7 @@ test('Council identity proof recognizes transferred canonical repository but no 
 });
 
 test('read-only workflow discovers installed Coordinator from existing protected client ID and key',async()=>{
- const yaml=await readFile(new URL('../.github/workflows/council-principal-proof.yml',import.meta.url),'utf8');
+ const yaml=legacyView('council-principal-proof.yml');
  assert.match(yaml,/workflow_dispatch:/);
  assert.match(yaml,/github\.repository == 'michaeljwilliams0123\/Ultron\.MW'/);
  assert.match(yaml,/github\.actor == 'michaeljwilliams0123'/);

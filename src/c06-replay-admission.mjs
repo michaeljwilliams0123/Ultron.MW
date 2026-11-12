@@ -5,8 +5,10 @@
  */
 const SHA=/^[a-f0-9]{40}$/;
 const RUN=/^[1-9][0-9]{0,19}$/;
+// The C06 generate/publish jobs run in the consolidated lab lane (26 -> 8);
+// the whole lane file is pinned, so any change to it blocks replay (fail-closed).
 export const C06_REPLAY_PINNED_PATHS=Object.freeze([
- '.github/workflows/c06-owner-model-release.yml',
+ '.github/workflows/lane-lab-evidence.yml',
  'scripts/c06-run-model.mjs',
  'scripts/c06-verify-output.mjs',
  'src/c06-model-origin.mjs',

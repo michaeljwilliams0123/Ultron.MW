@@ -1,4 +1,5 @@
 import {mergeVerifiedWorkflow} from './hf-github-receipts.js';
+import {LAB_LANE_FILE,labLaneRunKey} from './workflow-lanes.js';
 /** Read-only Hugging Face evaluation lane, backed by GitHub Actions and durable cache.
  * Zero new paid inference calls. Never interpret a workflow green as model promotion.
  */
@@ -8,11 +9,11 @@ const SHA=/^[a-f0-9]{40}$/;
 const FRESH_MS=20*60*1000;
 export const WORKFLOWS=Object.freeze([
  Object.freeze({key:'heldout',label:'16-case held-out CPU evaluation',
-  file:'hf-heldout-cpu.yml'}),
+  file:LAB_LANE_FILE}),
  Object.freeze({key:'tournament',label:'Small CPU model tournament',
-  file:'hf-free-cpu-tournament.yml'}),
+  file:LAB_LANE_FILE}),
  Object.freeze({key:'c06',label:'Model-authored 3-file PR candidate',
-  file:'c06-owner-model-release.yml'})
+  file:LAB_LANE_FILE})
 ]);
 const frozenEvidence=Object.freeze({
  observation:'historical-evidence',
@@ -49,15 +50,17 @@ function emptySnapshot(observedAt){
   workflows:WORKFLOWS.map(x=>emptyWorkflow(x)),
   benchmark:frozenEvidence,release};
 }
-async function inspectWorkflow(fetchGithub,item){
- const url=GH+'/actions/workflows/'+item.file+'/runs?per_page=1&event=workflow_dispatch';
+async function listRuns(fetchGithub,file,perPage){
+ const url=GH+'/actions/workflows/'+file+'/runs?per_page='+perPage+'&event=workflow_dispatch';
  const response=await fetchGithub(url,{method:'GET',cache:'no-store',
   headers:{Accept:'application/vnd.github+json','User-Agent':'Ultron-HF-Lab'},
   signal:AbortSignal.timeout(6500)});
  if(!response?.ok)throw Error('github-http-'+String(response?.status||'unknown'));
  const body=await response.json();
  if(!Array.isArray(body?.workflow_runs))throw Error('invalid-actions-response');
- const run=body.workflow_runs[0];
+ return body.workflow_runs;
+}
+function observedRun(item,run,file){
  if(!run)return emptyWorkflow(item,'no-run',null);
  const valid=Number.isSafeInteger(run.id)&&run.id>0&&SHA.test(run.head_sha||'')&&
   ['queued','in_progress','completed','requested','waiting','pending'].includes(run.status);
@@ -65,19 +68,37 @@ async function inspectWorkflow(fetchGithub,item){
  const conclusion=run.status==='completed'&&typeof run.conclusion==='string'?
   run.conclusion.slice(0,32):null;
  return {key:item.key,label:item.label,
-  workflowUrl:BROWSER+'/actions/workflows/'+item.file,
+  workflowUrl:BROWSER+'/actions/workflows/'+file,
   state:'observed',reason:null,runId:run.id,status:run.status,
   conclusion,headSha:run.head_sha,
   runUrl:BROWSER+'/actions/runs/'+run.id,
   startedAt:date(run.created_at)};
 }
+// One read of the consolidated lab lane. A run counts for a task only with
+// its exact path, workflow name and allowlisted run title, and only as an
+// owner workflow_dispatch on main (Skeptic L1): a branch or bot run must never
+// pose as the newest lab result.
+const OWNER={login:'michaeljwilliams0123',id:308995719};
+export function eligibleLaneRun(run,key){
+ return labLaneRunKey(run)===key&&run.head_branch==='main'&&
+  run.event==='workflow_dispatch'&&run.actor?.login===OWNER.login&&
+  run.actor?.id===OWNER.id;
+}
 export async function collectHfRuns({fetchGithub=fetch,now=()=>new Date().toISOString()}={}){
- const observedAt=now(),settled=await Promise.allSettled(
-  WORKFLOWS.map(item=>inspectWorkflow(fetchGithub,item)));
+ const observedAt=now();
  const result=emptySnapshot(observedAt);
- result.workflows=settled.map((v,i)=>v.status==='fulfilled'?v.value:
-  emptyWorkflow(WORKFLOWS[i],'unavailable',
-   String(v.reason?.message||'provider-unavailable').slice(0,65)));
+ let runs;
+ try{runs=await listRuns(fetchGithub,LAB_LANE_FILE,30);}
+ catch(error){
+  const reason=String(error?.message||'provider-unavailable').slice(0,65);
+  result.workflows=WORKFLOWS.map(item=>emptyWorkflow(item,'unavailable',reason));
+  return result;
+ }
+ result.workflows=WORKFLOWS.map(item=>{
+  try{return observedRun(item,runs.find(run=>eligibleLaneRun(run,item.key)),LAB_LANE_FILE);}
+  catch(error){return emptyWorkflow(item,'unavailable',
+   String(error?.message||'provider-unavailable').slice(0,65));}
+ });
  return result;
 }
 function present(snapshot,state,at,reason=null,verified=[]){

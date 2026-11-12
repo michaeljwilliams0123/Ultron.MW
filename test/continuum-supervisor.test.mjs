@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {CONTINUUM_ISSUES, selectCouncilReviews, readCouncilActivity} from '../src/continuum-supervisor.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const now='2026-11-01T12:00:00Z';
 const item=(number,extra={})=>({number,state:'open',lastReviewAt:null,lastMeaningfulAt:'2026-10-31T12:00:00Z',...extra});
@@ -45,7 +46,7 @@ test('refuse out-of-scope and invalid time/limits before dispatch',()=>{
 });
 
 test('supervisor grants only actions dispatch, never administration or secret access',()=>{
-  const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+  const yml=legacyView('continuum-council-supervisor.yml');
   assert.match(yml,/schedule:/);
   assert.match(yml,/workflow_dispatch:/);
   assert.match(yml,/\bactions: write\b/);
@@ -188,7 +189,7 @@ test('council title transport does not apply a second UTF-8 byte truncation',()=
 
 
 test('hourly council supervisor isolates unreadable issue and dispatches a later eligible issue',async()=>{
- const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+ const yml=legacyView('continuum-council-supervisor.yml');
  const fragment=yml.match(/          script: \|\n([\s\S]*?)\n(?=\S|$)/);
  assert.ok(fragment,'supervisor inline script must exist');
  let source=fragment[1].split('\n').map(x=>x.replace(/^ {12}/,'')).join('\n');
@@ -341,7 +342,7 @@ test('RED: same-count replacement of newest council comment invalidates scan',as
 });
 
 test('RED: selected council issue is revalidated before workflow dispatch',async()=>{
-  const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+  const yml=legacyView('continuum-council-supervisor.yml');
   const fragment=yml.match(/          script: \|\n([\s\S]*?)\n(?=\S|$)/);
   assert.ok(fragment,'supervisor inline script must exist');
   let source=fragment[1].split('\n').map(x=>x.replace(/^ {12}/,'')).join('\n');
@@ -403,7 +404,7 @@ test('RED: same-second edit on earlier scanned council page invalidates complete
 });
 
 test('RED: supervisor summary counts only successful council workflow dispatches',async()=>{
- const yml=readFileSync(new URL('../.github/workflows/continuum-council-supervisor.yml',import.meta.url),'utf8');
+ const yml=legacyView('continuum-council-supervisor.yml');
  const fragment=yml.match(/          script: \|\n([\s\S]*?)\n(?=\S|$)/);
  assert.ok(fragment);
  let source=fragment[1].split('\n').map(x=>x.replace(/^ {12}/,'')).join('\n');

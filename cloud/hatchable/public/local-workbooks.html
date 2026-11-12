@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Ultron.MW — Local Workbook Lab</title>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color-scheme:dark;background:#0b1322;color:#ecf3ff}
+*{box-sizing:border-box}body{margin:0}main{max-width:1050px;padding:26px 20px 70px;margin:auto}
+a{color:#a9cfff}nav{margin-bottom:28px;display:flex;gap:20px;flex-wrap:wrap}
+h1{font-size:clamp(27px,5vw,42px);margin:0 0 12px}h2{font-size:19px;margin:0 0 12px}
+p{line-height:1.5}.muted{color:#acbdd5}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.panel{background:#13233a;border:1px solid #354965;padding:20px;border-radius:13px;margin:16px 0}
+button,input,select{font:inherit;border-radius:7px;padding:10px;background:#203652;border:1px solid #587395;color:#fff}
+button{background:#8bb5ff;color:#081b36;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+label{display:block;margin:10px 0 5px;font-weight:600}
+input[type=file]{max-width:100%;width:100%}#sheet{min-width:210px}
+#result,#status{white-space:pre-line}#result{padding:12px;background:#0c1b30;border-radius:8px;min-height:42px}
+.scroll{overflow:auto;border:1px solid #38516d;border-radius:8px;max-height:400px}
+table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #38516d;min-width:80px;max-width:280px;white-space:pre-wrap;overflow-wrap:anywhere;padding:7px}
+th{background:#203a58;position:sticky;top:0}td{background:#0e1e33}.warn{color:#ffd195}
+.file-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px;border-bottom:1px solid #334964;overflow-wrap:anywhere}
+.file-item:last-child{border-bottom:0}#files{max-height:320px;overflow:auto}
+#cell-value{width:100%;max-width:340px}#cell-ref{width:105px;text-transform:uppercase}
+@media(max-width:740px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<nav><a href="/">Cloud Brain</a><a href="/connectors.html">Connectors</a><a href="https://github.com/michaeljwilliams0123/Ultron.MW">GitHub repository</a></nav>
+<p class="muted">ULTRON.MW / PRIVATE WORKBOOK INTAKE</p>
+<h1>Local Workbook Lab</h1>
+<p class="muted">Use an Excel <code>.xlsx</code> file without Microsoft 365, enterprise Microsoft Graph, or a browser extension. Only the authenticated primary Hatchable project owner can save or retrieve cloud copies. The workbook is parsed locally in this browser before an explicit cloud upload.</p>
+<section class="panel">
+<h2>1. Open a workbook from Downloads</h2>
+<input id="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+<div class="actions"><button id="open" type="button">Inspect locally</button><button id="upload" type="button" disabled>Save private cloud copy</button><button id="export" type="button" disabled>Export edited XLSX</button></div>
+<p id="status" role="status" aria-live="polite">No file selected.</p>
+<p class="muted">Only standard, macro-free <code>.xlsx</code> archives up to 2 MB are accepted. No external links, embedded objects, or workbook macros. Importing a file does not grant Ultron access to the rest of your computer.</p>
+</section>
+<div class="grid">
+<section class="panel">
+<h2>2. Worksheets and cells</h2>
+<label for="sheet">Worksheet</label><select id="sheet" disabled><option>Choose a workbook first</option></select>
+<div class="actions"><label for="cell-ref">Cell</label><input id="cell-ref" value="A1" aria-label="Cell reference" maxlength="10"><button id="lookup" type="button" disabled>Read cell</button></div>
+<pre id="result">Selected cell details appear here.</pre>
+<label for="cell-value">New cell value (optional)</label><input id="cell-value" placeholder="Number, text, or =formula" disabled>
+<div class="actions"><button id="stage" type="button" disabled>Stage cell edit</button><span id="edits" class="muted">0 edits</span></div>
+<p class="muted">Formula editing is preserved as Excel formulas; this browser does not recalculate formulas. Exported workbooks ask spreadsheet applications to recalculate on open.</p>
+</section>
+<section class="panel"><h2>3. Private cloud files</h2>
+<div class="actions"><button id="refresh" type="button">Refresh cloud files</button></div>
+<div id="files" role="region" aria-label="Saved workbooks"><p class="muted">Checking owner access…</p></div>
+<p class="muted">Cloud storage is private. Download links expire after 30 seconds. No business or employee data should be uploaded without permission.</p></section>
+</div>
+<section class="panel"><h2>Worksheet preview</h2><div class="scroll"><table id="preview"><tbody><tr><td class="muted">Open a workbook to preview the first populated cells.</td></tr></tbody></table></div></section>
+</main>
+<script defer src="/vendor/fflate-0.8.2.min.js"></script>
+<script defer src="/local-workbooks.js"></script>
+</body></html>

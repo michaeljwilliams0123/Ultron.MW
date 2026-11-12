@@ -144,3 +144,13 @@ test('trusted workflow loads only main, never runs PR code, and cannot forge via
  assert.doesNotMatch(y,/\$\{\{\s*github\.event\.(?:pull_request|issue)\.(?:title|body)/);
  assert.match(y,/Fail closed when the Council Gate App is not configured[\s\S]*exit 1/);
 });
+
+
+test('trusted gate supplies live exact-head CI evidence to its own debate',()=>{
+ const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
+ assert.match(y,/checks\.listForRef\(\{owner,repo,ref:pr\.head\.sha,per_page:100\}\)/);
+ assert.match(y,/compareCommits\(\{owner,repo,base:pr\.base\.sha,head:pr\.head\.sha\}\)/);
+ assert.match(y,/total_count>100/);
+ assert.match(y,/COUNCIL_REVIEW_EVIDENCE_FILE.*write\('exact-head-ci.json',observed\)/);
+ assert.ok(y.indexOf("COUNCIL_REVIEW_EVIDENCE_FILE")<y.indexOf('name: Run Council debate'));
+});

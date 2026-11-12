@@ -1,3 +1,4 @@
+import {evaluateWorkflowEvidence,CORE_VERIFY_WORKFLOW} from './ci-evidence.js';
 const API='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const REPO_URL='https://github.com/michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
@@ -37,7 +38,7 @@ export async function collectConnectivity({db,fetchGithub=fetch,now=()=>new Date
   db.query('SELECT id,objective,status,attempts,updated_at FROM brain_tasks ORDER BY updated_at DESC,id DESC LIMIT 8'),
   githubJson(fetchGithub,'/git/ref/heads/main'),
   githubJson(fetchGithub,'/pulls?state=open&per_page=8&sort=updated&direction=desc'),
-  githubJson(fetchGithub,'/actions/runs?branch=main&event=push&per_page=12')
+  githubJson(fetchGithub,'/actions/workflows/verify.yml/runs?branch=main&event=push&per_page=100')
  ]);
  const controlRow=read(control)?.rows?.[0];
  const runtime=controlRow&&typeof controlRow.paused==='boolean'?{
@@ -89,15 +90,27 @@ export async function collectConnectivity({db,fetchGithub=fetch,now=()=>new Date
  else if(!Array.isArray(workflowRows))
   ci.reason=failure(runs)?.reason||'invalid-ci-list';
  else{
-  const selection=workflowRows.filter(run=>run?.head_sha===mainSha&&
-   run?.name==='Ultron core verification'&&run?.event==='push')
-   .sort((a,b)=>Date.parse(b.created_at||0)-Date.parse(a.created_at||0))[0];
-  if(!selection)ci={...ci,state:'no-current-main-run',sourceSha:mainSha};
-  else ci={state:'observed',status:safeText(selection.status,32)||'unknown',
-   conclusion:selection.conclusion==null?null:safeText(selection.conclusion,32),
-   runId:Number(selection.id)||null,
-   runUrl:safeGithubUrl(selection.html_url,'/actions/runs/')||REPO_URL+'/actions',
-   sourceSha:mainSha,observedAt:observedDate(selection.created_at)};
+  const candidates=workflowRows.filter(run=>run?.path===CORE_VERIFY_WORKFLOW.path&&
+   run?.workflow_id===CORE_VERIFY_WORKFLOW.workflowId&&
+   run?.head_sha===mainSha&&run?.head_branch==='main'&&
+   run?.head_repository?.full_name==='michaeljwilliams0123/Ultron.MW'&&
+   run?.event==='push').sort((a,b)=>b.id-a.id);
+  const selected=candidates[0];
+  let jobsByRunId={};
+  if(selected){
+   try{jobsByRunId[selected.id]=await githubJson(fetchGithub,
+    '/actions/runs/'+selected.id+'/jobs?filter=all&per_page=100');}
+   catch{jobsByRunId={};}
+  }
+  const evidence=evaluateWorkflowEvidence({runs:workflowRows,
+   jobsByRunId,targetSha:mainSha,allowedEvents:['push']});
+  ci={state:evidence.status==='pending-or-absent'?'no-current-main-run':
+   evidence.status==='verified'?'observed':evidence.status,
+   status:selected?safeText(selected.status,32)||'unknown':null,
+   conclusion:evidence.verified?'success':null,
+   runId:evidence.runId,
+   runUrl:selected?safeGithubUrl(selected.html_url,'/actions/runs/')||REPO_URL+'/actions':REPO_URL+'/actions',
+   sourceSha:mainSha,observedAt:observedDate(selected?.created_at)};
  }
  return {schema:'ultron.connectivity.v1',observedAt,paidCeilingCents:0,
   runtime,queue,github,ci,pullRequests};

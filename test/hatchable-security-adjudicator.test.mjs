@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {webcrypto} from 'node:crypto';
+import {webcrypto,createVerify} from 'node:crypto';
 import {verifyDelegatedGrant,consumeDelegatedGrant} from '../cloud/hatchable/lib/security-adjudicator.js';
 
 const subtle=webcrypto.subtle;
@@ -175,6 +175,7 @@ test('C04: exact owner-signed PR comment grant is bound to one repository, PR, d
  const grant={...base,grantId:'owner-c04-pr-comment-20261110',
   actor:'worker:coordinator',objectiveId:'c04-pr-390-comment',
   operation:'pr.comment',resource,
+  policySha:'742eeeaa209cebeb376c23778918082ebc07efa1b25f9ecb2ad77a3acf82a7ac',
   notBefore:start,expiresAt:'2026-11-10T20:04:59.000Z',
   profileVersion:7,stopVersion:5,administrativeChange:false};
  const scope={actor:grant.actor,objectiveId:grant.objectiveId,
@@ -202,4 +203,102 @@ test('C04: exact owner-signed PR comment grant is bound to one repository, PR, d
  await assert.rejects(check(grant,{...scope,resource:
   'github:pr-comment:michaeljwilliams0123/Ultron.MW:391:sha256:'+'b'.repeat(64)},
   '2026-11-10T20:01:00.000Z'),/grant-scope-mismatch/);
+ // #420: a pr.comment grant with any other policySha is refused.
+ for(const policySha of ['a'.repeat(64),undefined])
+  await assert.rejects(check({...grant,policySha},scope,'2026-11-10T20:01:00.000Z'),
+   /invalid-grant-(policy|claims)/);
+});
+
+test('Hatchable ECDSA verifier bridge accepts a minimal update/verify provider without end()',async()=>{
+ const mod=await import('../cloud/hatchable/lib/security-adjudicator.js');
+ const pair=await keyPair(),envelope=await signed();
+ const publicJwk=await subtle.exportKey('jwk',pair.publicKey);
+ const raw=Uint8Array.from(Buffer.from(envelope.signature,'base64url'));
+ let calls=0;
+ const provider=algorithm=>{
+  assert.equal(algorithm,'sha256');
+  let bytes;
+  return {
+   update(input){bytes=Buffer.from(input);calls++;return this;},
+   verify(pem,signature,encoding){
+    calls++;
+    const native=createVerify('SHA256');
+    native.update(bytes);
+    return native.verify(pem,signature,encoding);
+   }
+  };
+ };
+ const accepted=mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,createVerifier:provider});
+ assert.equal(accepted,true);
+ assert.equal(calls,2,'provider only needs update and verify');
+ const corrupted=new Uint8Array(raw);corrupted[0]^=1;
+ assert.equal(mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:corrupted,publicJwk,createVerifier:provider}),false);
+ assert.throws(()=>mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,
+  createVerifier:()=>({update(){throw Error('provider-side-effect')},verify(){return true}})}),
+ /grant-signature-provider-update-error/);
+});
+
+test('Hatchable crypto bridge verifies string UTF-8 payload and base64 DER signature',async()=>{
+ const mod=await import('../cloud/hatchable/lib/security-adjudicator.js');
+ const pair=await keyPair(),envelope=await signed();
+ const publicJwk=await subtle.exportKey('jwk',pair.publicKey);
+ const raw=Uint8Array.from(Buffer.from(envelope.signature,'base64url'));
+ let message;
+ const provider=algorithm=>{
+  assert.equal(algorithm,'sha256');
+  return {
+   update(payload,encoding){
+    assert.equal(typeof payload,'string','host bridge expects string input');
+    assert.equal(encoding,'utf8','UTF-8 encoding is explicit');
+    message=payload;
+    return this;
+   },
+   verify(pem,signature,encoding){
+    assert.equal(typeof pem,'string');
+    assert.equal(typeof signature,'string','host bridge expects base64 DER string');
+    assert.equal(encoding,'base64');
+    const native=createVerify('SHA256');
+    native.update(message,'utf8');
+    return native.verify(pem,signature,encoding);
+   }
+  };
+ };
+ assert.equal(mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,createVerifier:provider}),true);
+ const corrupted=new Uint8Array(raw);corrupted[0]^=1;
+ assert.equal(mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:corrupted,publicJwk,createVerifier:provider}),false);
+ assert.throws(()=>mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,
+  createVerifier:()=>({update(){throw Error('host-update-failed')},verify(){return true}})}),
+  /grant-signature-provider-update-error/);
+ assert.throws(()=>mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,
+  createVerifier:()=>({update(){return this},verify(){throw Error('host-verify-failed')}})}),
+  /grant-signature-provider-verify-error/);
+});
+
+test('C04 PR-comment and #412 branch policies remain independently pinned after main integration',async()=>{
+ const now='2026-11-10T20:01:00.000Z';
+ const make=(operation,resource,policySha,grantId)=>({
+  ...base,operation,resource,policySha,grantId,
+  notBefore:'2026-11-10T20:00:00.000Z',
+  expiresAt:'2026-11-10T20:04:00.000Z'
+ });
+ const comment=make('pr.comment',
+  'github:pr-comment:michaeljwilliams0123/Ultron.MW:390:sha256:'+'a'.repeat(64),
+  '742eeeaa209cebeb376c23778918082ebc07efa1b25f9ecb2ad77a3acf82a7ac',
+  'merged-policy-comment-001');
+ const branch=make('repair.branch.create',
+  'github:branch:michaeljwilliams0123/Ultron.MW:ultron/canary-test123:sha256:'+'b'.repeat(64),
+  (await import('../cloud/hatchable/lib/security-adjudicator.js')).BRANCH_POLICY_SHA,
+  'merged-policy-branch-001');
+ const scope=g=>({...request,operation:g.operation,resource:g.resource});
+ assert.equal((await check(comment,scope(comment),now)).operation,'pr.comment');
+ assert.equal((await check(branch,scope(branch),now)).operation,'repair.branch.create');
+ await assert.rejects(check({...comment,policySha:branch.policySha},scope(comment),now),/invalid-grant-policy/);
+ await assert.rejects(check({...branch,policySha:comment.policySha},scope(branch),now),/invalid-grant-branch-policy/);
 });

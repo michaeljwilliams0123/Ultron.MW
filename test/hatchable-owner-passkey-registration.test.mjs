@@ -13,6 +13,7 @@ function head(major,len){
  throw Error('large fixture');
 }
 function cbor(v){
+ if(v===true||v===false)return Uint8Array.of(v?0xf5:0xf4);
  if(v instanceof Uint8Array)return cat(head(2,v.length),v);
  if(typeof v==='number')return head(v<0?1:0,v<0?-1-v:v);
  if(typeof v==='string'){const b=txt(v);return cat(head(3,b.length),b);}
@@ -21,16 +22,17 @@ function cbor(v){
 }
 async function fixture({origin='https://ultron-mw-cloud.hatchable.site',
  rpId='ultron-mw-cloud.hatchable.site',flags=0x45,alg=-7,fmt='none',
- clientChallenge=null}={}){
+ clientChallenge=null,extensions=null,invalidPoint=false}={}){
  const pair=await webcrypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
  const jwk=await webcrypto.subtle.exportKey('jwk',pair.publicKey);
  const credentialId=webcrypto.getRandomValues(new Uint8Array(32));
  const challenge=b64(webcrypto.getRandomValues(new Uint8Array(32)));
  const rpHash=new Uint8Array(await webcrypto.subtle.digest('SHA-256',txt(rpId)));
- const cose=cbor(new Map([[1,2],[3,alg],[-1,1],[-2,new Uint8Array(Buffer.from(jwk.x,'base64url'))],
+ const cose=cbor(new Map([[1,2],[3,alg],[-1,1],[-2,invalidPoint?new Uint8Array(32):new Uint8Array(Buffer.from(jwk.x,'base64url'))],
   [-3,new Uint8Array(Buffer.from(jwk.y,'base64url'))]]));
  const auth=cat(rpHash,Uint8Array.of(flags,0,0,0,1),new Uint8Array(16),
-  Uint8Array.of(0,credentialId.length),credentialId,cose);
+  Uint8Array.of(0,credentialId.length),credentialId,cose,
+  ...(extensions?[cbor(extensions)]:[]));
  const attestationObject=b64(cbor(new Map([['fmt',fmt],['attStmt',new Map()],
   ['authData',auth]])));
  const clientDataJSON=b64(txt(JSON.stringify({type:'webauthn.create',
@@ -65,4 +67,53 @@ test('rejects malformed, cross-origin, non-ES256 and missing user verification',
  const f=await fixture();
  await assert.rejects(verifyOwnerPasskeyRegistration({...f,credentialId:b64(new Uint8Array(32).fill(3))},
   {subtle:webcrypto.subtle}),/passkey-/);
+});
+
+test('accepts valid ES256 WebAuthn registration with Windows-compatible CBOR extensions',async()=>{
+ const x=await fixture({flags:0xc5,
+  extensions:new Map([['credProps',new Map([['rk',true]])]])});
+ const verified=await verifyOwnerPasskeyRegistration(x,{subtle:webcrypto.subtle});
+ assert.equal(verified.credentialId,x.credentialId);
+});
+test('rejects ED flag without extension CBOR payload',async()=>{
+ const x=await fixture({flags:0xc5});
+ await assert.rejects(verifyOwnerPasskeyRegistration(x,{subtle:webcrypto.subtle}),/passkey-/);
+});
+
+test('rejects authenticator extension bytes without ED and non-map ED CBOR',async()=>{
+ const cases=[
+  await fixture({flags:0x45,extensions:new Map([['credProps',new Map([['rk',true]])]])}),
+  await fixture({flags:0xc5,extensions:'not-a-map'})
+ ];
+ for(const value of cases)await assert.rejects(
+  verifyOwnerPasskeyRegistration(value,{subtle:webcrypto.subtle}),/passkey-/);
+});
+
+test('registration uses lowercase sha256 host verifier with no stream end dependency',async()=>{
+ const f=await fixture();
+ const actions=[];
+ const createVerifier=algorithm=>{
+  assert.equal(algorithm,'sha256');
+  actions.push('create');
+  return {
+   update(input){assert.ok(input instanceof Uint8Array);actions.push('update');return this;},
+   verify(publicPem,signature,encoding){
+    assert.match(publicPem,/BEGIN PUBLIC KEY/);
+    assert.equal(typeof signature,'string');
+    assert.equal(encoding,'base64');
+    actions.push('verify');
+    return false; // Key parse success; dummy message is not authenticated.
+   }
+  };
+ };
+ const result=await verifyOwnerPasskeyRegistration(f,{
+  subtle:webcrypto.subtle,createVerifier});
+ assert.equal(result.credentialId,f.credentialId);
+ assert.deepEqual(actions,['create','update','verify']);
+});
+
+test('rejects malformed ES256 public point even with valid COSE shape',async()=>{
+ const x=await fixture({invalidPoint:true});
+ await assert.rejects(verifyOwnerPasskeyRegistration(x,{subtle:webcrypto.subtle}),
+  /passkey-unsupported-credential-key/);
 });

@@ -85,6 +85,20 @@ jobs:
             const slim={number:pr.number,state:pr.state,user:pr.user,
               head:{sha:pr.head.sha,ref:pr.head.ref,repo:{id:pr.head.repo.id,full_name:pr.head.repo.full_name}},
               base:{sha:pr.base.sha,ref:pr.base.ref,repo:{id:pr.base.repo.id,full_name:pr.base.repo.full_name}}};
+            // Read exact-head CI in the trusted main-only job as well as the
+            // advisory debate. Missing/failed evidence remains a HOLD.
+            let observed={};
+            try {
+              const [checks,comparison]=await Promise.all([
+                github.rest.checks.listForRef({owner,repo,ref:pr.head.sha,per_page:100}),
+                github.rest.repos.compareCommits({owner,repo,base:pr.base.sha,head:pr.head.sha})
+              ]);
+              if(checks.data?.total_count>100)throw Error('check-inventory-truncated');
+              observed={pr,comparison:comparison.data,checkRuns:checks.data};
+            } catch(error) {
+              core.warning('Council CI evidence remains unverified: '+error.message);
+            }
+            core.exportVariable('COUNCIL_REVIEW_EVIDENCE_FILE',write('exact-head-ci.json',observed));
             core.exportVariable('COUNCIL_PR_FILE',write('pr.json',slim));
             core.exportVariable('COUNCIL_FILES_FILE',write('files.json',
               {complete,files:files.map(f=>({filename:f.filename,previous_filename:f.previous_filename,status:f.status}))}));

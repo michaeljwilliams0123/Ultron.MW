@@ -6,18 +6,19 @@ import {collectHfRuns,getHfLabView,WORKFLOWS} from '../cloud/hatchable/lib/hf-la
 const read=path=>readFileSync(path,'utf8');
 const HEAD='a'.repeat(40);
 const urls=[];
-const successful=(id)=>({workflow_runs:[{id,head_sha:HEAD,status:'completed',
-  conclusion:'success',event:'workflow_dispatch',created_at:'2026-11-04T03:00:00Z'}]});
 const response=body=>({ok:true,status:200,json:async()=>body});
+// All lab evidence comes from one consolidated lane (26 -> 8 step 3).
+const laneRun=(id,task,extra={})=>({id,head_sha:HEAD,status:'completed',conclusion:'success',
+ event:'workflow_dispatch',created_at:'2026-11-04T03:00:00Z',name:'Ultron lab evidence',
+ head_branch:'main',actor:{login:'michaeljwilliams0123',id:308995719},
+ path:'.github/workflows/lane-lab-evidence.yml',display_title:'Ultron lab evidence: '+task,...extra});
 const mockFetch=async url=>{
  urls.push(url);
  const u=String(url);
- if(u.includes('hf-heldout-cpu.yml'))return response(successful(41764422463));
- if(u.includes('hf-free-cpu-tournament.yml'))return response(successful(41756754075));
- if(u.includes('c06-owner-model-release.yml'))return response({workflow_runs:[
-  {id:41771806146,head_sha:HEAD,status:'completed',conclusion:'failure',
-   event:'workflow_dispatch',created_at:'2026-11-04T04:12:41Z'}
- ]});
+ if(u.includes('lane-lab-evidence.yml'))return response({workflow_runs:[
+  laneRun(41771806146,'c06-owner-model-release',{conclusion:'failure',created_at:'2026-11-04T04:12:41Z'}),
+  laneRun(41764422463,'hf-heldout-cpu'),
+  laneRun(41756754075,'hf-free-cpu-tournament')]});
  throw Error('unexpected-url');
 };
 test('HF-LAB-01: separately observed workflow status cannot misrepresent failed model release',async()=>{
@@ -29,8 +30,8 @@ test('HF-LAB-01: separately observed workflow status cannot misrepresent failed 
  assert.equal(result.release.productionAccepted,false);
  assert.equal(result.release.autoPromotion,false);
  assert.equal(result.paidBudgetCents,0);
- assert.equal(urls.length,3);
- assert.ok(urls.every(x=>String(x).startsWith('https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/actions/workflows/')));
+ assert.equal(urls.length,1);
+ assert.ok(urls.every(x=>String(x).startsWith('https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/actions/workflows/lane-lab-evidence.yml/runs')));
 });
 test('HF-LAB-02: historical scores are source-pinned and 3B remains research-only',async()=>{
  const result=await collectHfRuns({fetchGithub:mockFetch});
@@ -41,13 +42,20 @@ test('HF-LAB-02: historical scores are source-pinned and 3B remains research-onl
  assert.equal(result.benchmark.models.at(-1).productionEligible,false);
  assert.equal(result.benchmark.observation,'historical-evidence');
 });
-test('HF-LAB-03: independent upstream failures remain unavailable, not fabricated success',async()=>{
- const failure=async url=>String(url).includes('c06-owner')?
-  ({ok:false,status:403,json:async()=>({})}):response({workflow_runs:[]});
+test('HF-LAB-03: upstream failures remain unavailable, not fabricated success',async()=>{
+ const failure=async()=>({ok:false,status:403,json:async()=>({})});
  const result=await collectHfRuns({fetchGithub:failure});
- assert.equal(result.workflows.find(x=>x.key==='c06').state,'unavailable');
- assert.equal(result.workflows.find(x=>x.key==='heldout').state,'no-run');
- assert.equal(result.workflows.find(x=>x.key==='c06').conclusion,null);
+ for(const item of result.workflows){
+  assert.equal(item.state,'unavailable');
+  assert.equal(item.conclusion,null);
+  assert.equal(item.reason,'github-http-403');
+ }
+ const empty=await collectHfRuns({fetchGithub:async()=>response({workflow_runs:[]})});
+ assert.equal(empty.workflows.find(x=>x.key==='heldout').state,'no-run');
+ const broken=await collectHfRuns({fetchGithub:async()=>response({workflow_runs:[
+  laneRun(-1,'c06-owner-model-release')]})});
+ assert.equal(broken.workflows.find(x=>x.key==='c06').state,'unavailable');
+ assert.equal(broken.workflows.find(x=>x.key==='heldout').state,'no-run');
 });
 function fakeCache(){
  let state=null;
@@ -79,7 +87,7 @@ test('HF-LAB-04: shared PostgreSQL cache avoids repeated rate-limit API calls',a
  const second=await getHfLabView({db,fetchGithub,now});
  assert.equal(first.cache.state,'refreshed');
  assert.equal(second.cache.state,'fresh');
- assert.equal(calls.length,3);
+ assert.equal(calls.length,1);
  assert.equal(second.workflows.find(x=>x.key==='c06').conclusion,'failure');
 });
 test('HF-LAB-05: allowlisted owner route and MCP share the same observation helper',()=>{
@@ -101,4 +109,41 @@ test('HF-LAB-05: allowlisted owner route and MCP share the same observation help
  assert.doesNotMatch(js,/innerHTML\s*=/);
  assert.doesNotMatch(js,/setInterval|new EventSource|new WebSocket/);
  assert.match(migration,/CREATE TABLE IF NOT EXISTS hf_lab_cache/);
+});
+
+test('LANE-LAB-01: only an exact lane run counts; legacy files are never read',async()=>{
+ urls.length=0;
+ const fetchGithub=async url=>{
+  urls.push(url);
+  if(String(url).includes('lane-lab-evidence.yml'))return response({workflow_runs:[
+   laneRun(50000000003,'c06-owner-model-release',{name:'Forged lane'}),
+   laneRun(50000000002,'hf-heldout-cpu'),
+   laneRun(50000000001,'hf-free-cpu-tournament',{display_title:'Ultron lab evidence: tournament'}),
+   laneRun(50000000000,'hf-free-cpu-tournament',{path:'.github/workflows/hf-free-cpu-tournament.yml'})]});
+  throw Error('unexpected-url');
+ };
+ const result=await collectHfRuns({fetchGithub});
+ const by=key=>result.workflows.find(x=>x.key===key);
+ assert.equal(by('heldout').runId,50000000002);
+ assert.match(by('heldout').workflowUrl,/lane-lab-evidence\.yml$/);
+ assert.equal(by('tournament').state,'no-run');
+ assert.equal(by('c06').state,'no-run');
+ assert.equal(urls.length,1);
+ for(const item of WORKFLOWS)assert.equal(item.file,'lane-lab-evidence.yml');
+});
+
+test('LANE-LAB-02: a lane run counts only as an owner workflow_dispatch on main (Skeptic L1)',async()=>{
+ const {eligibleLaneRun}=await import('../cloud/hatchable/lib/hf-lab-view.js');
+ const good={id:7,name:'Ultron lab evidence',path:'.github/workflows/lane-lab-evidence.yml',
+  display_title:'Ultron lab evidence: hf-heldout-cpu',head_branch:'main',event:'workflow_dispatch',
+  actor:{login:'michaeljwilliams0123',id:308995719}};
+ assert.equal(eligibleLaneRun(good,'heldout'),true);
+ assert.equal(eligibleLaneRun(good,'c06'),false);
+ for(const change of [{head_branch:'attacker-branch'},{event:'push'},{actor:{login:'michaeljwilliams0123ultron',id:354634860}},
+  {actor:{login:'michaeljwilliams0123',id:1}},{actor:undefined},{head_branch:undefined}])
+  assert.equal(eligibleLaneRun({...good,...change},'heldout'),false,JSON.stringify(change));
+ const result=await collectHfRuns({fetchGithub:async url=>String(url).includes('lane-lab-evidence.yml')?
+  response({workflow_runs:[{...good,id:60000000001,head_sha:HEAD,status:'completed',conclusion:'success',
+   created_at:'2026-11-11T05:00:00Z',head_branch:'attacker-branch'}]}):mockFetch(url)});
+ assert.equal(result.workflows.find(x=>x.key==='heldout').state,'no-run');
 });

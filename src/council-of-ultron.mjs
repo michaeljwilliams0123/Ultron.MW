@@ -16,6 +16,11 @@ import { COUNCIL_APP_ROLES } from './council-app-bindings.mjs';
 import { COUNCIL_ABILITIES, memberAbilityAdmission } from './council-members.mjs';
 import { evaluateHubEntry, snapshotSha, verifyGitHubs } from './git-hubs.mjs';
 import { commandsFor } from '../docs/core/capabilities.mjs';
+// One shared "is this outcome verified" predicate, owned by the Phase 2 memory
+// lib (it must stay importable on Hatchable). Re-exported here so routing and
+// the persisted scorecard use the same rule.
+import { isVerifiedOutcome } from '../cloud/hatchable/lib/council-memory.js';
+export { isVerifiedOutcome };
 
 const fail = code => { throw Object.assign(new Error('council-of-ultron-' + code), { code }); };
 const freezeDeep = value => {
@@ -58,6 +63,12 @@ const SKILL_ID = /^[a-z][a-z0-9-]{2,63}$/;
 const CRON = /^(\S+\s+){4}\S+$/;
 const EVENT = /^[a-z_]+(\.[a-z_:-]+)?$/;
 const EVIDENCE = /^(?:https:\/\/github\.com\/michaeljwilliams0123\/(?:Ultron\.MW|mahoraga)\/\S{1,300}|sha256:[a-f0-9]{64}|receipt:[A-Za-z0-9_.:-]{8,160})$/;
+// Skeptic M1: owner-decision stems matched after normalization, whatever the inflection.
+const GOVERNANCE_STEMS = Object.freeze(['merg', 'secret', 'permission', 'token', 'credential', 'releas', 'deploy', 'publish', 'production']);
+// Skeptic M4: keys that must never be written into memory or scorecard objects.
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+// Skeptic L3: admitted operations that still need the owner by default.
+const confirmByDefault = op => op === 'actions.dispatch' || op.startsWith('computer.');
 const SECRET_LIKE = /(?:sk-[a-zA-Z0-9]{16,}|gh[opusr]_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{15,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
 
 const routine = (kind, value, prompt) => ({ kind, [kind === 'cron' ? 'schedule' : 'on']: value, prompt });
@@ -151,9 +162,19 @@ function cleanText(value, max, code) {
   if (SECRET_LIKE.test(value)) fail('credential-like-material');
   return value.trim();
 }
+// Skeptic L2: a GitHub evidence link must stay inside an allowed repo after URL normalization.
+function evidenceLinkOk(item) {
+  if (!item.startsWith('https://')) return true;
+  if (/(?:^|[/\\])(?:\.|%2e){1,2}(?:[/\\?#]|$)/i.test(item.slice(8))) return false;
+  let url;
+  try { url = new URL(item); } catch { return false; }
+  return url.protocol === 'https:' && url.host === 'github.com' && !url.username && !url.password &&
+    /^\/michaeljwilliams0123\/(?:Ultron\.MW|mahoraga)\/./.test(url.pathname);
+}
 function cleanEvidence(list) {
   const items = Array.isArray(list) ? list : [list];
-  if (!items.length || items.length > 10 || items.some(item => typeof item !== 'string' || !EVIDENCE.test(item)))
+  if (!items.length || items.length > 10 ||
+      items.some(item => typeof item !== 'string' || !EVIDENCE.test(item) || !evidenceLinkOk(item)))
     fail('evidence-invalid');
   return [...new Set(items)];
 }
@@ -167,7 +188,10 @@ export function createCouncilMemory({ roster = COUNCIL_ROSTER, now = isoNow, jou
   if (!Number.isSafeInteger(journalLimit) || journalLimit < 1 || journalLimit > 5000) fail('journal-limit-invalid');
   const data = state ? structuredClone(state) :
     { schema: 'ultron.council-memory.v1', members: {}, shared: [], outcomes: [] };
+  // Skeptic M4: prototype-free maps, so no stored key can reach Object.prototype.
+  data.members = Object.assign(Object.create(null), data.members);
   for (const m of members) data.members[m.id] ||= { namespace: m.memoryNamespace, profile: {}, journal: [] };
+  for (const id of Object.keys(data.members)) data.members[id].profile = Object.assign(Object.create(null), data.members[id].profile);
   const own = id => {
     if (!members.some(m => m.id === id)) fail('member-unknown');
     return data.members[id];
@@ -176,7 +200,7 @@ export function createCouncilMemory({ roster = COUNCIL_ROSTER, now = isoNow, jou
   const api = {
     remember(memberId, key, value) {
       const slot = own(memberId);
-      if (!/^[a-z][a-z0-9_.-]{1,63}$/.test(key || '')) fail('fact-key-invalid');
+      if (!/^[a-z][a-z0-9_.-]{1,63}$/.test(key || '') || UNSAFE_KEYS.has(key)) fail('fact-key-invalid');
       slot.profile[key] = { value: cleanText(value, 500, 'fact-invalid'), at: stamp() };
       return Object.freeze({ ...slot.profile[key] });
     },
@@ -224,25 +248,121 @@ export function restoreCouncilMemory(snapshot, options = {}) {
   if (!snapshot || snapshot.schema !== 'ultron.council-memory.v1') fail('snapshot-invalid');
   const { sha256, ...body } = snapshot;
   if (snapshotSha(body) !== sha256) fail('snapshot-digest-mismatch');
-  return createCouncilMemory({ ...options, state: body });
+  validateMemoryState(body, validateRoster(options.roster ?? COUNCIL_ROSTER));
+  // Phase 1 snapshots may lack evidenceVerified: anything but literal true restores as unverified.
+  const outcomes = body.outcomes.map(o => ({ ...o, evidenceVerified: isVerifiedOutcome(o) }));
+  return createCouncilMemory({ ...options, state: { ...body, outcomes } });
+}
+
+/** Skeptic M4: the digest is unkeyed, so a restored snapshot re-runs every write-path check. */
+function validateMemoryState(body, members) {
+  const bad = () => fail('snapshot-state-invalid');
+  const plain = value => value && typeof value === 'object' && !Array.isArray(value);
+  const keysOk = value => {
+    if (!value || typeof value !== 'object') return;
+    for (const key of Object.keys(value)) { if (UNSAFE_KEYS.has(key)) bad(); keysOk(value[key]); }
+  };
+  keysOk(body);
+  const at = value => { if (typeof value !== 'string' || !ISO.test(value)) bad(); };
+  const member = id => { if (typeof id !== 'string' || !members.some(m => m.id === id)) bad(); };
+  const outcome = value => { if (value !== null && !['succeeded', 'failed', 'held'].includes(value)) bad(); };
+  const lane = value => { if (value !== null && !LANE_IDS.includes(value)) bad(); };
+  if (!plain(body.members) || !Array.isArray(body.shared) || !Array.isArray(body.outcomes)) bad();
+  for (const [id, slot] of Object.entries(body.members)) {
+    member(id);
+    if (!plain(slot) || slot.namespace !== members.find(m => m.id === id).memoryNamespace ||
+        !plain(slot.profile) || !Array.isArray(slot.journal)) bad();
+    for (const [key, fact] of Object.entries(slot.profile)) {
+      if (!/^[a-z][a-z0-9_.-]{1,63}$/.test(key) || !plain(fact)) bad();
+      cleanText(fact.value, 500, 'fact-invalid'); at(fact.at);
+    }
+    for (const entry of slot.journal) {
+      if (!plain(entry) || !/^[a-z][a-z-]{1,31}$/.test(entry.kind || '') || !Array.isArray(entry.evidence)) bad();
+      at(entry.at); lane(entry.lane); outcome(entry.outcome);
+      cleanText(entry.text, 1000, 'journal-text-invalid');
+      if (entry.evidence.length) cleanEvidence(entry.evidence);
+    }
+  }
+  for (const entry of body.shared) {
+    if (!plain(entry)) bad();
+    at(entry.at); member(entry.by); cleanText(entry.fact, 500, 'shared-fact-invalid'); cleanEvidence(entry.evidence);
+  }
+  for (const entry of body.outcomes) {
+    if (!plain(entry) || !/^[a-f0-9]{64}$/.test(entry.routing || '') || !Array.isArray(entry.lanes) || !entry.lanes.length ||
+        entry.lanes.some(l => !LANE_IDS.includes(l))) bad();
+    member(entry.lead); outcome(entry.status); if (entry.status === null) bad(); at(entry.at); cleanEvidence(entry.evidence);
+  }
+}
+
+// Skeptic M1: common Cyrillic/Greek look-alikes of Latin letters.
+const CONFUSABLES = Object.freeze({ 'а': 'a', 'с': 'c', 'е': 'e', 'һ': 'h', 'і': 'i', 'ј': 'j', 'к': 'k', 'м': 'm', 'н': 'h',
+  'о': 'o', 'р': 'p', 'ѕ': 's', 'т': 't', 'у': 'y', 'х': 'x', 'ԁ': 'd', 'ɡ': 'g', 'α': 'a', 'ε': 'e', 'ι': 'i', 'κ': 'k',
+  'ν': 'v', 'ο': 'o', 'ρ': 'p', 'τ': 't', 'υ': 'u', 'χ': 'x' });
+function signalText(objective) {
+  const raw = cleanText(objective, 2000, 'objective-invalid').normalize('NFKC').replace(/[\p{Cf}\u200b-\u200f\u2060-\u2064\ufeff]/gu, '')
+    .toLowerCase();
+  return { raw, text: ' ' + raw.replace(/./gu, ch => CONFUSABLES[ch] || ch) + ' ' };
+}
+function laneHits(objective) {
+  const { raw, text } = signalText(objective);
+  const joined = text.replace(/(\p{L})[-\u2010\u2011](?=\p{L})/gu, '$1'); // 'me-rge' -> 'merge'
+  const has = pattern => pattern.test(text) || pattern.test(joined);
+  // Single letters separated by dots/spaces ('m.e.r.g.e', 's e c r e t') are joined for governance stems only.
+  const dotted = joined.replace(/(?<!\p{L})\p{L}(?:[.\s_*\u00b7]+\p{L}(?!\p{L})){2,}/gu, run => run.replace(/[^\p{L}]/gu, ''));
+  const stems = GOVERNANCE_STEMS.filter(stem => has(new RegExp('(^|[^a-z])' + stem)) || new RegExp('(^|[^a-z])' + stem).test(dotted));
+  // A signal-like word that still carries non-ASCII letters is treated as an evasion attempt.
+  const disguised = (raw.match(/[\p{L}\p{M}-]+/gu) || []).some(word => /[^\x00-\x7f]/.test(word) && /[a-z]/.test(word) &&
+    GOVERNANCE_STEMS.some(stem => [...word.replace(/-/g, '').slice(0, stem.length)].every((ch, i) => ch === stem[i] || /[^\x00-\x7f]/.test(ch)) &&
+      word.replace(/-/g, '').length >= stem.length));
+  return LANE_IDS.map(lane => {
+    let weight = CAPABILITY_LANES[lane].signals.filter(signal => has(new RegExp('(^|[^a-z])' +
+      signal.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z]|$)'))).length;
+    if (lane === 'governance') weight = Math.max(weight, stems.length, disguised ? 1 : 0);
+    return { lane, weight };
+  }).filter(hit => hit.weight > 0)
+    .sort((a, b) => b.weight - a.weight || LANE_IDS.indexOf(a.lane) - LANE_IDS.indexOf(b.lane));
 }
 
 /** Deterministic lane inference from the objective text. */
 export function inferLanes(objective) {
-  const text = ' ' + cleanText(objective, 2000, 'objective-invalid').toLowerCase() + ' ';
-  const hits = LANE_IDS.map(lane => ({ lane,
-    weight: CAPABILITY_LANES[lane].signals.filter(signal => new RegExp('(^|[^a-z])' +
-      signal.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z]|$)').test(text)).length }))
-    .filter(hit => hit.weight > 0)
-    .sort((a, b) => b.weight - a.weight || LANE_IDS.indexOf(a.lane) - LANE_IDS.indexOf(b.lane));
+  const hits = laneHits(objective);
   return Object.freeze(hits.length ? hits.map(hit => Object.freeze(hit)) : [Object.freeze({ lane: 'reasoning', weight: 1 })]);
+}
+
+/** Column contract for persisted scorecard rows (Phase 2, Hatchable
+ * `brain_council_scorecard_rows`). The migration and any store must use exactly
+ * these columns; `scorecardRows()` is the only producer. One row per member and
+ * lane, computed from one verified memory snapshot (`snapshot_sha256`). */
+export const SCORECARD_COLUMNS = freezeDeep([
+  { name: 'member_id', type: 'text', note: 'roster id, e.g. ultron-sentinel' },
+  { name: 'lane', type: 'text', note: 'one of LANE_IDS' },
+  { name: 'attempts', type: 'integer', note: 'non-held outcomes led by the member in this lane' },
+  { name: 'successes', type: 'integer', note: 'succeeded outcomes, <= attempts' },
+  { name: 'rate', type: 'numeric(5,4)', note: 'Laplace smoothed (successes + 1) / (attempts + 2)' },
+  { name: 'snapshot_sha256', type: 'text', note: 'sha256 of the memory snapshot the row was computed from' },
+]);
+export const SCORECARD_SCHEMA = 'ultron.council-scorecard.v1';
+
+/** Flatten a scorecard into SCORECARD_COLUMNS rows bound to one snapshot. */
+export function scorecardRows(card, snapshotSha256) {
+  if (!/^[a-f0-9]{64}$/.test(snapshotSha256 || '')) fail('scorecard-snapshot-invalid');
+  const rows = [];
+  for (const memberId of Object.keys(card).sort()) for (const lane of Object.keys(card[memberId]).sort()) {
+    const { attempts, successes, rate } = card[memberId][lane];
+    if (!LANE_IDS.includes(lane) || !Number.isSafeInteger(attempts) || !Number.isSafeInteger(successes) ||
+        successes < 0 || successes > attempts) fail('scorecard-row-invalid');
+    rows.push({ member_id: memberId, lane, attempts, successes, rate, snapshot_sha256: snapshotSha256 });
+  }
+  return freezeDeep(rows);
 }
 
 /** Track record per member and lane from recorded outcomes (Laplace smoothed). */
 export function councilScorecard(memory) {
-  const card = {};
+  const card = Object.create(null); // Skeptic M4: no prototype to pollute
   for (const outcome of memory.outcomes()) for (const lane of outcome.lanes) {
-    const slot = ((card[outcome.lead] ||= {})[lane] ||= { attempts: 0, successes: 0, rate: 0.5 });
+    // Skeptic L1: unverified evidence never steers routing.
+    if (!isVerifiedOutcome(outcome) || !ID.test(outcome.lead || '') || !LANE_IDS.includes(lane)) continue;
+    const slot = ((card[outcome.lead] ||= Object.create(null))[lane] ||= { attempts: 0, successes: 0, rate: 0.5 });
     if (outcome.status === 'held') continue;
     slot.attempts += 1;
     if (outcome.status === 'succeeded') slot.successes += 1;
@@ -257,10 +377,16 @@ export function routeCouncilTask(task, { roster = COUNCIL_ROSTER, memory = null,
   if (!task || typeof task !== 'object' || !/^[a-z0-9][a-z0-9:._-]{2,80}$/.test(task.id || '')) fail('task-invalid');
   const objective = cleanText(task.objective, 2000, 'objective-invalid');
   if (!Number.isSafeInteger(maxMembers) || maxMembers < 1 || maxMembers > 7) fail('max-members-invalid');
-  const lanes = task.lanes ? task.lanes.map(lane => {
-    if (!LANE_IDS.includes(lane)) fail('task-lane-invalid');
-    return { lane, weight: 1 };
-  }) : inferLanes(objective);
+  // Skeptic M2: caller lanes can add to, never replace, what the objective text implies.
+  if (task.lanes !== undefined && (!Array.isArray(task.lanes) || task.lanes.some(lane => !LANE_IDS.includes(lane))))
+    fail('task-lane-invalid');
+  let lanes = inferLanes(objective);
+  if (task.lanes) {
+    const hits = laneHits(objective);
+    lanes = [...new Set(task.lanes)].map(lane => ({ lane, weight: 1 }));
+    for (const hit of hits) if (!lanes.some(l => l.lane === hit.lane)) lanes.push(hit);
+    if (!lanes.length) lanes = inferLanes(objective);
+  }
   const operations = Array.isArray(task.operations) ? task.operations : [];
   if (operations.some(op => typeof op !== 'string' || !/^[a-z][a-z0-9.-]{2,60}$/.test(op))) fail('task-operations-invalid');
   const card = memory ? councilScorecard(memory) : {};
@@ -296,6 +422,8 @@ export function routeCouncilTask(task, { roster = COUNCIL_ROSTER, memory = null,
   const escalations = [];
   for (const item of admission.filter(a => !a.admitted))
     escalations.push({ to: 'owner', op: item.op, reason: item.reason });
+  for (const item of admission.filter(a => a.admitted && confirmByDefault(a.op)))
+    escalations.push({ to: 'owner', op: item.op, reason: 'owner-confirmation-by-default' });
   if (lanes.some(l => l.lane === 'governance')) escalations.push({ to: 'owner', reason: 'governance-lane-requires-owner-decision' });
   const body = {
     schema: 'ultron.council-routing.v1', taskId: task.id, objectiveSha256: snapshotSha({ objective }),
@@ -311,11 +439,29 @@ export function routeCouncilTask(task, { roster = COUNCIL_ROSTER, memory = null,
   return freezeDeep({ ...body, fingerprint: snapshotSha(body) });
 }
 
-/** Close the loop: write evidence-backed outcomes into memory for future routing. */
-export function recordCouncilOutcome(memory, routing, { status, evidence, note = '' } = {}) {
+/** Skeptic M3: the fingerprint is unkeyed, so re-check the advisory invariants on every routing we consume. */
+function assertAdvisoryRouting(routing) {
   if (!routing || routing.schema !== 'ultron.council-routing.v1') fail('routing-invalid');
   const { fingerprint, ...body } = routing;
   if (snapshotSha(body) !== fingerprint) fail('routing-fingerprint-mismatch');
+  const escalated = op => Array.isArray(routing.escalations) && routing.escalations.some(e => e?.to === 'owner' && e.op === op);
+  const ok = routing.executes === false && routing.countsAsApproval === false && routing.authority === 'advisory-only' &&
+    Array.isArray(routing.admission) && Array.isArray(routing.escalations) && Array.isArray(routing.members) &&
+    Array.isArray(routing.lanes) && routing.lanes.length && routing.lanes.every(l => LANE_IDS.includes(l)) &&
+    routing.members.some(m => m?.id === routing.lead && m.duty === 'lead') &&
+    routing.admission.every(a => a && typeof a.op === 'string' &&
+      (OWNER_ONLY_OPERATIONS.includes(a.op) ? a.admitted === false && escalated(a.op) : true) &&
+      (a.admitted === true ? !confirmByDefault(a.op) || escalated(a.op) : escalated(a.op))) &&
+    (!routing.lanes.includes('governance') ||
+      routing.escalations.some(e => e?.reason === 'governance-lane-requires-owner-decision')) &&
+    routing.decision === (routing.escalations.length ? 'escalate-to-owner' : 'route');
+  if (!ok) fail('routing-not-advisory');
+  return fingerprint;
+}
+
+/** Close the loop: write evidence-backed outcomes into memory for future routing. */
+export function recordCouncilOutcome(memory, routing, { status, evidence, note = '' } = {}) {
+  const fingerprint = assertAdvisoryRouting(routing);
   if (!['succeeded', 'failed', 'held'].includes(status)) fail('outcome-status-invalid');
   const links = cleanEvidence(evidence);
   if (memory.outcomes().some(o => o.routing === fingerprint)) fail('outcome-already-recorded');
@@ -353,9 +499,7 @@ export function mapOwnerMessage(text) {
 /** Companion speaks first, in plain language, with in-thread progress and
  * approval cards for anything the owner must decide. Drafts only: nothing is sent. */
 export function companionReply(routing, { roster = COUNCIL_ROSTER } = {}) {
-  if (!routing || routing.schema !== 'ultron.council-routing.v1') fail('routing-invalid');
-  const { fingerprint, ...body } = routing;
-  if (snapshotSha(body) !== fingerprint) fail('routing-fingerprint-mismatch');
+  const fingerprint = assertAdvisoryRouting(routing);
   const name = id => validateRoster(roster).find(m => m.id === id)?.name || id;
   const helpers = routing.members.filter(m => m.duty !== 'lead').map(m => name(m.id) + ' (' + m.duty + ')');
   const lanes = routing.lanes.map(l => CAPABILITY_LANES[l].label.toLowerCase()).join(', ');

@@ -21,6 +21,8 @@
 <style>.cloud-return{display:flex;justify-content:space-between;gap:12px;padding:10px 20px;background:#12273a;border-bottom:1px solid #37647c;font:600 13px system-ui,sans-serif}.cloud-return a{color:#b8f0ff;text-decoration:underline}.cloud-return small{color:#b5cbd7}</style>
 </head>
 <body>
+<!-- shared-nav:v1 --><nav class="shared-nav" aria-label="Ultron pages" style="display:flex;flex-wrap:wrap;gap:8px;max-width:1024px;margin:0 auto;padding:12px 16px;font:600 13px/1.2 system-ui,sans-serif"><a href="/council-room.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Council room · start here</a><a href="/workspace.html" aria-current="page" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;background:#274c70;">Workspace</a><a href="/" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Cloud controls</a><a href="/passkey-owner.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Owner passkeys</a><a href="/connectors.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Connectors</a><a href="/repair-operations.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">Repair operations</a><a href="/github-pr-comment-canary.html" style="color:#dbedff;text-decoration:none;padding:7px 11px;border:1px solid #466283;border-radius:9px;">GitHub App canary</a></nav>
+
 <div class="cloud-return" role="navigation" aria-label="Hatchable cloud console"><span>ULTRON.MW — Unified workspace</span><a href="/">Cloud controls</a></div>
 <div class="shell">
  <aside class="rail"><div class="brand"><span class="mark">U</span> ULTRON.MW</div><nav class="nav" aria-label="Sections"><button data-tab="brain" aria-current="page">Brain</button><button data-tab="learning">Learning</button><button data-tab="systems">Systems</button></nav><div class="rail-end">ONE OWNER<br>ONE BRAIN<br>GITHUB-HOSTED</div></aside>
@@ -94,7 +96,7 @@
     <button type="button" id="hatchable-refresh">Refresh cloud status</button>
   </section>
   <p class="muted"><strong>Cloud owner feedback:</strong> reply to a completed GitHub task Issue with the exact three-line rating shown on its receipt. That owner-authenticated comment triggers an evidence evaluation on GitHub-hosted Actions; it cannot execute extra tools or add permissions.</p>
-  <p class="muted"><strong>Cloud actions:</strong> Create PR to main drafts a documentation proposal, or a bounded source PR when an exact-main implementation manifest is supplied. Neither route auto-merges. Read-only commands: /help, /system status, /repo inspect, /learning status. Unsupported steps are blocked. GitHub Actions is not an always-on LLM server. <a href="https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/cloud-objective.yml" target="_blank" rel="noopener noreferrer">Cloud workflow</a></p>
+  <p class="muted"><strong>Cloud actions:</strong> Create PR to main drafts a documentation proposal, or a bounded source PR when an exact-main implementation manifest is supplied. Neither route auto-merges. Read-only commands: /help, /system status, /repo inspect, /learning status. Unsupported steps are blocked. GitHub Actions is not an always-on LLM server. <a href="https://github.com/michaeljwilliams0123/Ultron.MW/actions/workflows/owner-comment-router.yml" target="_blank" rel="noopener noreferrer">Cloud workflow</a></p>
   <p class="muted">Optional legacy local adapter — not required for cloud jobs:</p>
   <div class="owner-actions hidden" id="optional-local-actions">
     <label for="action-key">Local owner pairing key</label>
@@ -131,5 +133,6 @@
  </main>
 </div>
 <script src="./app.js" defer></script>
+<script src="./council-front-door.js" defer></script>
 </body>
 </html>

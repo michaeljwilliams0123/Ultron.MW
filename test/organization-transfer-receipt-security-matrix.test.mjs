@@ -18,7 +18,9 @@ const ACTORS = [
 const run = (changes = {}) => ({
   id: 42816723356,
   run_attempt: 1,
-  path: '.github/workflows/c06-owner-model-release.yml',
+  path: '.github/workflows/lane-lab-evidence.yml',
+  name: 'Ultron lab evidence',
+  display_title: 'Ultron lab evidence: c06-owner-model-release',
   event: 'workflow_dispatch',
   status: 'completed',
   conclusion: 'success',
@@ -35,13 +37,15 @@ const payload = (r = run(), changes = {}) => ({
   ...changes
 });
 
-for (const actor of ACTORS) {
-  test('GitHub receipt admission trusts ' + actor.login + ' only with exact ID and canonical repo', () => {
-    const accepted = validateGithubWorkflowPayload(payload(run({ actor })));
-    assert.equal(accepted.sourceSha, SHA);
-    assert.equal(accepted.workflowKey, 'c06');
-  });
-}
+test('GitHub receipt admission trusts ' + ACTORS[0].login + ' only with exact ID and canonical repo', () => {
+  const accepted = validateGithubWorkflowPayload(payload(run({ actor: ACTORS[0] })));
+  assert.equal(accepted.sourceSha, SHA);
+  assert.equal(accepted.workflowKey, 'c06');
+});
+// Skeptic L5: lab jobs are owner-only, so the Ultron bot is not a lab receipt actor.
+test('GitHub lab receipt admission rejects ' + ACTORS[1].login + ' even with its exact ID', () => {
+  assert.throws(() => validateGithubWorkflowPayload(payload(run({ actor: ACTORS[1] }))), /untrusted-github-workflow/);
+});
 const invalidRuns = [
   ['mismatched primary actor ID', { actor: { login: ACTORS[0].login, id: ACTORS[1].id } }],
   ['mismatched Ultron actor ID', { actor: { login: ACTORS[1].login, id: ACTORS[0].id } }],
@@ -54,6 +58,7 @@ const invalidRuns = [
   ['pull request event', { event: 'pull_request_target' }],
   ['uncompleted run', { status: 'in_progress' }],
   ['unlisted workflow', { path: '.github/workflows/other.yml' }],
+  ['retired legacy lab workflow', { path: '.github/workflows/c06-owner-model-release.yml', name: undefined, display_title: undefined }],
   ['malformed source SHA', { head_sha: 'main' }],
   ['zero run ID', { id: 0 }],
   ['zero run attempt', { run_attempt: 0 }]

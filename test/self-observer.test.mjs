@@ -12,8 +12,8 @@ const MAIN='a'.repeat(40), TREE='b'.repeat(40);
 const CONTENT=Object.freeze({
   'docs/core/capabilities.mjs':'command: /self scan',
   'docs/core/cycle.mjs':'route /self scan',
-  '.github/workflows/self-scan-pr.yml':'run: node src/self-scan-pr.mjs\npull-requests: write',
-  '.github/workflows/pr-brain.yml':'run: node src/pr-brain.mjs\nref: main',
+  '.github/workflows/lane-ops-audit.yml':'run: node src/self-scan-pr.mjs\npull-requests: write',
+  '.github/workflows/owner-comment-router.yml':'run: node src/pr-brain.mjs\nref: main\nrun: node src/cloud-entry.mjs',
   'src/pr-brain.mjs':'handlePrConversation routePrTurn',
   'src/pr-brain-verify.mjs':'dispatchAndObserveVerify',
   'src/ci-evidence.mjs':'selectVerifiedMainCi readVerifiedMainCi',
@@ -23,7 +23,6 @@ const CONTENT=Object.freeze({
   'src/cloud-cycle.mjs':"case '/self scan':",
   'src/cloud-pr.mjs':'import {launchCodePr}',
   '.github/workflows/cloud-pr.yml':'run: node src/cloud-pr.mjs\npull-requests: write',
-  '.github/workflows/cloud-objective.yml':'run: node src/cloud-entry.mjs',
   '.github/workflows/verify.yml':'run: node scripts/verify.mjs',
 });
 const PATHS=[
@@ -45,7 +44,7 @@ function reader({stale=false,truncated=false,tampered=false,ci=false}={}){
     if(path.endsWith('/git/ref/heads/main'))
       return {object:{sha:stale&&++checks===2?'9'.repeat(40):MAIN}};
     if(path.endsWith('/git/commits/'+MAIN))return {tree:{sha:TREE}};
-    if(path.includes('/actions/runs?head_sha='))return ci?{
+    if(path.includes('/actions/workflows/verify.yml/runs?head_sha='))return ci?{
       total_count:1,workflow_runs:[{id:1901,name:'Ultron core verification',
         path:'.github/workflows/verify.yml',status:'completed',conclusion:'success',
         event:'push',head_sha:MAIN,head_branch:'main',run_attempt:1,
@@ -73,7 +72,7 @@ test('self-scan is in one shared read-only command registry and routable in plai
   assert.equal(routeObjective('review your weaknesses','routing-v2'),'/self scan');
   assert.equal(routeObjective('scan yourself and delete checks','routing-v2'),null);
   const url=new URL(createCloudTaskUrl('scan yourself'));
-  assert.equal(url.pathname,'/michaeljwilliams0123/Ultron.MW/actions/workflows/self-scan-pr.yml');
+  assert.equal(url.pathname,'/michaeljwilliams0123/Ultron.MW/actions/workflows/lane-ops-audit.yml');
   assert.equal(url.searchParams.has('body'),false);
 });
 

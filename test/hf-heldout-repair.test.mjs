@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {HELDOUT_REPAIR_CASES,heldoutCorpusDigest} from '../src/hf-heldout-cases.mjs';
 import {scoreProposedRepair,heldoutShard,makeHeldoutReceipt,admitHeldoutCpu}
  from '../src/hf-heldout-eval.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const sourceSha='a'.repeat(40), modelRevision='b'.repeat(40);
 test('HF-HO-01: 16 immutable multi-line substantive repairs and independent reference vectors',()=>{
@@ -75,7 +76,7 @@ test('HF-HO-06: receipt pins exact model, corpus and source',()=>{
   assert.throws(()=>makeHeldoutReceipt({...input,...tamper}),/invalid-heldout-receipt/);
 });
 test('HF-HO-07: manual matrix no secrets or paid GPU',async()=>{
- const yml=await readFile(new URL('../.github/workflows/hf-heldout-cpu.yml',import.meta.url),'utf8');
+ const yml=legacyView('hf-heldout-cpu.yml');
  assert.match(yml,/workflow_dispatch:/);assert.doesNotMatch(yml,/^\s+schedule:/m);
  assert.match(yml,/max-parallel:\s*4/);assert.match(yml,/runs-on:\s*ubuntu-24\.04/);
  assert.match(yml,/github\.event\.repository\.private == false/);
@@ -89,7 +90,7 @@ test('HF-HO-08: larger candidate expands bounded matrix to eight jobs on four pu
  const plan=admitHeldoutCpu({repository:'michaeljwilliams0123/Ultron.MW',isPublic:true,
   runner:'ubuntu-24.04',parallel:4,gpu:false,costCents:0,shards:2});
  assert.equal(plan.totalModelJobs,8);
- const yml=await readFile(new URL('../.github/workflows/hf-heldout-cpu.yml',import.meta.url),'utf8');
+ const yml=legacyView('hf-heldout-cpu.yml');
  assert.ok(yml.includes('profile: [baseline, coder-small, coder-medium, coder-large]'));
  assert.ok(yml.includes('max-parallel: 4'));
 });

@@ -5,6 +5,20 @@ const OWNER='michaeljwilliams0123';
 const KEY=/^[a-z0-9-]{8,48}$/;
 const HELD=reason=>({ok:false,status:'held',reason});
 const UNCERTAIN=reason=>({ok:false,status:'reconcile-required',reason});
+// Owner-only, allowlisted diagnostic reasons. Never return raw crypto exceptions,
+// signed envelopes, private keys, PEM, or signer identity internals.
+const GRANT_REASONS=new Set([
+ 'invalid-grant-payload','invalid-grant-signature',
+ 'invalid-grant-claims','invalid-grant-time','invalid-grant-versions',
+ 'unsupported-grant-operation','invalid-grant-policy',
+ 'invalid-grant-pr-comment-scope','grant-ttl-exceeded','grant-expired',
+ 'grant-not-yet-valid','grant-scope-mismatch','administrative-grant-required',
+ 'invalid-adjudicator-public-key','trusted-adjudicator-key-unavailable',
+ 'grant-signature-provider-unavailable','grant-signature-provider-error',
+ 'grant-signature-provider-update-error','grant-signature-provider-verify-error'
+]);
+const diagnosticReason=error=>GRANT_REASONS.has(error?.message)?
+ error.message:'verification-failed';
 const TEXT=new TextEncoder();
 const base64url=bytes=>btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 async function digest(data){
@@ -106,6 +120,7 @@ export async function prepareOwnerPasskey({db,request}={}){
   return HELD('enrollment-key-or-version-denied');
  return {ok:true,status:'prepared',key,grantRequest:grantRequest(row),
   challenge:row.challenge,rpId:'ultron-mw-cloud.hatchable.site',
+  expiresAt:row.expiresAt,
   userId:base64url(crypto.getRandomValues(new Uint8Array(16)))};
 }
 export async function finishOwnerPasskey({db,config,key,envelope,attestation}={}){
@@ -117,14 +132,27 @@ export async function finishOwnerPasskey({db,config,key,envelope,attestation}={}
  catch{return UNCERTAIN('enrollment-readback-unavailable');}
  if(!row||row.usedAt||Date.parse(row.expiresAt)<=Date.now())
   return HELD('enrollment-expired-or-used');
- let grant,credential;
+ // Distinguish the signer grant from browser attestation; neither stage can
+ // persist owner credentials until both independently succeed.
+ let grant;
  try{
   const pinned=JSON.parse(await config.get('ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK'));
   grant=await verifyDelegatedGrant({envelope,publicJwk:pinned,request:grantRequest(row)});
-  if(grant.profileVersion!==row.profileVersion||grant.stopVersion!==row.stopVersion||
-   grant.policySha!==row.policySha)throw Error('enrollment-grant-mismatch');
+ }catch(error){return HELD('enrollment-owner-grant-'+diagnosticReason(error));}
+ if(grant.profileVersion!==row.profileVersion||grant.stopVersion!==row.stopVersion||
+    grant.policySha!==row.policySha)
+  return HELD('enrollment-owner-grant-binding-mismatch');
+ let credential;
+ try{
   credential=await verifyOwnerPasskeyRegistration({...attestation,challenge:row.challenge});
- }catch{return HELD('enrollment-cryptographic-verification-failed');}
+ }catch(error){
+  // Expose only internal enumerated verifier categories to this owner-only
+  // endpoint; never send authenticator data, signatures, or raw error details.
+  const reason=typeof error?.message==='string'?error.message:'';
+  const detail=/^passkey-[a-z0-9-]{3,60}$/.test(reason)?
+   reason.slice('passkey-'.length):'verification-failed';
+  return HELD('enrollment-webauthn-'+detail);
+ }
  try{
   await db.query(COMMIT,[row.key,row.fingerprint,row.challenge,grant.grantId,
    grant.policySha,grant.resource,grant.expiresAt,row.profileVersion,row.stopVersion,
@@ -142,6 +170,27 @@ export async function finishOwnerPasskey({db,config,key,envelope,attestation}={}
  }catch{}
  return UNCERTAIN('enrollment-commit-unresolved');
 }
+// Only expired, unused enrollment requests can be diagnosed.
+// This function performs no admission, credential creation, or SQL mutation.
+export async function diagnoseExpiredOwnerGrant({db,config,key,envelope}={}){
+ if(typeof key!=='string'||!KEY.test(key)||typeof db?.query!=='function'||
+  typeof config?.get!=='function'||!exactly(envelope,['payload','signature']))
+  return HELD('invalid-grant-diagnostic');
+ let row;
+ try{row=await enrollment(db,key);}catch{return UNCERTAIN('diagnostic-read-unavailable');}
+ if(!row||row.usedAt||Date.parse(row.expiresAt)>Date.now())
+  return HELD('diagnostic-expired-only');
+ let pinned;
+ try{pinned=JSON.parse(await config.get('ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK'));}
+ catch{return UNCERTAIN('diagnostic-verifier-unavailable');}
+ try{
+  await verifyDelegatedGrant({envelope,publicJwk:pinned,request:grantRequest(row)});
+  return {ok:true,status:'diagnosed',reason:'signature-valid'};
+ }catch(error){
+  return {ok:true,status:'diagnosed',reason:diagnosticReason(error)};
+ }
+}
+
 export async function listOwnerPasskeys({db}={}){
  if(typeof db?.query!=='function')throw Error('passkey-db-unavailable');
  const r=await db.query(`SELECT credential_id AS "credentialId",label,created_at AS "createdAt",
