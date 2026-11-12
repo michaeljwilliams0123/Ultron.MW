@@ -110,3 +110,24 @@ test('unsigned, mismatched and revoked owner enrollment fail closed',async()=>{
   assert.notEqual(blocked.status,'enrolled');
  }finally{await h.db.close();}
 });
+
+test('enrollment provides safe grant-versus-attestation failure categories',async()=>{
+ const h=await setup();
+ try{
+  const request={key:'owner-passkey-diagnostic-1',label:'Owner device',
+   expectedProfileVersion:7,expectedStopVersion:5};
+  const prepared=await enroller.prepareOwnerPasskey({db:h.db,request});
+  assert.equal(prepared.status,'prepared');
+  const attestation=await fixture(prepared.challenge);
+  const wrong=await signedGrant(h.issuer.privateKey,{...prepared.grantRequest,objectiveId:'wrong'});
+  const rejectedGrant=await enroller.finishOwnerPasskey({db:h.db,config:h.config,
+   key:request.key,envelope:wrong,attestation});
+  assert.equal(rejectedGrant.reason,'enrollment-owner-grant-verification-failed');
+  const good=await signedGrant(h.issuer.privateKey,prepared.grantRequest);
+  const rejectedAttestation=await enroller.finishOwnerPasskey({db:h.db,config:h.config,
+   key:request.key,envelope:good,
+   attestation:{...attestation,attestationObject:'invalid-encoding'}});
+  assert.match(rejectedAttestation.reason,/^enrollment-webauthn-(encoding-invalid|attestation-invalid)$/);
+  assert.equal((await enroller.listOwnerPasskeys({db:h.db})).length,0);
+ }finally{await h.db.close();}
+});

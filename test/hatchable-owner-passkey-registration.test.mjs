@@ -79,3 +79,12 @@ test('rejects ED flag without extension CBOR payload',async()=>{
  const x=await fixture({flags:0xc5});
  await assert.rejects(verifyOwnerPasskeyRegistration(x,{subtle:webcrypto.subtle}),/passkey-/);
 });
+
+test('rejects authenticator extension bytes without ED and non-map ED CBOR',async()=>{
+ const cases=[
+  await fixture({flags:0x45,extensions:new Map([['credProps',new Map([['rk',true]])]])}),
+  await fixture({flags:0xc5,extensions:'not-a-map'})
+ ];
+ for(const value of cases)await assert.rejects(
+  verifyOwnerPasskeyRegistration(value,{subtle:webcrypto.subtle}),/passkey-/);
+});
