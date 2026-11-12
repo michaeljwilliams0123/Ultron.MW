@@ -79,6 +79,8 @@ test('owner-signed bootstrap registers verified credential once and preserves re
    expectedProfileVersion:7,expectedStopVersion:5};
   const prepare=await enroller.prepareOwnerPasskey({db:h.db,request});
   assert.equal(prepare.ok,true,JSON.stringify(prepare));
+  assert.ok(Number.isFinite(Date.parse(prepare.expiresAt)));
+  assert.ok(Date.parse(prepare.expiresAt)>Date.now());
   const envelope=await signedGrant(h.issuer.privateKey,prepare.grantRequest);
   const attestation=await fixture(prepare.challenge);
   const finish=await enroller.finishOwnerPasskey({db:h.db,config:h.config,
