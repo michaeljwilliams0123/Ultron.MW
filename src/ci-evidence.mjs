@@ -43,3 +43,48 @@ export async function readVerifiedMainCi({get,mainSha}={}){
     return selectVerifiedMainCi(body,mainSha);
   }catch{return null;} // Unknown is not a failed check or a passing check.
 }
+
+/** Isomorphic, strictly typed-by-observation GitHub Verify evidence.
+ * Source identity is workflow path AND workflow ID; run.name is display-only.
+ * This module has no Node or Hatchable dependencies and can be mirrored byte-for-byte.
+ */
+export const CORE_VERIFY_WORKFLOW=Object.freeze({
+ path:'.github/workflows/verify.yml',workflowId:388875616,
+ requiredJobs:Object.freeze({push:['test','attested-receipt'],
+  workflow_dispatch:['test'],pull_request:['test','fixed-comparison']})
+});
+export function evaluateWorkflowEvidence({runs,jobsByRunId={},targetSha,allowedEvents=['push','workflow_dispatch']}={}){
+ const result=(status,run=null)=>Object.freeze({schema:'ultron.verified-ci-evidence.v1',
+  status,verified:status==='verified',runId:run?.id??null,
+  workflowId:run?.workflow_id??null,headSha:targetSha??null,
+  conclusion:status==='verified'?'success':null});
+ if(!SHA.test(targetSha||''))return result('invalid-sha');
+ if(!Array.isArray(runs))return result('unavailable');
+ const matches=runs.filter(r=>r?.path===CORE_VERIFY_WORKFLOW.path&&
+  r?.workflow_id===CORE_VERIFY_WORKFLOW.workflowId&&
+  r?.head_sha===targetSha&&r?.head_branch==='main'&&
+  r?.head_repository?.full_name===REPO&&allowedEvents.includes(r?.event)&&
+  Number.isSafeInteger(r?.id)&&r.id>0&&
+  Number.isSafeInteger(r?.run_attempt)&&r.run_attempt>0)
+  .sort((a,b)=>b.id-a.id);
+ if(!matches.length)return result('pending-or-absent');
+ const run=matches[0];
+ if(run.status!=='completed')return result('in-progress',run);
+ const response=jobsByRunId[run.id];
+ if(!response||!Array.isArray(response.jobs)||
+  !Number.isSafeInteger(response.total_count)||
+  response.total_count!==response.jobs.length||
+  response.total_count>=100)return result('unknown-missing',run);
+ const expected=CORE_VERIFY_WORKFLOW.requiredJobs[run.event];
+ if(!expected)return result('unavailable',run);
+ const jobs=response.jobs.filter(j=>j.run_attempt===run.run_attempt);
+ if(new Set(jobs.map(j=>j.name)).size!==jobs.length)return result('unknown-missing',run);
+ if(expected.some(name=>!jobs.some(j=>j.name===name)))return result('unknown-missing',run);
+ if(expected.some(name=>jobs.find(j=>j.name===name)?.conclusion==='skipped'))
+  return result('unknown-missing',run);
+ if(expected.some(name=>jobs.find(j=>j.name===name)?.status!=='completed'))
+  return result('in-progress',run);
+ if(expected.some(name=>jobs.find(j=>j.name===name)?.conclusion!=='success')||
+  run.conclusion!=='success')return result('failed',run);
+ return result('verified',run);
+}
