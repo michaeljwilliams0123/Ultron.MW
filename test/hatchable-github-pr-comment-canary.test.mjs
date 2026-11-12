@@ -339,3 +339,22 @@ test('lost provider acknowledgment persists exact write intent and unresolved st
  assert.equal(recovered.status,'reconciled_success');
  assert.equal(github.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,1);
 });
+
+test('token exchange transport loss is classified before dispatch, not as an ambiguous GitHub write',async t=>{
+ const h=await admitted(t),calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method||'GET'});
+  throw Error('secret transport diagnostic must not be returned');
+ };
+ await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl}),/token-exchange-unavailable/);
+ assert.deepEqual(classifyPrCommentFailure(new Error('github-pr-comment-canary-token-exchange-unavailable')),
+  {stage:'credential_exchange',reason:'token-exchange-unavailable',dispatched:false});
+ const events=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage'"))
+  .rows.map(row=>row.details);
+ assert.ok(events.some(e=>e.stage==='credential_exchange_failed' && e.reason==='token-exchange-unavailable'));
+ assert.equal(events.some(e=>e.stage==='provider_write_intent'),false);
+ assert.equal((await h.db.query('SELECT state FROM github_pr_comment_executions')).rows[0].state,'reserved');
+ assert.equal(calls.length,1);
+ assert.doesNotMatch(JSON.stringify(events),/secret transport diagnostic/);
+});
