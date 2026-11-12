@@ -41,7 +41,9 @@ test('C04 hourly admission is idempotent across repeated scheduler calls',async(
   .replace("import {notifyOwner} from 'lib/owner-live-events.js';",
     'const notifyOwner=async()=>{globalThis.__c04TickContext.notifications++;};')
   .replace("import {recoverMissedHours} from 'lib/scheduler-recovery.js';",
-    'const recoverMissedHours=async()=>({recoveredCount:0,windowHours:6});');
+    'const recoverMissedHours=async()=>({recoveredCount:0,windowHours:6});')
+  .replace("import {classifySlot,recordSlot} from 'lib/slot-ledger.js';",
+    'const classifySlot=()=>({pickupLagSeconds:0,sloBreach:false});const recordSlot=async()=>({created:true});');
  assert.notEqual(transformed,text);
  globalThis.__c04TickPlatform={
   db:{async query(sql,params=[]){

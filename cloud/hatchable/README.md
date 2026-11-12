@@ -423,3 +423,122 @@ second batch cannot schedule another continuation. Focused tests exercise both
 paths, including the absence of inline work in the hourly tick. These source
 changes are not evidence that production v2 has been updated or that live
 PostgreSQL recovery has passed.
+
+### Grant-bound GitHub branch canary (#412 Option A, source only)
+
+`POST /api/brain/github-branch-canary` (`access='admin'`, owner handle and
+origin checked) runs the verbatim master pipeline (`lib/master-pipeline.js`,
+parity-tested against `src/engine/master-pipeline.mjs`) with Hatchable-native
+adapters. `prepare` returns the exact owner grant request. `submit` verifies the
+`ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK` grant and calls
+`reserveBranchExecution`, which in one SQL statement checks the passkey,
+profile/stop versions, not-paused, the $0 ceiling and `repair.branch.create`,
+consumes the 0037 nonce, records the grant and creates the 0039/0044 branch
+reservation and event. Only a grant signed under the branch policy
+(`sha256("ultron.412.owner-signed-hatchable-branch-canary.v1")`) verifies; any
+other `policySha` is refused before reservation. The generic
+`/api/brain/authority` route refuses `repair.branch.create` and `pr.comment`
+(`operation-requires-dedicated-route`), and `consumeDelegatedGrant` refuses
+branch grants, so a branch grant can only be spent by this route.
+
+**Stop/pause/grant re-check per write.** Every provider request the pipeline
+makes goes through a write guard. GETs pass. Each non-GET first re-runs the
+durable authorization check (current profile and stop versions, not paused,
+$0 ceiling, `repair.branch.create` allowed, owner passkey, unexpired grant).
+The first non-GET also CAS-claims the row `reserved` -> `in_flight` and checks
+again after the claim. So a stop, pause or profile change made at any point
+before the commit POST, or between the commit POST and the ref POST, stops the
+next write before it is sent: the row is held `reconcile_required` (202
+`write-authorization-revoked`) and nothing is retried. A request already handed
+to GitHub cannot be recalled; that is the only window the stop cannot cover.
+
+The ordered provider requests are: GET `main` (must equal the signed source
+SHA), GET the target ref (must be absent), GET the source commit, POST the
+commit, POST the ref. Then come an independent readback and a `brain_events` audit.
+If the operation fails and the guard proves **no non-GET was sent** (for example
+`main` moved, the target branch already exists, or a GET failed), the row moves
+`reserved` -> `failed_before_write` (terminal), one
+`github-branch-canary-failed-before-write` event records the reason with
+`nonGetRequestsSent:0`, and submit returns 409 `failed-before-write`. Any
+failure after a non-GET was attempted stays `reconcile_required`.
+The audit keeps the pipeline-level `remoteReadbackVerified:false`, meaning the
+pipeline's own Task-5 local git-diff readback is not performed on Hatchable.
+The separate provider readback of ref, commit, parent and tree is reported as
+`providerReadbackStatus` (`matched`, `mismatch` or `unavailable`). Only
+`matched` writes `github-branch-canary-audited`. Anything else writes
+`github-branch-canary-audit-held` and fails closed.
+`reconcile` never sends a non-GET to GitHub, but it is **not** read-only
+locally (see below). Migration `0044_github_branch_grant_executions.sql`
+extends the dedicated 0039 branch ledger with a nullable, unique `grant_id` and
+terminal-state checks; 0041 keeps PR comments in a separate untouched table.
+`repair.branch.create` is in no default profile. App 5633654
+`contents:write` is unconfirmed. This source does not establish deployment or
+live authorization.
+
+#### Clearing `reconcile_required` branch-canary rows
+
+Never resubmit the same prepared canary, never retry a provider write blindly,
+and never delete or rewrite `github_idempotent_executions` or `brain_events`
+rows. The branch guard trigger (0039, extended in 0044; 0041 is separate)
+rejects deletes and allows
+only these transitions: `reserved` -> `in_flight` | `completed` |
+`reconcile_required` | `failed_before_write` | `abandoned`; `in_flight` ->
+`completed` | `reconcile_required`; `reconcile_required` -> `completed` |
+`abandoned`. `completed`, `failed_before_write` and `abandoned` are immutable.
+The two non-completed terminal states are allowed only on grant-bound branch
+rows in the dedicated 0039 branch ledger (`grant_id` set, no receipt).
+
+1. Run reconcile: `POST /api/brain/github-branch-canary` with
+   `{"mode":"reconcile","prepared":<the prepared object>,"grantId":"<grant id>"}`.
+   It sends only GETs to GitHub (installation-token exchange aside). What it
+   writes locally, by outcome:
+   - Row `completed` -> repeat independent Task-5 provider readback and append
+     an audit event; return `200 recovered_success` only after the audit is
+     persisted with `providerReadbackStatus: matched`. On failure return 202
+     and stay held. The completed execution row and receipt are never changed,
+     and the GitHub commit/ref writes are never repeated.
+   - Row `reserved` -> `200 reserved`, `dispatched:false`. No writes. No
+     provider write was attempted (for example a token exchange denial).
+   - Row `failed_before_write` or `abandoned` -> `200` with that status and
+     `terminal:true`. No writes.
+   - Ref absent -> `202`, `reason:"readback-not-found"`. If the row was
+     `in_flight` it is updated to `reconcile_required` (`state`, `updated_at`);
+     a `reconcile_required` row is not changed. No event.
+   - Ref present but malformed or not matching the signed lineage -> `202`,
+     `reason:"readback-conflict"` (`providerReadbackStatus:"mismatch"`). Same
+     `in_flight` -> `reconcile_required` update; no event.
+   - Read failed -> `202`, `reason:"readback-unavailable"` or no reason. No
+     writes; try again later.
+   - Ref verified (ref -> commit, single parent = signed source SHA, same tree,
+     `Ultron-Operation-Digest` trailer) -> the row is updated to `completed`
+     (`state`, `receipt`, `updated_at`), then a second provider readback
+     inserts one `brain_events` row: `github-branch-canary-audited` on a match
+     (`200 reconciled_success`), or `github-branch-canary-audit-held` if that
+     readback mismatches or is unavailable (`202`, `audit-readback-*`; the row
+     stays `completed`).
+2. Confirm independently on GitHub whether `ultron/canary-<taskId>` exists
+   and what it points to. Use the GitHub UI or
+   `gh api repos/michaeljwilliams0123/Ultron.MW/git/ref/heads/ultron/canary-<taskId>`.
+3. Terminal handling:
+   - Verified branch: reconcile has already marked the row `completed`.
+   - `failed_before_write`: already terminal. The guard proved no write was
+     sent. Nothing to clear.
+   - Absent branch (`readback-not-found`), or a `reserved` row that was never
+     dispatched: the owner may abandon it with
+     `{"mode":"abandon","prepared":<the prepared object>,"grantId":"<grant id>"}`
+     on the same route. Abandon first does a fresh GET of the target ref and
+     proceeds only on a 404. It then updates the row
+     `reserved`|`reconcile_required` -> `abandoned` (`state`, `updated_at`) and
+     inserts one `github-branch-canary-abandoned` event (`previousState`,
+     `providerReadback:"branch-absent"`). It returns `200 abandoned`
+     (`changed:false` on repeat). A present branch is refused with 409
+     `abandon-branch-present`; reconcile it instead. `in_flight`, `completed`
+     and `failed_before_write` rows are refused with 409 `abandon-state-*`.
+     Abandon sends no non-GET to GitHub and never deletes rows. An orphan
+     commit object from an attempted commit POST may remain on GitHub; it is
+     unreferenced and harmless. The grant and nonce stay spent. To try again,
+     `prepare` a fresh canary, which creates a new task ID and branch name,
+     and sign a new grant.
+   - Conflict: treat it as an owner investigation. Do not adopt or abandon the
+     branch. Any cleanup of the GitHub branch is a separate manual owner
+     decision, and the ledger row stays as recorded.

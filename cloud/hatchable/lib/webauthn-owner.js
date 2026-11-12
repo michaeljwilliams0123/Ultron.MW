@@ -58,6 +58,8 @@ export async function verifyOwnerPasskeyAssertion({
  credentialId,expectedCredentialId,publicKeySpki,challenge,
  authenticatorData,clientDataJSON,signature,
  origin=ORIGIN,rpId=RP_ID,subtle=globalThis.crypto?.subtle
+}={},{
+ createVerifier=createVerify
 }={}){
  if(!subtle||typeof credentialId!=='string'||credentialId!==expectedCredentialId)
   refuse(credentialId===expectedCredentialId?'crypto-unavailable':'credential-mismatch');
@@ -91,9 +93,9 @@ export async function verifyOwnerPasskeyAssertion({
  catch{refuse('signature-invalid');} // Reject malformed DER consistently.
  let verified=false;
  try{
-  const v=createVerify('SHA256');
-  v.update(concat(auth,clientHash));v.end();
-  verified=v.verify(key,der);
+  const v=createVerifier('sha256');
+  v.update(concat(auth,clientHash));
+  verified=v.verify(key,btoa(String.fromCharCode(...der)),'base64');
  }catch{refuse('signature-invalid');}
  if(!verified)refuse('signature-invalid');
  return {credentialId,signCount};
@@ -115,6 +117,14 @@ function readCbor(data,cursor,depth=0){
   len=new DataView(data.buffer,data.byteOffset+cursor.i,4).getUint32(0,false);cursor.i+=4;}
  else refuse('attestation-invalid');
  if(len>16384)refuse('attestation-invalid');
+ // COSE extension maps may contain CBOR booleans (e.g. credProps.rk).
+ // Support only defined, bounded simple values; reject floats and breaks.
+ if(major===7){
+  if(info===20)return false;
+  if(info===21)return true;
+  if(info===22)return null;
+  refuse('attestation-invalid');
+ }
  if(major===0||major===1)return major===0?len:-1-len;
  if(major===2||major===3){
   if(cursor.i+len>data.length)refuse('attestation-invalid');
@@ -146,7 +156,8 @@ function encodeB64(bytes){
 export async function verifyOwnerPasskeyRegistration({
  credentialId,challenge,attestationObject,clientDataJSON
 }={},{
- origin=ORIGIN,rpId=RP_ID,subtle=globalThis.crypto?.subtle
+ origin=ORIGIN,rpId=RP_ID,subtle=globalThis.crypto?.subtle,
+ createVerifier=createVerify
 }={}){
  if(!subtle)refuse('crypto-unavailable');
  const rawId=decode(credentialId,{min:16,max:1024});
@@ -174,7 +185,7 @@ export async function verifyOwnerPasskeyRegistration({
  if(!equal(auth.slice(0,32),rpHash))refuse('rp-mismatch');
  const flags=auth[32];
  if((flags&0x01)===0||(flags&0x04)===0)refuse('user-verification-required');
- if((flags&0x40)===0||(flags&0x80)!==0)refuse('authenticator-data-invalid');
+ if((flags&0x40)===0)refuse('authenticator-data-invalid');
  const signCount=new DataView(auth.buffer,auth.byteOffset+33,4).getUint32(0,false);
  const credentialLength=(auth[53]<<8)|auth[54];
  if(credentialLength<16||credentialLength>1024||55+credentialLength>=auth.length)
@@ -183,6 +194,12 @@ export async function verifyOwnerPasskeyRegistration({
  if(!equal(attestedId,rawId))refuse('credential-mismatch');
  const cosePos={i:55+credentialLength};
  const cose=readCbor(auth,cosePos);
+ // WebAuthn Level 3 permits a CBOR authenticator extension map after COSE.
+ // Parse it only when ED is set, and always consume the entire authData.
+ if((flags&0x80)!==0){
+  const extensions=readCbor(auth,cosePos);
+  if(!(extensions instanceof Map))refuse('extensions-invalid');
+ }
  if(cosePos.i!==auth.length||!(cose instanceof Map)||
   cose.get(1)!==2||cose.get(3)!==-7||cose.get(-1)!==1||
   !(cose.get(-2) instanceof Uint8Array)||cose.get(-2).length!==32||
@@ -193,8 +210,13 @@ export async function verifyOwnerPasskeyRegistration({
  const publicKey=concat(concat(header,cose.get(-2)),cose.get(-3));
  // Hatchable V8 has SHA-256 digest but no ECDSA subtle.importKey.
  // Its node:crypto public-key verifier parses SPKI/PEM natively.
- try{const v=createVerify('SHA256');v.update(new Uint8Array([0]));v.end();
-  v.verify(spkiPem(publicKey),new Uint8Array([0x30,0x00]));}
+ try{
+  const v=createVerifier('sha256');
+  v.update(new Uint8Array([0]));
+  // r=s=1 is well-formed DER, but not an attestation authorization:
+  // this check only confirms the COSE public key can be parsed on-curve.
+  v.verify(spkiPem(publicKey),'MAYCAQECAQE=','base64');
+ }
  catch{refuse('unsupported-credential-key');}
  return Object.freeze({credentialId,publicKeySpki:encodeB64(publicKey),signCount});
 }

@@ -38,7 +38,9 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:center;fl
 <label for="signable">Exact grant request (read-only)</label><textarea id="signable" readonly></textarea>
 <p class="muted">Sign this request with your existing owner-controlled key using <code>node scripts/owner-grant.mjs sign PRIVATE_JWK REQUEST_JSON</code> on a trusted device. Paste only the resulting JSON envelope—not the private key—below. This bootstrap step is needed only for registering a new device.</p>
 <label for="envelope">Owner-signed grant envelope</label><textarea id="envelope" autocomplete="off" spellcheck="false" placeholder='{"payload":"...","signature":"..."}'></textarea>
+<button id="enroll-paste">Paste and check signed envelope</button>
 <button id="enroll-finish" disabled>Create passkey on this device</button>
+<p class="muted">A new preparation always generates a new enrollment key. To avoid an expired grant during Windows Hello, the signed envelope and enrollment must each have at least 2 minutes 30 seconds remaining before you start. Clipboard access is optional; Ctrl + V still works.</p>
 <p class="status" id="enroll-status" role="status" aria-live="polite">Checking owner session…</p>
 </section>
 <section>

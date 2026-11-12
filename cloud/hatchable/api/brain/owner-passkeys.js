@@ -1,5 +1,5 @@
 import {db,config} from 'hatchable';
-import {prepareOwnerPasskey,finishOwnerPasskey,listOwnerPasskeys}
+import {prepareOwnerPasskey,finishOwnerPasskey,listOwnerPasskeys,diagnoseExpiredOwnerGrant}
  from 'lib/owner-passkey-enrollment.js';
 export const access='admin';
 export const methods=['GET','POST'];
@@ -26,6 +26,8 @@ export default async function(req,res){
   else if(exact(b,['mode','key','envelope','attestation'])&&b.mode==='finish')
    result=await finishOwnerPasskey({db,config,key:b.key,
     envelope:b.envelope,attestation:b.attestation});
+  else if(exact(b,['mode','key','envelope'])&&b.mode==='diagnose-expired')
+   result=await diagnoseExpiredOwnerGrant({db,config,key:b.key,envelope:b.envelope});
   else return res.status(400).json(held('invalid-passkey-command'));
   return res.status(result.ok?200:result.status==='reconcile-required'?503:422).json(result);
  }catch{return res.status(503).json(held('passkey-outcome-unavailable'));}
