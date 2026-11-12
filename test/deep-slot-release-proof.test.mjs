@@ -103,3 +103,19 @@ test('SLOT-07 terminal outcome updates persisted SLO readback without replay',as
  assert.equal(rows[1].completion_status,'failed');
  assert.deepEqual(rows[1].evidence,{primaryOnTime:false,sloBreach:true});
 });
+
+test('SLOT-09 configured threshold and failed pickup remain breached after terminal readback',async t=>{
+ const db=new PGlite();t.after(()=>db.close());
+ await db.exec('CREATE TABLE brain_authority_grants(grant_id TEXT PRIMARY KEY)');
+ await db.exec(readFileSync(new URL('../cloud/hatchable/migrations/0045_deep_mutation_and_slots.sql',import.meta.url),'utf8'));
+ const slot='2026-11-11T16:00Z';
+ const late=classifySlot({scheduledHour:slot,actualPickupAt:'2026-11-11T16:19:00Z',sloSeconds:60});
+ assert.equal(late.sloBreach,true);
+ const failed=classifySlot({scheduledHour:S,actualPickupAt:'2026-11-11T21:17:05Z',completionStatus:'failed'});
+ assert.equal(failed.sloBreach,true);
+ assert.equal(failed.primaryOnTime,false);
+ await recordSlot({db,slot:late});
+ assert.equal((await completeSlot({db,key:slot,status:'done'})).updated,true);
+ const row=(await db.query('SELECT evidence FROM brain_scheduler_slots WHERE slot_key=$1',[slot])).rows[0];
+ assert.deepEqual(row.evidence,{primaryOnTime:false,sloBreach:true});
+});

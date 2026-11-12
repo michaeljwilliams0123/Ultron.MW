@@ -18,11 +18,12 @@ export function classifySlot({scheduledHour,actualPickupAt=null,declaredMinute=1
  const pickup=actualPickupAt==null?null:instant(actualPickupAt);
  const lag=pickup===null?null:Math.max(0,Math.ceil((pickup-intended)/1000));
  const classification=pickup===null?'missing':recovery?'recovery':'scheduled';
+ const sloBreach=(lag!==null&&lag>sloSeconds)||classification!=='scheduled'||completionStatus==='failed';
  return Object.freeze({schema:'ultron.scheduler-slot.v1',slotKey:scheduledHour,declaredMinute,
   actualPickupAt:pickup===null?null:new Date(pickup).toISOString(),
   pickupLagSeconds:lag,classification,completionStatus,
-  sloBreach:lag!==null&&lag>sloSeconds||classification==='missing',
-  primaryOnTime:classification==='scheduled'&&completionStatus==='done'&&lag<=sloSeconds});
+  sloBreach,
+  primaryOnTime:classification==='scheduled'&&completionStatus==='done'&&!sloBreach});
 }
 export async function recordSlot({db,slot}={}){
  if(typeof db?.query!=='function'||slot?.schema!=='ultron.scheduler-slot.v1')fail('invalid-input');
@@ -42,9 +43,9 @@ export async function completeSlot({db,key,status}={}){
   `UPDATE brain_scheduler_slots SET completion_status=$2,updated_at=now(),
    evidence=jsonb_build_object(
      'primaryOnTime',classification='scheduled' AND
-       pickup_lag_seconds IS NOT NULL AND pickup_lag_seconds<=900 AND $2='done',
-     'sloBreach',classification<>'scheduled' OR pickup_lag_seconds IS NULL OR
-       pickup_lag_seconds>900 OR $2<>'done'
+       COALESCE((evidence->>'sloBreach')::boolean,true)=false AND $2='done',
+     'sloBreach',classification<>'scheduled' OR
+       COALESCE((evidence->>'sloBreach')::boolean,true) OR $2<>'done'
    ) WHERE slot_key=$1 AND completion_status=$3 RETURNING slot_key`,
   [key,status,'pending']);
  return Object.freeze({updated:result.rows.length===1,slotKey:key});
