@@ -147,7 +147,7 @@ test('owner-only expired enrollment diagnostic proves a valid expired grant cryp
   const sig=await webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},
    h.issuer.privateKey,txt(payload));
   const expired={payload,signature:b64(sig)};
-  await h.db.query("UPDATE brain_owner_passkey_enrollments SET expires_at=now()-interval '1 second' WHERE enrollment_key=$1",[request.key]);
+  await h.db.query("UPDATE brain_owner_passkey_enrollments SET created_at=now()-interval '11 minutes',expires_at=now()-interval '2 minutes' WHERE enrollment_key=$1",[request.key]);
   const result=await enroller.diagnoseExpiredOwnerGrant({
    db:h.db,config:h.config,key:request.key,envelope:expired});
   assert.deepEqual(result,{ok:true,status:'diagnosed',reason:'grant-expired'});
