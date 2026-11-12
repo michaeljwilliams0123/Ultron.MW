@@ -18,6 +18,7 @@ const PR_COMMENT_FAILURES=Object.freeze({
  'configuration-invalid':{stage:'credential_exchange',dispatched:false},
  'clock-invalid':{stage:'credential_exchange',dispatched:false},
  'token-exchange-denied':{stage:'credential_exchange',dispatched:false},
+ 'token-exchange-unavailable':{stage:'credential_exchange',dispatched:false},
  'token-response-invalid':{stage:'credential_exchange',dispatched:false},
  'dispatch-not-admitted':{stage:'dispatch_admission',dispatched:false},
  'provider-write-denied':{stage:'provider_write',dispatched:null},
@@ -216,12 +217,18 @@ async function tokenForComment(raw,fetchImpl,clock){
  try{jwt=unsigned+'.'+base64url(signRs256(c.privateKey,unsigned));}
  catch{fail('configuration-invalid');}
  const permissions={issues:'write',metadata:'read'};
- const response=await provider(fetchImpl,
-  `${API}/app/installations/${c.installationId}/access_tokens`,{
-   method:'POST',headers:{Authorization:'Bearer '+jwt,
-    Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10',
-    'Content-Type':'application/json'},
-   body:JSON.stringify({repository_ids:[REPO_ID],permissions})});
+ let response;
+ try{
+  response=await provider(fetchImpl,
+   `${API}/app/installations/${c.installationId}/access_tokens`,{
+    method:'POST',headers:{Authorization:'Bearer '+jwt,
+     Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10',
+     'Content-Type':'application/json'},
+    body:JSON.stringify({repository_ids:[REPO_ID],permissions})});
+ }catch{
+  // Installation-token transport loss occurs BEFORE effect dispatch.
+  fail('token-exchange-unavailable');
+ }
  if(response.status!==201)fail('token-exchange-denied');
  let body;
  try{body=await response.json();}catch{fail('token-response-invalid');}
