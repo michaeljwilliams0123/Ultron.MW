@@ -5,7 +5,7 @@ const text=(id,s)=>{el(id).textContent=s;};
 const encode=x=>btoa(String.fromCharCode(...new Uint8Array(x))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const decode=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+
  '='.repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
-const newKey=()=>('owner-'+crypto.randomUUID()).slice(0,41);
+const newKey=()=>('owner-'+crypto.randomUUID());
 // Windows Hello may take up to 120 seconds. Keep a 30-second network margin
 // so an authorization cannot expire between the user gesture and submission.
 const MIN_ENROLLMENT_REMAINING_MS=150000;
