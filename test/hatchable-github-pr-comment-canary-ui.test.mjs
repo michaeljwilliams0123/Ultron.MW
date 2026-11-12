@@ -13,7 +13,8 @@ test('owner UI exposes prepare, one submit and readback-only reconciliation with
  assert.match(js,/mode:'prepare'/);
  assert.match(js,/execute\('submit'\)/);
  assert.match(js,/execute\('reconcile'\)/);
- assert.match(js,/if\(value[.]ok\)envelope[.]value=''/);
+ assert.match(js,/if\(value[.]ok&&value[.]receipt\?\.[a-z]+\?\.[a-z]+\)/);
+ assert.match(js,/envelope[.]value='';prepared=null;submitted=false/);
  assert.match(js,/credentials:'include'/);
  assert.doesNotMatch(js,/localStorage|sessionStorage|Authorization/);
 });
