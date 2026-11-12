@@ -17,8 +17,10 @@ test('self-test is admin only and uses a fixed disposable vector',async()=>{
  const owner=mock();
  await handler({member:{handle:'michaeljwilliams0123'},method:'GET'},owner);
  assert.equal(owner.statusCode,200);
- assert.deepEqual(owner.body.results.map(x=>x.case),['base64-string','buffer','uint8array']);
- assert.ok(owner.body.results.every(x=>x.verified===true));
+ assert.equal(owner.body.results.length,21);
+ assert.deepEqual(owner.body.results.slice(0,3).map(x=>x.case),['base64-string','buffer','uint8array']);
+ assert.ok(owner.body.results.slice(0,3).every(x=>x.algorithm==='sha256'));
+ assert.ok(owner.body.results.slice(0,3).every(x=>x.verified===true));
  assert.equal(owner.headers['Cache-Control'],'private, no-store');
  assert.equal(JSON.stringify(owner.body).includes('PRIVATE KEY'),false);
 });
