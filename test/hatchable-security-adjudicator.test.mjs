@@ -220,11 +220,11 @@ test('Hatchable ECDSA verifier bridge accepts a minimal update/verify provider w
   let bytes;
   return {
    update(input){bytes=Buffer.from(input);calls++;return this;},
-   verify(pem,signature){
+   verify(pem,signature,encoding){
     calls++;
     const native=createVerify('SHA256');
     native.update(bytes);
-    return native.verify(pem,signature);
+    return native.verify(pem,signature,encoding);
    }
   };
  };
