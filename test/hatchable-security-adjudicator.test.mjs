@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {webcrypto} from 'node:crypto';
+import {webcrypto,createVerify} from 'node:crypto';
 import {verifyDelegatedGrant,consumeDelegatedGrant} from '../cloud/hatchable/lib/security-adjudicator.js';
 
 const subtle=webcrypto.subtle;
@@ -207,4 +207,36 @@ test('C04: exact owner-signed PR comment grant is bound to one repository, PR, d
  for(const policySha of ['a'.repeat(64),undefined])
   await assert.rejects(check({...grant,policySha},scope,'2026-11-10T20:01:00.000Z'),
    /invalid-grant-(policy|claims)/);
+});
+
+test('Hatchable ECDSA verifier bridge accepts a minimal update/verify provider without end()',async()=>{
+ const mod=await import('../cloud/hatchable/lib/security-adjudicator.js');
+ const pair=await keyPair(),envelope=await signed();
+ const publicJwk=await subtle.exportKey('jwk',pair.publicKey);
+ const raw=Uint8Array.from(Buffer.from(envelope.signature,'base64url'));
+ let calls=0;
+ const provider=algorithm=>{
+  assert.equal(algorithm,'SHA256');
+  let bytes;
+  return {
+   update(input){bytes=Buffer.from(input);calls++;return this;},
+   verify(pem,signature){
+    calls++;
+    const native=createVerify('SHA256');
+    native.update(bytes);
+    return native.verify(pem,signature);
+   }
+  };
+ };
+ const accepted=mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,createVerifier:provider});
+ assert.equal(accepted,true);
+ assert.equal(calls,2,'provider only needs update and verify');
+ const corrupted=new Uint8Array(raw);corrupted[0]^=1;
+ assert.equal(mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:corrupted,publicJwk,createVerifier:provider}),false);
+ assert.throws(()=>mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,
+  createVerifier:()=>({update(){throw Error('provider-side-effect')},verify(){return true}})}),
+ /grant-signature-provider-error/);
 });
