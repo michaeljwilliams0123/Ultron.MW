@@ -1,0 +1,20 @@
+{
+  "schema": "ultron.secondary-admin.app.canary.v1",
+  "app_slug": "ultron-mw-secondary-admin",
+  "app_owner": "michaeljwilliams0123ultron",
+  "app_id": 5722581,
+  "installation_id": 181119149,
+  "repository": "michaeljwilliams0123/Ultron.MW",
+  "repository_id": 1424939667,
+  "repo_selection": "selected",
+  "token_permissions": {
+    "contents": "write"
+  },
+  "initial_main_sha": "e8e5ee6b165b2e75d79aa03784e765d28f261cbe",
+  "paid_inference_used": false,
+  "run_id": "mwd43etf-e1de3793",
+  "branch": "ultron/secondary-admin-app-canary-mwd43etf-e1de3793",
+  "path": "docs/canary/secondary-admin-app-mwd43etf-e1de3793.json",
+  "objective": "short-lived secondary-owned App installation token, bounded live readback and replay",
+  "scope": "canary-branch-only"
+}
