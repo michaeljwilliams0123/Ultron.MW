@@ -7,10 +7,10 @@ const OWNER='michaeljwilliams0123';
 const MESSAGE='ultron-hatchable-crypto-bridge-public-selftest-v1';
 const PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEBKVZE+Q0wDdKArd+GjGBinsNyeX1\n85JKjR9e6O8EH50yLL2E7zQ4MwrgnzGVNO6B2LBNGMbV/85XJS5118FOng==\n-----END PUBLIC KEY-----";
 const SIGNATURE_B64="MEUCIHXU/PJRs8fWylTzCOoAaL966XKlsyzaZ98iYwKxlEwDAiEAyrwOnWhAFSbFsBO7yaTApssuxJOhrIhdDF9VY165oOU=";
-function probe(id,signatureType){
- const result={case:id,stage:'create',verified:false};
+function probe(id,signatureType,algorithm){
+ const result={case:id,algorithm,stage:'create',verified:false};
  try{
-  const v=createVerify('SHA256');
+  const v=createVerify(algorithm);
   result.stage='update';
   v.update(MESSAGE,'utf8');
   result.stage='verify';
@@ -31,7 +31,9 @@ function probe(id,signatureType){
  return result;
 }
 export function runPublicCryptoSelftest(){
- return ['base64-string','buffer','uint8array'].map(t=>probe(t,t));
+ const algorithms=['sha256','SHA256','SHA-256','RSA-SHA256','ecdsa-sha256','ECDSA-SHA256','ES256'];
+ return algorithms.flatMap(algorithm=>
+  ['base64-string','buffer','uint8array'].map(type=>probe(type,type,algorithm)));
 }
 export default async function(req,res){
  res.setHeader('Cache-Control','private, no-store');

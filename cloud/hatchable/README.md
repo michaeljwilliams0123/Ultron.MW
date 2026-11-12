@@ -469,7 +469,9 @@ The separate provider readback of ref, commit, parent and tree is reported as
 `github-branch-canary-audit-held` and fails closed.
 `reconcile` never sends a non-GET to GitHub, but it is **not** read-only
 locally (see below). Migration `0044_github_branch_grant_executions.sql`
-is required. `repair.branch.create` is in no default profile. App 5633654
+extends the dedicated 0039 branch ledger with a nullable, unique `grant_id` and
+terminal-state checks; 0041 keeps PR comments in a separate untouched table.
+`repair.branch.create` is in no default profile. App 5633654
 `contents:write` is unconfirmed. This source does not establish deployment or
 live authorization.
 
@@ -477,13 +479,14 @@ live authorization.
 
 Never resubmit the same prepared canary, never retry a provider write blindly,
 and never delete or rewrite `github_idempotent_executions` or `brain_events`
-rows. The guard trigger (0039/0041, replaced in 0044) rejects deletes and allows
+rows. The branch guard trigger (0039, extended in 0044; 0041 is separate)
+rejects deletes and allows
 only these transitions: `reserved` -> `in_flight` | `completed` |
 `reconcile_required` | `failed_before_write` | `abandoned`; `in_flight` ->
 `completed` | `reconcile_required`; `reconcile_required` -> `completed` |
 `abandoned`. `completed`, `failed_before_write` and `abandoned` are immutable.
 The two non-completed terminal states are allowed only on grant-bound branch
-rows (`target_kind='branch'`, `grant_id` set, no receipt).
+rows in the dedicated 0039 branch ledger (`grant_id` set, no receipt).
 
 1. Run reconcile: `POST /api/brain/github-branch-canary` with
    `{"mode":"reconcile","prepared":<the prepared object>,"grantId":"<grant id>"}`.
