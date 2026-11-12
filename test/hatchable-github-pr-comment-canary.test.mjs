@@ -9,7 +9,7 @@ const canarySource=(await readFile(new URL('../cloud/hatchable/lib/github-pr-com
  import.meta.url),'utf8')).replace("'lib/rsa-pkcs1-sign.js'",
  JSON.stringify(new URL('../cloud/hatchable/lib/rsa-pkcs1-sign.js',import.meta.url).href));
 const {preparePrCommentCanary,operationDigest,submitPrCommentCanary,
- reconcilePrCommentCanary}=await import('data:text/javascript;base64,'+
+ reconcilePrCommentCanary,classifyPrCommentFailure}=await import('data:text/javascript;base64,'+
  Buffer.from(canarySource).toString('base64'));
 
 const MIGRATIONS=['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
@@ -287,4 +287,55 @@ test('token exchange accepts GitHub expiry stamped after our clock read, within 
  assert.doesNotMatch(await attempt(now+3600000+4*60000),/token-response-invalid/);
  assert.match(await attempt(now+3600000+6*60000),/token-response-invalid/);
  assert.match(await attempt(now-1000),/token-response-invalid/);
+});
+
+
+test('C04 failure classification is bounded to fixed safe reason codes and dispatch status',()=>{
+ assert.deepEqual(classifyPrCommentFailure(new Error('github-pr-comment-canary-token-exchange-denied')),
+  {stage:'credential_exchange',reason:'token-exchange-denied',dispatched:false});
+ assert.deepEqual(classifyPrCommentFailure(new Error('github-pr-comment-canary-provider-outcome-unknown')),
+  {stage:'provider_write',reason:'provider-outcome-unknown',dispatched:null});
+ assert.deepEqual(classifyPrCommentFailure(new Error('github-pr-comment-canary-readback-not-found')),
+  {stage:'provider_readback',reason:'readback-not-found',dispatched:null});
+ const secret='Bearer super-secret-token';
+ assert.deepEqual(classifyPrCommentFailure(new Error(secret)),
+  {stage:'unknown',reason:'unclassified',dispatched:null});
+ assert.doesNotMatch(JSON.stringify(classifyPrCommentFailure(new Error(secret))),/super-secret/);
+});
+
+test('token exchange denial records a pre-dispatch failure without any provider write intent',async t=>{
+ const h=await admitted(t);
+ const calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method||'GET'});
+  if(url.endsWith('/access_tokens'))return response(403,{message:'private-value-not-for-logs'});
+  throw Error('effect-not-allowed');
+ };
+ await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl}),/token-exchange-denied/);
+ const events=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage' ORDER BY id"))
+  .rows.map(row=>row.details);
+ assert.ok(events.some(e=>e.stage==='credential_exchange_failed' &&
+  e.reason==='token-exchange-denied' && e.idempotencyKey===h.prepared.idempotencyKey));
+ assert.equal(events.some(e=>e.stage==='provider_write_intent'),false);
+ assert.deepEqual(calls.map(c=>c.method),['POST']);
+ assert.equal((await h.db.query('SELECT state FROM github_pr_comment_executions')).rows[0].state,'reserved');
+ assert.doesNotMatch(JSON.stringify(events),/private-value-not-for-logs/);
+});
+
+test('lost provider acknowledgment persists exact write intent and unresolved stage, never retries POST',async t=>{
+ const h=await admitted(t),github=provider(h.prepared,{lost:true});
+ await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl:github.fetchImpl}),
+  /provider-outcome-unknown/);
+ const events=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage' ORDER BY id"))
+  .rows.map(row=>row.details);
+ assert.ok(events.some(e=>e.stage==='provider_write_intent'));
+ assert.ok(events.some(e=>e.stage==='reconcile_required' && e.reason==='provider-outcome-unknown'));
+ assert.equal(events.every(e=>e.idempotencyKey===h.prepared.idempotencyKey),true);
+ assert.equal(github.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,1);
+ const recovered=await reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,fetchImpl:github.fetchImpl});
+ assert.equal(recovered.status,'reconciled_success');
+ assert.equal(github.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,1);
 });
