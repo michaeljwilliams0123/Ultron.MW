@@ -88,3 +88,26 @@ test('rejects authenticator extension bytes without ED and non-map ED CBOR',asyn
  for(const value of cases)await assert.rejects(
   verifyOwnerPasskeyRegistration(value,{subtle:webcrypto.subtle}),/passkey-/);
 });
+
+test('registration uses lowercase sha256 host verifier with no stream end dependency',async()=>{
+ const f=await fixture();
+ const actions=[];
+ const createVerifier=algorithm=>{
+  assert.equal(algorithm,'sha256');
+  actions.push('create');
+  return {
+   update(input){assert.ok(input instanceof Uint8Array);actions.push('update');return this;},
+   verify(publicPem,signature,encoding){
+    assert.match(publicPem,/BEGIN PUBLIC KEY/);
+    assert.equal(typeof signature,'string');
+    assert.equal(encoding,'base64');
+    actions.push('verify');
+    return false; // Key parse success; dummy message is not authenticated.
+   }
+  };
+ };
+ const result=await verifyOwnerPasskeyRegistration(f,{
+  subtle:webcrypto.subtle,createVerifier});
+ assert.equal(result.credentialId,f.credentialId);
+ assert.deepEqual(actions,['create','update','verify']);
+});

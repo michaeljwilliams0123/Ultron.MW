@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {webcrypto} from 'node:crypto';
+import {webcrypto,createVerify} from 'node:crypto';
 
 const {verifyOwnerPasskeyAssertion}=await import(
  '../cloud/hatchable/lib/webauthn-owner.js');
@@ -83,4 +83,31 @@ test('owner passkey assertion rejects another credential and malformed DER signa
  await assert.rejects(verifyOwnerPasskeyAssertion({...assertion,
   signature:b64(Uint8Array.of(1,2,3)),expectedCredentialId:assertion.credentialId,
   subtle:webcrypto.subtle}),/passkey-signature-invalid/);
+});
+
+test('assertion validates signature using lowercase sha256 host bridge without end',async()=>{
+ const a=await fixture();
+ const actions=[];
+ let signedBytes;
+ const createVerifier=algorithm=>{
+  assert.equal(algorithm,'sha256');
+  actions.push('create');
+  return {
+   update(bytes){assert.ok(bytes instanceof Uint8Array);signedBytes=Buffer.from(bytes);actions.push('update');return this;},
+   verify(key,signature,encoding){
+    actions.push('verify');
+    assert.match(key,/BEGIN PUBLIC KEY/);
+    assert.equal(typeof signature,'string');
+    assert.equal(encoding,'base64');
+    const v=createVerify('sha256');
+    v.update(signedBytes);
+    return v.verify(key,signature,'base64');
+   }
+  };
+ };
+ const accepted=await verifyOwnerPasskeyAssertion({...a,
+  expectedCredentialId:a.credentialId,subtle:webcrypto.subtle},
+  {createVerifier});
+ assert.equal(accepted.signCount,7);
+ assert.deepEqual(actions,['create','update','verify']);
 });
