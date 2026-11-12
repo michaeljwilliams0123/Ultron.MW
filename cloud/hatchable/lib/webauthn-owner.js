@@ -95,7 +95,7 @@ export async function verifyOwnerPasskeyAssertion({
  try{
   const v=createVerifier('sha256');
   v.update(concat(auth,clientHash));
-  verified=v.verify(key,encodeB64(der).replace(/-/g,'+').replace(/_/g,'/'),'base64');
+  verified=v.verify(key,btoa(String.fromCharCode(...der)),'base64');
  }catch{refuse('signature-invalid');}
  if(!verified)refuse('signature-invalid');
  return {credentialId,signCount};

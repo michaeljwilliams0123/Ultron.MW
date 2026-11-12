@@ -22,13 +22,13 @@ function cbor(v){
 }
 async function fixture({origin='https://ultron-mw-cloud.hatchable.site',
  rpId='ultron-mw-cloud.hatchable.site',flags=0x45,alg=-7,fmt='none',
- clientChallenge=null,extensions=null}={}){
+ clientChallenge=null,extensions=null,invalidPoint=false}={}){
  const pair=await webcrypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
  const jwk=await webcrypto.subtle.exportKey('jwk',pair.publicKey);
  const credentialId=webcrypto.getRandomValues(new Uint8Array(32));
  const challenge=b64(webcrypto.getRandomValues(new Uint8Array(32)));
  const rpHash=new Uint8Array(await webcrypto.subtle.digest('SHA-256',txt(rpId)));
- const cose=cbor(new Map([[1,2],[3,alg],[-1,1],[-2,new Uint8Array(Buffer.from(jwk.x,'base64url'))],
+ const cose=cbor(new Map([[1,2],[3,alg],[-1,1],[-2,invalidPoint?new Uint8Array(32):new Uint8Array(Buffer.from(jwk.x,'base64url'))],
   [-3,new Uint8Array(Buffer.from(jwk.y,'base64url'))]]));
  const auth=cat(rpHash,Uint8Array.of(flags,0,0,0,1),new Uint8Array(16),
   Uint8Array.of(0,credentialId.length),credentialId,cose,
@@ -110,4 +110,10 @@ test('registration uses lowercase sha256 host verifier with no stream end depend
   subtle:webcrypto.subtle,createVerifier});
  assert.equal(result.credentialId,f.credentialId);
  assert.deepEqual(actions,['create','update','verify']);
+});
+
+test('rejects malformed ES256 public point even with valid COSE shape',async()=>{
+ const x=await fixture({invalidPoint:true});
+ await assert.rejects(verifyOwnerPasskeyRegistration(x,{subtle:webcrypto.subtle}),
+  /passkey-unsupported-credential-key/);
 });
