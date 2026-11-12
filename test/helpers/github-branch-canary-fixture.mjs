@@ -7,10 +7,12 @@ const root=new URL('../../cloud/hatchable/',import.meta.url);
 const data=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('base64');
 const adjudicatorUrl=new URL('lib/security-adjudicator.js',root).href;
 const pipelineUrl=new URL('lib/master-pipeline.js',root).href;
+const rsaSignerUrl=new URL('lib/rsa-pkcs1-sign.js',root).href;
 export const adjudicator=await import(adjudicatorUrl);
 export const canary=await import(data((await readFile(new URL('lib/github-branch-canary.js',root),'utf8'))
  .replace("'lib/master-pipeline.js'",JSON.stringify(pipelineUrl))
- .replace("'lib/security-adjudicator.js'",JSON.stringify(adjudicatorUrl))));
+ .replace("'lib/security-adjudicator.js'",JSON.stringify(adjudicatorUrl))
+ .replace("'lib/rsa-pkcs1-sign.js'",JSON.stringify(rsaSignerUrl))));
 
 export const REPO='michaeljwilliams0123/Ultron.MW';
 export const SOURCE='1'.repeat(40);
