@@ -14,7 +14,8 @@ const GRANT_REASONS=new Set([
  'invalid-grant-pr-comment-scope','grant-ttl-exceeded','grant-expired',
  'grant-not-yet-valid','grant-scope-mismatch','administrative-grant-required',
  'invalid-adjudicator-public-key','trusted-adjudicator-key-unavailable',
- 'grant-signature-provider-unavailable','grant-signature-provider-error'
+ 'grant-signature-provider-unavailable','grant-signature-provider-error',
+ 'grant-signature-provider-update-error','grant-signature-provider-verify-error'
 ]);
 const diagnosticReason=error=>GRANT_REASONS.has(error?.message)?
  error.message:'verification-failed';

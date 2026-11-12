@@ -78,10 +78,14 @@ export function verifyOwnerSignatureWithProvider({
  let pem,der;
  try{pem=keyFromJwk(publicJwk);der=rawEcdsaToDer(signatureRaw);}
  catch{refuse('invalid-grant-signature');}
- try{
-  verifier.update(new TextEncoder().encode(payload));
-  return verifier.verify(pem,der)===true;
- }catch{refuse('grant-signature-provider-error');}
+ // Cross the Hatchable Node-crypto bridge using supported textual arguments.
+ // UTF-8 payload and base64 DER preserve the exact signed bytes, while each
+ // failure is categorized without exposing raw host exceptions.
+ try{verifier.update(payload,'utf8');}
+ catch{refuse('grant-signature-provider-update-error');}
+ const signatureB64=btoa(String.fromCharCode(...der));
+ try{return verifier.verify(pem,signatureB64,'base64')===true;}
+ catch{refuse('grant-signature-provider-verify-error');}
 }
 
 export async function verifyDelegatedGrant({

@@ -220,11 +220,11 @@ test('Hatchable ECDSA verifier bridge accepts a minimal update/verify provider w
   let bytes;
   return {
    update(input){bytes=Buffer.from(input);calls++;return this;},
-   verify(pem,signature){
+   verify(pem,signature,encoding){
     calls++;
     const native=createVerify('SHA256');
     native.update(bytes);
-    return native.verify(pem,signature);
+    return native.verify(pem,signature,encoding);
    }
   };
  };
@@ -238,5 +238,45 @@ test('Hatchable ECDSA verifier bridge accepts a minimal update/verify provider w
  assert.throws(()=>mod.verifyOwnerSignatureWithProvider({
   payload:envelope.payload,signatureRaw:raw,publicJwk,
   createVerifier:()=>({update(){throw Error('provider-side-effect')},verify(){return true}})}),
- /grant-signature-provider-error/);
+ /grant-signature-provider-update-error/);
+});
+
+test('Hatchable crypto bridge verifies string UTF-8 payload and base64 DER signature',async()=>{
+ const mod=await import('../cloud/hatchable/lib/security-adjudicator.js');
+ const pair=await keyPair(),envelope=await signed();
+ const publicJwk=await subtle.exportKey('jwk',pair.publicKey);
+ const raw=Uint8Array.from(Buffer.from(envelope.signature,'base64url'));
+ let message;
+ const provider=algorithm=>{
+  assert.equal(algorithm,'SHA256');
+  return {
+   update(payload,encoding){
+    assert.equal(typeof payload,'string','host bridge expects string input');
+    assert.equal(encoding,'utf8','UTF-8 encoding is explicit');
+    message=payload;
+    return this;
+   },
+   verify(pem,signature,encoding){
+    assert.equal(typeof pem,'string');
+    assert.equal(typeof signature,'string','host bridge expects base64 DER string');
+    assert.equal(encoding,'base64');
+    const native=createVerify('SHA256');
+    native.update(message,'utf8');
+    return native.verify(pem,signature,encoding);
+   }
+  };
+ };
+ assert.equal(mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,createVerifier:provider}),true);
+ const corrupted=new Uint8Array(raw);corrupted[0]^=1;
+ assert.equal(mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:corrupted,publicJwk,createVerifier:provider}),false);
+ assert.throws(()=>mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,
+  createVerifier:()=>({update(){throw Error('host-update-failed')},verify(){return true}})}),
+  /grant-signature-provider-update-error/);
+ assert.throws(()=>mod.verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:raw,publicJwk,
+  createVerifier:()=>({update(){return this},verify(){throw Error('host-verify-failed')}})}),
+  /grant-signature-provider-verify-error/);
 });
