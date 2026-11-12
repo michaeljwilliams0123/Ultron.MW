@@ -216,7 +216,7 @@ test('Hatchable ECDSA verifier bridge accepts a minimal update/verify provider w
  const raw=Uint8Array.from(Buffer.from(envelope.signature,'base64url'));
  let calls=0;
  const provider=algorithm=>{
-  assert.equal(algorithm,'SHA256');
+  assert.equal(algorithm,'sha256');
   let bytes;
   return {
    update(input){bytes=Buffer.from(input);calls++;return this;},
@@ -248,7 +248,7 @@ test('Hatchable crypto bridge verifies string UTF-8 payload and base64 DER signa
  const raw=Uint8Array.from(Buffer.from(envelope.signature,'base64url'));
  let message;
  const provider=algorithm=>{
-  assert.equal(algorithm,'SHA256');
+  assert.equal(algorithm,'sha256');
   return {
    update(payload,encoding){
     assert.equal(typeof payload,'string','host bridge expects string input');

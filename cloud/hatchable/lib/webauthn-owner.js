@@ -58,6 +58,8 @@ export async function verifyOwnerPasskeyAssertion({
  credentialId,expectedCredentialId,publicKeySpki,challenge,
  authenticatorData,clientDataJSON,signature,
  origin=ORIGIN,rpId=RP_ID,subtle=globalThis.crypto?.subtle
+}={},{
+ createVerifier=createVerify
 }={}){
  if(!subtle||typeof credentialId!=='string'||credentialId!==expectedCredentialId)
   refuse(credentialId===expectedCredentialId?'crypto-unavailable':'credential-mismatch');
@@ -91,9 +93,9 @@ export async function verifyOwnerPasskeyAssertion({
  catch{refuse('signature-invalid');} // Reject malformed DER consistently.
  let verified=false;
  try{
-  const v=createVerify('SHA256');
-  v.update(concat(auth,clientHash));v.end();
-  verified=v.verify(key,der);
+  const v=createVerifier('sha256');
+  v.update(concat(auth,clientHash));
+  verified=v.verify(key,btoa(String.fromCharCode(...der)),'base64');
  }catch{refuse('signature-invalid');}
  if(!verified)refuse('signature-invalid');
  return {credentialId,signCount};
@@ -154,7 +156,8 @@ function encodeB64(bytes){
 export async function verifyOwnerPasskeyRegistration({
  credentialId,challenge,attestationObject,clientDataJSON
 }={},{
- origin=ORIGIN,rpId=RP_ID,subtle=globalThis.crypto?.subtle
+ origin=ORIGIN,rpId=RP_ID,subtle=globalThis.crypto?.subtle,
+ createVerifier=createVerify
 }={}){
  if(!subtle)refuse('crypto-unavailable');
  const rawId=decode(credentialId,{min:16,max:1024});
@@ -207,8 +210,13 @@ export async function verifyOwnerPasskeyRegistration({
  const publicKey=concat(concat(header,cose.get(-2)),cose.get(-3));
  // Hatchable V8 has SHA-256 digest but no ECDSA subtle.importKey.
  // Its node:crypto public-key verifier parses SPKI/PEM natively.
- try{const v=createVerify('SHA256');v.update(new Uint8Array([0]));v.end();
-  v.verify(spkiPem(publicKey),new Uint8Array([0x30,0x00]));}
+ try{
+  const v=createVerifier('sha256');
+  v.update(new Uint8Array([0]));
+  // r=s=1 is well-formed DER, but not an attestation authorization:
+  // this check only confirms the COSE public key can be parsed on-curve.
+  v.verify(spkiPem(publicKey),'MAYCAQECAQE=','base64');
+ }
  catch{refuse('unsupported-credential-key');}
  return Object.freeze({credentialId,publicKeySpki:encodeB64(publicKey),signCount});
 }
