@@ -73,11 +73,16 @@ export async function verifyDelegatedGrant({
     !envelope.payload.length)refuse('invalid-grant-payload');
  const signature=decodeSignature(envelope.signature);
  let ok=false;
+ let verifier;
+ try{verifier=createVerify('SHA256');}
+ catch{refuse('grant-signature-provider-unavailable');}
+ let pem,der;
+ try{pem=keyFromJwk(publicJwk);der=rawEcdsaToDer(signature);}
+ catch{refuse('invalid-grant-signature');}
  try{
-  const v=createVerify('SHA256');
-  v.update(new TextEncoder().encode(envelope.payload));v.end();
-  ok=v.verify(keyFromJwk(publicJwk),rawEcdsaToDer(signature));
- }catch{refuse('invalid-grant-signature');}
+  verifier.update(new TextEncoder().encode(envelope.payload));verifier.end();
+  ok=verifier.verify(pem,der);
+ }catch{refuse('grant-signature-provider-error');}
  if(!ok)refuse('invalid-grant-signature');
  let grant;
  try{grant=JSON.parse(envelope.payload);}

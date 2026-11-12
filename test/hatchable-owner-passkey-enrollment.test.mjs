@@ -122,7 +122,7 @@ test('enrollment provides safe grant-versus-attestation failure categories',asyn
   const wrong=await signedGrant(h.issuer.privateKey,{...prepared.grantRequest,objectiveId:'wrong'});
   const rejectedGrant=await enroller.finishOwnerPasskey({db:h.db,config:h.config,
    key:request.key,envelope:wrong,attestation});
-  assert.equal(rejectedGrant.reason,'enrollment-owner-grant-verification-failed');
+  assert.equal(rejectedGrant.reason,'enrollment-owner-grant-grant-scope-mismatch');
   const good=await signedGrant(h.issuer.privateKey,prepared.grantRequest);
   const rejectedAttestation=await enroller.finishOwnerPasskey({db:h.db,config:h.config,
    key:request.key,envelope:good,
