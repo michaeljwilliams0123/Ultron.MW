@@ -73,7 +73,7 @@ export function verifyOwnerSignatureWithProvider({
   signatureRaw.length!==64||!publicJwk)
   refuse('invalid-grant-signature');
  let verifier;
- try{verifier=createVerifier('SHA256');}
+ try{verifier=createVerifier('sha256');}
  catch{refuse('grant-signature-provider-unavailable');}
  let pem,der;
  try{pem=keyFromJwk(publicJwk);der=rawEcdsaToDer(signatureRaw);}
