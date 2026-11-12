@@ -85,3 +85,21 @@ test('RELEASE-05 source and Hatchable proof policies stay byte-identical',()=>{
  const hatch=readFileSync(new URL('../cloud/hatchable/lib/release-proof.js',import.meta.url),'utf8');
  assert.equal(node,hatch);
 });
+
+test('SLOT-07 terminal outcome updates persisted SLO readback without replay',async t=>{
+ const db=new PGlite();t.after(()=>db.close());
+ await db.exec('CREATE TABLE brain_authority_grants(grant_id TEXT PRIMARY KEY)');
+ await db.exec(readFileSync(new URL('../cloud/hatchable/migrations/0045_deep_mutation_and_slots.sql',import.meta.url),'utf8'));
+ const good='2026-11-11T18:00Z',failed='2026-11-11T19:00Z';
+ await recordSlot({db,slot:classifySlot({scheduledHour:good,actualPickupAt:'2026-11-11T18:17:30Z'})});
+ await recordSlot({db,slot:classifySlot({scheduledHour:failed,actualPickupAt:'2026-11-11T19:18:00Z'})});
+ assert.equal((await db.query('SELECT evidence FROM brain_scheduler_slots WHERE slot_key=$1',[good])).rows[0].evidence.primaryOnTime,false);
+ assert.equal((await completeSlot({db,key:good,status:'done'})).updated,true);
+ assert.equal((await completeSlot({db,key:failed,status:'failed'})).updated,true);
+ assert.equal((await completeSlot({db,key:good,status:'failed'})).updated,false);
+ const rows=(await db.query('SELECT slot_key,completion_status,evidence FROM brain_scheduler_slots ORDER BY slot_key')).rows;
+ assert.equal(rows[0].completion_status,'done');
+ assert.deepEqual(rows[0].evidence,{primaryOnTime:true,sloBreach:false});
+ assert.equal(rows[1].completion_status,'failed');
+ assert.deepEqual(rows[1].evidence,{primaryOnTime:false,sloBreach:true});
+});
