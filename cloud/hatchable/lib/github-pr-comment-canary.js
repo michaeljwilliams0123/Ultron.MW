@@ -310,8 +310,10 @@ export async function submitPrCommentCanary({
  let token;
  try{token=await tokenForComment(appCredentials,fetchImpl,clock);}
  catch(error){
-  await recordPrCommentStage(db,prepared,'credential_exchange_failed',
-   classifyPrCommentFailure(error).reason);
+  // A caller may probe token validity without reserving an execution.
+  // Never let an optional diagnostic hide the original pre-dispatch failure.
+  try{await recordPrCommentStage(db,prepared,'credential_exchange_failed',
+   classifyPrCommentFailure(error).reason);}catch{}
   throw error;
  }
  await recordPrCommentStage(db,prepared,'credential_scoped');
