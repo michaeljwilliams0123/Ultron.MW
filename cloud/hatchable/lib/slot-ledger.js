@@ -39,7 +39,13 @@ export async function completeSlot({db,key,status}={}){
  if(typeof db?.query!=='function'||!SHA.test(key||'')||!['done','failed'].includes(status))
   fail('invalid-input');
  const result=await db.query(
-  'UPDATE brain_scheduler_slots SET completion_status=$2,updated_at=now() WHERE slot_key=$1 AND completion_status=$3 RETURNING slot_key',
+  `UPDATE brain_scheduler_slots SET completion_status=$2,updated_at=now(),
+   evidence=jsonb_build_object(
+     'primaryOnTime',classification='scheduled' AND
+       pickup_lag_seconds IS NOT NULL AND pickup_lag_seconds<=900 AND $2='done',
+     'sloBreach',classification<>'scheduled' OR pickup_lag_seconds IS NULL OR
+       pickup_lag_seconds>900 OR $2<>'done'
+   ) WHERE slot_key=$1 AND completion_status=$3 RETURNING slot_key`,
   [key,status,'pending']);
  return Object.freeze({updated:result.rows.length===1,slotKey:key});
 }
