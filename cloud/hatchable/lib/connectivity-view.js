@@ -1,4 +1,4 @@
-import {evaluateWorkflowEvidence,CORE_VERIFY_WORKFLOW} from 'lib/ci-evidence.js';
+import {evaluateWorkflowEvidence,CORE_VERIFY_WORKFLOW} from './ci-evidence.js';
 const API='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const REPO_URL='https://github.com/michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
