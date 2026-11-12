@@ -27,9 +27,8 @@ export const WORKBENCH_VERBS = Object.freeze([
 export const ALLOWED_DISPATCH_WORKFLOWS = Object.freeze([
   'verify.yml',
   'council-debate.yml',
-  'pr-brain.yml',
   'cloud-pr.yml',
-  'self-scan-pr.yml',
+  'lane-ops-audit.yml',
 ]);
 
 export const ALLOWED_DISPATCH_REFS = Object.freeze(['main']);

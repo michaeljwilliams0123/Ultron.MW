@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const script=resolve(import.meta.dirname,'../scripts/mirror-gitlab.sh');
 // Hosts may set safe.bareRepository=explicit; these tests only use their own temp bare repos.
@@ -49,7 +50,7 @@ test('mirror fast-forwards exactly, is idempotent, and never overwrites divergen
   }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('mirror action stays disabled until owner config and retains no checkout credential',async()=>{
-  const yml=await readFile(resolve(import.meta.dirname,'../.github/workflows/gitlab-mirror.yml'),'utf8');
+  const yml=legacyView('gitlab-mirror.yml');
   assert.match(yml,/ULTRON_GITLAB_MIRROR_ENABLED == 'true'/);
   assert.match(yml,/github\.event\.workflow_run\.event == 'push'/);
   assert.match(yml,/persist-credentials: false/);

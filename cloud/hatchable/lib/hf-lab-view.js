@@ -9,11 +9,11 @@ const SHA=/^[a-f0-9]{40}$/;
 const FRESH_MS=20*60*1000;
 export const WORKFLOWS=Object.freeze([
  Object.freeze({key:'heldout',label:'16-case held-out CPU evaluation',
-  file:'hf-heldout-cpu.yml'}),
+  file:LAB_LANE_FILE}),
  Object.freeze({key:'tournament',label:'Small CPU model tournament',
-  file:'hf-free-cpu-tournament.yml'}),
+  file:LAB_LANE_FILE}),
  Object.freeze({key:'c06',label:'Model-authored 3-file PR candidate',
-  file:'c06-owner-model-release.yml'})
+  file:LAB_LANE_FILE})
 ]);
 const frozenEvidence=Object.freeze({
  observation:'historical-evidence',
@@ -74,41 +74,29 @@ function observedRun(item,run,file){
   runUrl:BROWSER+'/actions/runs/'+run.id,
   startedAt:date(run.created_at)};
 }
-async function inspectWorkflow(fetchGithub,item){
- const runs=await listRuns(fetchGithub,item.file,1);
- return observedRun(item,runs[0],item.file);
-}
-// Transition: the newest run wins across the legacy file and the consolidated
-// lab lane. A lane run counts only with its exact path, name and run title.
-// A lane run is shown only when it is an owner workflow_dispatch on main
-// (Skeptic L1): a branch or bot run must never pose as the newest lab result.
+// One read of the consolidated lab lane. A run counts for a task only with
+// its exact path, workflow name and allowlisted run title, and only as an
+// owner workflow_dispatch on main (Skeptic L1): a branch or bot run must never
+// pose as the newest lab result.
 const OWNER={login:'michaeljwilliams0123',id:308995719};
 export function eligibleLaneRun(run,key){
  return labLaneRunKey(run)===key&&run.head_branch==='main'&&
   run.event==='workflow_dispatch'&&run.actor?.login===OWNER.login&&
   run.actor?.id===OWNER.id;
 }
-function newest(item,legacy,lane){
- const laneRun=lane.status==='fulfilled'?
-  lane.value.find(run=>eligibleLaneRun(run,item.key)):undefined;
- if(legacy.status!=='fulfilled'){
-  if(laneRun)return observedRun(item,laneRun,LAB_LANE_FILE);
-  throw legacy.reason;
- }
- const legacyRun=legacy.value;
- if(laneRun&&(!legacyRun?.runId||laneRun.id>legacyRun.runId))
-  return observedRun(item,laneRun,LAB_LANE_FILE);
- return legacyRun;
-}
 export async function collectHfRuns({fetchGithub=fetch,now=()=>new Date().toISOString()}={}){
  const observedAt=now();
- const [lane,...settled]=await Promise.allSettled([
-  listRuns(fetchGithub,LAB_LANE_FILE,30),
-  ...WORKFLOWS.map(item=>inspectWorkflow(fetchGithub,item))]);
  const result=emptySnapshot(observedAt);
- result.workflows=settled.map((v,i)=>{
-  try{return newest(WORKFLOWS[i],v,lane);}
-  catch(error){return emptyWorkflow(WORKFLOWS[i],'unavailable',
+ let runs;
+ try{runs=await listRuns(fetchGithub,LAB_LANE_FILE,30);}
+ catch(error){
+  const reason=String(error?.message||'provider-unavailable').slice(0,65);
+  result.workflows=WORKFLOWS.map(item=>emptyWorkflow(item,'unavailable',reason));
+  return result;
+ }
+ result.workflows=WORKFLOWS.map(item=>{
+  try{return observedRun(item,runs.find(run=>eligibleLaneRun(run,item.key)),LAB_LANE_FILE);}
+  catch(error){return emptyWorkflow(item,'unavailable',
    String(error?.message||'provider-unavailable').slice(0,65));}
  });
  return result;

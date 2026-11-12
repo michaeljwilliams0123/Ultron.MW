@@ -3,6 +3,7 @@ import {createHash,createVerify} from 'node:crypto';
 // signing key; workers hold ONLY the pinned public verification key.
 // This module cannot mint credentials, grant itself privileges, or change policy.
 const VERIFIED=new WeakSet();
+const PR_COMMENT_POLICY_SHA='742eeeaa209cebeb376c23778918082ebc07efa1b25f9ecb2ad77a3acf82a7ac';
 const OPERATIONS=new Set([
  'repo.inspect','repo.issue.create','repo.verify.dispatch','repo.pr.review',
  'repo.pr.squash','repo.branch.update','cloud.deploy','permissions.change',
@@ -67,6 +68,31 @@ function rawEcdsaToDer(raw){
  const r=component(raw.slice(0,32)),s=component(raw.slice(32));
  return Uint8Array.from([0x30,4+r.length+s.length,2,r.length,...r,2,s.length,...s]);
 }
+// Hatchable's host-bridged createVerify only needs update() and verify().
+// Do not depend on Node stream-only end(): the bridge need not implement it.
+// Verification still consumes the exact signed payload and DER-encoded ES256.
+export function verifyOwnerSignatureWithProvider({
+ payload,signatureRaw,publicJwk,createVerifier=createVerify
+}={}){
+ if(typeof payload!=='string'||!(signatureRaw instanceof Uint8Array)||
+  signatureRaw.length!==64||!publicJwk)
+  refuse('invalid-grant-signature');
+ let verifier;
+ try{verifier=createVerifier('SHA256');}
+ catch{refuse('grant-signature-provider-unavailable');}
+ let pem,der;
+ try{pem=keyFromJwk(publicJwk);der=rawEcdsaToDer(signatureRaw);}
+ catch{refuse('invalid-grant-signature');}
+ // Cross the Hatchable Node-crypto bridge using supported textual arguments.
+ // UTF-8 payload and base64 DER preserve the exact signed bytes, while each
+ // failure is categorized without exposing raw host exceptions.
+ try{verifier.update(payload,'utf8');}
+ catch{refuse('grant-signature-provider-update-error');}
+ const signatureB64=btoa(String.fromCharCode(...der));
+ try{return verifier.verify(pem,signatureB64,'base64')===true;}
+ catch{refuse('grant-signature-provider-verify-error');}
+}
+
 export async function verifyDelegatedGrant({
  envelope,publicJwk,request,now=new Date().toISOString(),
  subtle=globalThis.crypto?.subtle
@@ -76,12 +102,8 @@ export async function verifyDelegatedGrant({
  if(!envelope||typeof envelope.payload!=='string'||envelope.payload.length>4096||
     !envelope.payload.length)refuse('invalid-grant-payload');
  const signature=decodeSignature(envelope.signature);
- let ok=false;
- try{
-  const v=createVerify('SHA256');
-  v.update(new TextEncoder().encode(envelope.payload));v.end();
-  ok=v.verify(keyFromJwk(publicJwk),rawEcdsaToDer(signature));
- }catch{refuse('invalid-grant-signature');}
+ const ok=verifyOwnerSignatureWithProvider({
+  payload:envelope.payload,signatureRaw:signature,publicJwk});
  if(!ok)refuse('invalid-grant-signature');
  let grant;
  try{grant=JSON.parse(envelope.payload);}
@@ -104,6 +126,11 @@ export async function verifyDelegatedGrant({
   refuse('invalid-grant-branch-scope');
  if(grant.operation==='repair.branch.create'&&grant.policySha!==BRANCH_POLICY_SHA)
   refuse('invalid-grant-branch-policy');
+ // #420: pr.comment grants must carry the exact C04 PR-comment policy hash,
+ // sha256('ultron.c04.owner-signed-coordinator-pr-comment.v1').
+ if(grant.operation==='pr.comment'&&grant.policySha!==PR_COMMENT_POLICY_SHA)
+  refuse('invalid-grant-policy');
+
  const versioned=Object.hasOwn(grant,'profileVersion')||
   Object.hasOwn(grant,'stopVersion');
  if(versioned&&(!Number.isSafeInteger(grant.profileVersion)||
@@ -226,10 +253,13 @@ export async function reservePrCommentExecution({
   FOR SHARE
  ), existing AS MATERIALIZED (
   SELECT idempotency_key,state,operation_digest,body_sha256,target_number
-  FROM github_idempotent_executions
+  FROM github_pr_comment_executions
   WHERE idempotency_key=$1 OR
    (repository='michaeljwilliams0123/Ultron.MW' AND
-    target_kind='pull_request_comment' AND target_number=$12 AND body_sha256=$13)
+    target_number=$12 AND body_sha256=$13)
+  UNION ALL
+  SELECT idempotency_key,state,operation_digest,NULL::text,NULL::bigint
+  FROM github_idempotent_executions WHERE idempotency_key=$1
  ), nonce AS (
   INSERT INTO brain_github_approval_nonces(
    nonce,operation,target_resource,approval_timestamp,expires_at)
@@ -244,11 +274,11 @@ export async function reservePrCommentExecution({
   SELECT $2,$6,$7,'pr.comment',$3,$8,$5::timestamptz FROM nonce
   RETURNING grant_id
  ), execution AS (
-  INSERT INTO github_idempotent_executions(
-   idempotency_key,operation_digest,repository,target_kind,target_branch,
+  INSERT INTO github_pr_comment_executions(
+   idempotency_key,operation_digest,repository,
    target_number,body_sha256,grant_id,persona_role,state)
-  SELECT $1,$9,'michaeljwilliams0123/Ultron.MW','pull_request_comment',
-   NULL,$12,$13,grant_id,'builder','reserved' FROM admitted
+  SELECT $1,$9,'michaeljwilliams0123/Ultron.MW',
+   $12,$13,grant_id,'builder','reserved' FROM admitted
   RETURNING idempotency_key,state
  ), receipt AS (
   INSERT INTO brain_events(event_type,details)

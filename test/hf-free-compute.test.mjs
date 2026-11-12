@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {selectFreeModelProfile,admitFreeCpuTournament,
   resolveEvaluationRevision,makeCpuEvidence,FREE_CPU_MODELS} from '../src/hf-free-compute.mjs';
+import {legacyView} from './workflow-lane-view.mjs';
 
 const sha='a'.repeat(40);
 const baseline='516c8d04add8a80c5228f32102b57953b8d421a9';
@@ -89,7 +90,7 @@ test('HF-CPU-06: a benchmark receipt is source-pinned, bounded and rejects any b
 });
 
 test('HF-CPU-07: workflow performs bounded parallel evaluation without scheduled or GPU paid jobs',async()=>{
- const workflow=await readFile(new URL('../.github/workflows/hf-free-cpu-tournament.yml',import.meta.url),'utf8');
+ const workflow=legacyView('hf-free-cpu-tournament.yml');
  assert.match(workflow,/workflow_dispatch:/);
  assert.doesNotMatch(workflow,/^\s+schedule:/m);
  assert.match(workflow,/max-parallel:\s*4/);

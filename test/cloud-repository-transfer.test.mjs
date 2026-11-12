@@ -24,7 +24,7 @@ test('Hatchable issue and Council integrations point only at current personal re
 });
 
 test('OIDC bridge pins current immutable owner/repository identity', () => {
-  for (const file of ['lib/council-oidc.js', 'lib/github-oidc-bridge.js']) {
+  for (const file of ['lib/council-oidc.js']) {
     const body = source(file);
     assert.ok(body.includes(CANONICAL), file + ' missing canonical repository');
     assert.ok(body.includes(SUBJECT) || (body.includes('repo:michaeljwilliams0123@308995719/Ultron.MW@1424939667:ref:') && body.includes("const REF='refs/heads/main'")), file + ' missing immutable subject');
@@ -35,7 +35,7 @@ test('OIDC bridge pins current immutable owner/repository identity', () => {
 });
 
 test('OIDC actor checks bind GitHub login to immutable ID rather than login alone', () => {
-  for (const file of ['lib/council-oidc.js', 'lib/github-oidc-bridge.js']) {
+  for (const file of ['lib/council-oidc.js']) {
     const body = source(file);
     assert.match(body, /claims\.actor_id/);
     assert.match(body, /354634860/);

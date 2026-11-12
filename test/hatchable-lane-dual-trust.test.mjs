@@ -24,15 +24,20 @@ test('LANE-01: lab lane identity is one exact path, name and allowlisted title',
   assert.equal(labLaneRunKey(bad),null);
 });
 
-test('LANE-02: every legacy Hatchable trust pin is still present during the transition',()=>{
+test('LANE-02: final state trusts only the consolidated lane identities',()=>{
  const oidc=read('cloud/hatchable/lib/council-oidc.js');
- for(const file of ['council-debate.yml','council-worker.yml','owner-comment-router.yml',
-  'cloud-pr.yml','lane-governed-task.yml'])assert.ok(oidc.includes('/.github/workflows/'+file+'@refs/heads/main'),file);
+ for(const file of ['council-debate.yml','owner-comment-router.yml','cloud-pr.yml','lane-governed-task.yml'])
+  assert.ok(oidc.includes('/.github/workflows/'+file+'@refs/heads/main'),file);
+ assert.doesNotMatch(oidc,/council-worker\.yml@/);
  const receipts=read('cloud/hatchable/lib/hf-github-receipts.js');
  for(const file of ['hf-heldout-cpu.yml','hf-free-cpu-tournament.yml','c06-owner-model-release.yml'])
-  assert.ok(receipts.includes("'"+file+"'"),file);
- assert.match(read('cloud/hatchable/lib/heldout-evidence.js'),/held-out-acceptance\.yml/);
- assert.match(read('cloud/hatchable/lib/github-oidc-bridge.js'),/hf-oidc-bridge\.yml/);
+  assert.ok(!receipts.includes(file),file+' still trusted by receipts');
+ const view=read('cloud/hatchable/lib/hf-lab-view.js');
+ for(const file of ['hf-heldout-cpu.yml','hf-free-cpu-tournament.yml','c06-owner-model-release.yml'])
+  assert.ok(!view.includes(file),file+' still read by the lab view');
+ assert.doesNotMatch(read('cloud/hatchable/lib/heldout-evidence.js'),/held-out-acceptance\.yml/);
+ for(const gone of ['cloud/hatchable/lib/github-oidc-bridge.js','cloud/hatchable/api/brain/hf-oidc-event.js',
+  'scripts/hf-oidc-publish.mjs'])assert.throws(()=>read(gone),/ENOENT/,gone);
  assert.match(read('cloud/hatchable/lib/mahoraga-actions.js'),/\/actions\/workflows\/verify\.yml/);
 });
 

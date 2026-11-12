@@ -19,15 +19,16 @@ const mockDB={
 };
 const response=data=>({ok:true,status:200,json:async()=>data});
 const healthyFetch=async url=>{
+ if(url.includes('/actions/runs/12/jobs?'))return response({total_count:2,jobs:[{name:'test',status:'completed',conclusion:'success',run_attempt:1},{name:'attested-receipt',status:'completed',conclusion:'success',run_attempt:1}]});
  if(url===ROOT+'/git/ref/heads/main')return response({object:{sha:SHA}});
  if(url.includes('/pulls?'))return response([{number:256,title:'User interface',draft:false,
   html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/256',
   updated_at:'2026-11-03T19:00:00Z'}]);
- if(url.includes('/actions/runs?'))return response({workflow_runs:[
-  {id:12,name:'Ultron core verification',status:'completed',conclusion:'success',
+ if(url.includes('/actions/workflows/verify.yml/runs?'))return response({workflow_runs:[
+  {id:12,name:'commit subject',path:'.github/workflows/verify.yml',workflow_id:388875616,run_attempt:1,head_branch:'main',head_repository:{full_name:'michaeljwilliams0123/Ultron.MW'},status:'completed',conclusion:'success',
    head_sha:SHA,event:'push',created_at:'2026-11-03T20:00:00Z',
    html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/12'},
-  {id:11,name:'Ultron core verification',status:'completed',conclusion:'failure',
+  {id:11,name:'commit subject',path:'.github/workflows/verify.yml',workflow_id:388875616,run_attempt:1,head_branch:'main',head_repository:{full_name:'michaeljwilliams0123/Ultron.MW'},status:'completed',conclusion:'failure',
    head_sha:'b'.repeat(40),event:'push',created_at:'2026-11-03T19:00:00Z'}
  ]});
  throw Error('unexpected-url');
@@ -67,7 +68,7 @@ test('CONNECT-03: stale CI from a different SHA must never claim head success',a
   if(url===ROOT+'/git/ref/heads/main')return response({object:{sha:SHA}});
   if(url.includes('/pulls?'))return response([]);
   return response({workflow_runs:[{
-   id:500,name:'Ultron core verification',event:'push',status:'completed',
+   id:500,name:'commit subject',path:'.github/workflows/verify.yml',workflow_id:388875616,run_attempt:1,head_branch:'main',head_repository:{full_name:'michaeljwilliams0123/Ultron.MW'},event:'push',status:'completed',
    conclusion:'success',head_sha:'b'.repeat(40),
    html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/500'
   }]});
@@ -106,9 +107,10 @@ test('CONNECT-05: unsigned owners see sign-in guidance, not a fake connection su
 test('CONNECT-06: issue-comment workflow flood cannot hide successful current-main push CI',async()=>{
  const latestMain='a'.repeat(40);
  const fetchWithFlood=async url=>{
+  if(url.includes('/actions/runs/41879685232/jobs?'))return response({total_count:2,jobs:[{name:'test',status:'completed',conclusion:'success',run_attempt:1},{name:'attested-receipt',status:'completed',conclusion:'success',run_attempt:1}]});
   if(url===ROOT+'/git/ref/heads/main')return response({object:{sha:latestMain}});
   if(url.includes('/pulls?'))return response([]);
-  if(url.includes('/actions/runs?')){
+  if(url.includes('/actions/workflows/verify.yml/runs?')){
    // GitHub lists newest 12 runs before a client-side filter is applied.
    // Unfiltered requests yield only issue-comment events and conceal the
    // older, still-current push check from the owner cockpit.
@@ -118,7 +120,7 @@ test('CONNECT-06: issue-comment workflow flood cannot hide successful current-ma
       conclusion:'skipped',created_at:'2026-11-04T18:00:00Z'}))
    });
    return response({workflow_runs:[{
-    id:41879685232,name:'Ultron core verification',event:'push',
+    id:41879685232,name:'commit subject',path:'.github/workflows/verify.yml',workflow_id:388875616,run_attempt:1,head_branch:'main',head_repository:{full_name:'michaeljwilliams0123/Ultron.MW'},event:'push',
     head_sha:latestMain,status:'completed',conclusion:'success',
     created_at:'2026-11-04T17:00:00Z',
     html_url:'https://github.com/michaeljwilliams0123/Ultron.MW/actions/runs/41879685232'

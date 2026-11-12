@@ -18,7 +18,9 @@ const REST='/repos/michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
 const ID_KEY=/^admin:[a-z0-9][a-z0-9-]{7,90}$/;
 const ALLOWED_WORKFLOWS=new Set([
- 'verify.yml','council-debate.yml','continuum-council-supervisor.yml'
+ // The Continuum supervisor now runs inside council-debate.yml (26 -> 8
+ // consolidation); its retired standalone filename is no longer a target.
+ 'verify.yml','council-debate.yml'
 ]);
 const METHODS=Object.freeze({
  'actions.dispatch':{permission:'actions',mode:'routine'},
