@@ -280,3 +280,25 @@ test('Hatchable crypto bridge verifies string UTF-8 payload and base64 DER signa
   createVerifier:()=>({update(){return this},verify(){throw Error('host-verify-failed')}})}),
   /grant-signature-provider-verify-error/);
 });
+
+test('C04 PR-comment and #412 branch policies remain independently pinned after main integration',async()=>{
+ const now='2026-11-10T20:01:00.000Z';
+ const make=(operation,resource,policySha,grantId)=>({
+  ...base,operation,resource,policySha,grantId,
+  notBefore:'2026-11-10T20:00:00.000Z',
+  expiresAt:'2026-11-10T20:04:00.000Z'
+ });
+ const comment=make('pr.comment',
+  'github:pr-comment:michaeljwilliams0123/Ultron.MW:390:sha256:'+'a'.repeat(64),
+  '742eeeaa209cebeb376c23778918082ebc07efa1b25f9ecb2ad77a3acf82a7ac',
+  'merged-policy-comment-001');
+ const branch=make('repair.branch.create',
+  'github:branch:michaeljwilliams0123/Ultron.MW:ultron/canary-test123:sha256:'+'b'.repeat(64),
+  (await import('../cloud/hatchable/lib/security-adjudicator.js')).BRANCH_POLICY_SHA,
+  'merged-policy-branch-001');
+ const scope=g=>({...request,operation:g.operation,resource:g.resource});
+ assert.equal((await check(comment,scope(comment),now)).operation,'pr.comment');
+ assert.equal((await check(branch,scope(branch),now)).operation,'repair.branch.create');
+ await assert.rejects(check({...comment,policySha:branch.policySha},scope(comment),now),/invalid-grant-policy/);
+ await assert.rejects(check({...branch,policySha:comment.policySha},scope(branch),now),/invalid-grant-branch-policy/);
+});

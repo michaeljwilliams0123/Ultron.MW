@@ -1,5 +1,8 @@
 import {db,config} from 'hatchable';
 import {verifyDelegatedGrant,consumeDelegatedGrant} from 'lib/security-adjudicator.js';
+// #412: these operations have their own atomic reservation route
+// (github-pr-comment-canary / github-branch-canary) and are refused here.
+const DEDICATED=new Set(['pr.comment','repair.branch.create']);
 
 // Owner-only admission API. It checks and records signed authority but does
 // NOT execute the requested operation or mint administrative credentials.
@@ -16,6 +19,9 @@ export default async function(req,res){
   return res.status(503).json({schema:'ultron.authority-admission.v1',
    ok:false,error:'adjudicator-unconfigured'});
  }
+ if(DEDICATED.has(req.body?.request?.operation))
+  return res.status(403).json({schema:'ultron.authority-admission.v1',
+   ok:false,error:'operation-requires-dedicated-route'});
  let verified;
  try{
   verified=await verifyDelegatedGrant({
@@ -25,6 +31,9 @@ export default async function(req,res){
   return res.status(403).json({schema:'ultron.authority-admission.v1',
    ok:false,error:'authority-not-verified'});
  }
+ if(DEDICATED.has(verified?.operation))
+  return res.status(403).json({schema:'ultron.authority-admission.v1',
+   ok:false,error:'operation-requires-dedicated-route'});
  try{
   const result=await consumeDelegatedGrant({db,verifiedGrant:verified});
   if(!result.ok)return res.status(result.error==='grant-replayed'?409:403).json({
