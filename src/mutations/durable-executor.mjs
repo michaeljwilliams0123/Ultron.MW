@@ -20,7 +20,15 @@ async function complete(db,i,evidence){
   externalId:evidence.externalId,readbackHash:evidence.hash,verified:true});
  const x=await db.query('UPDATE brain_github_deep_mutations SET state=$2, receipt=$3::jsonb, updated_at=now() WHERE idempotency_key=$1 AND operation_digest=$4 AND state IN ($5,$6) RETURNING state',
   [i.idempotencyKey,'verified',JSON.stringify(receipt),i.operationDigest,'sent','reconcile_required']);
- if(x.rows.length!==1)fail('receipt-not-committed');
+ if(x.rows.length!==1){
+  // Another concurrent reconciler may have committed the same proven effect.
+  const previous=await db.query('SELECT state,operation_digest,receipt FROM brain_github_deep_mutations WHERE idempotency_key=$1',[i.idempotencyKey]);
+  const row=previous.rows[0];
+  if(row?.state==='verified'&&row.operation_digest===i.operationDigest&&
+   row.receipt?.externalId===evidence.externalId&&row.receipt?.readbackHash===evidence.hash)
+   return Object.freeze({status:'verified',executed:false,externalId:evidence.externalId,receipt:row.receipt});
+  fail('receipt-not-committed');
+ }
  return Object.freeze({status:'verified',executed:true,externalId:evidence.externalId,receipt});
 }
 async function reconcile(db,i,readback){
