@@ -88,3 +88,12 @@ test('CI enforces source credential scan in the existing core lane without addin
  assert.match(core,/actions\/checkout@[a-f0-9]{40}/);
  assert.match(core,/persist-credentials: false/);
 });
+
+test('NUL-containing text source fails closed rather than bypassing credential scanning',()=>{
+ sandbox({'docs/suspicious.md':Buffer.from('prefix\0ghp_'+('A'.repeat(36)))},root=>{
+  const result=scanTrackedRoot(root);
+  assert.ok(result.findings.some(x=>x.path==='docs/suspicious.md'&&x.code==='BINARY_TEXT'),
+   'NUL-containing text files must not silently skip security findings');
+  assert.ok(!JSON.stringify(result).includes('ghp_'+('A'.repeat(36))));
+ });
+});
