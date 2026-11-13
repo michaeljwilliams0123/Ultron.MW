@@ -11,12 +11,13 @@
  */
 import {verify as ed25519Verify} from 'node:crypto';
 import {gatePasses} from '../council-trusted-gate.mjs';
+import {createPostgresApprovalNonceStore} from './crypto_auth.mjs';
 
 const SCHEMA='ultron.composio.council-attestation.v1';
 const DOMAIN='ULTRON-COMPOSIO-COUNCIL-ATTESTATION-v1\n';
 const SHA=/^[a-f0-9]{40}$/;
 const KID=/^council-[a-z0-9-]{3,48}$/;
-const NONCE=/^council-[a-z0-9_-]{16,96}$/;
+const NONCE=/^council-[a-z0-9_-]{16,88}$/;
 const SIGNATURE=/^[A-Za-z0-9_-]{86}$/;
 const TTL_MS=300_000;
 const factoryVerifiers=new WeakSet();
@@ -98,7 +99,7 @@ export function createTrustedComposioCouncilVerifier({
   try{
    consumed=await nonceStore.consume({
     keyId:message.keyId,nonce:message.nonce,sourceSha,prNumber,
-    expiresAt:message.expiresAt,
+    issuedAt:message.issuedAt,expiresAt:message.expiresAt,
    });
   }catch{
    fail('durable Council nonce consumption unavailable');
@@ -108,6 +109,28 @@ export function createTrustedComposioCouncilVerifier({
  };
  factoryVerifiers.add(verifier);
  return verifier;
+}
+/**
+ * Reuses existing migration 0037 durable nonce table in a separate Council
+ * nonce namespace and signed attestation operation profile. The unique nonce
+ * constraint supplies atomic first-writer wins, not write authorization.
+ */
+export function createPostgresComposioCouncilNonceStore({db}={}){
+ const underlying=createPostgresApprovalNonceStore({db});
+ return Object.freeze({consume:async({
+  nonce,keyId,sourceSha,prNumber,issuedAt,expiresAt
+ }={})=>{
+  if(!NONCE.test(nonce||'')||!KID.test(keyId||'')||
+     !SHA.test(sourceSha||'')||!Number.isSafeInteger(prNumber)||prNumber<1||
+     !Number.isSafeInteger(issuedAt)||!Number.isSafeInteger(expiresAt)||
+     expiresAt<=issuedAt||expiresAt-issuedAt>TTL_MS)
+   return false;
+  return underlying.consume({
+   nonce,toolName:SCHEMA,
+   targetResource:'ultron:github:Council:'+prNumber+':'+sourceSha+':'+keyId,
+   timestamp:issuedAt,
+  });
+ }});
 }
 export function isTrustedComposioCouncilVerifier(fn){
  return typeof fn==='function'&&factoryVerifiers.has(fn);
