@@ -263,3 +263,42 @@ test('fully signed Council and owner plans reach only the real durable App execu
   assert.equal(h.writes,1);
  }finally{await h.db.close();}
 });
+
+test('Council approval for one source commit must not authorize an owner-signed write at another head',async()=>{
+ const h=await setup({approve:false});
+ try{
+  const {publicKey,privateKey}=generateKeyPairSync('ed25519');
+  const differentHead='f'.repeat(40);
+  const envelope={
+   schema:'ultron.composio.council-attestation.v1',
+   keyId:'council-release-main',sourceSha:differentHead,prNumber:442,
+   issuedAt:h.now-1000,expiresAt:h.now+240000,
+   nonce:'council-source-mismatch-'+String(h.now)+'-abcdefghi',
+   result:{status:'accepted',approvedCount:7,securitySensitive:false,
+    sourceSha:differentHead,prNumber:442},
+  };
+  const signature=signEd25519(null,councilAttestationSigningBytes({
+   ...envelope,signature:'A'.repeat(86)
+  }),privateKey).toString('base64url');
+  const verifyCouncilAttestation=createTrustedComposioCouncilVerifier({
+   keys:{'council-release-main':publicKey},
+   nonceStore:createPostgresComposioCouncilNonceStore({db:h.db}),
+   clock:()=>h.now,
+  });
+  let tokenRequests=0;
+  const tokenFactory={getTokenForScope:async scope=>{
+   tokenRequests++;return h.tokenFactory.getTokenForScope(scope);
+  }};
+  await assert.rejects(executeGovernedGitHubAppMutation({
+   operationRequest:h.operationRequest,
+   tokenFactory,
+   trusted:{...h.ownerTrust,verifyCouncilAttestation},
+   councilAttestation:{...envelope,signature},
+   sha:differentHead,prNumber:442,durableAppExecutor:h.executor,
+  }),/Council.*source.*mismatch|source.*Council.*mismatch/i);
+  assert.equal(tokenRequests,0);
+  assert.equal(h.writes,0);
+  const ledger=await h.db.query('SELECT count(*)::int AS n FROM github_idempotent_executions');
+  assert.equal(ledger.rows[0].n,0);
+ }finally{await h.db.close();}
+});
