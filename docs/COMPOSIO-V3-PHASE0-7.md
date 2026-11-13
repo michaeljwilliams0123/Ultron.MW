@@ -6,7 +6,7 @@ Status: source candidate on PR #442. **No production Composio Platform credentia
 - Canonical repository: michaeljwilliams0123/Ultron.MW, ID 1424939667; canonical owner ID 308995719; delegated user ID 354634860.
 - Both historical migration names 0039_autonomous_repair_checkpoints.sql and 0039_github_idempotent_executions.sql are separate files, each with a separate database table already observed on Hatchable. Do not rename, consolidate or replay them.
 - Add migration 0046_composio_sessions.sql only. It seeds two PENDING principals and stores ID references and hash digests, not secrets.
-- Baseline verification runs in existing GitHub Verify plus isolated Composio workflow: scripts/verify-fast.mjs and scripts/audit-route-references.mjs. scripts/verify-hatchable-parity.mjs needs --manifest FILE --version N --head SHA; live parity must remain unverified until an exact pinned deployment manifest is available.
+- Baseline verification runs in the existing canonical GitHub Verify workflow: scripts/verify-fast.mjs and scripts/audit-route-references.mjs; the Composio SDK is installed and tested as an additional existing Verify job step without creating a ninth workflow. scripts/verify-hatchable-parity.mjs needs --manifest FILE --version N --head SHA; live parity must remain unverified until an exact pinned deployment manifest is available.
 - src/server.mjs and src/capability-bindings.mjs remain unchanged. cloud/hatchable/OPENAI-AGENTS-INTEGRATION.md remains a design, not a deployed Composio gateway.
 
 ## Phase 1 — SDK
@@ -38,7 +38,7 @@ Status: source candidate on PR #442. **No production Composio Platform credentia
 - The isolated Node 22 worker cannot be imported into a Hatchable V8 function; runtime connection requires an explicitly provisioned trusted worker, not automatic source deployment.
 
 ## Phase 6 — Testing
-- Dedicated read-only .github/workflows/composio-v3.yml installs the SDK and executes isolated worker tests, migration/Postgres tests, policy/hatchable mirror tests, route audit and fast baseline without any Composio credentials.
+- Canonical .github/workflows/verify.yml installs the isolated SDK and runs worker tests, SQL migration/Postgres checks, mirrored policy tests, route audit and fast baseline without any Composio credentials. The initially attempted ninth workflow composio-v3.yml was removed after exact-head CI caught two workflow-governance violations.
 - Repository's existing exact-head Verify and Council checks are separate gates.
 - Source checks cannot establish live account authorization, production schema migration, signed owner grants, or a deployed worker.
 
