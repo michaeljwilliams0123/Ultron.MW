@@ -25,7 +25,17 @@ function clean(value,depth=0){
   return value;
  }
  if(Array.isArray(value)){
-  if(value.length>50||Object.getOwnPropertySymbols(value).length)fail('invalid payload');
+  // JSON round-tripping turns holes into null; signing a sparse array would
+  // authenticate bytes different from its persisted representation.
+  // Reject extra properties and accessors rather than silently dropping them.
+  const descriptors=Object.getOwnPropertyDescriptors(value);
+  const keys=Object.keys(descriptors).filter(key=>key!=='length');
+  if(value.length>50||Object.getOwnPropertySymbols(value).length||
+     Object.getPrototypeOf(value)!==Array.prototype||
+     keys.length!==value.length||
+     keys.some((key,index)=>key!==String(index)||
+       !Object.hasOwn(descriptors[key],'value')))
+   fail('invalid payload');
   return value.map(v=>clean(v,depth+1));
  }
  if(!value||typeof value!=='object'||
