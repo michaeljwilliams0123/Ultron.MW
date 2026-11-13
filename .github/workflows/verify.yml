@@ -67,6 +67,7 @@ jobs:
         run: |
           node -e "const [a,b,c]=process.versions.node.split('.').map(Number);if(a<22||(a===22&&(b<22||(b===22&&c<3))))process.exit(1)"
           npm ci --prefix integrations/composio --ignore-scripts --no-audit --no-fund
+          npm audit --prefix integrations/composio --omit=dev --audit-level=high
           npm test --prefix integrations/composio
           node scripts/audit-route-references.mjs > /tmp/ultron-route-audit.json
           node integrations/composio/verify-live-primary.mjs --dry-run
