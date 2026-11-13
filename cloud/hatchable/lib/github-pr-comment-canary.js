@@ -415,3 +415,38 @@ export async function reconcilePrCommentCanary({
  await recordPrCommentStage(db,prepared,'remote_observed');
  return complete(db,prepared,digest,observed,'reconciled_success');
 }
+
+/** Read-only credential/repository/PR probe. No owner grant is consumed, no
+ * execution row is changed, and no provider comment POST can occur. Results
+ * are restricted to safe structural metadata; never echo token or response. */
+export async function diagnosePrCommentCanary({
+ pullRequest,appCredentials,fetchImpl=globalThis.fetch,clock=Date.now
+}={}){
+ const number=databaseId(pullRequest);
+ if(typeof fetchImpl!=='function'||typeof clock!=='function')
+  fail('service-invalid');
+ const token=await tokenForComment(appCredentials,fetchImpl,clock);
+ const headers=readHeaders(token);
+ const safeStatus=response=>Number.isInteger(response?.status)&&
+  response.status>=100&&response.status<=599?response.status:null;
+ const repo=await provider(fetchImpl,`${API}/repos/${REPO}`,{
+  method:'GET',headers});
+ const repositoryHttpStatus=safeStatus(repo);
+ let repositoryArchived=null;
+ if(repositoryHttpStatus===200){
+  let data;try{data=await repo.json();}catch{fail('readback-unavailable');}
+  repositoryArchived=typeof data?.archived==='boolean'?data.archived:null;
+ }
+ const issue=await provider(fetchImpl,
+  `${API}/repos/${REPO}/issues/${number}`,{method:'GET',headers});
+ const issueHttpStatus=safeStatus(issue);
+ let issueLocked=null,issueState=null,isPullRequest=null;
+ if(issueHttpStatus===200){
+  let data;try{data=await issue.json();}catch{fail('readback-unavailable');}
+  issueLocked=typeof data?.locked==='boolean'?data.locked:null;
+  issueState=['open','closed'].includes(data?.state)?data.state:null;
+  isPullRequest=typeof data?.pull_request==='object'&&data.pull_request!==null;
+ }
+ return Object.freeze({readOnly:true,repositoryHttpStatus,issueHttpStatus,
+  repositoryArchived,issueLocked,issueState,isPullRequest});
+}
