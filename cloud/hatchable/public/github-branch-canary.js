@@ -6,7 +6,7 @@ const SHA=/^[a-f0-9]{40}$/,SIG=/^[A-Za-z0-9_-]{86}$/;
 const MARGIN_MS=150000;
 const OWNER='michaeljwilliams0123';
 let ready=false,reason='not-checked',sourceSha=null,prepared=null,grantRequest=null;
-let signedEnvelope=null,grantId=null,submitted=false,completed=false;
+let signedEnvelope=null,grantId=null,submitted=false,completed=false,submitting=false;
 const disabled=(id,value)=>{el(id).disabled=value;};
 function resetPrepared(){
  prepared=null;grantRequest=null;signedEnvelope=null;grantId=null;submitted=false;completed=false;
@@ -83,6 +83,7 @@ function checkEnvelope(text){
  return {envelope,grantId:claims.grantId,seconds:Math.floor(remaining/1000)};
 }
 async function prepare(){
+ if(submitting){status('Submission in progress; do not prepare another grant.');return;}
  if(!ready){status('Not ready: '+reason+'. No GitHub write sent.');return;}
  resetPrepared();
  if(!await check())return;
@@ -116,27 +117,38 @@ async function paste(){
  status('Branch grant matched ('+valid.seconds+' seconds remain). One GitHub branch write can be authorized.');
 }
 async function submit(){
- if(submitted){status('Already submitted; use Reconcile, never re-submit this grant.');return;}
+ if(submitted||submitting){
+  status('Already submitted or in progress; use Reconcile, never re-submit this grant.');
+  return;
+ }
  if(!prepared||!signedEnvelope||!grantId){status('No validated owner-signed GitHub grant.');return;}
- const valid=checkEnvelope(el('gh-envelope').value);
- // Avoid silently targeting stale main if another release landed after preparation.
- const connectivity=await requireOk('/api/brain/connectivity');
- if(connectivity?.github?.mainSha!==prepared.sourceSha||
-  !ciMatches(connectivity,prepared.sourceSha))
-  throw Error('verified-main-changed-prepare-a-new-GitHub-branch');
- if(!confirm('Create exactly ONE GitHub branch '+prepared.branch+
-  ' at '+prepared.sourceSha+' using this owner-signed authorization?'))return;
- submitted=true;disabled('gh-submit',true);disabled('gh-reconcile',false);
- const res=await call('/api/brain/github-branch-canary',{
-  mode:'submit',prepared,envelope:valid.envelope
- });
- if(res.ok&&res.data.status==='success'){
-  completed=true;
-  status('GitHub branch write reported: '+String(res.data.branch)+
-   '. Independently verify provider readback and PostgreSQL receipt before production acceptance.');
- }else{
-  status('GitHub outcome '+String(res.data?.status||res.data?.error||'unknown')+
-   '. Do not re-submit. Reconcile the existing operation with its signed grant ID.');
+ // Claim the local one-shot latch BEFORE the first await (connectivity GET).
+ // A second click must never enter this preflight or reach the write API.
+ submitting=true;
+ try{
+  const valid=checkEnvelope(el('gh-envelope').value);
+  const connectivity=await requireOk('/api/brain/connectivity');
+  if(connectivity?.github?.mainSha!==prepared.sourceSha||
+   !ciMatches(connectivity,prepared.sourceSha))
+   throw Error('verified-main-changed-prepare-a-new-GitHub-branch');
+  if(!confirm('Create exactly ONE GitHub branch '+prepared.branch+
+   ' at '+prepared.sourceSha+' using this owner-signed authorization?'))return;
+  submitted=true;disabled('gh-submit',true);disabled('gh-reconcile',false);
+  const res=await call('/api/brain/github-branch-canary',{
+   mode:'submit',prepared,envelope:valid.envelope
+  });
+  if(res.ok&&res.data.status==='success'){
+   completed=true;
+   status('GitHub branch write reported: '+String(res.data.branch)+
+    '. Independently verify provider readback and PostgreSQL receipt before production acceptance.');
+  }else{
+   status('GitHub outcome '+String(res.data?.status||res.data?.error||'unknown')+
+    '. Do not re-submit. Reconcile the existing operation with its signed grant ID.');
+  }
+ }finally{
+  // Release the preflight lock on cancellation/stale CI, but never clear the
+  // one-shot "submitted" marker after a possible remote write.
+  submitting=false;
  }
 }
 async function reconcile(){
