@@ -13,6 +13,8 @@ export const APP_PROOF=Object.freeze({
  owner:'michaeljwilliams0123'
 });
 const API='https://api.github.com';
+// GitHub starts its 1-hour TTL on provider issuance, after our clock read.
+const TOKEN_EXPIRY_SKEW_MS=5*60000;
 const HEADERS=Object.freeze({Accept:'application/vnd.github+json',
  'X-GitHub-Api-Version':'2022-11-28'});
 const result=(reason,fields={})=>Object.freeze({
@@ -77,7 +79,7 @@ export async function probeGithubAppInstallation({credentials,signJwt,
   const t=minted.body;
   const expiry=Date.parse(t?.expires_at);
   if(minted.status!==201||typeof t?.token!=='string'||t.token.length<8||
-     !Number.isFinite(expiry)||expiry<=now||expiry>now+3600000||
+     !Number.isFinite(expiry)||expiry<=now||expiry>now+3600000+TOKEN_EXPIRY_SKEW_MS||
      JSON.stringify(t?.permissions)!==JSON.stringify({metadata:'read'})||
      !Array.isArray(t?.repositories)||t.repositories.length!==1||
      !exactRepo(t.repositories[0]))
