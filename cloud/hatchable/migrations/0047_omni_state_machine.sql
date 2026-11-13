@@ -8,7 +8,10 @@ CREATE TABLE IF NOT EXISTS brain_omni_execution_state(
    REFERENCES brain_signed_inbox(id) ON DELETE RESTRICT,
  operation_digest TEXT NOT NULL CHECK(operation_digest ~ '^[a-f0-9]{64}$'),
  github_idempotency_key TEXT NOT NULL UNIQUE CHECK(
-   github_idempotency_key ~ '^ultron-task-[a-zA-Z0-9][a-zA-Z0-9_-]{0,90} NOT NULL DEFAULT 'PERSISTED' CHECK(state IN
+   github_idempotency_key ~ '^ultron-task-[a-zA-Z0-9][a-zA-Z0-9_-]{0,90}$'),
+ ingress_nonce TEXT NOT NULL UNIQUE CHECK(
+   ingress_nonce ~ '^[a-f0-9]{32,64}$'),
+ state TEXT NOT NULL DEFAULT 'PERSISTED' CHECK(state IN
    ('PERSISTED','AUTHORIZED','DISPATCHED','RECONCILE_REQUIRED',
     'VERIFIED','FAILED_TERMINAL')),
  owner_grant_id TEXT REFERENCES brain_authority_grants(grant_id) ON DELETE RESTRICT,
