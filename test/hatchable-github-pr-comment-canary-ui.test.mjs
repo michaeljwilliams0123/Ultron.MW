@@ -9,6 +9,7 @@ test('owner UI exposes prepare, one submit and readback-only reconciliation with
  assert.match(html,/Prepare owner grant/);
  assert.match(html,/Submit one App comment/);
  assert.match(html,/Read back existing attempt/);
+ assert.match(html,/Inspect GitHub App access/);
  assert.doesNotMatch(html,/(?:private[-_ ]?key|passcode|password)["']?\s*(?:id|name)=/i);
  assert.match(js,/mode:'prepare'/);
  assert.match(js,/execute\('submit'\)/);
@@ -20,7 +21,7 @@ test('owner UI exposes prepare, one submit and readback-only reconciliation with
 });
 
 test('ambiguous submit permanently disables same-key POST while permitting read-only reconciliation',async()=>{
- const ids=['pull-request','prepare','copy','comment','signable','envelope',
+ const ids=['pull-request','prepare','diagnose','copy','comment','signable','envelope',
   'submit','reconcile','status'];
  const elements=Object.fromEntries(ids.map(id=>[id,{value:'',disabled:false,textContent:'',
   listeners:{},addEventListener(type,callback){this.listeners[type]=callback;}}]));
@@ -31,9 +32,10 @@ test('ambiguous submit permanently disables same-key POST while permitting read-
  const fetch=async(url,options)=>{
   const input=JSON.parse(options.body);requests.push(input.mode);
   const value=input.mode==='prepare'?{ok:true,prepared,ownerGrantRequest:{actor:'owner'}}:
+   input.mode==='diagnose'?{ok:true,status:'diagnosed',probe:{readOnly:true,issueHttpStatus:200,issueState:'open'}}:
    {ok:false,status:'reconcile-required',error:'provider-outcome-unresolved',
     stage:'provider_write',reason:'provider-outcome-unknown',dispatched:null};
-  return {ok:input.mode==='prepare',status:input.mode==='prepare'?200:202,
+  return {ok:['prepare','diagnose'].includes(input.mode),status:['prepare','diagnose'].includes(input.mode)?200:202,
    json:async()=>value};
  };
  runInNewContext(js,{document:{getElementById:id=>elements[id]},fetch,
@@ -49,5 +51,8 @@ test('ambiguous submit permanently disables same-key POST while permitting read-
  await elements.submit.listeners.click();
  await elements.prepare.listeners.click();
  await elements.reconcile.listeners.click();
- assert.deepEqual(requests,['prepare','submit','reconcile']);
+ await elements.diagnose.listeners.click();
+ assert.deepEqual(requests,['prepare','submit','reconcile','diagnose']);
+ assert.equal(elements.submit.disabled,true);
+ assert.match(elements.status.textContent,/Read-only/);
 });
