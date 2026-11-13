@@ -191,3 +191,13 @@ test('authenticated interrupted dispatch becomes reconcile-required, never auto-
   await recovered.close();
  }finally{await f.remove();}
 });
+
+test('sparse arrays and non-JSON array properties are rejected before signing',()=>{
+ const sparse=[];sparse[1]='second';
+ assert.throws(()=>signed({payload:{targets:sparse}}),/invalid payload|non-JSON/);
+ const extra=['first'];extra.secretLabel='must-not-be-silently-ignored';
+ assert.throws(()=>signed({payload:{targets:extra}}),/invalid payload|non-JSON/);
+ const getter=['first'];
+ Object.defineProperty(getter,'0',{enumerable:true,configurable:true,get(){throw Error('getter-executed')}});
+ assert.throws(()=>signed({payload:{targets:getter}}),/invalid payload|non-JSON/);
+});
