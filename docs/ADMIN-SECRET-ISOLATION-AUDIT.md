@@ -11,9 +11,10 @@ secrets, an external vault, or previous releases. Use GitHub secret scanning and
 
 ## CI enforcement
 
-The new `.github/workflows/secret-isolation.yml` runs on PRs and main pushes with read-only
-permissions, no secrets, and a pinned checkout. The core `.github/workflows/verify.yml` also
-runs this scanner before any npm dependency installation, binding failures to its existing `test` job.
+The existing `.github/workflows/verify.yml` runs the scanner before dependency installation
+for pull requests and main-branch verification, binding failures to the required `test` job.
+The repository intentionally retains its eight-workflow consolidation contract; a redundant
+ninth standalone secret-audit workflow is not added. This is a source audit, not a secret-custody proof.
 
 ## Actual Council Gate configuration (unverified until App registration)
 
