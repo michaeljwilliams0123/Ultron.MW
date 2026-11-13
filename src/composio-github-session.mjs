@@ -50,6 +50,8 @@ function dataFrom(result) {
 export function composioGitHubReadSessionConfig(accounts) {
   assertAccountIds(accounts);
   return {
+    // Fail closed for paid Instant tools under Ultron's $0 policy.
+    instant: false,
     toolkits: ['github'],
     tools: { github: { enable: [...COMPOSIO_GITHUB_READ_TOOLS] } },
     connectedAccounts: { github: [accounts.owner, accounts.ultron] },
