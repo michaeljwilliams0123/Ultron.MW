@@ -9,7 +9,7 @@ const canarySource=(await readFile(new URL('../cloud/hatchable/lib/github-pr-com
  import.meta.url),'utf8')).replace("'lib/rsa-pkcs1-sign.js'",
  JSON.stringify(new URL('../cloud/hatchable/lib/rsa-pkcs1-sign.js',import.meta.url).href));
 const {preparePrCommentCanary,operationDigest,submitPrCommentCanary,
- reconcilePrCommentCanary,classifyPrCommentFailure}=await import('data:text/javascript;base64,'+
+ reconcilePrCommentCanary,classifyPrCommentFailure,diagnosePrCommentCanary}=await import('data:text/javascript;base64,'+
  Buffer.from(canarySource).toString('base64'));
 
 const MIGRATIONS=['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
@@ -395,4 +395,42 @@ test('untrusted exceptions cannot smuggle fake status codes or secrets into diag
   {providerHttpStatus:'403'});
  assert.deepEqual(classifyPrCommentFailure(invalid),
   {stage:'provider_write',reason:'provider-write-denied',dispatched:null});
+});
+
+test('owner-only GitHub App diagnostics are read-only and never make a comment',async t=>{
+ const h=await admitted(t),base=provider(h.prepared),calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method||'GET'});
+  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW'))
+   return response(200,{archived:false,disabled:false});
+  if(url.endsWith('/issues/437'))
+   return response(200,{number:437,state:'open',locked:false,pull_request:{url:'pr'}});
+  return base.fetchImpl(url,options);
+ };
+ const outcome=await diagnosePrCommentCanary({pullRequest:437,
+  appCredentials:APP,fetchImpl});
+ assert.deepEqual(outcome,{readOnly:true,repositoryHttpStatus:200,
+  issueHttpStatus:200,repositoryArchived:false,issueLocked:false,
+  issueState:'open',isPullRequest:true});
+ assert.equal(calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,0);
+ assert.equal((await h.db.query("SELECT state FROM github_pr_comment_executions"))
+  .rows[0].state,'reserved');
+});
+test('read-only preflight reports missing PR with only safe bounded HTTP metadata',async t=>{
+ const base=provider((await admitted(t)).prepared),calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method||'GET'});
+  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW'))
+   return response(200,{archived:false});
+  if(url.endsWith('/issues/437'))
+   return response(404,{message:'private-raw-provider-body'});
+  return base.fetchImpl(url,options);
+ };
+ const outcome=await diagnosePrCommentCanary({pullRequest:437,
+  appCredentials:APP,fetchImpl});
+ assert.deepEqual(outcome,{readOnly:true,repositoryHttpStatus:200,
+  issueHttpStatus:404,repositoryArchived:false,issueLocked:null,
+  issueState:null,isPullRequest:null});
+ assert.doesNotMatch(JSON.stringify(outcome),/private-raw-provider-body/);
+ assert.equal(calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,0);
 });
