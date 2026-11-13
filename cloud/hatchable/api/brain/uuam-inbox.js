@@ -15,8 +15,8 @@ export default async function(req,res){
    return reply(res,403,'staging-only');
  let enabled,secret;
  try{
-   enabled=await config.get('ULTRON_UUAM_INBOX_ENABLED');
-   if(enabled!=='true')throw Error('disabled');
+   enabled=await config.get('uuam_inbox_enabled');
+   if(enabled!==true)throw Error('disabled');
    secret=await config.get('ULTRON_UUAM_DELIVERY_HMAC_KEY');
    if(typeof secret!=='string'||new TextEncoder().encode(secret).length<32)
      throw Error('missing-secret');
