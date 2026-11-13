@@ -120,7 +120,7 @@ test('valid Council attestation alone cannot bypass missing owner operation sign
   durableAppExecutor:createComposioDurableAppExecutor({
    services:{db:{query:async()=>({rows:[]})},
     authorization:{verify:async()=>{throw Error('should not authorize');}},
-    remote:{inspect:async()=>({state:'absent'})}},
+    fetchImpl:async()=>({ok:false,status:404})},
    gitOperation:async()=>{writes++;},
   }),
  }),/Task 2 Security Error/);
