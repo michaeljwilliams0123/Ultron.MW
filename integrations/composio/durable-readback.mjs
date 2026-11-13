@@ -59,11 +59,21 @@ function approvedContext(approved){
 }
 /** Build only in the authenticated server composition root. */
 export function createComposioDurableAppExecutor({services,gitOperation}={}){
+ if(services?.remote!==undefined)
+  fail('direct inspector override denied');
  if(typeof services?.db?.query!=='function'||
     typeof services?.authorization?.verify!=='function'||
-    typeof services?.remote?.inspect!=='function'||
+    typeof services?.fetchImpl!=='function'||
     typeof gitOperation!=='function')
-  fail('trusted PostgreSQL, independent remote readback, authorization and App writer required');
+  fail('trusted PostgreSQL, GitHub GET transport, authorization and App writer required');
+ // Never supply services.remote: Task 4's inspectGitHubBranch performs an
+ // independent ref/commit/parent/ref GET sequence, not a claimed match from
+ // a caller-provided callback.
+ const runtimeServices=Object.freeze({
+  db:services.db,authorization:services.authorization,
+  fetchImpl:services.fetchImpl,
+  ...(services.clock?{clock:services.clock}:{})
+ });
  const executor=async approved=>{
   const {taskContext,sourceSha}=approvedContext(approved);
   // An owner-approved operation must still satisfy Task 4's independently
@@ -72,7 +82,7 @@ export function createComposioDurableAppExecutor({services,gitOperation}={}){
    taskContext,approved.token,
    Object.freeze({role:'builder'}),
    request=>gitOperation(Object.freeze({...request,sourceSha})),
-   services
+   runtimeServices
   );
   // Task 4 returns a verified receipt only after independent provider GET and
   // fresh PostgreSQL SELECT; never convert HTTP 200 alone into success.
