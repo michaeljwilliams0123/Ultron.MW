@@ -1,4 +1,5 @@
-import {config, api} from 'hatchable';
+import {config, api, db} from 'hatchable';
+import {verifiedProviderMutations} from 'lib/connector-evidence.js';
 import {probeGithubOperator} from 'lib/github-operator-probe.js';
 
 export const access='admin';
@@ -39,11 +40,12 @@ export default async function(req,res){
   'ULTRON_VAULT_KEY','ULTRON_GRAPH_WORKBOOK_BINDING',
   'ULTRON_GRAPH_DELEGATED_TOKEN'
  ];
- const [states,gitlabRead,gitlabWrite,githubOauth]=await Promise.all([
+ const [states,gitlabRead,gitlabWrite,githubOauth,verified]=await Promise.all([
   Promise.all(names.map(configured)),
   oauthRead('gitlab'),
   oauthRead('gitlab_write'),
-  probeGithubOperator((name,options)=>api.call(name,options))
+  probeGithubOperator((name,options)=>api.call(name,options)),
+  verifiedProviderMutations({db})
  ]);
  const present=Object.fromEntries(names.map((name,i)=>[name,states[i]]));
  const appParts={
@@ -72,7 +74,7 @@ export default async function(req,res){
    'credentials-present-scope-unverified':'setup-required',
    approvedForUltronRepository:false},
   gitlab:{read:gitlabRead,writeScopeReadProbe:gitlabWrite,
-   writeMutationVerified:false},
+   writeMutationVerified:verified.gitlabBranchVerified},
   githubOauth,
   graph:{state:present.ULTRON_GRAPH_WORKBOOK_BINDING&&
    present.ULTRON_GRAPH_DELEGATED_TOKEN?'credentials-present-unverified':'not-configured'},
