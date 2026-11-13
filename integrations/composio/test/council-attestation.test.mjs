@@ -8,6 +8,7 @@ import {
  isTrustedComposioCouncilVerifier,createPostgresComposioCouncilNonceStore,
 } from '../../../src/security/composio-council-attestation.mjs';
 import {executeGovernedGitHubAppMutation} from '../index.mjs';
+import {createComposioDurableAppExecutor} from '../durable-readback.mjs';
 
 const HEAD='a'.repeat(40),PR=442,NOW=1794520000000;
 const KID='council-release-main';
@@ -116,7 +117,12 @@ test('valid Council attestation alone cannot bypass missing owner operation sign
     expectedInstallationId:1,clock:()=>NOW},
   operationRequest:{},
   tokenFactory:{getTokenForScope:async()=>{tokens++;}},
-  durableAppExecutor:async()=>{writes++;},
+  durableAppExecutor:createComposioDurableAppExecutor({
+   services:{db:{query:async()=>({rows:[]})},
+    authorization:{verify:async()=>{throw Error('should not authorize');}},
+    remote:{inspect:async()=>({state:'absent'})}},
+   gitOperation:async()=>{writes++;},
+  }),
  }),/Task 2 Security Error/);
  assert.equal(tokens,0);assert.equal(writes,0);
 });
