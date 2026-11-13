@@ -148,5 +148,18 @@ test('PostgreSQL atomically consumes the Council nonce across store reinitializa
   assert.equal(rows[0].nonce,nonce);
   assert.ok(rows[0].target_resource.includes(HEAD));
   assert.ok(rows[0].target_resource.includes(String(PR)));
+  // Two concurrent consumers of a fresh nonce must yield exactly one winner.
+  // This is the same atomic unique-key primitive needed for duplicate webhook
+  // or racing worker deliveries; it is not an external business effect.
+  const secondNonce='council-db-'+randomUUID().replace(/-/g,'');
+  const concurrentRequest={...request,nonce:secondNonce};
+  const outcomes=await Promise.all([
+   first.consume(concurrentRequest),restarted.consume(concurrentRequest)
+  ]);
+  assert.deepEqual(outcomes.sort(),[false,true]);
+  const concurrent=await db.query(
+   'SELECT count(*)::int AS count FROM brain_github_approval_nonces WHERE nonce=$1',
+   [secondNonce]);
+  assert.equal(concurrent.rows[0].count,1);
  }finally{await db.close();}
 });
