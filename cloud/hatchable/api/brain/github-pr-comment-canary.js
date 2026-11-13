@@ -3,7 +3,7 @@ import {verifyDelegatedGrant,reservePrCommentExecution}
  from 'lib/security-adjudicator.js';
 import {preparePrCommentCanary,validatePreparedCanary,operationDigest,
  submitPrCommentCanary,reconcilePrCommentCanary,prCommentCanaryReadiness,
- prCommentCanaryEnabled}
+ prCommentCanaryEnabled,classifyPrCommentFailure,diagnosePrCommentCanary}
  from 'lib/github-pr-comment-canary.js';
 
 export const access='admin';
@@ -72,6 +72,19 @@ export default async function handler(req,res){
  catch{readiness={configured:false,status:'not-configured',missing:['readiness-unavailable']};}
  if(!readiness.enabled)return disabled(res);
  if(!readiness.configured)return notConfigured(res,readiness);
+ if(mode==='diagnose'){
+  // The only provider POST here is GitHub's installation-token exchange.
+  // Diagnostic mode performs repository and PR GETs, never a comment write.
+  try{
+   const probe=await diagnosePrCommentCanary({
+    pullRequest:req.body?.pullRequest,appCredentials:await appCredentials()});
+   return reply(res,200,{ok:true,status:'diagnosed',probe});
+  }catch(error){
+   const failure=classifyPrCommentFailure(error);
+   return reply(res,503,{ok:false,status:'diagnostic-unavailable',
+    reason:failure.reason});
+  }
+ }
  if(mode==='prepare'){
   try{
    const prepared=await preparePrCommentCanary({db,
@@ -94,8 +107,12 @@ export default async function handler(req,res){
     operationDigest:digest,appCredentials:await appCredentials()});
    return reply(res,200,{ok:true,status:result.status,
     idempotencyKey:prepared.idempotencyKey,receipt:result.receipt});
-  }catch{return reply(res,202,{ok:false,status:'reconcile-required',
-   idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved'});}
+  }catch(error){
+   const failure=classifyPrCommentFailure(error);
+   return reply(res,202,{ok:false,status:'reconcile-required',
+    idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved',
+    reason:failure.reason,stage:failure.stage});
+  }
  }
  if(mode!=='submit')return reply(res,400,{ok:false,error:'canary-mode-invalid'});
  let credentials,jwk,verified,digest;
@@ -122,11 +139,16 @@ export default async function handler(req,res){
   return reply(res,201,{ok:true,status:result.status,
    idempotencyKey:prepared.idempotencyKey,receipt:result.receipt});
  }catch(error){
-  if(/(?:token-exchange|token-response|configuration|clock|dispatch-not-admitted)/
-    .test(String(error?.message)))
+  // Never echo the raw exception: it can contain provider payloads or secrets.
+  // A pre-dispatch failure is distinguishable from an ambiguous remote effect.
+  const failure=classifyPrCommentFailure(error);
+  if(failure.dispatched===false)
    return reply(res,503,{ok:false,status:'reserved',
-    idempotencyKey:prepared.idempotencyKey,error:'canary-dispatch-unavailable'});
+    idempotencyKey:prepared.idempotencyKey,error:'canary-dispatch-unavailable',
+    reason:failure.reason,stage:failure.stage,dispatched:false});
   return reply(res,202,{ok:false,status:'reconcile-required',
-   idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved'});
+   idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved',
+   reason:failure.reason,stage:failure.stage,dispatched:null,
+   ...(failure.providerHttpStatus?{providerHttpStatus:failure.providerHttpStatus}:{})});
  }
 }

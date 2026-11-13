@@ -9,7 +9,7 @@ const canarySource=(await readFile(new URL('../cloud/hatchable/lib/github-pr-com
  import.meta.url),'utf8')).replace("'lib/rsa-pkcs1-sign.js'",
  JSON.stringify(new URL('../cloud/hatchable/lib/rsa-pkcs1-sign.js',import.meta.url).href));
 const {preparePrCommentCanary,operationDigest,submitPrCommentCanary,
- reconcilePrCommentCanary}=await import('data:text/javascript;base64,'+
+ reconcilePrCommentCanary,classifyPrCommentFailure,diagnosePrCommentCanary}=await import('data:text/javascript;base64,'+
  Buffer.from(canarySource).toString('base64'));
 
 const MIGRATIONS=['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
@@ -287,4 +287,150 @@ test('token exchange accepts GitHub expiry stamped after our clock read, within 
  assert.doesNotMatch(await attempt(now+3600000+4*60000),/token-response-invalid/);
  assert.match(await attempt(now+3600000+6*60000),/token-response-invalid/);
  assert.match(await attempt(now-1000),/token-response-invalid/);
+});
+
+
+test('C04 failure classification is bounded to fixed safe reason codes and dispatch status',()=>{
+ assert.deepEqual(classifyPrCommentFailure(new Error('github-pr-comment-canary-token-exchange-denied')),
+  {stage:'credential_exchange',reason:'token-exchange-denied',dispatched:false});
+ assert.deepEqual(classifyPrCommentFailure(new Error('github-pr-comment-canary-provider-outcome-unknown')),
+  {stage:'provider_write',reason:'provider-outcome-unknown',dispatched:null});
+ assert.deepEqual(classifyPrCommentFailure(new Error('github-pr-comment-canary-readback-not-found')),
+  {stage:'provider_readback',reason:'readback-not-found',dispatched:null});
+ const secret='Bearer super-secret-token';
+ assert.deepEqual(classifyPrCommentFailure(new Error(secret)),
+  {stage:'unknown',reason:'unclassified',dispatched:null});
+ assert.doesNotMatch(JSON.stringify(classifyPrCommentFailure(new Error(secret))),/super-secret/);
+});
+
+test('token exchange denial records a pre-dispatch failure without any provider write intent',async t=>{
+ const h=await admitted(t);
+ const calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method||'GET'});
+  if(url.endsWith('/access_tokens'))return response(403,{message:'private-value-not-for-logs'});
+  throw Error('effect-not-allowed');
+ };
+ await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl}),/token-exchange-denied/);
+ const events=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage' ORDER BY id"))
+  .rows.map(row=>row.details);
+ assert.ok(events.some(e=>e.stage==='credential_exchange_failed' &&
+  e.reason==='token-exchange-denied' && e.idempotencyKey===h.prepared.idempotencyKey));
+ assert.equal(events.some(e=>e.stage==='provider_write_intent'),false);
+ assert.deepEqual(calls.map(c=>c.method),['POST']);
+ assert.equal((await h.db.query('SELECT state FROM github_pr_comment_executions')).rows[0].state,'reserved');
+ assert.doesNotMatch(JSON.stringify(events),/private-value-not-for-logs/);
+});
+
+test('lost provider acknowledgment persists exact write intent and unresolved stage, never retries POST',async t=>{
+ const h=await admitted(t),github=provider(h.prepared,{lost:true});
+ await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl:github.fetchImpl}),
+  /provider-outcome-unknown/);
+ const events=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage' ORDER BY id"))
+  .rows.map(row=>row.details);
+ assert.ok(events.some(e=>e.stage==='provider_write_intent'));
+ assert.ok(events.some(e=>e.stage==='reconcile_required' && e.reason==='provider-outcome-unknown'));
+ assert.equal(events.every(e=>e.idempotencyKey===h.prepared.idempotencyKey),true);
+ assert.equal(github.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,1);
+ const recovered=await reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,fetchImpl:github.fetchImpl});
+ assert.equal(recovered.status,'reconciled_success');
+ assert.equal(github.calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,1);
+});
+
+test('token exchange transport loss is classified before dispatch, not as an ambiguous GitHub write',async t=>{
+ const h=await admitted(t),calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method||'GET'});
+  throw Error('secret transport diagnostic must not be returned');
+ };
+ await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl}),/token-exchange-unavailable/);
+ assert.deepEqual(classifyPrCommentFailure(new Error('github-pr-comment-canary-token-exchange-unavailable')),
+  {stage:'credential_exchange',reason:'token-exchange-unavailable',dispatched:false});
+ const events=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage'"))
+  .rows.map(row=>row.details);
+ assert.ok(events.some(e=>e.stage==='credential_exchange_failed' && e.reason==='token-exchange-unavailable'));
+ assert.equal(events.some(e=>e.stage==='provider_write_intent'),false);
+ assert.equal((await h.db.query('SELECT state FROM github_pr_comment_executions')).rows[0].state,'reserved');
+ assert.equal(calls.length,1);
+ assert.doesNotMatch(JSON.stringify(events),/secret transport diagnostic/);
+});
+
+test('provider denial reports only safe HTTP status and preserves one-write idempotency',async t=>{
+ for(const status of [403,404,410,422,429,503]){
+  const h=await admitted(t),base=provider(h.prepared),calls=[];
+  const fetchImpl=async(url,options={})=>{
+   if(options.method==='POST'&&url.endsWith('/comments')){
+    calls.push(url);return response(status,{message:'sensitive-provider-explanation'});
+   }
+   return base.fetchImpl(url,options);
+  };
+  let denied;
+  try{await submitPrCommentCanary({db:h.db,prepared:h.prepared,
+   operationDigest:h.digest,appCredentials:APP,fetchImpl});}
+  catch(error){denied=error;}
+  assert.ok(denied);
+  assert.deepEqual(classifyPrCommentFailure(denied),
+   {stage:'provider_write',reason:'provider-write-denied',
+    dispatched:null,providerHttpStatus:status});
+  const rows=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage'"))
+   .rows.map(r=>r.details);
+  assert.ok(rows.some(e=>e.stage==='provider_write_intent'));
+  assert.ok(rows.some(e=>e.stage==='reconcile_required'&&
+   e.reason==='provider-write-denied'&&e.providerHttpStatus===status));
+  assert.equal((await h.db.query("SELECT state FROM github_pr_comment_executions"))
+   .rows[0].state,'reconcile_required');
+  assert.equal(calls.length,1);
+  assert.doesNotMatch(JSON.stringify(rows),/sensitive-provider-explanation/);
+ }
+});
+test('untrusted exceptions cannot smuggle fake status codes or secrets into diagnostics',()=>{
+ const malicious=Object.assign(new Error('Bearer sensitive'),{providerHttpStatus:403});
+ assert.deepEqual(classifyPrCommentFailure(malicious),
+  {stage:'unknown',reason:'unclassified',dispatched:null});
+ const invalid=Object.assign(new Error('github-pr-comment-canary-provider-write-denied'),
+  {providerHttpStatus:'403'});
+ assert.deepEqual(classifyPrCommentFailure(invalid),
+  {stage:'provider_write',reason:'provider-write-denied',dispatched:null});
+});
+
+test('owner-only GitHub App diagnostics are read-only and never make a comment',async t=>{
+ const h=await admitted(t),base=provider(h.prepared),calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method||'GET'});
+  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW'))
+   return response(200,{archived:false,disabled:false});
+  if(url.endsWith('/issues/437'))
+   return response(200,{number:437,state:'open',locked:false,pull_request:{url:'pr'}});
+  return base.fetchImpl(url,options);
+ };
+ const outcome=await diagnosePrCommentCanary({pullRequest:437,
+  appCredentials:APP,fetchImpl});
+ assert.deepEqual(outcome,{readOnly:true,repositoryHttpStatus:200,
+  issueHttpStatus:200,repositoryArchived:false,issueLocked:false,
+  issueState:'open',isPullRequest:true});
+ assert.equal(calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,0);
+ assert.equal((await h.db.query("SELECT state FROM github_pr_comment_executions"))
+  .rows[0].state,'reserved');
+});
+test('read-only preflight reports missing PR with only safe bounded HTTP metadata',async t=>{
+ const base=provider((await admitted(t)).prepared),calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method||'GET'});
+  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW'))
+   return response(200,{archived:false});
+  if(url.endsWith('/issues/437'))
+   return response(404,{message:'private-raw-provider-body'});
+  return base.fetchImpl(url,options);
+ };
+ const outcome=await diagnosePrCommentCanary({pullRequest:437,
+  appCredentials:APP,fetchImpl});
+ assert.deepEqual(outcome,{readOnly:true,repositoryHttpStatus:200,
+  issueHttpStatus:404,repositoryArchived:false,issueLocked:null,
+  issueState:null,isPullRequest:null});
+ assert.doesNotMatch(JSON.stringify(outcome),/private-raw-provider-body/);
+ assert.equal(calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,0);
 });
