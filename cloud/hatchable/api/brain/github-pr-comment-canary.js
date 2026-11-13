@@ -3,7 +3,7 @@ import {verifyDelegatedGrant,reservePrCommentExecution}
  from 'lib/security-adjudicator.js';
 import {preparePrCommentCanary,validatePreparedCanary,operationDigest,
  submitPrCommentCanary,reconcilePrCommentCanary,prCommentCanaryReadiness,
- prCommentCanaryEnabled,classifyPrCommentFailure}
+ prCommentCanaryEnabled,classifyPrCommentFailure,diagnosePrCommentCanary}
  from 'lib/github-pr-comment-canary.js';
 
 export const access='admin';
@@ -72,6 +72,19 @@ export default async function handler(req,res){
  catch{readiness={configured:false,status:'not-configured',missing:['readiness-unavailable']};}
  if(!readiness.enabled)return disabled(res);
  if(!readiness.configured)return notConfigured(res,readiness);
+ if(mode==='diagnose'){
+  // The only provider POST here is GitHub's installation-token exchange.
+  // Diagnostic mode performs repository and PR GETs, never a comment write.
+  try{
+   const probe=await diagnosePrCommentCanary({
+    pullRequest:req.body?.pullRequest,appCredentials:await appCredentials()});
+   return reply(res,200,{ok:true,status:'diagnosed',probe});
+  }catch(error){
+   const failure=classifyPrCommentFailure(error);
+   return reply(res,503,{ok:false,status:'diagnostic-unavailable',
+    reason:failure.reason});
+  }
+ }
  if(mode==='prepare'){
   try{
    const prepared=await preparePrCommentCanary({db,
