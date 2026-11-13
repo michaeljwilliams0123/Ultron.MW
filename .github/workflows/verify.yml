@@ -43,6 +43,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+      - name: Verify authored source and deployed mirror parity
+        run: node scripts/check-runtime-parity.mjs
       - name: Audit source for accidental credentials
         run: node scripts/audit-secret-isolation.mjs
       - name: Install audited locked model runtime
