@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash,createHmac} from 'node:crypto';
+import {createHash,createHmac,generateKeyPairSync,sign as signEd25519} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {enforceSignedApprovalAndTagPersona} from '../../../src/middleware/enforce-signed-approval.mjs';
+import {executeGovernedGitHubAppMutation} from '../index.mjs';
+import {createTrustedComposioCouncilVerifier,councilAttestationSigningBytes,createPostgresComposioCouncilNonceStore} from '../../../src/security/composio-council-attestation.mjs';
 import {requiredTokenPermissions} from '../../../src/github-principal-policy.mjs';
 import {
  createComposioDurableAppExecutor,isComposioDurableAppExecutor,
@@ -15,7 +17,7 @@ const OP='repair.branch.create',TASK='composio-canary-001';
 const branch='canary/composio-pr442-readback';
 const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 
-async function setup({initial='absent',callback='commit',auth=true,receiptLoss=false}={}){
+async function setup({initial='absent',callback='commit',auth=true,approve=true}={}){
  const db=new PGlite();
  try{
   for(const f of ['0037_github_approval_nonces.sql','0039_github_idempotent_executions.sql'])
@@ -39,8 +41,9 @@ async function setup({initial='absent',callback='commit',auth=true,receiptLoss=f
    token:'ci-test-scoped-app-token-not-live',...scope,installationId:42,
    expiresAt:new Date(now+600000).toISOString()
   })};
-  const approved=await enforceSignedApprovalAndTagPersona(operationRequest,tokenFactory,
-   {db,trustedKey:KEY,expectedInstallationId:42,clock:()=>now});
+  const ownerTrust={db,trustedKey:KEY,expectedInstallationId:42,clock:()=>now};
+  const approved=approve?await enforceSignedApprovalAndTagPersona(
+   operationRequest,tokenFactory,ownerTrust):null;
   let remote=initial,writes=0,reads=0,authorizations=0;
   const services={
    db,clock:()=>now,
@@ -63,12 +66,14 @@ async function setup({initial='absent',callback='commit',auth=true,receiptLoss=f
    if(callback==='throw-before'){throw Error('timeout before network effect');}
    if(callback==='commit'||callback==='commit-lost-ack')remote='matched';
    if(callback==='commit-lost-ack')throw Error('lost response after mutation');
+   if(callback==='write-403'){remote='throw-403';throw Error('write failed: HTTP 403');}
    if(callback==='http-200-no-op')return {status:200};
    return {status:201};
   };
   const executor=createComposioDurableAppExecutor({services,gitOperation});
-  return {db,approved,executor,get writes(){return writes;},
-    get reads(){return reads;},get authorizations(){return authorizations;},
+  return {db,approved,executor,now,operationRequest,tokenFactory,ownerTrust,
+    get writes(){return writes;},get reads(){return reads;},
+    get authorizations(){return authorizations;},
     setRemote:x=>{remote=x;}};
  }catch(e){await db.close();throw e;}
 }
@@ -165,5 +170,64 @@ test('ad hoc callback and forged authorization object cannot impersonate the vet
    persona:h.approved.persona,token:'fake-token'};
   await assert.rejects(h.executor(forged),/trusted approved operation required/);
   assert.equal(h.writes,0);
+ }finally{await h.db.close();}
+});
+
+test('401/403 reported during mutation stays unresolved and cannot auto-repeat a write',async()=>{
+ const h=await setup({callback:'write-403'});
+ try{
+  const first=await h.executor(h.approved);
+  assert.equal(first.status,'reconcile_required');
+  assert.equal(first.details.remoteVerified,false);
+  assert.equal(h.writes,1);
+  const second=await h.executor(h.approved);
+  assert.equal(second.status,'reconcile_required');
+  assert.equal(h.writes,1);
+  const row=await h.db.query('SELECT state,receipt FROM github_idempotent_executions');
+  assert.equal(row.rows[0].state,'reconcile_required');
+  assert.equal(row.rows[0].receipt,null);
+ }finally{await h.db.close();}
+});
+test('fully signed Council and owner plans reach only the real durable App executor',async()=>{
+ const h=await setup({approve:false});
+ try{
+  const {publicKey,privateKey}=generateKeyPairSync('ed25519');
+  const envelope={
+   schema:'ultron.composio.council-attestation.v1',
+   keyId:'council-release-main',
+   sourceSha:SOURCE,prNumber:442,
+   issuedAt:h.now-1000,expiresAt:h.now+240000,
+   nonce:'council-composio-readback-'+String(h.now)+'-abcdefgh',
+   result:{status:'accepted',approvedCount:7,securitySensitive:false,
+    sourceSha:SOURCE,prNumber:442},
+  };
+  const raw={...envelope,signature:'A'.repeat(86)};
+  const signature=signEd25519(null,councilAttestationSigningBytes(raw),privateKey).toString('base64url');
+  const councilAttestation={...envelope,signature};
+  const verifyCouncilAttestation=createTrustedComposioCouncilVerifier({
+   keys:{'council-release-main':publicKey},
+   nonceStore:createPostgresComposioCouncilNonceStore({db:h.db}),
+   clock:()=>h.now,
+  });
+  const receipt=await executeGovernedGitHubAppMutation({
+   operationRequest:h.operationRequest,
+   tokenFactory:h.tokenFactory,
+   trusted:{...h.ownerTrust,verifyCouncilAttestation},
+   councilAttestation,sha:SOURCE,prNumber:442,
+   durableAppExecutor:h.executor,
+  });
+  assert.equal(receipt.status,'success');
+  assert.equal(receipt.details.remoteVerified,true);
+  assert.equal(h.writes,1);
+  const nonceCounts=await h.db.query(
+   'SELECT count(*)::int AS n FROM brain_github_approval_nonces');
+  assert.equal(nonceCounts.rows[0].n,2,'Council and owner nonces are distinct and both persisted');
+  await assert.rejects(executeGovernedGitHubAppMutation({
+   operationRequest:h.operationRequest,tokenFactory:h.tokenFactory,
+   trusted:{...h.ownerTrust,verifyCouncilAttestation},
+   councilAttestation,sha:SOURCE,prNumber:442,
+   durableAppExecutor:h.executor,
+  }),/Council attestation verification failed/);
+  assert.equal(h.writes,1);
  }finally{await h.db.close();}
 });
