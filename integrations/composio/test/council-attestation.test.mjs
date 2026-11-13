@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {generateKeyPairSync,sign as ed25519Sign} from 'node:crypto';
+import {generateKeyPairSync,sign as ed25519Sign,randomUUID} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
+import {PGlite} from '@electric-sql/pglite';
 import {
  createTrustedComposioCouncilVerifier,councilAttestationSigningBytes,
- isTrustedComposioCouncilVerifier,
+ isTrustedComposioCouncilVerifier,createPostgresComposioCouncilNonceStore,
 } from '../../../src/security/composio-council-attestation.mjs';
 import {executeGovernedGitHubAppMutation} from '../index.mjs';
 
@@ -124,4 +126,27 @@ test('malformed envelope fields or invalid key types are rejected before provide
  }),/untrusted Council public key/);
  const e=fixture();
  assert.throws(()=>councilAttestationSigningBytes({...e,token:'secret'}),/invalid attestation envelope/);
+});
+
+test('PostgreSQL atomically consumes the Council nonce across store reinitialization',async()=>{
+ const db=new PGlite();
+ try{
+  const path=new URL('../../../cloud/hatchable/migrations/0037_github_approval_nonces.sql',import.meta.url);
+  await db.exec(await readFile(path,'utf8'));
+  const at=Date.now(),nonce='council-db-'+randomUUID().replace(/-/g,'');
+  const request={keyId:KID,nonce,sourceSha:HEAD,prNumber:PR,
+   issuedAt:at,expiresAt:at+240000};
+  const first=createPostgresComposioCouncilNonceStore({db});
+  const restarted=createPostgresComposioCouncilNonceStore({db});
+  assert.equal(await first.consume(request),true);
+  assert.equal(await restarted.consume(request),false);
+  const {rows}=await db.query(
+   'SELECT operation,target_resource,nonce FROM brain_github_approval_nonces WHERE nonce=$1',
+   [nonce]);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].operation,'ultron.composio.council-attestation.v1');
+  assert.equal(rows[0].nonce,nonce);
+  assert.ok(rows[0].target_resource.includes(HEAD));
+  assert.ok(rows[0].target_resource.includes(String(PR)));
+ }finally{await db.close();}
 });
