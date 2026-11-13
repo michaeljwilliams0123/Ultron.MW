@@ -71,7 +71,7 @@ async function setup({initial='absent',callback='commit',auth=true,approve=true}
      return {ok:true,status:200,json:async()=>({
       sha:REMOTE,
       message:remote==='conflict'?'unrelated operation':
-       'signed canary\\n\\nUltron-Operation-Digest: '+digest(plan),
+       'signed canary\n\nUltron-Operation-Digest: '+digest(plan),
       parents:[{sha:SOURCE}],tree:{sha:'c'.repeat(40)}
      })};
     return {ok:false,status:404};
