@@ -71,14 +71,6 @@ jobs:
           npm test --prefix integrations/composio
           node scripts/audit-route-references.mjs > /tmp/ultron-route-audit.json
           node integrations/composio/verify-live-primary.mjs --dry-run
-      - name: Export isolated Composio lockfile for deterministic review
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: composio-lock-${{ github.event.pull_request.head.sha }}
-          path: integrations/composio/package-lock.json
-          if-no-files-found: error
-          retention-days: 1
   attested-receipt:
     needs: test
     if: >-
