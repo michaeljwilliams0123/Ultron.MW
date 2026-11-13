@@ -1,4 +1,4 @@
-# Omni Shadow Execution Evidence — migration 0047
+# Omni Shadow Execution Evidence — migration 0049
 
 **State:** additive source-only candidate. Not deployed. No GitHub mutations, no paid inference, no new owner-grant issuance.
 
@@ -6,7 +6,7 @@
 
 The canonical repo already has durable intent/receipt systems: 0013 Continuum outbox, 0028 Council execution ledger,
 0039 branch writes, 0041 PR comment writes, and 0045 deep mutation ledger. A separate executing transport
-would duplicate authority and bypass protected evidence. The 0047 scope is a read/advisory-only, inert evidence
+would duplicate authority and bypass protected evidence. The 0049 scope is a read/advisory-only, inert evidence
 layer for testing lifecycle integrity before independently reviewed integration.
 
 ## States and acceptance
@@ -45,6 +45,12 @@ Tests cover full advisory lifecycle, canonical replay, changed nonce payload, so
 direct SQL transition skipping, terminal immutability, seven unverified advisory signatures,
 real P-256 grant signatures, expired/tampered grants, provider readback denial, and inert tool manifests.
 
-Do not apply 0047 to production or enable new routes merely because CI is green. The outstanding
+Do not apply 0049 to production or enable new routes merely because CI is green. The outstanding
 Council App, credential custody, owner passkey and provider-receipt acceptance checks remain mandatory.
 Release changes require a separate reviewed PR and an authorized end-to-end mutation canary.
+
+## Canonical migration coexistence
+
+PR #443 owns `0047_omni_state_machine.sql`: the authoritative projection over the already-existing signed inbox and GitHub 0039 idempotency ledger. This proposal reserves `0049_omni_shadow_evidence.sql` exclusively for its **inactive read/advisory shadow records**. It does not install or activate a second mutation authority. PR #442 independently owns Composio migration 0048.
+
+Before any rollout, run the combined 0046 → canonical 0047 → 0048 → 0049 PostgreSQL migration suite on a clean database, then replay/mismatch/rollback tests, and verify exact deployed manifests. This branch alone cannot establish combined runtime acceptance or Council approval.
