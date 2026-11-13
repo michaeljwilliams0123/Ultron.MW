@@ -40,6 +40,7 @@ const votes=intent=>{
 };
 const envelope=()=>({source:SOURCE,deliveryId:DELIVERY,taskKey:'task-uuam-001',
   rawBody:PAYLOAD,operationDigest:DIGEST,githubIdempotencyKey:TASK,
+  nonce:'c'.repeat(32),
   signatureHeaders:{'x-hub-signature-256':'test-fixture'}});
 const setup=async()=>{
   const db=new PGlite();
