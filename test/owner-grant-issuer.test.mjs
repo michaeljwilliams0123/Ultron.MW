@@ -53,3 +53,25 @@ test('owner key creation refuses a private key inside checked-in source',async()
   privateFile:fileURLToPath(keyFile),publicFile:fileURLToPath(keyFile)+'.public'
  }),/private-key-inside-repository/);
 });
+
+test('PR-comment owner grants never exceed the verifier five-minute TTL including clock skew',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'ultron-owner-ttl-'));
+ try{
+  const privateFile=join(dir,'owner-private.jwk');
+  const publicFile=join(dir,'owner-public.jwk');
+  await generateOwnerKeyPair({privateFile,publicFile});
+  const now=Date.UTC(2026,10,12,20,0);
+  const target={
+   ...request,operation:'pr.comment',
+   policySha:'742eeeaa209cebeb376c23778918082ebc07efa1b25f9ecb2ad77a3acf82a7ac',
+   resource:'github:pr-comment:michaeljwilliams0123/Ultron.MW:437:sha256:'+'a'.repeat(64)
+  };
+  const envelope=await signOwnerGrant({privateFile,request:target,now});
+  const payload=JSON.parse(envelope.payload);
+  const actualTtl=Date.parse(payload.expiresAt)-Date.parse(payload.notBefore);
+  assert.ok(actualTtl<=5*60000,'issued PR-comment grants must honor the inclusive verifier TTL');
+  await verifyDelegatedGrant({envelope,
+   publicJwk:JSON.parse(await readFile(publicFile,'utf8')),request:target,
+   now:new Date(now).toISOString(),subtle:webcrypto.subtle});
+ }finally{await rm(dir,{recursive:true,force:true});}
+});

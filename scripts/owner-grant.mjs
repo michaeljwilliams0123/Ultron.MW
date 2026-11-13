@@ -71,7 +71,9 @@ export async function signOwnerGrant({privateFile,request,now=Date.now()}={}){
   authorizedBy:OWNER,audience:'ultron-cloud-brain',
   grantId:'owner-'+randomUUID(),policySha:request.policySha,
   notBefore:new Date(now-1000).toISOString(),
-  expiresAt:new Date(now+5*60_000).toISOString(),
+  // The PR-comment verifier caps total validity at five minutes including
+  // the backdated notBefore second. Leave a margin for clock drift.
+  expiresAt:new Date(now+4*60_000).toISOString(),
   actor:request.actor,objectiveId:request.objectiveId,
   operation:request.operation,resource:request.resource,
   administrativeChange:request.administrativeChange,
