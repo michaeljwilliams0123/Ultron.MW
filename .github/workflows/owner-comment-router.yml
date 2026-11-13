@@ -184,6 +184,7 @@ jobs:
       )
     permissions:
       contents: read
+      checks: read
       issues: write
       pull-requests: write
       id-token: write
