@@ -52,10 +52,11 @@ export class DurableOutboxHandler {
 
   /** Verify raw ingress before persisting; bind duplicate IDs to exact bytes. */
   async ingestEvent({source,deliveryId,taskKey,rawBody,operationDigest,
-    githubIdempotencyKey,signatureHeaders}={}){
+    githubIdempotencyKey,nonce,signatureHeaders}={}){
     if(!ID.test(source||'')||!ID.test(deliveryId||'')||
        !ID.test(taskKey||'')||!HEX.test(operationDigest||'')||
        !TASK.test(githubIdempotencyKey||'')||
+       !/^[a-f0-9]{32,64}$/.test(nonce||'')||
        !Buffer.isBuffer(rawBody)||rawBody.length<1||
        rawBody.length>1048576)
       fail('invalid event envelope');
@@ -78,16 +79,17 @@ export class DurableOutboxHandler {
         fail('conflicting delivery identity or payload');
       await db.query(
         'INSERT INTO brain_omni_execution_state'+
-        '(inbox_id,operation_digest,github_idempotency_key) '+
-        'VALUES($1,$2,$3) ON CONFLICT(inbox_id) DO NOTHING',
-        [row.id,operationDigest,githubIdempotencyKey]);
+        '(inbox_id,operation_digest,github_idempotency_key,ingress_nonce) '+
+        'VALUES($1,$2,$3,$4) ON CONFLICT(inbox_id) DO NOTHING',
+        [row.id,operationDigest,githubIdempotencyKey,nonce]);
       const projection=rows(await db.query(
-        'SELECT inbox_id,operation_digest,github_idempotency_key,state '+
+        'SELECT inbox_id,operation_digest,github_idempotency_key,ingress_nonce,state '+
         'FROM brain_omni_execution_state WHERE inbox_id=$1 FOR UPDATE',
         [row.id]))[0];
       if(!projection||projection.operation_digest!==operationDigest||
-         projection.github_idempotency_key!==githubIdempotencyKey)
-        fail('conflicting idempotency or operation digest');
+         projection.github_idempotency_key!==githubIdempotencyKey||
+         projection.ingress_nonce!==nonce)
+        fail('conflicting idempotency, nonce or operation digest');
       return Object.freeze({inboxId:Number(row.id),
         state:projection.state,reused:rows(inserted).length===0});
     });
