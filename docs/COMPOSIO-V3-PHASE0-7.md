@@ -5,7 +5,7 @@ Status: source candidate on PR #442. **No production Composio Platform credentia
 ## Phase 0 — Preflight
 - Canonical repository: michaeljwilliams0123/Ultron.MW, ID 1424939667; canonical owner ID 308995719; delegated user ID 354634860.
 - Both historical migration names 0039_autonomous_repair_checkpoints.sql and 0039_github_idempotent_executions.sql are separate files, each with a separate database table already observed on Hatchable. Do not rename, consolidate or replay them.
-- Add migration 0046_composio_sessions.sql only. It seeds two PENDING principals and stores ID references and hash digests, not secrets.
+- Add migration 0048_composio_sessions.sql only. It seeds two PENDING principals and stores ID references and hash digests, not secrets.
 - Baseline verification runs in the existing canonical GitHub Verify workflow: scripts/verify-fast.mjs and scripts/audit-route-references.mjs; the Composio SDK is installed and tested as an additional existing Verify job step without creating a ninth workflow. scripts/verify-hatchable-parity.mjs needs --manifest FILE --version N --head SHA; live parity must remain unverified until an exact pinned deployment manifest is available.
 - src/server.mjs and src/capability-bindings.mjs remain unchanged. cloud/hatchable/OPENAI-AGENTS-INTEGRATION.md remains a design, not a deployed Composio gateway.
 
@@ -44,7 +44,7 @@ Status: source candidate on PR #442. **No production Composio Platform credentia
 
 ## Phase 7 — Canaries and acceptance
 - Live ChatGPT-connected Composio readbacks of the owner and contributor have succeeded in prior work, as has a bounded sandbox issue-write/independent readback/closure. Those do **not** demonstrate Hatchable-to-Composio Platform production acceptance.
-- Platform production acceptance requires verified owner credential binding and Custom Auth Config ID; an enrolled/revocable delegated grant; server-only scoped API key; exact account pin and default owner readback; committed 0046 applied; independently persisted/read-back session receipt; Hatchable deployment manifest parity; and exact-head CI with no release policy bypass.
+- Platform production acceptance requires verified owner credential binding and Custom Auth Config ID; an enrolled/revocable delegated grant; server-only scoped API key; exact account pin and default owner readback; committed 0048 applied; independently persisted/read-back session receipt; Hatchable deployment manifest parity; and exact-head CI with no release policy bypass.
 - Do not mark productionAccepted:true or squash merge until those actual conditions pass.
 
 Official sources:
