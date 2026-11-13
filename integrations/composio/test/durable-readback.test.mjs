@@ -53,10 +53,29 @@ async function setup({initial='absent',callback='commit',auth=true,approve=true}
      repository:intent.repository,targetBranch:intent.targetBranch,
      personaRole:intent.personaRole,expiresAt:new Date(now+240000).toISOString()};
    }},
-   remote:{inspect:async()=>{reads++;
-    if(remote==='throw-403')throw Error('403 token revoked');
-    return {state:remote,sha:remote==='matched'?REMOTE:undefined};
-   }},
+   fetchImpl:async (url,opts={})=>{
+    reads++;
+    assert.equal(opts.headers.Authorization,'Bearer ci-test-scoped-app-token-not-live');
+    if(remote==='throw-403')return {ok:false,status:403};
+    if(url.includes('/git/ref/heads/')){
+     if(remote==='absent')return {ok:false,status:404};
+     return {ok:true,status:200,json:async()=>({
+      object:{type:'commit',sha:REMOTE},
+     })};
+    }
+    if(url.endsWith('/git/commits/'+SOURCE))
+     return {ok:true,status:200,json:async()=>({
+      sha:SOURCE,tree:{sha:'c'.repeat(40)}
+     })};
+    if(url.endsWith('/git/commits/'+REMOTE))
+     return {ok:true,status:200,json:async()=>({
+      sha:REMOTE,
+      message:remote==='conflict'?'unrelated operation':
+       'signed canary\\n\\nUltron-Operation-Digest: '+digest(plan),
+      parents:[{sha:SOURCE}],tree:{sha:'c'.repeat(40)}
+     })};
+    return {ok:false,status:404};
+   },
   };
   const gitOperation=async request=>{
    writes++;
@@ -160,6 +179,19 @@ test('concurrent duplicate operations share one 0039 admission row and at most o
   assert.equal(results.filter(r=>r.status==='fulfilled'&&r.value.status==='success').length,1);
   const row=await h.db.query('SELECT count(*)::int AS count FROM github_idempotent_executions');
   assert.equal(row.rows[0].count,1);
+ }finally{await h.db.close();}
+});
+test('caller-supplied remote inspector cannot replace audited GitHub GET verification',async()=>{
+ const h=await setup();
+ try{
+  assert.throws(()=>createComposioDurableAppExecutor({
+   services:{
+    db:h.db,authorization:{verify:async()=>({verified:true})},
+    remote:{inspect:async()=>({state:'matched',sha:REMOTE})},
+    fetchImpl:async()=>({ok:false,status:503}),
+   },
+   gitOperation:async()=>({status:200}),
+  }),/direct inspector override denied/);
  }finally{await h.db.close();}
 });
 test('ad hoc callback and forged authorization object cannot impersonate the vetted executor',async()=>{
