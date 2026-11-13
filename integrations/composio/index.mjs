@@ -11,6 +11,7 @@ import {
 } from '../../src/composio-v3-policy.mjs';
 import {enforceSignedApprovalAndTagPersona} from '../../src/middleware/enforce-signed-approval.mjs';
 import {gatePasses} from '../../src/council-trusted-gate.mjs';
+import {isTrustedComposioCouncilVerifier} from '../../src/security/composio-council-attestation.mjs';
 
 const SHA=/^[a-f0-9]{40}$/;
 const SESSION=/^[A-Za-z0-9_-]{8,160}$/;
@@ -166,14 +167,30 @@ export function createComposioV3Worker({
  * The existing executor must reserve its 0039 idempotency row before network.
  */
 export async function executeGovernedGitHubAppMutation({
- operationRequest,tokenFactory,trusted,councilResult,sha,prNumber,
+ operationRequest,tokenFactory,trusted,councilAttestation,sha,prNumber,
  durableAppExecutor
 }={}){
- if(typeof durableAppExecutor!=='function'||!gatePasses(councilResult,sha,prNumber))
-  deny('trusted Council and durable App executor required');
+ // The caller cannot supply a bare councilResult, status string or boolean.
+ // Only a verifier constructed with pinned Ed25519 keys and a durable nonce
+ // consumer can admit a Council result. The trusted backend supplies it.
+ if(typeof durableAppExecutor!=='function'||
+    !isTrustedComposioCouncilVerifier(trusted?.verifyCouncilAttestation))
+  deny('trusted Council attestation verifier required');
+ let verifiedCouncil;
+ try{
+  verifiedCouncil=await trusted.verifyCouncilAttestation(councilAttestation,{
+   sourceSha:sha,prNumber
+  });
+ }catch{
+  deny('Council attestation verification failed');
+ }
+ if(!gatePasses(verifiedCouncil,sha,prNumber))
+  deny('verified Council release gate held');
  const approved=await enforceSignedApprovalAndTagPersona(
   operationRequest,tokenFactory,trusted);
  if(!approved?.authorized)deny('owner cryptographic authorization required');
  // The passed executor is a trusted backend function, never agent-controlled.
+ // The executor must independently reserve and reconcile migration 0039
+ // idempotency state; a Council signature never substitutes for owner grant.
  return durableAppExecutor(approved);
 }
