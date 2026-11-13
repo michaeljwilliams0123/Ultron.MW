@@ -180,6 +180,6 @@ test('Hatchable route is public POST and requires signed raw body before DB',asy
   assert.match(text,/export const methods\s*=\s*\['POST'\]/);
   assert.match(text,/req\.rawBody/);
   assert.match(text,/ULTRON_UUAM_DELIVERY_HMAC_KEY/);
-  assert.match(text,/ULTRON_UUAM_INBOX_ENABLED/);
+  assert.match(text,/uuam_inbox_enabled/);
   assert.doesNotMatch(text,/staging-secret|DATABASE_URL|process\.env/);
 });
