@@ -38,6 +38,13 @@ function configContainsExpected(config,expected,profile){
  const multi=config.multi_account||config.multiAccount;
  if(profile==='multi-account'&&(!multi?.enable||multi?.require_explicit_selection!==true&&
    multi?.requireExplicitSelection!==true))return false;
+ const sandbox=config.sandbox||config.workbench;
+ if(!sandbox||sandbox.enable!==false&&sandbox.enabled!==false)return false;
+ const manager=config.manage_connections||config.manageConnections;
+ if(manager&&(manager.enable===true||manager.enabled===true))return false;
+ const proxy=config.proxy_execute??config.proxyExecute;
+ const enabledProxy=proxy===true||proxy?.enable===true;
+ if(enabledProxy!==(profile==='primary-proxy'))return false;
  if(profile!=='multi-account'&&multi?.enable===true)return false;
  return true;
 }
@@ -53,7 +60,7 @@ export function createComposioV3Worker({
   client=new Composio({apiKey});
  }
  if(!client||typeof client.create!=='function'||typeof client.use!=='function'||
-   !store||['read','reserve','activate','reconcile'].some(k=>typeof store[k]!=='function')||
+   !store||['read','reserve','activate','reconcile','recordObservation'].some(k=>typeof store[k]!=='function')||
    typeof userId!=='string'||!/^ultron-owner-[0-9]{6,20}$/.test(userId)||
    !SHA.test(sourceSha||''))deny('trusted SDK/store/source configuration incomplete');
  const policies=Object.freeze({
@@ -125,9 +132,14 @@ export function createComposioV3Worker({
      repo.owner?.login!=='michaeljwilliams0123'||Number(repo.owner?.id)!==308995719||
      repo.permissions?.pull!==true||actor==='mw-primary'&&repo.permissions?.admin!==true)
    deny('canonical repository readback mismatch');
+  const observationDigest=hash({actor,githubUserId:expected.id,repositoryId:COMPOSIO_OWNER.repositoryId,sourceSha});
+  const persisted=await store.recordObservation({sessionId:session.sessionId,
+   actor,sourceSha,githubUserId:expected.id,
+   repositoryId:COMPOSIO_OWNER.repositoryId,observationDigest});
+  if(persisted?.verified!==true)deny('PostgreSQL independent readback required');
   return Object.freeze({schema:'ultron.composio.v3.read-receipt',
    verified:true,effect:'read',actor,githubUserId:expected.id,
-   repositoryId:COMPOSIO_OWNER.repositoryId,sourceSha});
+   repositoryId:COMPOSIO_OWNER.repositoryId,sourceSha,receiptKey:persisted.receiptKey});
  }
  async function proxyRead({actor,endpoint,profile='primary-proxy'}={}){
   const request=requireComposioProxyRead({actor,profile,method:'GET',endpoint});
