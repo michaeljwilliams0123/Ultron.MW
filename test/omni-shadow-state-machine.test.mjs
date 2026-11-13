@@ -12,7 +12,7 @@ const hash=x=>createHash('sha256').update(canonicalJson(x)).digest('hex');
 
 async function fixture(){
  const db=new PGlite();
- for(const file of ['0008_admin_grants.sql','0047_omni_state_machine.sql'])
+ for(const file of ['0008_admin_grants.sql','0049_omni_shadow_evidence.sql'])
   await db.exec(await readFile(new URL('../cloud/hatchable/migrations/'+file,import.meta.url),'utf8'));
  const {publicKey,privateKey}=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
  return {db,privateKey,machine:createOmniShadowMachine({db,ownerPublicJwk:publicKey.export({format:'jwk'})}),close:()=>db.close()};
@@ -29,10 +29,10 @@ async function grantRow(f,event,grant){
  [grant.grantId,'omni-event:'+event.id+':sha256:'+event.payloadSha256,event.payloadSha256,grant.expiresAt]);
 }
 
-test('0047 schema is repeatable and tool proposals cannot self-activate',async()=>{
+test('0049 shadow schema is repeatable and tool proposals cannot self-activate',async()=>{
  const f=await fixture();
  try{
-  await f.db.exec(await readFile(new URL('../cloud/hatchable/migrations/0047_omni_state_machine.sql',import.meta.url),'utf8'));
+  await f.db.exec(await readFile(new URL('../cloud/hatchable/migrations/0049_omni_shadow_evidence.sql',import.meta.url),'utf8'));
   const tables=(await f.db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'brain_omni_%'")).rows.map(x=>x.table_name);
   for(const name of ['brain_omni_shadow_events','brain_omni_advisory_signatures','brain_omni_candidate_tools','brain_omni_transition_events'])assert.ok(tables.includes(name),name);
   await f.db.query("INSERT INTO brain_omni_candidate_tools(tool_name,manifest,manifest_sha256) VALUES($1,'{}',$2)",['proposed.inactive','f'.repeat(64)]);
