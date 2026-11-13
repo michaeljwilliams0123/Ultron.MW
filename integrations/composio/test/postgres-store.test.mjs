@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {createComposioPostgresStore} from '../postgres-store.mjs';
 
-const migration=new URL('../../../cloud/hatchable/migrations/0046_composio_sessions.sql',import.meta.url);
+const migration=new URL('../../../cloud/hatchable/migrations/0048_composio_sessions.sql',import.meta.url);
 const ids={primaryAccountId:'ca_primary_worker_123',executorAccountId:'ca_admin_worker_456'};
 const config='ac_custom_verified_123';
 const hash='a'.repeat(64),sha='b'.repeat(40);
