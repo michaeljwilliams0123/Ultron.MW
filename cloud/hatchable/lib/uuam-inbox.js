@@ -45,8 +45,16 @@ export async function verifyUuamDelivery({
 }={}){
  if(typeof secret!=='string'||encoder.encode(secret).length<32||!subtle)
    error('authentication-unconfigured');
- if(typeof raw!=='string'||encoder.encode(raw).length<20||
-    encoder.encode(raw).length>MAX_BYTES+4096)error('invalid');
+ // Hatchable can expose the unchanged HTTP body as text or raw bytes.
+ // Decode bytes strictly; replacement characters would invalidate HMAC bytes.
+ let rawText;
+ try{
+   rawText=typeof raw==='string'?raw:
+     raw instanceof Uint8Array?
+       new TextDecoder('utf-8',{fatal:true}).decode(raw):null;
+ }catch{error('invalid');}
+ if(typeof rawText!=='string'||encoder.encode(rawText).length<20||
+    encoder.encode(rawText).length>MAX_BYTES+4096)error('invalid');
  if(typeof timestamp!=='string'||!/^[0-9]{10}$/.test(timestamp)||
     !Number.isSafeInteger(now)||Math.abs(now-Number(timestamp)*1000)>300000)
    error('timestamp-invalid');
@@ -57,12 +65,12 @@ export async function verifyUuamDelivery({
    const key=await subtle.importKey('raw',encoder.encode(secret),
      {name:'HMAC',hash:'SHA-256'},false,['verify']);
    valid=await subtle.verify('HMAC',key,fromHex(m[1]),
-     encoder.encode(timestamp+'.'+raw));
+     encoder.encode(timestamp+'.'+rawText));
  }catch{error('signature-invalid');}
  if(!valid)error('signature-invalid');
  let envelope,original;
  try{
-   envelope=JSON.parse(raw);
+   envelope=JSON.parse(rawText);
    if(!validEnvelope(envelope,now))error('invalid');
    original=JSON.parse(envelope.rawBody);
    if(!validEvent(original))error('invalid');
