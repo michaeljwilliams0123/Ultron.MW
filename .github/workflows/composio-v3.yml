@@ -40,3 +40,5 @@ jobs:
         run: node scripts/audit-route-references.mjs > /tmp/ultron-route-audit.json
       - name: Fast baseline verification
         run: node scripts/verify-fast.mjs
+      - name: Validate Phase 7 primary canary without credentials
+        run: node integrations/composio/verify-live-primary.mjs --dry-run
