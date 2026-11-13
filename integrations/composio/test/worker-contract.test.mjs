@@ -6,7 +6,7 @@ const sha='a'.repeat(40);
 function fake(){
  const used=[],state=new Map(),writes=[];
  const serverConfig=p=>({
-  instant:false,toolkits:{enabled:['github']},
+  instant:false,toolkits:{enabled:['github']},sandbox:{enable:false},proxy_execute:{enable:!!p.proxyExecute},
   tools:{github:{enabled:p.tools.github.enable}},
   connected_accounts:{github:p.connectedAccounts.github},
   multi_account:{enable:p.multiAccount.enable,
@@ -33,7 +33,8 @@ function fake(){
   async read(){return state.get('record');},
   async reserve(){return {ok:true,id:'lease123'};},
   async activate(v){state.set('record',{status:'active',...v});state.set('session',session);},
-  async reconcile(){used.push({action:'reconcile'});}
+  async reconcile(){used.push({action:'reconcile'});},
+  async recordObservation(){used.push({action:'receipt'});return {verified:true,receiptKey:'receipt_mock_123'};}
  };
  // Preserve object identity after create and activation.
  const create=client.create.bind(client);
@@ -50,6 +51,7 @@ test('creates scoped owner direct session, verifies readback and reuses persiste
    accountIds:ids,userId:'ultron-owner-308995719',sourceSha:sha});
  const receipt=await worker.inspect({actor:'mw-primary'});
  assert.equal(receipt.verified,true);
+ assert.equal(receipt.receiptKey,'receipt_mock_123');
  assert.equal(receipt.githubUserId,308995719);
  assert.equal(f.used.filter(x=>x.action==='create').length,1);
  const second=await worker.inspect({actor:'mw-primary'});
