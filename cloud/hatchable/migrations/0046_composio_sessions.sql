@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS brain_composio_sessions (
 CREATE UNIQUE INDEX IF NOT EXISTS brain_composio_one_active_session_per_profile
  ON brain_composio_sessions(principal_key,session_profile)
  WHERE status='active';
+-- No overlapping in-flight or ambiguous session creation for a profile.
+CREATE UNIQUE INDEX IF NOT EXISTS brain_composio_one_unsettled_session
+ ON brain_composio_sessions(principal_key,session_profile)
+ WHERE status IN ('reserved','active','reconcile-required');
 CREATE INDEX IF NOT EXISTS brain_composio_sessions_updated
  ON brain_composio_sessions(status,updated_at);
 
