@@ -135,3 +135,12 @@ test('ambiguous GitHub response never blindly resubmits; owner can reconcile rea
  assert.equal(h.requests.filter(x=>x.body.mode==='submit').length,1);
  assert.match(h.element('gh-status-text').textContent,/reconciled/i);
 });
+
+test('rapid concurrent clicks cannot authorize two branch submissions',async()=>{
+ const h=fixture();
+ await h.click('gh-check');await h.click('gh-prepare');
+ h.setClipboard(h.signed());await h.click('gh-paste');
+ await Promise.all([h.click('gh-submit'),h.click('gh-submit')]);
+ assert.equal(h.requests.filter(x=>x.body.mode==='submit').length,1);
+ assert.equal(h.confirmations(),1);
+});
