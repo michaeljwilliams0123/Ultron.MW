@@ -189,9 +189,19 @@ export async function executeGovernedGitHubAppMutation({
   deny('verified Council release gate held');
  if(!isComposioDurableAppExecutor(durableAppExecutor))
   deny('trusted durable GitHub App executor required');
+ // Council proof and the separately owner-signed operation must authorize
+ // the same exact commit. Reject a known mismatch BEFORE consuming the owner
+ // grant nonce or minting an installation token.
+ const submittedHead=operationRequest?.payload?.parameters?.sourceSha;
+ if(typeof submittedHead==='string'&&submittedHead!==sha)
+  deny('Council and owner source-head mismatch');
  const approved=await enforceSignedApprovalAndTagPersona(
   operationRequest,tokenFactory,trusted);
  if(!approved?.authorized)deny('owner cryptographic authorization required');
+ // Recheck the cryptographically verified frozen payload after any awaits;
+ // a caller-mutated request cannot change the already signed target head.
+ if(approved.executionPayload?.parameters?.sourceSha!==sha)
+  deny('Council and owner source-head mismatch');
  // The passed executor is a trusted backend function, never agent-controlled.
  // The executor must independently reserve and reconcile migration 0039
  // idempotency state; a Council signature never substitutes for owner grant.
