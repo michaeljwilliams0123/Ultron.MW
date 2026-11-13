@@ -183,3 +183,12 @@ test('Hatchable route is public POST and requires signed raw body before DB',asy
   assert.match(text,/uuam_inbox_enabled/);
   assert.doesNotMatch(text,/staging-secret|DATABASE_URL|process\.env/);
 });
+
+test('receiver authenticates the exact HMAC when Hatchable supplies Uint8Array rawBody',async()=>{
+ const wire=await received();
+ const bytes=te.encode(wire.raw);
+ const verified=await verify({...wire,raw:bytes});
+ assert.equal(verified.deliveryId,BODY.deliveryId);
+ assert.equal(verified.payloadSha256,await sha(raw(BODY)));
+ await assert.rejects(verify({...wire,raw:new Uint8Array([0xc3,0x28])}),/invalid/i);
+});
