@@ -42,7 +42,7 @@ const received=async(body=BODY,params={})=>{
   return {raw:original,timestamp,signature:'sha256='+sig,
     secret:KEY,subtle:webcrypto.subtle};
 };
-const verify=async wire=>verifyUuamDelivery({...wire,now:Date.now()});
+const verify=async wire=>verifyUuamDelivery({now:Date.now(),...wire});
 const dbFixture=async()=>{
   const db=new PGlite();
   for(const name of ['0008_admin_grants.sql','0009_signed_event_inbox.sql',
