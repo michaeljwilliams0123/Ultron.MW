@@ -12,6 +12,7 @@ import {
 import {enforceSignedApprovalAndTagPersona} from '../../src/middleware/enforce-signed-approval.mjs';
 import {gatePasses} from '../../src/council-trusted-gate.mjs';
 import {isTrustedComposioCouncilVerifier} from '../../src/security/composio-council-attestation.mjs';
+import {isComposioDurableAppExecutor} from './durable-readback.mjs';
 
 const SHA=/^[a-f0-9]{40}$/;
 const SESSION=/^[A-Za-z0-9_-]{8,160}$/;
@@ -186,6 +187,8 @@ export async function executeGovernedGitHubAppMutation({
  }
  if(!gatePasses(verifiedCouncil,sha,prNumber))
   deny('verified Council release gate held');
+ if(!isComposioDurableAppExecutor(durableAppExecutor))
+  deny('trusted durable GitHub App executor required');
  const approved=await enforceSignedApprovalAndTagPersona(
   operationRequest,tokenFactory,trusted);
  if(!approved?.authorized)deny('owner cryptographic authorization required');
