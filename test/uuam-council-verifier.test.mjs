@@ -58,9 +58,10 @@ test('rejects diminished threshold and unregistered algorithm',()=>{
   assert.throws(()=>new CouncilAttestationVerifier({members:MEMBERS,threshold:4,
     policyVersion:'v1',allowedOperations:['pr.comment']}),/threshold/i);
   const rsa=generateKeyPairSync('rsa',{modulusLength:2048}).publicKey;
-  assert.throws(()=>new CouncilAttestationVerifier({members:[
-    {...MEMBERS[0],publicKeyPem:rsa.export({type:'spki',format:'pem'})}
-  ],threshold:1,policyVersion:'v1',allowedOperations:['pr.comment']}),/ed25519/i);
+  const wrongAlgorithm=MEMBERS.map(m=>({id:m.id,publicKeyPem:m.publicKeyPem}));
+  wrongAlgorithm[0].publicKeyPem=rsa.export({type:'spki',format:'pem'});
+  assert.throws(()=>new CouncilAttestationVerifier({members:wrongAlgorithm,
+    threshold:7,policyVersion:'v1',allowedOperations:['pr.comment']}),/ed25519/i);
 });
 test('rejects unsigned extra intent fields and missing registered authorization evidence',()=>{
   const i=intent(),v=votes(i);
