@@ -135,6 +135,7 @@ export default async function handler(req,res){
     reason:failure.reason,stage:failure.stage,dispatched:false});
   return reply(res,202,{ok:false,status:'reconcile-required',
    idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved',
-   reason:failure.reason,stage:failure.stage,dispatched:null});
+   reason:failure.reason,stage:failure.stage,dispatched:null,
+   ...(failure.providerHttpStatus?{providerHttpStatus:failure.providerHttpStatus}:{})});
  }
 }
