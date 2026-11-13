@@ -13,6 +13,49 @@ const KEY=/^ultron-task-c04-pr[1-9][0-9]{0,8}-[a-f0-9]{24}$/;
 const POLICY_SHA=createHash('sha256').update(
  'ultron.c04.owner-signed-coordinator-pr-comment.v1').digest('hex');
 
+// Only fixed reason codes may cross the API or enter the durable stage ledger.
+const PR_COMMENT_FAILURES=Object.freeze({
+ 'configuration-invalid':{stage:'credential_exchange',dispatched:false},
+ 'clock-invalid':{stage:'credential_exchange',dispatched:false},
+ 'token-exchange-denied':{stage:'credential_exchange',dispatched:false},
+ 'token-exchange-unavailable':{stage:'credential_exchange',dispatched:false},
+ 'token-response-invalid':{stage:'credential_exchange',dispatched:false},
+ 'dispatch-not-admitted':{stage:'dispatch_admission',dispatched:false},
+ 'provider-write-denied':{stage:'provider_write',dispatched:null},
+ 'provider-outcome-unknown':{stage:'provider_write',dispatched:null},
+ 'provider-response-mismatch':{stage:'provider_write',dispatched:null},
+ 'readback-unavailable':{stage:'provider_readback',dispatched:null},
+ 'readback-mismatch':{stage:'provider_readback',dispatched:null},
+ 'readback-not-found':{stage:'provider_readback',dispatched:null},
+ 'readback-conflict':{stage:'provider_readback',dispatched:null},
+ 'intent-conflict':{stage:'reconciliation',dispatched:null},
+ 'reconciliation-not-admitted':{stage:'reconciliation',dispatched:null},
+ 'ledger-readback-unavailable':{stage:'reconciliation',dispatched:null},
+ 'receipt-persistence-unverified':{stage:'receipt_persistence',dispatched:null}
+});
+export function classifyPrCommentFailure(error){
+ const message=typeof error?.message==='string'?error.message:'';
+ const prefix='github-pr-comment-canary-';
+ const code=message.startsWith(prefix)?message.slice(prefix.length):'';
+ const detail=Object.hasOwn(PR_COMMENT_FAILURES,code)?PR_COMMENT_FAILURES[code]:null;
+ return Object.freeze(detail?{stage:detail.stage,reason:code,dispatched:detail.dispatched}:
+  {stage:'unknown',reason:'unclassified',dispatched:null});
+}
+const SAFE_STAGES=new Set(['credential_scoped','credential_exchange_failed',
+ 'provider_write_intent','provider_acknowledged','remote_observed',
+ 'reconcile_required','reconciliation_started','reconciliation_unresolved']);
+async function recordPrCommentStage(db,prepared,stage,reason=null){
+ if(!SAFE_STAGES.has(stage)||(reason!==null&&reason!=='unclassified'&&
+  !Object.hasOwn(PR_COMMENT_FAILURES,reason)))fail('stage-request-invalid');
+ // No token, signature, private key, provider body, or arbitrary exception string.
+ // This append-only event is independent of the immutable execution receipt.
+ const result=await db.query(`INSERT INTO brain_events(event_type,details)
+  SELECT 'github-pr-comment-stage',
+   jsonb_build_object('idempotencyKey',$1::text,'stage',$2::text,'reason',$3::text)
+  WHERE EXISTS(SELECT 1 FROM github_pr_comment_executions WHERE idempotency_key=$1)
+  RETURNING id`,[prepared.idempotencyKey,stage,reason]);
+ if(result?.rows?.length!==1)fail('stage-persistence-unavailable');
+}
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const json=value=>base64url(Buffer.from(JSON.stringify(value),'utf8'));
 function randomHex(length){
@@ -174,12 +217,18 @@ async function tokenForComment(raw,fetchImpl,clock){
  try{jwt=unsigned+'.'+base64url(signRs256(c.privateKey,unsigned));}
  catch{fail('configuration-invalid');}
  const permissions={issues:'write',metadata:'read'};
- const response=await provider(fetchImpl,
-  `${API}/app/installations/${c.installationId}/access_tokens`,{
-   method:'POST',headers:{Authorization:'Bearer '+jwt,
-    Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10',
-    'Content-Type':'application/json'},
-   body:JSON.stringify({repository_ids:[REPO_ID],permissions})});
+ let response;
+ try{
+  response=await provider(fetchImpl,
+   `${API}/app/installations/${c.installationId}/access_tokens`,{
+    method:'POST',headers:{Authorization:'Bearer '+jwt,
+     Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10',
+     'Content-Type':'application/json'},
+    body:JSON.stringify({repository_ids:[REPO_ID],permissions})});
+ }catch{
+  // Installation-token transport loss occurs BEFORE effect dispatch.
+  fail('token-exchange-unavailable');
+ }
  if(response.status!==201)fail('token-exchange-denied');
  let body;
  try{body=await response.json();}catch{fail('token-response-invalid');}
@@ -257,12 +306,35 @@ export async function submitPrCommentCanary({
  prepared=validatePreparedCanary(prepared);
  if(typeof db?.query!=='function'||!SHA256.test(digest||'')||
    typeof fetchImpl!=='function'||typeof clock!=='function')fail('service-invalid');
- const token=await tokenForComment(appCredentials,fetchImpl,clock);
- const claimed=await db.query(`UPDATE github_pr_comment_executions
+
+ let token;
+ try{token=await tokenForComment(appCredentials,fetchImpl,clock);}
+ catch(error){
+  // A caller may probe token validity without reserving an execution.
+  // Never let an optional diagnostic hide the original pre-dispatch failure.
+  try{await recordPrCommentStage(db,prepared,'credential_exchange_failed',
+   classifyPrCommentFailure(error).reason);}catch{}
+  throw error;
+ }
+ await recordPrCommentStage(db,prepared,'credential_scoped');
+ // Claim write intent and append the audit event in ONE DB transaction, prior
+ // to the only effectful provider POST. A failed event cannot leave a claim
+ // that silently proceeds without evidence.
+ const claimed=await db.query(`WITH moved AS (
+  UPDATE github_pr_comment_executions
   SET state='in_flight',updated_at=now()
   WHERE idempotency_key=$1 AND operation_digest=$2 AND state='reserved'
-  RETURNING idempotency_key`,[prepared.idempotencyKey,digest]);
- if(claimed?.rows?.length!==1)fail('dispatch-not-admitted');
+  RETURNING idempotency_key
+ ), evidence AS (
+  INSERT INTO brain_events(event_type,details)
+  SELECT 'github-pr-comment-stage',
+   jsonb_build_object('idempotencyKey',idempotency_key,
+    'stage','provider_write_intent','reason',NULL::text)
+  FROM moved RETURNING id
+ ) SELECT (SELECT count(*)::int FROM moved) AS claims,
+  (SELECT count(*)::int FROM evidence) AS events`,[prepared.idempotencyKey,digest]);
+ if(claimed?.rows?.[0]?.claims!==1||claimed?.rows?.[0]?.events!==1)
+  fail('dispatch-not-admitted');
  try{
   const response=await provider(fetchImpl,
    `${API}/repos/${REPO}/issues/${prepared.pullRequest}/comments`,{
@@ -272,10 +344,15 @@ export async function submitPrCommentCanary({
   if(response.status!==201)fail('provider-write-denied');
   let created;try{created=await response.json();}catch{fail('provider-outcome-unknown');}
   if(!verifiedComment(created,prepared))fail('provider-response-mismatch');
+  await recordPrCommentStage(db,prepared,'provider_acknowledged');
   const observed=await independentRead(fetchImpl,Number(created.id),prepared,token);
+  await recordPrCommentStage(db,prepared,'remote_observed');
   return complete(db,prepared,digest,observed,'success');
  }catch(error){
   await markReconcile(db,prepared);
+  // Failure to append a secondary diagnostic must never trigger a second POST.
+  try{await recordPrCommentStage(db,prepared,'reconcile_required',
+   classifyPrCommentFailure(error).reason);}catch{}
   throw error;
  }
 }
@@ -291,6 +368,7 @@ export async function reconcilePrCommentCanary({
    stored.body_sha256!==prepared.bodySha256)fail('intent-conflict');
  if(stored.state==='completed')return Object.freeze({status:'recovered_success',receipt:stored.receipt});
  if(!['in_flight','reconcile_required'].includes(stored.state))fail('reconciliation-not-admitted');
+ await recordPrCommentStage(db,prepared,'reconciliation_started');
  const token=appCredentials?await tokenForComment(appCredentials,fetchImpl,clock):'';
  // The per-issue comments endpoint ignores sort/direction and returns oldest
  // first, so bound the scan to comments created after the reservation.
@@ -309,8 +387,13 @@ export async function reconcilePrCommentCanary({
   matches.push(...comments.filter(comment=>verifiedComment(comment,prepared)));
   if(comments.length<100)break;
  }
- if(matches.length!==1){await markReconcile(db,prepared);fail(matches.length
-  ?'readback-conflict':'readback-not-found');}
+ if(matches.length!==1){
+  await markReconcile(db,prepared);
+  await recordPrCommentStage(db,prepared,'reconciliation_unresolved',
+   matches.length?'readback-conflict':'readback-not-found');
+  fail(matches.length?'readback-conflict':'readback-not-found');
+ }
  const observed=await independentRead(fetchImpl,Number(matches[0].id),prepared,token);
+ await recordPrCommentStage(db,prepared,'remote_observed');
  return complete(db,prepared,digest,observed,'reconciled_success');
 }
