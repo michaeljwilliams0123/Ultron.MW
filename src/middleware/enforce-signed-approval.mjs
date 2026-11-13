@@ -22,6 +22,11 @@ import {
 const SCHEMA='ultron.github.operation.v1';
 const RESOURCE_PREFIX='ultron:github:'+ULTRON_REPOSITORY+':sha256:';
 const APPROVAL_TTL_MS=300_000;
+// A caller-provided authorized:true is not a cryptographic approval.
+const AUTHENTIC_APPROVALS=new WeakSet();
+export function isCryptographicallyApprovedOperation(value){
+ return !!value&&typeof value==='object'&&AUTHENTIC_APPROVALS.has(value);
+}
 const PLAN_KEYS=['schema','repository','operation','activeAgentRole',
  'idempotencyKey','permittedScope','parameters'];
 const SCOPE_KEYS=['operation','repositoryId','permissions'];
@@ -213,5 +218,7 @@ export async function enforceSignedApprovalAndTagPersona(
  Object.defineProperty(result,'token',{
   get(){return token;},enumerable:false
  });
- return Object.freeze(result);
+ const approved=Object.freeze(result);
+ AUTHENTIC_APPROVALS.add(approved);
+ return approved;
 }
