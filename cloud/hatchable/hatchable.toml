@@ -139,3 +139,19 @@ description   = "Read-only private Ultron GitLab project CI observation; connect
 name = "ULTRON_PR_COMMENT_CANARY_ENABLED"
 required = false
 description = "Owner opt-in for the C04 PR-comment canary. Exactly 'true' enables it; unset or any other value keeps it disabled (default off)."
+
+
+# UUAM: optional signed Cloudflare -> Hatchable staging inbox.
+# Intentionally disabled unless owner configures the opt-in and shared HMAC.
+# No value or privileged GitHub App credential is stored in source.
+[[secret]]
+name = "ULTRON_UUAM_DELIVERY_HMAC_KEY"
+required = false
+description = "Distinct 32+ character HMAC key for Cloudflare staged delivery; owner-supplied in protected Hatchable Setup. No default or environment exposure."
+
+[[config]]
+name = "uuam_inbox_enabled"
+type = "boolean"
+label = "Enable UUAM staging inbox"
+help = "Enable only after 0047 has applied, signed delivery key custody is verified, and readback canaries pass. This allows inbox persistence, not execution."
+default = false

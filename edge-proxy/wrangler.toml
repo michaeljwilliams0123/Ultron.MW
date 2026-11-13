@@ -1,0 +1,29 @@
+# Isolated source-only staging Worker. No production bindings are activated.
+name = "ultron-mw-edge-staging"
+main = "src/index.js"
+compatibility_date = "2026-11-12"
+
+[vars]
+ENVIRONMENT = "staging"
+REPOSITORY = "michaeljwilliams0123/Ultron.MW"
+HATCHABLE_CORE_ORIGIN = "https://ultron-mw-cloud.hatchable.site"
+# This MUST remain false until a signed, idempotent 200/201 Hatchable
+# /api/brain/uuam-inbox endpoint is deployed and independently tested.
+HATCHABLE_INBOX_ENABLED = "false"
+
+[[queues.producers]]
+binding = "ULTRON_EVENT_QUEUE"
+queue = "ultron-staging-events"
+
+[[queues.producers]]
+binding = "ULTRON_DEAD_LETTER_QUEUE"
+queue = "ultron-staging-events-dlq"
+
+[[queues.consumers]]
+queue = "ultron-staging-events"
+max_batch_size = 1
+max_batch_timeout = 5
+max_concurrency = 1
+max_retries = 3
+retry_delay = 30
+dead_letter_queue = "ultron-staging-events-dlq"

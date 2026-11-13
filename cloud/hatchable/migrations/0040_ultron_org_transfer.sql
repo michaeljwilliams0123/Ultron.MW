@@ -1,6 +1,7 @@
--- Forward-only transition to organization ownership (issue #370).
--- Preserve historical receipts referencing the former personal repository path.
--- Runtime code must issue new mutations ONLY to Ultron-MW/Ultron.MW.
+-- Historical org-transfer constraint compatibility; canonical owner remains michaeljwilliams0123.
+-- Preserve immutable receipts referencing the retired Ultron-MW/Ultron.MW path.
+-- New runtime mutations MUST target michaeljwilliams0123/Ultron.MW (repository ID 1424939667).
+-- This migration changes no owner, backfills no receipts, and grants no privileges.
 ALTER TABLE brain_continuum_outbox
   DROP CONSTRAINT IF EXISTS brain_continuum_outbox_repository_check;
 ALTER TABLE brain_continuum_outbox
