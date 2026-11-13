@@ -17,7 +17,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16-alpine
@@ -63,6 +63,13 @@ jobs:
           ULTRON_POSTGRES_TEST: '1'
           ULTRON_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
         run: node --test --test-concurrency=1 test/hatchable-acceptance-postgres.test.mjs test/hatchable-heldout-postgres.test.mjs test/hatchable-owner-stop-postgres.test.mjs test/hatchable-completion-readback-postgres.test.mjs test/hatchable-process-recovery-postgres.test.mjs test/mahoraga-process-recovery-postgres.test.mjs test/repair-pr-postgres-live.test.mjs test/continuum-outbox-postgres.test.mjs test/hatchable-cloud-action-postgres.test.mjs
+      - name: Composio SDK isolated package and zero-cost canary checks
+        run: |
+          node -e "const [a,b,c]=process.versions.node.split('.').map(Number);if(a<22||(a===22&&(b<22||(b===22&&c<3))))process.exit(1)"
+          npm install --prefix integrations/composio --ignore-scripts --no-audit --no-fund --save-exact
+          npm test --prefix integrations/composio
+          node scripts/audit-route-references.mjs > /tmp/ultron-route-audit.json
+          node integrations/composio/verify-live-primary.mjs --dry-run
   attested-receipt:
     needs: test
     if: >-
