@@ -76,17 +76,15 @@ test('scans untracked source files locally before they are staged',()=>{
  });
 });
 
-test('CI uses read-only unprivileged source audit and required core verification',async()=>{
- const {readFileSync}=await import('node:fs');
- const own=new URL('../.github/workflows/secret-isolation.yml',import.meta.url);
- const yaml=readFileSync(own,'utf8');
+test('CI enforces source credential scan in the existing core lane without adding a ninth workflow',async()=>{
+ const {readFileSync,existsSync}=await import('node:fs');
+ const standalone=new URL('../.github/workflows/secret-isolation.yml',import.meta.url);
+ assert.equal(existsSync(standalone),false,'standalone secret audit would violate the eight-workflow lane contract');
  const core=readFileSync(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8');
- assert.match(yaml,/^\s*pull_request:\s*$/m);
- assert.match(yaml,/^\s*push:\s*$/m);
- assert.match(yaml,/permissions:\s*\n\s+contents: read/);
- assert.match(yaml,/persist-credentials: false/);
- assert.doesNotMatch(yaml,/pull_request_target|secrets\.|id-token:\s*write|contents:\s*write/i);
- assert.match(yaml,/actions\/checkout@[a-f0-9]{40}/);
- assert.match(yaml,/run: node scripts\/audit-secret-isolation\.mjs/);
  assert.match(core,/name: Audit source for accidental credentials[\s\S]*?run: node scripts\/audit-secret-isolation\.mjs/);
+ const scanner=core.indexOf('run: node scripts/audit-secret-isolation.mjs');
+ const install=core.indexOf('npm ci --ignore-scripts');
+ assert.ok(scanner>=0 && install>scanner,'source scan must run before dependency installation');
+ assert.match(core,/actions\/checkout@[a-f0-9]{40}/);
+ assert.match(core,/persist-credentials: false/);
 });
