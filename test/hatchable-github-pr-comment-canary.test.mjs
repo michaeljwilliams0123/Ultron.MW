@@ -358,3 +358,41 @@ test('token exchange transport loss is classified before dispatch, not as an amb
  assert.equal(calls.length,1);
  assert.doesNotMatch(JSON.stringify(events),/secret transport diagnostic/);
 });
+
+test('provider denial reports only safe HTTP status and preserves one-write idempotency',async t=>{
+ for(const status of [403,404,410,422,429,503]){
+  const h=await admitted(t),base=provider(h.prepared),calls=[];
+  const fetchImpl=async(url,options={})=>{
+   if(options.method==='POST'&&url.endsWith('/comments')){
+    calls.push(url);return response(status,{message:'sensitive-provider-explanation'});
+   }
+   return base.fetchImpl(url,options);
+  };
+  let denied;
+  try{await submitPrCommentCanary({db:h.db,prepared:h.prepared,
+   operationDigest:h.digest,appCredentials:APP,fetchImpl});}
+  catch(error){denied=error;}
+  assert.ok(denied);
+  assert.deepEqual(classifyPrCommentFailure(denied),
+   {stage:'provider_write',reason:'provider-write-denied',
+    dispatched:null,providerHttpStatus:status});
+  const rows=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage'"))
+   .rows.map(r=>r.details);
+  assert.ok(rows.some(e=>e.stage==='provider_write_intent'));
+  assert.ok(rows.some(e=>e.stage==='reconcile_required'&&
+   e.reason==='provider-write-denied'&&e.providerHttpStatus===status));
+  assert.equal((await h.db.query("SELECT state FROM github_pr_comment_executions"))
+   .rows[0].state,'reconcile_required');
+  assert.equal(calls.length,1);
+  assert.doesNotMatch(JSON.stringify(rows),/sensitive-provider-explanation/);
+ }
+});
+test('untrusted exceptions cannot smuggle fake status codes or secrets into diagnostics',()=>{
+ const malicious=Object.assign(new Error('Bearer sensitive'),{providerHttpStatus:403});
+ assert.deepEqual(classifyPrCommentFailure(malicious),
+  {stage:'unknown',reason:'unclassified',dispatched:null});
+ const invalid=Object.assign(new Error('github-pr-comment-canary-provider-write-denied'),
+  {providerHttpStatus:'403'});
+ assert.deepEqual(classifyPrCommentFailure(invalid),
+  {stage:'provider_write',reason:'provider-write-denied',dispatched:null});
+});
