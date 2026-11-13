@@ -55,9 +55,26 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:center;fl
 <button id="action-reconcile" disabled>Read back existing attempt</button>
 <p class="status" id="action-status" role="status" aria-live="polite">No external write prepared.</p>
 </section>
+<section id="github-branch-canary" aria-labelledby="gh-canary-title">
+<h2 id="gh-canary-title">3. GitHub branch canary (separate owner-signed grant)</h2>
+<p class="muted">This tests the GitHub branch executor from PR #416; it is separate from the GitLab branch action above. First enroll an owner passkey, then explicitly enable <code>repair.branch.create</code> in the owner autonomy profile. This page will not bypass either gate. A new P-256 owner signature authorizes one exact branch at the verified main SHA.</p>
+<button id="gh-check">Check GitHub release readiness</button>
+<label for="gh-source">Verified GitHub main SHA</label><input id="gh-source" readonly>
+<button id="gh-prepare" disabled>Prepare one GitHub branch</button>
+<label for="gh-branch">Exact branch to create (read-only)</label><input id="gh-branch" readonly>
+<label for="gh-grant">Exact branch owner-signing request (read-only)</label><textarea id="gh-grant" readonly></textarea>
+<button id="gh-copy" disabled>Copy branch signing request</button>
+<label for="gh-envelope">Owner-signed branch grant envelope</label><textarea id="gh-envelope" placeholder='{"payload":"...","signature":"..."}' spellcheck="false" autocomplete="off"></textarea>
+<button id="gh-paste" disabled>Paste and verify branch grant</button>
+<button id="gh-submit" disabled>Authorize one real GitHub branch write</button>
+<button id="gh-reconcile" disabled>Reconcile existing branch attempt (no repeat write)</button>
+<p class="status" id="gh-status-text" role="status" aria-live="polite">Readiness has not been checked. No GitHub branch execution is authorized.</p>
+<p class="muted">A successful provider response is not sufficient for full production acceptance: independent GitHub readback, PostgreSQL receipt, replay rejection, current-main CI and separate Council gates must still be verified.</p>
+</section>
 <p class="muted">Only the private GitLab project 87884831 is in scope. No signing key, OAuth token or passkey secret is transmitted by these browser actions. A browser session or a successful test alone does not imply a production provider effect.</p>
 </main>
 <script src="./owner-passkeys.js" defer></script>
+<script src="./github-branch-canary.js" defer></script>
 <script src="./sign-in.js" defer></script>
 </body>
 </html>
