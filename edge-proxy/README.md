@@ -38,7 +38,28 @@ using a secure deployment secret mechanism, never committed to source:
 For production use, consider versioned key IDs and overlapping rotation
 windows. This staging implementation has neither.
 
-## Required Hatchable endpoint, NOT currently deployed
+## Hatchable receiver implemented in source, NOT currently deployed
+
+The receiver implementation is now checked in as
+\`cloud/hatchable/api/brain/uuam-inbox.js\` and
+\`cloud/hatchable/lib/uuam-inbox.js\`, with PostgreSQL and signature
+regression coverage in \`test/uuam-hatchable-inbox.test.mjs\`.
+
+The Hatchable project's \`hatchable.toml\` declares an optional protected
+\`ULTRON_UUAM_DELIVERY_HMAC_KEY\` secret and a default-\`false\` boolean
+\`uuam_inbox_enabled\` configuration switch. The owner must supply the same
+random HMAC key value to Hatchable's protected Setup and to Cloudflare's
+\`HATCHABLE_DELIVERY_HMAC_KEY\` secret binding; it must be **distinct** from
+Cloudflare \`ULTRON_INGRESS_HMAC_KEY\`. Do not activate either switch until
+the real migration and remote canaries have passed. Missing keys or the
+default-disabled switch return HTTP 503 without a database mutation.
+
+Migration \`0047_omni_state_machine.sql\` records an immutable, unique
+\`ingress_nonce\` on the existing event-state projection and rejects
+replays that change delivery ID while reusing a previously committed nonce.
+The Hatchable receiver uses \`db.transaction([...])\`, never pooled
+\`BEGIN\`/\`COMMIT\` calls, and verifies exact PostgreSQL readback before
+returning the source queue acknowledgement receipt.
 
 The consumer targets exactly
 `https://ultron-mw-cloud.hatchable.site/api/brain/uuam-inbox`.
