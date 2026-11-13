@@ -114,7 +114,7 @@ test('Council Room POST is idempotent and only the first durable message wakes t
 test('Council Room rejects secret-like messages before any durable write',async()=>{
  const p=platform(),route=await loadRoute(p);
  for(const body of ['password: example-value','otp=123456',
-  'github token ghp_abcdefghijklmnopqrstuvwxyz0123456789']){
+  'github token '+'ghp_'+('A'.repeat(36))]){
   const result=await route.default(ownerPost({body}),response());
   assert.equal(result.status,422);
   assert.equal(result.body.error,'secret-like-content-rejected');
