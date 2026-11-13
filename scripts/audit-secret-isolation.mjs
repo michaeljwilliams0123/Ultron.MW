@@ -51,7 +51,7 @@ export function scanTrackedRoot(repoRoot){
   if(info.size>MAX_TEXT_BYTES){flag(normalized,'OVERSIZED_TEXT');continue}
   let raw;
   try{raw=readFileSync(full)}catch{flag(normalized,'READ_FAILURE');continue}
-  if(raw.includes(0)){skippedBinary++;continue}
+  if(raw.includes(0)){flag(normalized,'BINARY_TEXT');skippedBinary++;continue}
   scannedFiles++;
   const body=raw.toString('utf8');
   const matches=[...body.matchAll(pemPattern)];
