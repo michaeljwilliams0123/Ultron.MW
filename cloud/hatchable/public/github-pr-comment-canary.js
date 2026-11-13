@@ -1,13 +1,13 @@
 (()=>{
 'use strict';
 const byId=id=>document.getElementById(id);
-const pr=byId('pull-request'),prepare=byId('prepare'),copy=byId('copy');
+const pr=byId('pull-request'),prepare=byId('prepare'),diagnose=byId('diagnose'),copy=byId('copy');
 const comment=byId('comment'),signable=byId('signable'),envelope=byId('envelope');
 const submit=byId('submit'),reconcile=byId('reconcile'),status=byId('status');
 let prepared=null,busy=false,submitted=false;
 function setStatus(text){status.textContent=text;}
 function buttons(){
- prepare.disabled=busy||submitted;copy.disabled=busy||!prepared;
+ prepare.disabled=busy||submitted;diagnose.disabled=busy;copy.disabled=busy||!prepared;
  submit.disabled=busy||!prepared||submitted;
  reconcile.disabled=busy||!prepared||!submitted;
 }
@@ -37,6 +37,23 @@ prepare.addEventListener('click',async()=>{
   signable.value=JSON.stringify(value.ownerGrantRequest);
   setStatus('Prepared. Copy and sign the exact request; it expires after five minutes.');
  }catch(error){setStatus(String(error.message||error));}
+ finally{busy=false;buttons();}
+});
+diagnose.addEventListener('click',async()=>{
+ if(busy)return;
+ busy=true;buttons();
+ try{
+  const pullRequest=Number(pr.value);
+  if(!Number.isSafeInteger(pullRequest)||pullRequest<1)
+   throw Error('Enter a valid pull request number.');
+  const value=await call({mode:'diagnose',pullRequest});
+  const p=value.probe||{};
+  setStatus('Read-only GitHub App check: repository HTTP '+(p.repositoryHttpStatus??'unknown')+
+   ', PR HTTP '+(p.issueHttpStatus??'unknown')+', state '+(p.issueState??'unknown')+
+   ', locked '+String(p.issueLocked??'unknown')+
+   ', archived '+String(p.repositoryArchived??'unknown')+
+   '. No comment was sent. An accessible PR is not proof a comment write will succeed.');
+ }catch(error){setStatus('Read-only diagnosis unavailable: '+String(error.message||error));}
  finally{busy=false;buttons();}
 });
 copy.addEventListener('click',async()=>{
