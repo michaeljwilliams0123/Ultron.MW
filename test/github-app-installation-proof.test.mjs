@@ -100,3 +100,18 @@ test('authored source and deployable Hatchable module are byte-identical',async(
  const cloud=await readFile(new URL('../cloud/hatchable/lib/github-app-installation-proof.js',import.meta.url));
  assert.deepEqual(src,cloud);
 });
+
+
+test('accepts token expiry with a bounded provider clock/latency skew',async()=>{
+ const now=Date.parse('2026-11-13T23:00:00Z');
+ const {service}=harness({token:{...token,expires_at:new Date(now+3600000+120000).toISOString()}});
+ const proof=await probeGithubAppInstallation({credentials:config,fetchImpl:service,signJwt:sign,now});
+ assert.equal(proof.state,'installation-and-scoped-read-verified');
+});
+
+test('rejects token expiry with an unreasonable provider skew',async()=>{
+ const now=Date.parse('2026-11-13T23:00:00Z');
+ const {service}=harness({token:{...token,expires_at:new Date(now+3600000+600000).toISOString()}});
+ const proof=await probeGithubAppInstallation({credentials:config,fetchImpl:service,signJwt:sign,now});
+ assert.equal(proof.reason,'token-scope-mismatch');
+});
