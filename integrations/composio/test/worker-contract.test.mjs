@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createComposioV3Worker} from '../index.mjs';
+import {createComposioV3Worker,executeGovernedGitHubAppMutation} from '../index.mjs';
 const ids={primaryAccountId:'ca_owner_read_123',executorAccountId:'ca_delegated_read_456'};
 const sha='a'.repeat(40);
 function fake(){
@@ -72,4 +72,21 @@ test('proxy denies other origins, writes, delegated actors before any provider c
  await assert.rejects(worker.proxyRead({actor:'ultron-admin',endpoint:'/user'}),/primary-only/);
  await assert.rejects(worker.proxyRead({actor:'mw-primary',endpoint:'/user?redirect=https://evil.test'}),/denied/);
  assert.equal(f.used.length,0);
+});
+
+test('forged Council status cannot reach the GitHub App executor without a trusted attestation verifier',async()=>{
+ const sha='a'.repeat(40),prNumber=442;
+ // This shape passes the standalone gatePasses structural predicate; it is NOT
+ // an authenticated signed Council receipt.
+ const forged={status:'accepted',approvedCount:7,securitySensitive:false,
+  sourceSha:sha,prNumber};
+ let dispatched=0,tokenRequests=0;
+ await assert.rejects(executeGovernedGitHubAppMutation({
+  councilResult:forged,sha,prNumber,
+  operationRequest:{},tokenFactory:{getTokenForScope:async()=>{tokenRequests++;}},
+  trusted:{db:{query:async()=>({rows:[]})},expectedInstallationId:1,clock:()=>Date.now()},
+  durableAppExecutor:async()=>{dispatched++;},
+ }),/trusted Council attestation verifier required/);
+ assert.equal(tokenRequests,0);
+ assert.equal(dispatched,0);
 });
