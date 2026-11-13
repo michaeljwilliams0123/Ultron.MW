@@ -74,7 +74,8 @@ test('disabled: every non-status mode returns 503 before reading credentials, th
  const before=(await h.pg.query(TABLES)).rows[0];
  const prepared={pullRequest:398,idempotencyKey:'ultron-task-c04-pr398-'+'a'.repeat(24),
   commentBody:'x',bodySha256:'b'.repeat(64)};
- for(const body of [{mode:'prepare',pullRequest:398},{mode:'submit',prepared,envelope:{}},
+ for(const body of [{mode:'prepare',pullRequest:398},{mode:'diagnose',pullRequest:398},
+   {mode:'submit',prepared,envelope:{}},
    {mode:'reconcile',prepared,envelope:{}},{mode:'bogus'},{},null]){
   h.queries.length=0;h.configReads.length=0;
   const r=await call(body);
