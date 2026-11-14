@@ -22,7 +22,7 @@ test('owner UI exposes prepare, one submit and readback-only reconciliation with
 
 test('ambiguous submit permanently disables same-key POST while permitting read-only reconciliation',async()=>{
  const ids=['pull-request','prepare','diagnose','copy','comment','signable','envelope',
-  'submit','reconcile','status'];
+  'submit','reconcile','status','load-target'];
  const elements=Object.fromEntries(ids.map(id=>[id,{value:'',disabled:false,textContent:'',
   listeners:{},addEventListener(type,callback){this.listeners[type]=callback;}}]));
  elements['pull-request'].value='437';
@@ -36,7 +36,7 @@ test('ambiguous submit permanently disables same-key POST while permitting read-
    return {ok:true,status:200,json:async()=>({state:'idle'})};
   const input=JSON.parse(options.body);requests.push(input.mode);
   const value=input.mode==='prepare'?{ok:true,prepared,ownerGrantRequest:{actor:'owner'}}:
-   input.mode==='diagnose'?{ok:true,status:'diagnosed',probe:{readOnly:true,issueHttpStatus:200,issueState:'open'}}:
+   input.mode==='diagnose'?{ok:true,status:'diagnosed',probe:{readOnly:true,repositoryHttpStatus:200,issueHttpStatus:200,isPullRequest:true,issueState:'open',issueLocked:false,repositoryArchived:false}}:
    {ok:false,status:'reconcile-required',error:'provider-outcome-unresolved',
     stage:'provider_write',reason:'provider-outcome-unknown',dispatched:null};
   return {ok:['prepare','diagnose'].includes(input.mode),status:['prepare','diagnose'].includes(input.mode)?200:202,
@@ -59,7 +59,7 @@ test('ambiguous submit permanently disables same-key POST while permitting read-
  await elements.prepare.listeners.click();
  await elements.reconcile.listeners.click();
  await elements.diagnose.listeners.click();
- assert.deepEqual(requests,['prepare','submit','readback','diagnose']);
+ assert.deepEqual(requests,['diagnose','prepare','submit','readback','diagnose']);
  assert.equal(elements.submit.disabled,true);
  assert.match(elements.status.textContent,/Read-only/);
 });
