@@ -74,7 +74,9 @@ test('health probe sets a bounded request timeout without exposing authority',as
  let delayMs=null,signals=0;
  AbortSignal.timeout=ms=>{
   delayMs=ms;
-  return originalTimeout(1);
+  const controller=new AbortController();
+  queueMicrotask(()=>controller.abort());
+  return controller.signal;
  };
  globalThis.fetch=async(_url,options)=>{
   assert.equal(options.method,'GET');
