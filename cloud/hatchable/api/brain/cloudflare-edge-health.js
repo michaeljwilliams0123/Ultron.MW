@@ -13,7 +13,8 @@ export default async function(req,res) {
     const response=await fetch(EDGE,{
       method:'GET',
       headers:{Accept:'application/json'},
-      redirect:'error'
+      redirect:'error',
+      signal:AbortSignal.timeout(4000)
     });
     if(!response.ok)
       return res.status(503).json({schema:SCHEMA,state:'unavailable',executionAuthorized:false});

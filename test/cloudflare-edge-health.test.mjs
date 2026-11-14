@@ -68,3 +68,35 @@ test('Cloudflare outage returns unavailable without emitting effects',async()=>{
   assert.equal(res.payload.executionAuthorized,false);
  }finally{globalThis.fetch=oldFetch;}
 });
+
+test('health probe sets a bounded request timeout without exposing authority',async()=>{
+ const oldFetch=globalThis.fetch,originalTimeout=AbortSignal.timeout;
+ let delayMs=null,signals=0;
+ AbortSignal.timeout=ms=>{
+  delayMs=ms;
+  return originalTimeout(1);
+ };
+ globalThis.fetch=async(_url,options)=>{
+  assert.equal(options.method,'GET');
+  assert.equal(options.redirect,'error');
+  assert.ok(options.signal instanceof AbortSignal,'upstream GET must have an abort signal');
+  signals++;
+  return await new Promise((_resolve,reject)=>{
+   const onAbort=()=>reject(new Error('upstream deadline exceeded'));
+   if(options.signal.aborted)onAbort();
+   else options.signal.addEventListener('abort',onAbort,{once:true});
+  });
+ };
+ try{
+  const res=response();
+  await handler(owner,res);
+  assert.equal(res.code,503);
+  assert.equal(res.payload.state,'unavailable');
+  assert.equal(res.payload.executionAuthorized,false);
+  assert.equal(signals,1);
+  assert.ok(delayMs>0&&delayMs<=5000,'the timeout must be positive and no more than 5s');
+ }finally{
+  globalThis.fetch=oldFetch;
+  AbortSignal.timeout=originalTimeout;
+ }
+});
