@@ -11,7 +11,7 @@ const api=await readFile(new URL('api/brain/github-pr-comment-canary.js',root),'
 const statusRoute=await readFile(new URL('api/brain/github-pr-comment-canary-status.js',root),'utf8');
 
 function browser({session=200,state='idle',submitStatus=403}={}){
- const ids=['pull-request','prepare','diagnose','copy','comment','signable','envelope','submit','reconcile','status','canary-controls'];
+ const ids=['pull-request','load-target','prepare','diagnose','copy','comment','signable','envelope','submit','reconcile','status','canary-controls'];
  const nodes=Object.fromEntries(ids.map(id=>[id,{value:id==='pull-request'?'448':'',disabled:false,textContent:'',style:{},
   listeners:{},addEventListener(type,fn){this.listeners[type]=fn;}}]));
  const calls=[],mounts=[];
@@ -33,7 +33,7 @@ function browser({session=200,state='idle',submitStatus=403}={}){
    json:async()=>({ok:false,error:submitStatus===403?'authority-not-verified':'provider-outcome-unresolved',
     status:submitStatus===202?'reconcile-required':undefined,dispatched:submitStatus===202?null:false})};
   if(input.mode==='diagnose')return{ok:true,status:200,json:async()=>({ok:true,
-   probe:{repositoryHttpStatus:200,issueHttpStatus:200}})};
+   probe:{readOnly:true,repositoryHttpStatus:200,issueHttpStatus:200,isPullRequest:true,issueState:'open',issueLocked:false,repositoryArchived:false}})};
   throw Error('unexpected '+url+' '+input.mode);
  };
  runInNewContext(ui,{document:{getElementById:id=>nodes[id]},fetch,URLSearchParams,
