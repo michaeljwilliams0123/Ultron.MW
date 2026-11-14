@@ -17,6 +17,15 @@ const API='https://api.github.com';
 const TOKEN_EXPIRY_SKEW_MS=5*60000;
 const HEADERS=Object.freeze({Accept:'application/vnd.github+json',
  'X-GitHub-Api-Version':'2022-11-28'});
+const PERMISSION_NAMES=Object.freeze([
+ 'metadata','contents','administration','actions','issues','pull_requests',
+ 'checks','workflows','secrets','variables','webhooks'
+]);
+function observedPermissions(value){
+ return Object.freeze(Object.fromEntries(PERMISSION_NAMES.map(name=>[
+  name,value?.[name]==='read'||value?.[name]==='write'?value[name]:'none'
+ ])));
+}
 const result=(reason,fields={})=>Object.freeze({
  schema:'ultron.github-app-installation-proof.v1',
  state:reason===null?'installation-and-scoped-read-verified':'unverified',
@@ -94,6 +103,10 @@ export async function probeGithubAppInstallation({credentials,signJwt,
    appId:APP_PROOF.appId,
    installationId:APP_PROOF.installationId,
    permissionProof:'installation-contents-write-observed; scoped-token-metadata-read',
+   observedPermissions:observedPermissions(installation.body.permissions),
+   administrationWritePermissionObserved:installation.body.permissions?.administration==='write',
+   actionsWritePermissionObserved:installation.body.permissions?.actions==='write',
+   adminOperationVerified:false,
    paidExternalSpendUSD:0});
  }catch{
   return result('provider-unavailable');
