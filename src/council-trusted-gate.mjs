@@ -154,3 +154,15 @@ export function resolveGatePublisher({appId,expectedSlug,mintedSlug}={}){
   return null;
  return Object.freeze({appId:Number(appId),slug:expectedSlug});
 }
+
+// Resolve a target from trusted GitHub event metadata, never issue/PR prose.
+// Used by pull_request_target, signed-owner comments and owner-only manual recheck.
+export function selectCouncilTargetNumber(eventName,payload={}){
+  const raw=eventName==='pull_request_target'?payload?.pull_request?.number:
+    eventName==='issue_comment'?payload?.issue?.number:
+    eventName==='workflow_dispatch'?payload?.inputs?.pr_number:null;
+  if(typeof raw==='number')return Number.isSafeInteger(raw)&&raw>0?raw:null;
+  if(typeof raw!=='string'||!/^[1-9][0-9]*$/.test(raw))return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number)&&number>0?number:null;
+}

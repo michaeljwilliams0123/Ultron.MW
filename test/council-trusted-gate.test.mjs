@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {generateKeyPairSync,sign} from 'node:crypto';
 import {evaluateTrustedCouncilGate,classifyTrustedRisk,ownerIntent,isOwnerAccount,
- gatePasses,buildGateCheckRun,resolveGatePublisher,GATE_CHECK_NAME}
+ gatePasses,buildGateCheckRun,resolveGatePublisher,selectCouncilTargetNumber,GATE_CHECK_NAME}
  from '../src/council-trusted-gate.mjs';
 
 const HEAD='a'.repeat(40),BASE='b'.repeat(40),PR=456,REPO='michaeljwilliams0123/Ultron.MW';
@@ -153,4 +153,27 @@ test('trusted gate supplies live exact-head CI evidence to its own debate',()=>{
  assert.match(y,/total_count>100/);
  assert.match(y,/COUNCIL_REVIEW_EVIDENCE_FILE.*write\('exact-head-ci.json',observed\)/);
  assert.ok(y.indexOf("COUNCIL_REVIEW_EVIDENCE_FILE")<y.indexOf('name: Run Council debate'));
+});
+
+test('Council manual recheck selects only a positive, safe, explicit PR number',()=>{
+  assert.equal(selectCouncilTargetNumber('pull_request_target',{pull_request:{number:454}}),454);
+  assert.equal(selectCouncilTargetNumber('issue_comment',{issue:{number:447}}),447);
+  assert.equal(selectCouncilTargetNumber('workflow_dispatch',{inputs:{pr_number:'454'}}),454);
+  assert.equal(selectCouncilTargetNumber('workflow_dispatch',{inputs:{pr_number:447}}),447);
+  for(const invalid of [null,undefined,'',0,-1,'0','-1','2x','1.5',true,{},'9007199254740992']){
+    assert.equal(selectCouncilTargetNumber('workflow_dispatch',{inputs:{pr_number:invalid}}),null,String(invalid));
+  }
+  assert.equal(selectCouncilTargetNumber('workflow_dispatch',{inputs:{}}),null);
+  assert.equal(selectCouncilTargetNumber('unknown',{pull_request:{number:454},issue:{number:447}}),null);
+});
+test('manual recheck stays owner-only, main-only and uses the trusted gate, not PR code',()=>{
+  const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
+  assert.match(y,/\n  workflow_dispatch:\n    inputs:\n      pr_number:\n/);
+  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
+  assert.match(y,/github\.actor_id == '308995719'/);
+  assert.match(y,/github\.ref == 'refs\/heads\/main'/);
+  assert.match(y,/inputs\.pr_number/);
+  assert.match(y,/gate\.selectCouncilTargetNumber\(context\.eventName,context\.payload\)/);
+  assert.match(y,/ref: main/);
+  assert.match(y,/Fail closed when the Council Gate App is not configured/);
 });
