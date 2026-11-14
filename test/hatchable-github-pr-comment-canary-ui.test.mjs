@@ -29,7 +29,11 @@ test('ambiguous submit permanently disables same-key POST while permitting read-
  const prepared={pullRequest:437,idempotencyKey:'ultron-task-c04-pr437-'+'a'.repeat(24),
   commentBody:'exact comment',bodySha256:'b'.repeat(64)};
  const requests=[];
- const fetch=async(url,options)=>{
+ const fetch=async(url,options={})=>{
+  if(url==='/api/brain/session')
+   return {ok:true,status:200,json:async()=>({authenticated:true,owner:'michaeljwilliams0123'})};
+  if(url.startsWith('/api/brain/github-pr-comment-canary-status'))
+   return {ok:true,status:200,json:async()=>({state:'idle'})};
   const input=JSON.parse(options.body);requests.push(input.mode);
   const value=input.mode==='prepare'?{ok:true,prepared,ownerGrantRequest:{actor:'owner'}}:
    input.mode==='diagnose'?{ok:true,status:'diagnosed',probe:{readOnly:true,issueHttpStatus:200,issueState:'open'}}:
@@ -38,8 +42,11 @@ test('ambiguous submit permanently disables same-key POST while permitting read-
   return {ok:['prepare','diagnose'].includes(input.mode),status:['prepare','diagnose'].includes(input.mode)?200:202,
    json:async()=>value};
  };
- runInNewContext(js,{document:{getElementById:id=>elements[id]},fetch,
+ runInNewContext(js,{document:{getElementById:id=>elements[id]},fetch,URLSearchParams,
+  location:{pathname:'/github-pr-comment-canary.html',search:'?pr=437'},
+  window:{UltronSignIn:{mount:async()=>{}}},
   navigator:{clipboard:{writeText:async()=>{}}}});
+ await new Promise(resolve=>setImmediate(resolve));
  await elements.prepare.listeners.click();
  elements.envelope.value=JSON.stringify({payload:'test',signature:'test'});
  await elements.submit.listeners.click();
@@ -52,7 +59,7 @@ test('ambiguous submit permanently disables same-key POST while permitting read-
  await elements.prepare.listeners.click();
  await elements.reconcile.listeners.click();
  await elements.diagnose.listeners.click();
- assert.deepEqual(requests,['prepare','submit','reconcile','diagnose']);
+ assert.deepEqual(requests,['prepare','submit','readback','diagnose']);
  assert.equal(elements.submit.disabled,true);
  assert.match(elements.status.textContent,/Read-only/);
 });
