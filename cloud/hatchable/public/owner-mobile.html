@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Ultron.MW — iPhone owner setup</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,-apple-system,sans-serif}
+*{box-sizing:border-box}
+body{background:#091525;color:#eef5ff;margin:0}
+main{max-width:720px;margin:0 auto;padding:20px 16px calc(32px + env(safe-area-inset-bottom))}
+h1{font-size:clamp(1.6rem,6vw,2.25rem);line-height:1.17;margin:4px 0 12px}
+h2{font-size:1.12rem;margin:0 0 7px}
+p{margin:8px 0 14px}
+.kicker{color:#bbd5ff;font-size:.8rem;font-weight:750;letter-spacing:.07em;text-transform:uppercase}
+.card{border:1px solid #486786;border-radius:16px;background:#11243c;padding:18px;margin:16px 0}
+.actions{display:grid;grid-template-columns:1fr;gap:10px;margin:12px 0}
+.action{display:flex;align-items:center;justify-content:center;min-height:48px;padding:12px 16px;background:#a8cdff;color:#081a32;font-weight:750;text-decoration:none;border-radius:10px;text-align:center}
+.action.secondary{background:#213c5d;color:#f0f7ff;border:1px solid #708eb4}
+a:not(.action){color:#c4dcff}
+.pill{display:inline-block;border:1px solid #547397;background:#1c3655;padding:4px 9px;border-radius:100px;font-size:.78rem}
+.status{border:1px solid #436887;padding:12px;border-radius:10px;background:#173454;overflow-wrap:anywhere}
+.warning{border-left:3px solid #f0bf70;padding:10px 12px;background:#32291d;color:#ffe8ba}
+.muted{color:#c0cfe2}
+ol{padding-left:23px;margin:10px 0}li{padding:3px 0}
+footer{padding:8px 0 28px;font-size:.9rem;color:#b4c6db}
+[data-sign-in-card] section{max-width:720px!important;margin:14px auto!important}
+@media(min-width:620px){.actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<main>
+<p class="kicker">Ultron cloud / owner access</p>
+<h1>Set up Ultron on your iPhone</h1>
+<p class="muted">Your phone handles sign-in and approval prompts. Hatchable runs the authorized work in the cloud. No Windows PC, terminal, private-key upload, or paid inference is needed to check access.</p>
+<div data-sign-in-card id="mobile-sign-in"></div>
+<section class="card">
+<h2>1. Sign in as the Hatchable owner</h2>
+<p id="session-state" class="status" role="status" aria-live="polite">Checking your Hatchable session…</p>
+<p class="muted">Use this page in <strong>Safari</strong>, not a third-party in-app browser, so iPhone passkey prompts can open normally. If sign-in is needed, the card above returns you to this exact page.</p>
+<div class="actions"><a class="action secondary" href="https://support.apple.com/guide/iphone/use-passkeys-to-sign-in-to-websites-and-apps-iphf538ea8d0/27/ios/27" rel="noopener noreferrer">iPhone passkey instructions</a></div>
+<p id="device-state" class="muted" role="status">Checking browser support…</p>
+</section>
+<section class="card">
+<h2>2. Set up GitHub Face ID sign-in</h2>
+<p>GitHub passkeys belong to your <strong>GitHub account</strong>, separately from Hatchable login and Ultron's operation-approval credential.</p>
+<div class="actions">
+<a class="action" href="https://github.com/settings/security" rel="noopener noreferrer">Open GitHub security settings</a>
+<a class="action secondary" href="https://docs.github.com/en/authentication/authenticating-with-a-passkey/managing-your-passkeys" rel="noopener noreferrer">GitHub passkey guide</a>
+</div>
+<p class="muted">In GitHub: Settings → Password and authentication → Passkeys → Add a passkey. Confirm with Face ID and keep your recovery method available.</p>
+</section>
+<section class="card">
+<h2>3. Check your Ultron owner passkey</h2>
+<p>The existing Ultron passkey is a separate credential. A previous enrollment is recorded, but this page cannot tell whether it is available on this iPhone. Do not create a duplicate credential unless you are following the required enrollment authorization.</p>
+<div class="actions"><a class="action secondary" href="./passkey-owner.html">Open Ultron passkey page</a></div>
+<p class="muted">New Ultron passkey enrollment may require an already authorized owner-signed grant; logging into Hatchable does not replace it.</p>
+</section>
+<section class="card">
+<h2>4. Open the GitHub C04 canary</h2>
+<p id="pr-state" class="status" role="status" aria-live="polite">Checking your selected PR…</p>
+<div class="actions"><a id="canary-link" class="action" href="./github-pr-comment-canary.html">Open C04 cloud console</a></div>
+<p class="warning"><strong>Approval safeguard:</strong> C04 currently requires a separate owner grant signed with P-256 for a comment write. Face ID login alone cannot authorize that write. Until native C04 WebAuthn is reviewed and deployed, this phone page performs read-only status checks only.</p>
+</section>
+<footer>
+<p>For convenience in Safari: Share → Add to Home Screen. The shortcut points to Hatchable's cloud page, not a local application.</p>
+<p><a href="/">Ultron Cloud Controls</a> · <a href="https://github.com/michaeljwilliams0123/Ultron.MW/issues/285" rel="noopener noreferrer">Acceptance issue #285</a></p>
+</footer>
+</main>
+<script src="./sign-in.js" defer></script>
+<script src="./owner-mobile.js" defer></script>
+</body>
+</html>
