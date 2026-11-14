@@ -22,12 +22,14 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:center;fl
 </head>
 <body>
 <main>
+<div id="sign-in-card" data-sign-in-card></div>
 <header><div><p class="muted">ULTRON CLOUD / OWNER AUTHORITY</p><h1>Coordinator App canary</h1></div><a href="/">Back to Command Center</a></header>
-<p class="muted">Prepare and authorize exactly one Coordinator-App-authored pull-request comment. Hatchable atomically reserves the owner grant and nonce before the write, reads the comment back without the App token, and stores an immutable PostgreSQL receipt. A lost response is reconciled by reads only.</p>
+<p class="muted">Prepare and authorize exactly one Coordinator-App-authored pull-request comment. Hatchable atomically reserves the owner grant and nonce before the write, reads the comment back through a separate provider GET using the scoped App token, and stores an immutable PostgreSQL receipt. A lost response is reconciled by reads only.</p>
+<div id="canary-controls">
 <section>
 <h2>1. Prepare the exact comment</h2>
 <label for="pull-request">Open Ultron.MW pull request number</label>
-<input id="pull-request" type="number" min="1" max="999999999" value="399" inputmode="numeric">
+<input id="pull-request" type="number" min="1" max="999999999" value="448" inputmode="numeric">
 <button id="diagnose">Inspect GitHub App access (read-only)</button>
 <button id="prepare">Prepare owner grant</button>
 <button id="copy" disabled>Copy signing request</button>
@@ -45,8 +47,10 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:center;fl
 <button id="reconcile" disabled>Read back existing attempt</button>
 <p class="status" id="status" role="status" aria-live="polite">No canary prepared. No GitHub write has been attempted.</p>
 </section>
+</div>
 <p class="muted">Fixed scope: owner <code>michaeljwilliams0123</code>, repository ID <code>1424939667</code>, Coordinator App ID <code>5633654</code>, installation <code>179066535</code>, and an in-memory token limited to <code>metadata:read</code> plus <code>issues:write</code>. Paid spend: $0.</p>
 </main>
+<script src="./sign-in.js" defer></script>
 <script src="./github-pr-comment-canary.js" defer></script>
 </body>
 </html>

@@ -13,7 +13,7 @@
    const back=url.searchParams.get('redirect');
    if(back){
     const inner=new URL(back);
-    if(inner.origin===location.origin){inner.searchParams.set('next',location.pathname);url.searchParams.set('redirect',inner.href)}
+    if(inner.origin===location.origin){inner.searchParams.set('next',location.pathname+(location.search||''));url.searchParams.set('redirect',inner.href)}
    }
    return url.href;
   }catch{return null}
