@@ -4,14 +4,19 @@ const byId=id=>document.getElementById(id);
 const pr=byId('pull-request'),prepare=byId('prepare'),diagnose=byId('diagnose'),copy=byId('copy');
 const comment=byId('comment'),signable=byId('signable'),envelope=byId('envelope');
 const submit=byId('submit'),reconcile=byId('reconcile'),status=byId('status');
-const controls=byId('canary-controls');
+const controls=byId('canary-controls'),load=byId('load-target');
 let prepared=null,busy=false,submitted=false,authenticated=false;
+let targetVerified=false,selectedPr=null;
 function setStatus(text){status.textContent=text;}
 function buttons(){
- prepare.disabled=busy||submitted||!authenticated;
- diagnose.disabled=busy||!authenticated;
+ const valid=/^[1-9][0-9]{0,8}$/.test(String(pr.value||'').trim());
+ const loaded=targetVerified&&selectedPr===Number(pr.value);
+ pr.disabled=busy||submitted||!!prepared;
+ load.disabled=busy||!authenticated||submitted||!!prepared||!valid;
+ prepare.disabled=busy||submitted||!authenticated||!loaded;
+ diagnose.disabled=busy||!authenticated||!valid;
  copy.disabled=busy||!prepared||submitted||!authenticated||!signable.value;
- submit.disabled=busy||!prepared||submitted||!authenticated;
+ submit.disabled=busy||!prepared||submitted||!authenticated||!loaded;
  reconcile.disabled=busy||!prepared||!submitted||!authenticated;
 }
 function sessionLost(){
@@ -61,6 +66,33 @@ async function hydrateStateOnLoad(){
   setStatus('No pending execution for PR #'+pullRequest+'.');
  }else{throw Error('Unknown execution state; no new write permitted.');}
  buttons();
+ return data;
+}
+async function loadTarget(){
+ if(busy||!authenticated||submitted||prepared)return;
+ let pullRequest;
+ try{pullRequest=prNumber();}catch(error){return setStatus(String(error.message||error));}
+ busy=true;targetVerified=false;selectedPr=null;buttons();
+ try{
+  const data=await hydrateStateOnLoad();
+  if(!authenticated||!data)return;
+  selectedPr=pullRequest;
+  if(data.state!=='idle')return;
+  const value=await call({mode:'diagnose',pullRequest});
+  const probe=value?.probe||{};
+  if(value.status!=='diagnosed'||probe.readOnly!==true||
+     probe.repositoryHttpStatus!==200||probe.issueHttpStatus!==200||
+     probe.isPullRequest!==true||probe.issueState!=='open'||
+     probe.issueLocked!==false||probe.repositoryArchived!==false){
+   return setStatus('Target must be a verified open, unlocked PR in the canonical non-archived repository. No write is enabled.');
+  }
+  targetVerified=true;
+  setStatus('Verified open and unlocked PR #'+pullRequest+
+   '. Execution ledger is idle; prepare is now available.');
+ }catch(error){
+  targetVerified=false;
+  setStatus('Target verification unavailable. No new provider write is enabled: '+String(error.message||error));
+ }finally{busy=false;buttons();}
 }
 async function call(body){
  const response=await fetch('/api/brain/github-pr-comment-canary',{
@@ -82,12 +114,14 @@ async function call(body){
  return {...value,httpStatus:response.status};
 }
 prepare.addEventListener('click',async()=>{
- if(!authenticated||submitted)return setStatus('A previous operation may be unresolved. Readback only.');
+ if(!authenticated||submitted||!targetVerified||selectedPr!==Number(pr.value))
+  return setStatus('Load and verify a specific open PR before preparing.');
  busy=true;prepared=null;comment.value='';signable.value='';buttons();
  try{
   const pullRequest=Number(pr.value);
   if(!Number.isSafeInteger(pullRequest)||pullRequest<1)throw Error('Enter a valid pull request number.');
   const value=await call({mode:'prepare',pullRequest});
+  if(value?.prepared?.pullRequest!==selectedPr)throw Error('Canary target mismatch; no grant prepared.');
   prepared=value.prepared;comment.value=prepared.commentBody;
   signable.value=JSON.stringify(value.ownerGrantRequest);
   setStatus('Prepared. Copy and sign the exact request; it expires after five minutes.');
@@ -153,14 +187,21 @@ submit.addEventListener('click',()=>execute('submit'));
 reconcile.addEventListener('click',()=>execute('reconcile'));
 const initialPr=new URLSearchParams(globalThis.location?.search||'').get('pr');
 if(initialPr&&/^[1-9][0-9]{0,8}$/.test(initialPr))pr.value=initialPr;
-pr.addEventListener('change',async()=>{
- if(submitted){setStatus('Pending operation: do not switch PR until readback is resolved.');return;}
- if(authenticated)try{await hydrateStateOnLoad();}
- catch(e){submitted=true;setStatus(String(e.message||e));buttons();}
+pr.addEventListener('change',()=>{
+ if(submitted||prepared){
+  pr.value=selectedPr===null?'':String(selectedPr);
+  return setStatus('A prepared or pending operation is pinned to its original PR. Complete readback before changing targets.');
+ }
+ targetVerified=false;selectedPr=null;
+ comment.value='';signable.value='';envelope.value='';
+ setStatus('Click Load target to inspect the selected PR before preparing.');
+ buttons();
 });
+load.addEventListener('click',()=>loadTarget());
 buttons();
 void checkSession().then(async ok=>{
- if(ok)try{await hydrateStateOnLoad();}
- catch(e){submitted=true;setStatus(String(e.message||e));buttons();}
+ if(!ok)return;
+ if(pr.value)await loadTarget();
+ else{setStatus('Enter an open PR number, then click Load target. No execution is enabled.');buttons();}
 });
 })();
