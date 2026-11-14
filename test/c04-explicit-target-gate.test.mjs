@@ -16,7 +16,7 @@ function harness({search='',open=true,status='idle'}={}){
   if(url==='/api/brain/session')
    return {ok:true,status:200,json:async()=>({authenticated:true,owner:'michaeljwilliams0123'})};
   if(url.startsWith('/api/brain/github-pr-comment-canary-status'))
-   return {ok:true,status:200,json:async()=>({state,pullRequest:447})};
+   return {ok:true,status:200,json:async()=>({state:status,pullRequest:447})};
   const request=JSON.parse(options.body);
   if(request.mode==='diagnose')
    return {ok:true,status:200,json:async()=>({ok:true,status:'diagnosed',
