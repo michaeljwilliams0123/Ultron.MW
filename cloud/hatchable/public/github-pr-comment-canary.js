@@ -67,7 +67,7 @@ async function call(body){
   method:'POST',credentials:'include',cache:'no-store',redirect:'error',
   headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  let value;try{value=await response.json();}catch{throw Error('Unreadable owner API response.');}
- if(response.status===401||value?.error==='login_required'){
+ if(response.status===401||value?.error==='login_required'||value?.error==='owner-identity-required'){
   sessionLost();throw Error('login_required');
  }
  if(value&&value.status==='disabled')
