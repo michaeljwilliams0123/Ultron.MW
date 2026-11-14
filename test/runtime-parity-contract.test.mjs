@@ -7,6 +7,17 @@ import {auditRuntimeParity,PARITY_PAIRS} from '../scripts/check-runtime-parity.m
 
 const ROOT=new URL('../',import.meta.url);
 
+test('G1 Coordinator App proof source must be pinned to its deployed Hatchable mirror',()=>{
+ const pair=['src/identity/github-app-installation-proof.mjs',
+  'cloud/hatchable/lib/github-app-installation-proof.js'];
+ assert.ok(PARITY_PAIRS.some(p=>p[0]===pair[0]&&p[1]===pair[1]),
+  'the G1 scoped-App proof is a required release mirror');
+ const sources=PARITY_PAIRS.map(p=>p[0]),targets=PARITY_PAIRS.map(p=>p[1]);
+ assert.equal(new Set(sources).size,sources.length,'mirror sources must be unique');
+ assert.equal(new Set(targets).size,targets.length,'mirror destinations must be unique');
+});
+
+
 test('canonical authored modules and deployed mirrors are byte-identical',async()=>{
  const proof=await auditRuntimeParity({root:ROOT});
  assert.ok(PARITY_PAIRS.length>=12,'verify both runtime and browser mirror families');
