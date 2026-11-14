@@ -14,6 +14,7 @@ import {fileURLToPath} from 'node:url';
 
 export const PARITY_PAIRS=Object.freeze([
  ['src/composio-v3-policy.mjs','cloud/hatchable/lib/composio-v3-policy.js'],
+ ['src/identity/github-app-installation-proof.mjs','cloud/hatchable/lib/github-app-installation-proof.js'],
  ['src/ci-evidence.mjs','cloud/hatchable/lib/ci-evidence.js'],
  ['src/scheduler/slot-ledger.mjs','cloud/hatchable/lib/slot-ledger.js'],
  ['src/council/trusted-evaluator.mjs','cloud/hatchable/lib/trusted-evaluator.js'],
