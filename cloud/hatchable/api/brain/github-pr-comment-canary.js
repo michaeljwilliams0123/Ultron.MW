@@ -1,7 +1,8 @@
 import {db,config} from 'hatchable';
+import {createHash} from 'node:crypto';
 import {verifyDelegatedGrant,reservePrCommentExecution}
  from 'lib/security-adjudicator.js';
-import {preparePrCommentCanary,validatePreparedCanary,operationDigest,
+import {preparePrCommentCanary,validatePreparedCanary,canonicalCanaryComment,operationDigest,
  submitPrCommentCanary,reconcilePrCommentCanary,prCommentCanaryReadiness,
  prCommentCanaryEnabled,classifyPrCommentFailure,diagnosePrCommentCanary}
  from 'lib/github-pr-comment-canary.js';
@@ -52,6 +53,8 @@ function disabled(res){
   reason:'canary-disabled'});
 }
 export default async function handler(req,res){
+ if(req.member?.handle!=='michaeljwilliams0123')
+  return reply(res,403,{ok:false,error:'owner-identity-required'});
  const mode=req.body?.mode;
  const readConfig=name=>config.get(name);
  if(mode==='status'){
@@ -83,6 +86,44 @@ export default async function handler(req,res){
    const failure=classifyPrCommentFailure(error);
    return reply(res,503,{ok:false,status:'diagnostic-unavailable',
     reason:failure.reason});
+  }
+ }
+ if(mode==='readback'){
+  const key=req.body?.idempotencyKey,pr=req.body?.pullRequest;
+  if(!req.body||Object.keys(req.body).sort().join(',')!==
+     'idempotencyKey,mode,pullRequest'||
+     typeof key!=='string'||!/^ultron-task-c04-pr[1-9][0-9]*-[a-f0-9]{24}$/.test(key)||
+     !Number.isSafeInteger(pr)||pr<1||pr>999999999)
+   return reply(res,400,{ok:false,error:'canary-request-invalid'});
+  let prepared,digest;
+  try{
+   const result=await db.query(`SELECT idempotency_key,target_number,
+    body_sha256,operation_digest,state FROM github_pr_comment_executions
+    WHERE repository=$1 AND idempotency_key=$2 AND target_number=$3`,
+    ['michaeljwilliams0123/Ultron.MW',key,pr]);
+   const row=result?.rows?.[0];
+   if(!row)return reply(res,404,{ok:false,error:'attempt-not-found'});
+   if(!['in_flight','reconcile_required','completed'].includes(row.state))
+    return reply(res,409,{ok:false,status:row.state,error:'attempt-not-dispatched'});
+   const commentBody=canonicalCanaryComment({pullRequest:pr,idempotencyKey:key});
+   const bodySha256=createHash('sha256').update(commentBody).digest('hex');
+   prepared=validatePreparedCanary({pullRequest:pr,idempotencyKey:key,
+    commentBody,bodySha256});
+   if(bodySha256!==row.body_sha256||
+      !/^[a-f0-9]{64}$/.test(row.operation_digest||''))
+    return reply(res,409,{ok:false,error:'intent-conflict'});
+   digest=row.operation_digest;
+  }catch{return reply(res,503,{ok:false,error:'attempt-read-unavailable'});}
+  try{
+   const result=await reconcilePrCommentCanary({db,prepared,
+    operationDigest:digest,appCredentials:await appCredentials()});
+   return reply(res,200,{ok:true,status:result.status,
+    idempotencyKey:key,receipt:result.receipt});
+  }catch(error){
+   const failure=classifyPrCommentFailure(error);
+   return reply(res,202,{ok:false,status:'reconcile-required',
+    idempotencyKey:key,error:'provider-outcome-unresolved',
+    reason:failure.reason,stage:failure.stage});
   }
  }
  if(mode==='prepare'){

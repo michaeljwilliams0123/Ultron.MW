@@ -50,7 +50,7 @@ async function call(body){
  let status,payload;const headers={};
  const res={setHeader:(k,v)=>{headers[k]=v;},status(code){status=code;return this;},
   json(value){payload=value;return this;}};
- await handler({body},res);
+ await handler({body,member:{handle:'michaeljwilliams0123'}},res);
  return {status,body:payload,headers};
 }
 
