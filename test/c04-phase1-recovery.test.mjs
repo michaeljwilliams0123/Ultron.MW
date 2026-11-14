@@ -59,7 +59,7 @@ test('P0: mounts the real shared login recovery component and preserves PR targe
  assert.match(html,/id="sign-in-card"[^>]*data-sign-in-card|data-sign-in-card[^>]*id="sign-in-card"/);
  assert.match(html,/src="\.\/sign-in\.js"/);
  assert.match(html,/id="canary-controls"/);
- assert.match(signin,/location\.pathname\+location\.search/);
+ assert.match(signin,/location\.pathname\+\(location\.search\|\|''\)/);
  const app=browser({session:401});await app.flush();
  assert.equal(app.nodes['canary-controls'].style.display,'none');
  assert.equal(app.nodes.prepare.disabled,true);
