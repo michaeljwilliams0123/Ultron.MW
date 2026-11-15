@@ -76,7 +76,9 @@ export async function probeGithubAppInstallation({credentials,signJwt,
    return result('installation-mismatch');
   const onRepo=await http(fetchImpl,
    '/repos/'+APP_PROOF.repository+'/installation',{method:'GET',headers:appHeaders});
-  if(onRepo.status!==200||!exactInstallation(onRepo.body))
+  if(onRepo.status!==200||!exactInstallation(onRepo.body)||
+     JSON.stringify(observedPermissions(onRepo.body.permissions))!==
+       JSON.stringify(observedPermissions(installation.body.permissions)))
    return result('repository-installation-mismatch');
   // Down-scope to metadata read even when the installation permits contents:write.
   const minted=await http(fetchImpl,
