@@ -6,8 +6,11 @@ const comment=byId('comment'),signable=byId('signable'),envelope=byId('envelope'
 const submit=byId('submit'),reconcile=byId('reconcile'),status=byId('status');
 const controls=byId('canary-controls'),load=byId('load-target');
 const pendingPanel=byId('pending-panel');
+const passkeySelect=byId('passkey-credential'),passkeyRefresh=byId('passkey-refresh');
+const passkeyPrepare=byId('passkey-prepare'),passkeyConfirm=byId('passkey-confirm');
 let prepared=null,busy=false,submitted=false,authenticated=false;
 let targetVerified=false,selectedPr=null,pendingHold=false;
+let ownerGrantRequest=null,passkeyChallenge=null;
 function setStatus(text){status.textContent=text;}
 function buttons(){
  if(pendingPanel)pendingPanel.hidden=!pendingHold;
@@ -21,6 +24,12 @@ function buttons(){
  copy.disabled=busy||!prepared||submitted||!authenticated||!signable.value;
  submit.disabled=busy||!prepared||submitted||!authenticated||!loaded;
  reconcile.disabled=busy||!prepared||!submitted||!authenticated;
+ if(passkeyRefresh)passkeyRefresh.disabled=busy||!authenticated||submitted||pendingHold;
+ if(passkeySelect)passkeySelect.disabled=busy||submitted||!!passkeyChallenge;
+ if(passkeyPrepare)passkeyPrepare.disabled=busy||!authenticated||!prepared||submitted||!loaded||
+  !ownerGrantRequest||!passkeySelect?.value;
+ if(passkeyConfirm)passkeyConfirm.disabled=busy||!authenticated||!prepared||submitted||!loaded||
+  !passkeyChallenge;
 }
 function sessionLost(){
  authenticated=false;
@@ -75,7 +84,8 @@ async function loadTarget(){
  if(busy||!authenticated||submitted||prepared)return;
  let pullRequest;
  try{pullRequest=prNumber();}catch(error){return setStatus(String(error.message||error));}
- busy=true;targetVerified=false;selectedPr=null;buttons();
+ busy=true;targetVerified=false;selectedPr=null;
+ ownerGrantRequest=null;passkeyChallenge=null;buttons();
  try{
   const data=await hydrateStateOnLoad();
   if(!authenticated||!data)return;
@@ -119,15 +129,16 @@ async function call(body){
 prepare.addEventListener('click',async()=>{
  if(!authenticated||submitted||!targetVerified||selectedPr!==Number(pr.value))
   return setStatus('Load and verify a specific open PR before preparing.');
- busy=true;prepared=null;comment.value='';signable.value='';buttons();
+ busy=true;prepared=null;ownerGrantRequest=null;passkeyChallenge=null;
+ comment.value='';signable.value='';buttons();
  try{
   const pullRequest=Number(pr.value);
   if(!Number.isSafeInteger(pullRequest)||pullRequest<1)throw Error('Enter a valid pull request number.');
   const value=await call({mode:'prepare',pullRequest});
   if(value?.prepared?.pullRequest!==selectedPr)throw Error('Canary target mismatch; no grant prepared.');
-  prepared=value.prepared;comment.value=prepared.commentBody;
-  signable.value=JSON.stringify(value.ownerGrantRequest);
-  setStatus('Prepared. Copy and sign the exact request; it expires after five minutes.');
+  prepared=value.prepared;ownerGrantRequest=value.ownerGrantRequest;
+  comment.value=prepared.commentBody;signable.value=JSON.stringify(ownerGrantRequest);
+  setStatus('Prepared. Use your enrolled passkey to authorize once, or the legacy signed-envelope fallback.');
  }catch(error){setStatus(String(error.message||error));}
  finally{busy=false;buttons();}
 });
@@ -153,6 +164,123 @@ copy.addEventListener('click',async()=>{
  try{await navigator.clipboard.writeText(signable.value);setStatus('Signing request copied. Keep the owner private key on the trusted device.');}
  catch{setStatus('Clipboard access failed. Select and copy the read-only signing request manually.');}
 });
+// Native device-bound WebAuthn, separate from legacy owner P-256 envelopes.
+const decodeB64=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+
+ '='.repeat((4-s.length%4)%4)),x=>x.charCodeAt(0));
+const encodeB64=bytes=>btoa(String.fromCharCode(...new Uint8Array(bytes)))
+ .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function passkeyCall(body){
+ const response=await fetch('/api/brain/github-pr-comment-passkey',{
+  method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',
+  headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ let value;
+ try{value=await response.json();}catch{throw Error('Unreadable passkey API response.');}
+ if(response.status===401||value?.reason==='owner-identity-required'){
+  sessionLost();throw Error('Owner session expired.');
+ }
+ return {...value,httpStatus:response.status};
+}
+async function refreshPasskeys(){
+ if(!authenticated||!passkeySelect)return;
+ const response=await fetch('/api/brain/owner-passkeys',{
+  credentials:'same-origin',cache:'no-store'});
+ if(!response.ok)throw Error('Owner passkey registry unavailable.');
+ const value=await response.json();
+ if(value?.ok!==true||!Array.isArray(value.credentials))
+  throw Error('Owner passkey list is invalid.');
+ const previous=passkeySelect.value;
+ passkeySelect.replaceChildren();
+ for(const c of value.credentials){
+  if(typeof c.credentialId!=='string'||!/^[A-Za-z0-9_-]{16,1024}$/.test(c.credentialId))
+   continue;
+  const option=document.createElement('option');
+  option.value=c.credentialId;
+  option.textContent=String(c.label||'Owner passkey').slice(0,64);
+  passkeySelect.append(option);
+ }
+ if([...passkeySelect.options].some(x=>x.value===previous))passkeySelect.value=previous;
+ if(!passkeySelect.value)setStatus('No active registered owner passkey. Enroll in Owner setup first.');
+ buttons();
+}
+passkeyRefresh?.addEventListener('click',async()=>{
+ if(busy||!authenticated)return;
+ busy=true;passkeyChallenge=null;buttons();
+ try{await refreshPasskeys();}
+ catch(e){setStatus('Passkey registry: '+String(e.message||e));}
+ finally{busy=false;buttons();}
+});
+passkeySelect?.addEventListener('change',()=>{
+ passkeyChallenge=null;
+ setStatus('Passkey selected. Prepare a fresh challenge for this credential.');
+ buttons();
+});
+passkeyPrepare?.addEventListener('click',async()=>{
+ if(busy||submitted||!prepared||!ownerGrantRequest||!targetVerified||
+    selectedPr!==prepared.pullRequest||!passkeySelect.value)
+  return setStatus('First verify target, prepare exact comment and select an owner passkey.');
+ busy=true;passkeyChallenge=null;buttons();
+ try{
+  const value=await passkeyCall({mode:'prepare',prepared,
+   credentialId:passkeySelect.value,
+   expectedProfileVersion:ownerGrantRequest.profileVersion,
+   expectedStopVersion:ownerGrantRequest.stopVersion});
+  if(!value.ok||value.status!=='prepared'||value.credentialId!==passkeySelect.value||
+     !/^passkey-[A-Za-z0-9-]{16,96}$/.test(value.grantId||'')||
+     typeof value.challenge!=='string'||value.rpId!=='ultron-mw-cloud.hatchable.site')
+   throw Error(value.reason||'Challenge creation was not verified.');
+  passkeyChallenge=value;
+  setStatus('Exact PR #'+prepared.pullRequest+
+   ' bound to a fresh device passkey challenge. Confirm once before it expires.');
+ }catch(error){setStatus('Passkey preparation denied: '+String(error.message||error));}
+ finally{busy=false;buttons();}
+});
+passkeyConfirm?.addEventListener('click',async()=>{
+ if(busy||!authenticated||submitted||!prepared||!passkeyChallenge||!targetVerified||
+   prepared.pullRequest!==selectedPr)return;
+ if(!navigator.credentials?.get)
+  return setStatus('This browser cannot use passkeys. Open this page in Safari or a compatible browser.');
+ const message='Authorize EXACTLY ONE GitHub PR #'+prepared.pullRequest+
+  ' comment by the Coordinator App? No automatic retry. Body:\n\n'+prepared.commentBody;
+ if(!globalThis.confirm(message))return;
+ let assertion;
+ try{
+  const c=passkeyChallenge;
+  if(!Number.isFinite(Date.parse(c.expiresAt))||Date.parse(c.expiresAt)<=Date.now())
+   throw Error('Passkey challenge expired. Prepare a fresh one.');
+  assertion=await navigator.credentials.get({publicKey:{
+   challenge:decodeB64(c.challenge),rpId:c.rpId,
+   allowCredentials:[{type:'public-key',id:decodeB64(c.credentialId)}],
+   userVerification:'required',timeout:120000
+  }});
+  if(!assertion||assertion.type!=='public-key')throw Error('No passkey assertion returned.');
+ }catch(error){
+  passkeyChallenge=null;buttons();
+  return setStatus('No GitHub write attempted. Passkey not confirmed: '+
+   String(error.message||error));
+ }
+ const c=passkeyChallenge;
+ const proof={grantId:c.grantId,credentialId:encodeB64(assertion.rawId),
+  authenticatorData:encodeB64(assertion.response.authenticatorData),
+  clientDataJSON:encodeB64(assertion.response.clientDataJSON),
+  signature:encodeB64(assertion.response.signature)};
+ submitted=true;pendingHold=true;busy=true;passkeyChallenge=null;buttons();
+ try{
+  const result=await passkeyCall({mode:'submit',prepared,proof});
+  if(result.ok&&result.receipt?.details?.remoteVerified===true&&
+    typeof result.receipt.details.commentUrl==='string'){
+   setStatus('Device-signed comment independently verified: '+result.receipt.details.commentUrl);
+   prepared=null;ownerGrantRequest=null;submitted=false;pendingHold=false;
+  }else{
+   setStatus('Passkey transaction '+(result.status||'held')+': '+
+    String(result.reason||'Unknown provider effect')+
+    '. Do not resubmit; inspect status and use readback only.');
+  }
+ }catch(error){
+  setStatus('Outcome may be uncertain: '+String(error.message||error)+
+   '. Do NOT sign or submit again without readback.');
+ }finally{busy=false;buttons();}
+});
+
 async function execute(mode){
  if(!authenticated||!prepared)return;
  if(mode==='submit'&&submitted)return setStatus('Operation already attempted; use readback.');
@@ -195,7 +323,7 @@ pr.addEventListener('change',()=>{
   pr.value=selectedPr===null?'':String(selectedPr);
   return setStatus('A prepared or pending operation is pinned to its original PR. Complete readback before changing targets.');
  }
- targetVerified=false;selectedPr=null;
+ targetVerified=false;selectedPr=null;ownerGrantRequest=null;passkeyChallenge=null;
  comment.value='';signable.value='';envelope.value='';
  setStatus('Click Load target to inspect the selected PR before preparing.');
  buttons();
@@ -204,6 +332,7 @@ load.addEventListener('click',()=>loadTarget());
 buttons();
 void checkSession().then(async ok=>{
  if(!ok)return;
+ await refreshPasskeys().catch(e=>setStatus('Passkey list unavailable: '+String(e.message||e)));
  if(pr.value)await loadTarget();
  else{setStatus('Enter an open PR number, then click Load target. No execution is enabled.');buttons();}
 });
