@@ -60,7 +60,7 @@ test('model input contains bounded exact-head diff and ignores foreign-head patc
  const input=buildCouncilReasoningInput({title:'Inspect the provider changes',
   body:'Verify the new guard',sourceSha:SHA,prNumber:454,
   reviewEvidence:evidence,prContext});
- assert.match(input,/src\\/provider\\.js/);
+ assert.equal(input.includes('src/provider.js'),true);
  assert.match(input,/safePermissionSignal/);
  assert.equal(checkExternalInput(input).ok,true);
  const foreign=buildCouncilReasoningInput({title:'Inspect',
