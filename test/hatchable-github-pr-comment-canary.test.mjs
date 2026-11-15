@@ -434,3 +434,35 @@ test('read-only preflight reports missing PR with only safe bounded HTTP metadat
  assert.doesNotMatch(JSON.stringify(outcome),/private-raw-provider-body/);
  assert.equal(calls.filter(c=>c.method==='POST'&&c.url.endsWith('/comments')).length,0);
 });
+
+test('trusted permission header is retained as safe ledger metadata after a 403 without another POST',async t=>{
+ const h=await admitted(t),github=provider(h.prepared);
+ let writeCount=0;
+ const fetchImpl=async(url,options={})=>{
+  if(options.method==='POST'&&url.endsWith('/issues/'+h.prepared.pullRequest+'/comments')){
+   writeCount++;
+   return {status:403,ok:false,
+    headers:new Headers({'x-accepted-github-permissions':'issues=write;pull_requests=write',
+     'x-untrusted-provider-body':'Bearer SHOULD_NOT_LEAK'}),
+    json:async()=>({message:'Bearer SHOULD_NOT_LEAK'})};
+  }
+  return github.fetchImpl(url,options);
+ };
+ let denied;
+ try {
+  await submitPrCommentCanary({db:h.db,prepared:h.prepared,
+   operationDigest:h.digest,appCredentials:APP,fetchImpl});
+ }catch(error){denied=error;}
+ assert.equal(denied?.message,'github-pr-comment-canary-provider-write-denied');
+ assert.deepEqual(classifyPrCommentFailure(denied),{
+  stage:'provider_write',reason:'provider-write-denied',dispatched:null,
+  providerHttpStatus:403,permissionHint:'issues-or-pull-requests-write'});
+ const events=(await h.db.query("SELECT details FROM brain_events WHERE event_type='github-pr-comment-stage' ORDER BY id")).rows.map(x=>x.details);
+ assert.ok(events.some(x=>x.stage==='reconcile_required'&&x.providerHttpStatus===403&&
+  x.permissionHint==='issues-or-pull-requests-write'));
+ assert.doesNotMatch(JSON.stringify(events),/SHOULD_NOT_LEAK|Bearer|x-untrusted/);
+ assert.equal((await h.db.query('SELECT state FROM github_pr_comment_executions')).rows[0].state,'reconcile_required');
+ await assert.rejects(reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,fetchImpl}),/readback-not-found/);
+ assert.equal(writeCount,1,'reconciliation must never dispatch a second provider POST');
+});
