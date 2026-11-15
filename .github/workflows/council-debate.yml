@@ -262,7 +262,7 @@ jobs:
                 core.info('Council GitHub patch evidence: '+selected.length+'/'+
                   observedFiles.length+' files; complete='+complete);
               } catch (error) {
-                core.warning('Council patch evidence unverified: '+error.message);
+                core.warning?.('Council patch evidence unverified: '+error.message);
               }
             }
 
