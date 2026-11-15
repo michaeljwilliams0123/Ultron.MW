@@ -129,10 +129,11 @@ export async function verifyAndReserveC04Passkey({db,prepared:raw,proof}={}){
  }catch{return HELD('passkey-readback-unavailable');}
  if(!row||row.usedAt||row.revokedAt||Date.parse(row.expiresAt)<=Date.now()||
   row.credentialId!==proof.credentialId||
-  row.actor!=='worker:coordinator'||row.objectiveId!==p.idempotencyKey||
+  row.actor!=='mcp:ultron'||row.objectiveId!==p.idempotencyKey||
   row.operation!=='pr.comment'||row.resource!==resource(p)||
   row.policySha!==POLICY||row.administrativeChange!==false||
-  !Number.isSafeInteger(row.profileVersion)||!Number.isSafeInteger(row.stopVersion))
+  !Number.isSafeInteger(Number(row.profileVersion))||
+  !Number.isSafeInteger(Number(row.stopVersion)))
   return HELD('passkey-challenge-stale-or-mismatched');
  let signature;
  try{signature=await verifyOwnerPasskeyAssertion({
