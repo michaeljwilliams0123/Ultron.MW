@@ -2,6 +2,11 @@
   "schema": "ultron.council-owner-signing-key.v1",
   "owner": "michaeljwilliams0123",
   "ownerId": 308995719,
-  "note": "Public P-256 JWK only (kty, crv, x, y). Never a private key. null keeps the owner override unavailable (fail-closed). Changing this file requires a reviewed PR to main.",
-  "publicJwk": null
+  "note": "Public P-256 JWK only (kty, crv, x, y). Never a private key. Changing this file requires a reviewed PR to main.",
+  "publicJwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "RTUPDqTd-oXJXlHeOsHPLQv93JA94wZ_nn8JpyRwgmQ",
+    "y": "xJdJ_djMxPodV3dz5lV9xvzPjVb4oe6hXaVx4BJScfs"
+  }
 }
