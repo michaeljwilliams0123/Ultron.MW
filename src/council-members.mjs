@@ -366,7 +366,21 @@ export async function runMemberActions({role,sourceSha,token,assessment,target,c
           appId:actor.appId,appSlug:actor.appSlug,bindingKey:actor.bindingKey},
          expectedEffect:String(action.why||action.text||'').slice(0,300),
          targetUrl:'https://api.github.com/repos/'+REPO+'/issues/'+target.number},
-        execute:()=>executeMemberAction(actor,token,action,scoped,{fetchImpl,deps}),
+        execute:async()=>{
+         const out=await executeMemberAction(actor,token,action,scoped,{fetchImpl,deps});
+         if(action.op==='review.comment'&&out.status==='done'){
+          // A provider POST response alone is not independent readback.
+          // If GET fails, keep an uncertain ledger state; NEVER replay.
+          const found=await probeCouncilEffect(actor,token,{
+           op:action.op,number:target.number,executionKey:key,
+           caseSha:target.caseSha
+          },fetchImpl);
+          if(!found)throw Error('council-review-readback-unverified');
+          return {...out,receipt:found.receipt||undefined,
+           effect:{executor:found.executor||actor.botLogin,url:found.url}};
+         }
+         return out;
+        },
         probe:()=>probeCouncilEffect(actor,token,{op:action.op,number:target.number,executionKey:key,caseSha:target.caseSha},fetchImpl)}));
       continue;
     }
