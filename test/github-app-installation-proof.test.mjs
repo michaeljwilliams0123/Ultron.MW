@@ -12,7 +12,7 @@ function harness(override={}){
  const service=async(url,options)=>{
   calls.push({url,method:options.method||'GET',authorization:options.headers.Authorization,body:options.body});
   if(url.endsWith('/app/installations/179066535'))return payload(200,override.installation??installation);
-  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/installation'))return payload(200,override.repoInstallation??installation);
+  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/installation'))return payload(200,override.repoInstallation??override.installation??installation);
   if(url.endsWith('/app/installations/179066535/access_tokens'))return payload(201,override.token??token);
   if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW'))return payload(200,override.repo??repo);
   throw Error('unexpected provider call');
