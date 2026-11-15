@@ -21,12 +21,12 @@ const LEGACY_FILES=['verify.yml','reef-runtime-probe.yml','owner-comment-router.
   'mahoraga-connection1026.yml','hf-free-cpu-tournament.yml','hf-heldout-cpu.yml','hf-oidc-bridge.yml',
   'held-out-acceptance.yml','c06-owner-model-release.yml','c06-reconcile-publish.yml','live-acceptance-audit.yml',
   'self-scan-pr.yml','gitlab-mirror.yml','cloud-objective.yml','cloud-pr.yml','council-worker.yml',
-  'governed-execution.yml','council-self-repair.yml'];
+  'governed-execution.yml','council-self-repair.yml','verify-secondary-admin.yml'];
 
 test('phase 2: exactly eight workflow files; every legacy job lives once in its lane; every pin is real',()=>{
   const parity=checkParity({readFile:read,listWorkflows:list,listStaged:staged});
   assert.deepEqual(parity.problems,[]);
-  assert.equal(parity.legacyCount,27,'26 legacy files plus council-self-repair (#411)');
+  assert.equal(parity.legacyCount,28,'26 legacy files plus council-self-repair (#411) and isolated verifier');
   assert.deepEqual(LEGACY_WORKFLOWS.map(w=>w.file).sort(),[...LEGACY_FILES].sort());
   assert.equal(parity.laneCount,8);
   const keys=parity.mapped.map(m=>m.lane+'#'+m.job);
@@ -56,6 +56,21 @@ test('lanes are owned by distinct Council roles (seven members plus Ultron Core)
   assert.equal(new Set(owners).size,8);
   for(const owner of owners)assert.ok(owner==='Ultron Core'||COUNCIL_APP_ROLES.includes(owner),owner);
   for(const role of COUNCIL_APP_ROLES)assert.ok(owners.includes(role),role+' owns no lane');
+});
+
+test('secondary Admin verifier is owner-gated in the protected canary lane',()=>{
+  const source=read('.github/workflows/lane-owner-canary.yml');
+  const job=source.split('\n  secondary-admin-verify:\n')[1];
+  assert.ok(job,'secondary Admin job exists in the eight-lane workflow inventory');
+  assert.match(job,/inputs\.canary_task == 'secondary-admin-verifier'/);
+  assert.match(job,/github\.actor == 'michaeljwilliams0123'/);
+  assert.match(job,/github\.triggering_actor == 'michaeljwilliams0123'/);
+  assert.match(job,/github\.ref == 'refs\/heads\/main'/);
+  assert.match(job,/environment: ultron-secondary-admin/);
+  assert.ok(job.includes('ULTRON_SECONDARY_ADMIN_PRIVATE_KEY: ${{ secrets.ULTRON_SECONDARY_ADMIN_PRIVATE_KEY }}'));
+  assert.match(job,/persist-credentials: false/);
+  assert.match(job,/node scripts\/verify-secondary-admin\.mjs/);
+  assert.equal(list().includes('verify-secondary-admin.yml'),false);
 });
 
 test('required check `test` is still produced only by verify.yml, unchanged',()=>{

@@ -14,6 +14,7 @@ on:
           - owner-actions-canary
           - owner-canary-matrix
           - mahoraga-connection1026
+          - secondary-admin-verifier
       actions_mode:
         description: 'owner-actions-canary: read-only by default; create means one isolated branch'
         type: choice
@@ -261,3 +262,35 @@ jobs:
           MAHORAGA_PAT: ${{ secrets.ULTRON_MAHORAGA_CONNECTION1026 }}
           CANARY_MODE: ${{ inputs.connection_mode }}
         run: node scripts/mahoraga-connection1026.mjs
+
+  secondary-admin-verify:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.canary_task == 'secondary-admin-verifier' &&
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    concurrency:
+      group: secondary-admin-${{ github.run_id }}-verify
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    environment: ultron-secondary-admin
+    timeout-minutes: 5
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '20'
+      - name: Verify scoped App token minting and canonical repository readback
+        env:
+          SECONDARY_ADMIN_APP_ID: ${{ vars.ULTRON_SECONDARY_ADMIN_APP_ID }}
+          SECONDARY_ADMIN_INSTALLATION_ID: ${{ vars.ULTRON_SECONDARY_ADMIN_INSTALLATION_ID }}
+          ULTRON_SECONDARY_ADMIN_PRIVATE_KEY: ${{ secrets.ULTRON_SECONDARY_ADMIN_PRIVATE_KEY }}
+        run: node scripts/verify-secondary-admin.mjs
