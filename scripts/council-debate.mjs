@@ -11,6 +11,7 @@ import {assessCouncil} from '../src/council-members.mjs';
 import {buildCouncilExactHeadEvidence} from '../src/council-exact-head-evidence.mjs';
 import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mjs';
 import {runReasoningRound,buildCouncilReasoningInput} from '../src/council-reasoning.mjs';
+import {buildCouncilPrContext,formatCouncilPrContext} from '../src/council-pr-context.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
 
 const ownerMode = ownerAutonomyEnabled();
@@ -100,13 +101,24 @@ try{
   reviewEvidence=buildCouncilExactHeadEvidence(data);
  }
 }catch{reviewEvidence=null;}
+// Read only provider-fetched exact-head files from the trusted workflow.
+let prContext=null;
+try{
+ const path=process.env.COUNCIL_PR_FILES_FILE;
+ if(path&&isPr){
+  const payload=JSON.parse(readFileSync(path,'utf8'));
+  if(payload.sourceSha===sourceSha&&payload.prNumber===itemNumber){
+   prContext=buildCouncilPrContext(payload);
+  }
+ }
+}catch{prContext=null;}
 const memberAssessments=assessCouncil({
   title,body,isPr,itemNumber,sourceSha,flags,ownerMode,
   reviewEvidence:reviewEvidence?.sourceSha===sourceSha?reviewEvidence:null,
   governorPositions:receipt.positions
 });
 const icon=v=>v==='proceed'?'✅':'⛔';
-const memberTable='| Member | Verdict | Why | Will do |\n|---|---|---|---|\n'+
+const memberTable='| Member | Deterministic advisory vote | Screening reason | Proposed action (not executed) |\n|---|---|---|---|\n'+
   memberAssessments.map(m=>'| **'+m.identity.role+'** (`'+m.identity.appSlug+'`) | '+
     icon(m.verdict)+' '+m.verdict+' ('+m.confidence+') | '+
     m.headline+' '+m.reasons.join(' ')+' | '+
@@ -148,7 +160,8 @@ if (isPr) {
   actions.push('Review exact-head Verify on this PR before merge.');
   actions.push('If Verify is green and scope matches intent, squash-merge when ready.');
 }
-actions.push('Reply with `@ultron implement …` or open a labeled `feature` follow-up if code work is required.');
+if(!isPr)actions.push('For implementation, use the existing owner-authorized \u0060@ultron implement …\u0060 issue router.');
+else if(prContext)actions.push('Review the exact-head changed-file analysis below: '+prContext.filesRendered+'/'+prContext.filesObserved+' file excerpts; coverage '+(prContext.complete?'complete':'partial')+'.');
 if (flags.multiFile) {
   actions.push(`Prefer implement-files with up to ${limits.maxFiles} paths under owner autonomy.`);
 }
@@ -164,14 +177,24 @@ if (ownerMode) {
 actions.push('Promote durable outcomes into docs/council_precedents.md via a reviewed PR (workflow does not push main).');
 
 const reasoning = await runReasoningRound({
-  input: buildCouncilReasoningInput({title,body,sourceSha,prNumber:itemNumber,reviewEvidence})
+  input: buildCouncilReasoningInput({title,body,sourceSha,prNumber:itemNumber,reviewEvidence,prContext})
 });
-const reasoningSection = reasoning.modelInvocations > 0
-  ? `\n### Model reasoning (advisory, free tier, public input only)\n${Object.entries(reasoning.results).map(([r, v]) => `- **${r}** — ${v.source === 'model' ? `${v.provider}/${v.modelId}` : `deterministic fallback (${v.fallbackReason})`}: ${v.verdict} (${v.confidence}) ${String(v.rationale).replace(/\s+/g, ' ').slice(0, 300)}`).join('\n')}\n${reasoning.disagreement ? '\n**Disagreement recorded between roles.**\n' : ''}`
-  : '';
-const modelNote = reasoning.modelInvocations > 0
-  ? `${reasoning.modelInvocations} of 3 reasoning roles invoked a real free-tier model (Builder, Skeptic, Sentinel); the seven member votes remain a deterministic screen`
-  : 'Council votes are a deterministic screen (modelInvocations=0)';
+const modelRoleCount=Object.keys(reasoning.results).length;
+const codeEvidence=prContext?formatCouncilPrContext(prContext):
+  'Exact-head diff was not fetched/verified. No file-specific conclusions can be claimed.';
+const asLine=value=>String(value||'').replace(/\\s+/g,' ').slice(0,450);
+const reasoningSection='\\n### Specialized model review (advisory; not authenticated GitHub reviewers)\\n'+
+ Object.entries(reasoning.results).map(([role,v])=>{
+  const basis=v.source==='model'?v.provider+'/'+v.modelId:
+    'deterministic fallback ('+v.fallbackReason+')';
+  return '- **'+role+'** — '+basis+'; **'+v.verdict+'** ('+v.confidence+')\\n'+
+   '  - Assessment: '+asLine(v.rationale)+'\\n'+
+   '  - Code hypotheses: '+(v.findings?.length?v.findings.map(asLine).join(' | '):'none evidenced')+'\\n'+
+   '  - Falsifying tests: '+(v.tests?.length?v.tests.map(asLine).join(' | '):'none supplied');
+ }).join('\\n')+
+ (reasoning.disagreement?'\\n**Disagreement is unresolved.**\\n':'\\n');
+const modelNote=reasoning.modelInvocations+' of '+modelRoleCount+
+ ' reasoning roles invoked a real free-tier model; deterministic role votes remain advisory';
 const stage1 = `# Stage 1 — Architect framing
 **Target:** #${item} — ${title}
 **Kind:** ${isPr ? 'pull_request' : 'issue'} · **Owner mode:** ${ownerMode ? 'yes' : 'no'} · **Policy:** ${limits.mode}
@@ -182,16 +205,16 @@ ${body || '(empty body)'}
 ## System framing
 - Deterministic GrokBot council (advisory-only)
 - Multi-turn inter-self dialogue attached
-- modelInvocations=0 · creditCost=0
+- modelInvocations=${reasoning.modelInvocations}/${modelRoleCount} · paidCreditCost=0
 - Flags: ${Object.entries(flags).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}
 `;
 
 const stage2 = `# Stage 2 — Crucible (Red Team + Pragmatist)
 
 ### Red Team
-1. Concurrent runs must not race-write institutional memory on main.
-2. Bodies capped at ${MAX_BODY} characters.
-3. No automatic push to protected main from this workflow.
+1. Changed-file coverage: ${prContext ? prContext.filesRendered+'/'+prContext.filesObserved : 'unavailable'}. Source: ${sourceSha || '(issue)'}. No claim of AST taint proof without an AST analyzer.
+2. Highest-signal changed paths: ${prContext?.files.slice(0,5).map(f=>f.path+' ['+f.tag+']').join(', ') || 'none available'}. Model inputs are bounded; unsafe patches are omitted.
+3. No automatic push to protected main; do not replay uncertain external writes or treat role signatures as separate App approvals.
 ${flags.security ? '4. Security-sensitive language detected — mandatory owner review.' : ''}
 ${flags.autonomy ? '5. Autonomy-expansion language present — confirm owner intent.' : ''}
 
@@ -202,9 +225,9 @@ ${flags.autonomy ? '5. Autonomy-expansion language present — confirm owner int
 `;
 
 const stage3 = `# Stage 3 — Architect rebuttal / refinement
-1. Memory updates stay comment + artifact; owner promotes precedents in a reviewed PR.
-2. Owner autonomy lowers friction for planning without removing syntax/CI floors on code paths.
-3. Security holds always win over velocity.
+1. Suggested test targets: ${prContext?.files.filter(f=>f.tag==='test').slice(0,5).map(f=>f.path).join(', ') || 'No changed test file observed; existing test coverage must be checked explicitly'}.
+2. Reviewed file categories: ${[...new Set(prContext?.files.map(f=>f.tag)||[])].join(', ') || 'not observed'}; require exact-head tests for code changes.
+3. Release status remains distinct from advisory findings, authenticated App execution and owner-only signing.
 `;
 
 const stage4 = `# Ultron Council Report
@@ -214,13 +237,23 @@ ${publication.marker}
 **Status:** **${status}** · ${proceedCount}/7 members say proceed<br>
 **Observed:** ${observedAt}
 
-### Council verdicts
+### Council screening (deterministic, not model-backed approvals)
 ${memberTable}
 
 **Identities:** \`${configuredCount}/7\` have credential fields configured (not authentication); \`${independentCount}/7\` have independently authenticated authorship proven by this report; \`${receiptProven}/7\` have verified App execution receipts. This report is posted by github-actions, not seven App accounts. App authentication must be established at execution time. ${modelNote}, not independent review.
 
+### Exact-head source evidence (untrusted code, bounded)
+
+<details><summary>Changed files and patch excerpts</summary>
+
+\u0060\u0060\u0060text
+${codeEvidence}
+\u0060\u0060\u0060
+
+</details>
+
 ${reasoningSection}
-### What each member will do
+### Proposed capabilities (execution requires independent receipts)
 ${roleAssessments}
 
 ### Action board (for owner)
@@ -246,7 +279,7 @@ ${formatDialogueMarkdown(dialogue)}
 - [${hold ? 'x' : ' '}] Block auto-proceed
 
 ---
-*Ultron Council · seven identities, seven brains*
+*Ultron Council · seven logical roles; only independently authenticated operations count as executed*
 `;
 
 writeFileSync('RFC_DRAFT.md', stage1);
