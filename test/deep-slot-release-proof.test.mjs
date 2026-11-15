@@ -6,10 +6,12 @@ import {classifySlot,recordSlot,completeSlot,planRecovery,slotKey}
  from '../src/scheduler/slot-ledger.mjs';
 import {buildReleaseProof} from '../src/evidence/release-proof.mjs';
 const S='2026-11-11T21:00Z',HEAD='a'.repeat(40);
-const roles=['architect','security','sre','qa','scope','devils_advocate','judge'];
-const appIds=Object.fromEntries(roles.map((r,i)=>[r,i+1001]));
-const runs=roles.map(r=>({name:'council/'+r,app:{id:appIds[r]},
- head_sha:HEAD,status:'completed',conclusion:'success'}));
+const councilCheck={id:12345,name:'ultron/council-7of7',head_sha:HEAD,
+ status:'completed',conclusion:'success',app:{id:5765239,slug:'ultron-council-gate'},
+ output:{title:'7/7 Council roles and model reviews on exact head',
+  summary:['**Decision:** accepted','**PR:** #463','**Head:** '+HEAD,
+   '**Role approvals:** 7/7','**Held roles:** none',
+   '**Model hold/unavailable:** none','**Security-sensitive paths:** none'].join('\n')}};
 const ci={verified:true,status:'verified',headSha:HEAD,workflowId:388875616,runId:43044028617};
 const deployment={target:'hatchable-v91',sourceSha:HEAD,
  artifactDigest:'sha256:'+'b'.repeat(64),receiptId:'pg-exec-919',independentReadback:true};
@@ -43,22 +45,22 @@ test('SLOT-04 bounded backfill never includes current hour',()=>{
  assert.deepEqual(planRecovery({now:'2026-11-11T22:00:00Z',lookbackHours:2,existingKeys:[S]}),
  ['2026-11-11T20:00Z']);
 });
-test('RELEASE-01 all independent evidence agrees on exact SHA',async()=>{
- const result=await buildReleaseProof({commitSha:HEAD,ci,councilChecks:runs,expectedAppIds:appIds,deployment});
+test('RELEASE-01 trusted Gate App decision, CI and deployed artifact agree on exact SHA',async()=>{
+ const result=await buildReleaseProof({commitSha:HEAD,ci,councilCheck,prNumber:463,deployment});
  assert.equal(result.status,'verified');assert.equal(result.council.quorum,'7/7');
  assert.equal(result.evidenceSha256.length,64);
 });
-test('RELEASE-02 outdated CI, shared role App, wrong deployed SHA downgrade',async()=>{
- const good={commitSha:HEAD,ci,councilChecks:runs,expectedAppIds:appIds,deployment};
+test('RELEASE-02 outdated CI, untrusted publisher and wrong deployed SHA downgrade',async()=>{
+ const good={commitSha:HEAD,ci,councilCheck,prNumber:463,deployment};
  const stale=await buildReleaseProof({...good,ci:{...ci,headSha:'c'.repeat(40)}});
  assert.equal(stale.verified,false);
- const spoof=await buildReleaseProof({...good,expectedAppIds:{...appIds,judge:appIds.qa}});
+ const spoof=await buildReleaseProof({...good,councilCheck:{...councilCheck,app:{id:15368,slug:'github-actions'}}});
  assert.equal(spoof.verified,false);
  const drift=await buildReleaseProof({...good,deployment:{...deployment,sourceSha:'d'.repeat(40)}});
  assert.equal(drift.status,'unverified-drift');
 });
 test('RELEASE-03 release envelope cannot claim verified without live artifact readback',async()=>{
- const x=await buildReleaseProof({commitSha:HEAD,ci,councilChecks:runs,expectedAppIds:appIds,
+ const x=await buildReleaseProof({commitSha:HEAD,ci,councilCheck,prNumber:463,
   deployment:{...deployment,independentReadback:false}});
  assert.equal(x.verified,false);
 });
@@ -78,7 +80,7 @@ test('RELEASE-04 owner route exposes unknown release honestly',()=>{
  const source=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8');
  assert.match(source,/access='admin'/);
  assert.match(source,/methods=\['GET'\]/);
- assert.match(source,/councilChecks:\[\],expectedAppIds:\{\},deployment:\{\}/);
+ assert.match(source,/councilCheck:null,prNumber:null,deployment:\{\}/);
 });
 test('RELEASE-05 source and Hatchable proof policies stay byte-identical',()=>{
  const node=readFileSync(new URL('../src/evidence/release-proof.mjs',import.meta.url),'utf8');
