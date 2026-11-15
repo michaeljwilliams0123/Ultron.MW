@@ -10,8 +10,8 @@ import {
  requireComposioProxyRead,maskComposioDisplay,denyUntrustedComposioMutation
 } from '../../src/composio-v3-policy.mjs';
 import {enforceSignedApprovalAndTagPersona} from '../../src/middleware/enforce-signed-approval.mjs';
-import {gatePasses} from '../../src/council-trusted-gate.mjs';
-import {isTrustedComposioCouncilVerifier} from '../../src/security/composio-council-attestation.mjs';
+import {isTrustedComposioCouncilVerifier,passesVerifiedComposioCouncilDecision}
+ from '../../src/security/composio-council-attestation.mjs';
 import {isComposioDurableAppExecutor} from './durable-readback.mjs';
 
 const SHA=/^[a-f0-9]{40}$/;
@@ -185,7 +185,7 @@ export async function executeGovernedGitHubAppMutation({
  }catch{
   deny('Council attestation verification failed');
  }
- if(!gatePasses(verifiedCouncil,sha,prNumber))
+ if(!passesVerifiedComposioCouncilDecision(verifiedCouncil,sha,prNumber))
   deny('verified Council release gate held');
  if(!isComposioDurableAppExecutor(durableAppExecutor))
   deny('trusted durable GitHub App executor required');
