@@ -1,6 +1,6 @@
 name: Ultron trusted Council release status
-# Trusted Council 7/7 gate (v2). The workflow definition (pull_request_target,
-# issue_comment) and every script it runs come from default `main`; the PR
+# Trusted Council 7/7 gate (v2). PR-target, owner-comment and owner-only
+# workflow_dispatch recheck load trusted `main`; the PR
 # branch is never checked out or executed. PR title, body, file list, reviews
 # and comments are read through the API as data. The result is published as a
 # check run by a dedicated GitHub App, so no other workflow can forge it.
@@ -10,6 +10,12 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, edited]
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Open Ultron.MW PR number to recheck without writing a comment'
+        required: true
+        type: number
 permissions:
   contents: read
 jobs:
@@ -23,11 +29,16 @@ jobs:
         github.event.issue.pull_request != null &&
         github.event.comment.user.id == 308995719 &&
         (startsWith(github.event.comment.body, '/council override ') ||
-         startsWith(github.event.comment.body, '/council recheck'))))
-    runs-on: ubuntu-latest
+         startsWith(github.event.comment.body, '/council recheck'))) ||
+       (github.event_name == 'workflow_dispatch' &&
+        github.actor == 'michaeljwilliams0123' &&
+        github.actor_id == '308995719' &&
+        github.ref == 'refs/heads/main' &&
+        inputs.pr_number > 0))
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     concurrency:
-      group: trusted-council-${{ github.event.pull_request.number || github.event.issue.number }}
+      group: trusted-council-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -46,7 +57,7 @@ jobs:
           node-version: '22'
       - name: Read live PR, changed files, reviews and owner comments as data
         id: prepare
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const fs=require('node:fs'),path=require('node:path');
@@ -54,9 +65,7 @@ jobs:
             const gate=await import(pathToFileURL(
               path.join(process.env.GITHUB_WORKSPACE,'src/council-trusted-gate.mjs')).href);
             const {owner,repo}=context.repo;
-            const number=context.eventName==='pull_request_target'
-              ? Number(context.payload.pull_request?.number)
-              : Number(context.payload.issue?.number);
+            const number=gate.selectCouncilTargetNumber(context.eventName,context.payload);
             if(!Number.isSafeInteger(number)||number<1){core.setOutput('skip','true');return;}
             const pr=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
             if(pr.state!=='open'||pr.base?.ref!=='main'||
@@ -147,7 +156,7 @@ jobs:
           permission-pull-requests: read
       - name: Publish check run as the Council Gate App
         if: steps.prepare.outputs.skip == 'false' && steps.app.outputs.token != ''
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GATE_APP_ID: ${{ vars.COUNCIL_GATE_APP_ID }}
           GATE_APP_SLUG: ${{ vars.COUNCIL_GATE_APP_SLUG }}

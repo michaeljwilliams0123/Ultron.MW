@@ -43,7 +43,7 @@ jobs:
     concurrency:
       group: ultron-cloud-${{ github.event.issue.number || github.run_id }}-cloud
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Configure Git bare-repository policy
@@ -96,7 +96,7 @@ jobs:
     concurrency:
       group: ultron-pr-brain-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}-pr-conversation
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 18
     permissions:
       contents: write
@@ -202,7 +202,7 @@ jobs:
       github.event.issue.state == 'open' &&
       startsWith(github.event.comment.body, '/codex run ')
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -239,7 +239,7 @@ jobs:
     concurrency:
       group: ultron-public-chat-${{ github.event.issue.number || github.run_id }}-public-chat
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     permissions:
       contents: read
