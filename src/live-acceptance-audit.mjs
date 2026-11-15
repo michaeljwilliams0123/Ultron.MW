@@ -71,6 +71,27 @@ export function evaluateAcceptance({sourceSha,observedAt,checks=[]}={}){
  };
 }
 
+// A compact exact-head GitHub Actions query is mandatory: downloading 30 full
+// workflow-run objects exceeds the audit's 450 KB response cap and can turn a
+// genuinely green Verify into a misleading "unknown" result.
+export function classifyExactMainVerify(sourceSha,response){
+ const unknown=detail=>({id:'github-verify',status:'unknown',detail});
+ if(!SHA.test(sourceSha||''))return unknown('Canonical main SHA unavailable');
+ if(response?.status!==200)return unknown(
+  'Workflow-runs API HTTP '+(response?.status===null?'unavailable':response?.status??'unavailable'));
+ if(response?.error)return unknown('Workflow-runs API: '+clean(response.error));
+ const list=response.body?.workflow_runs;
+ if(!Array.isArray(list))return unknown('Workflow-runs API schema invalid or over response limit');
+ const matching=list.filter(r=>Number.isSafeInteger(r?.id)&&r.id>0&&
+  r.workflow_id===388875616&&r.head_sha===sourceSha&&
+  r.head_branch==='main'&&r.event==='push');
+ if(matching.length===0)return unknown('No exact-main push Verify observed for this source SHA');
+ const latest=matching.reduce((a,b)=>b.id>a.id?b:a);
+ const detail='Exact-main run '+latest.id+' '+clean(latest.status)+'/'+clean(latest.conclusion);
+ if(latest.status!=='completed')return unknown(detail);
+ return {id:'github-verify',status:latest.conclusion==='success'?'pass':'fail',detail};
+}
+
 export function renderAcceptanceMarkdown(audit){
  const lines=[
   '# Ultron live acceptance — public read-only audit','',
