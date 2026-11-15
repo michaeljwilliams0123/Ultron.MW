@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {buildCouncilReasoningInput,checkExternalInput} from '../src/council-reasoning.mjs';
+import {buildCouncilPrContext} from '../src/council-pr-context.mjs';
 
 const SHA='a'.repeat(40);
 const evidence={
@@ -50,4 +51,20 @@ test('unverified, foreign or mismatched evidence cannot be laundered into passin
 test('trusted main Council review actually forwards the provider-derived evidence summary',()=>{
  const script=readFileSync(new URL('../scripts/council-debate.mjs',import.meta.url),'utf8');
  assert.match(script,/runReasoningRound\(\{\s*input:\s*buildCouncilReasoningInput\(/);
+});
+
+test('model input contains bounded exact-head diff and ignores foreign-head patch data',()=>{
+ const prContext=buildCouncilPrContext({sourceSha:SHA,prNumber:454,
+  files:[{filename:'src/provider.js',status:'modified',additions:1,deletions:0,
+   patch:'@@ -1 +1 @@\\n+ const result = safePermissionSignal(headers);'}]});
+ const input=buildCouncilReasoningInput({title:'Inspect the provider changes',
+  body:'Verify the new guard',sourceSha:SHA,prNumber:454,
+  reviewEvidence:evidence,prContext});
+ assert.match(input,/src\\/provider\\.js/);
+ assert.match(input,/safePermissionSignal/);
+ assert.equal(checkExternalInput(input).ok,true);
+ const foreign=buildCouncilReasoningInput({title:'Inspect',
+  body:'Verify',sourceSha:'b'.repeat(40),prNumber:454,prContext});
+ assert.doesNotMatch(foreign,/safePermissionSignal/);
+ assert.match(foreign,/patch evidence unavailable/);
 });
