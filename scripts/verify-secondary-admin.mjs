@@ -31,9 +31,19 @@ export async function verifySecondaryAdmin(configuration) {
   const jwt = generateAppJwt(configuration.appId, configuration.privateKey);
   const headers = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${jwt}`, 'User-Agent': 'ultron-secondary-admin-verifier' };
   const tokenData = await request(`https://api.github.com/app/installations/${configuration.installationId}/access_tokens`, {
-    method: 'POST', headers, body: JSON.stringify({ repositories: [TARGET.name] }),
+    method: 'POST', headers, body: JSON.stringify({ repositories: [TARGET.name], permissions: { contents: 'read' } }),
   });
   if (!tokenData.token || !tokenData.expires_at) throw new Error('GitHub returned an invalid installation-token response.');
+  if (!Array.isArray(tokenData.repositories) || tokenData.repositories.length !== 1 ||
+      tokenData.repositories[0]?.id !== TARGET.id) {
+    throw new Error('Scoped token repository binding mismatch.');
+  }
+  const permissions = tokenData.permissions;
+  if (!permissions || permissions.contents !== 'read' ||
+      Object.entries(permissions).some(([name,access]) =>
+        access !== 'read' || (name !== 'contents' && name !== 'metadata'))) {
+    throw new Error('Scoped token permissions differ from the read-only request.');
+  }
   const repository = await request(`https://api.github.com/repos/${TARGET.owner}/${TARGET.name}`, {
     headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${tokenData.token}`, 'User-Agent': 'ultron-secondary-admin-verifier' },
   });
