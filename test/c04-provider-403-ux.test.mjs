@@ -64,7 +64,8 @@ test('a recovered unresolved attempt is readback-only, not a second GitHub POST'
   throw Error('unexpected network request '+url);
  };
  const code=readFileSync(new URL('../cloud/hatchable/public/github-pr-comment-canary.js',import.meta.url),'utf8');
- runInNewContext(code,{document:{getElementById:id=>elements[id]},fetch,window:{}});
+ runInNewContext(code,{document:{getElementById:id=>elements[id]},fetch,
+  window:{},location:{search:'?pr=457'},URLSearchParams});
  await new Promise(resolve=>setTimeout(resolve,15));
  assert.equal(elements['pending-panel'].hidden,false);
  assert.equal(elements.submit.hidden,true);
