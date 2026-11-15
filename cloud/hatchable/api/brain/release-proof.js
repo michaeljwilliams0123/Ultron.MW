@@ -20,7 +20,9 @@ export default async function(req,res){
    status:ci?.state==='observed'&&ci?.conclusion==='success'?'verified':'unavailable',
    headSha:ci?.sourceSha,workflowId:388875616,runId:ci?.runId},
   // No unobserved Council identity or deployment digest is fabricated.
-  councilChecks:[],expectedAppIds:{},deployment:{}});
+  // No trusted exact-head PR check or independent deployment receipt was observed.
+  // A verified main CI run alone never satisfies Council release acceptance.
+  councilCheck:null,prNumber:null,deployment:{}});
  return res.json({...proof,observation:{ciState:ci?.state??'unavailable',
   runtimeState:observation.runtime?.state??'unavailable'}});
 }
