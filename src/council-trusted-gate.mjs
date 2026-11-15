@@ -120,8 +120,8 @@ export function gatePasses(result,sha,prNumber){
   result.schema==='ultron.council-trusted-gate.v2'&&
   ((result.status==='accepted'&&result.approvedCount===7&&
     result.securitySensitive===false)||
-   (result.status==='owner-overridden'&&result.approvedCount===7&&
-    result.securitySensitive===true&&result.overrideUsed===true&&
+   (result.status==='owner-overridden'&&result.securitySensitive===true&&
+    result.overrideUsed===true&&
     result.overrideSignatureVerified===true));
 }
 

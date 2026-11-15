@@ -75,6 +75,23 @@ test('7/7 and green CI never lift a security hold; only a signed owner exception
  // CRLF from some clients still verifies (M4).
  assert.equal(run({files,overrideComment:override('\r\n')}).status,'owner-overridden');
 });
+test('authentic exact-head owner signature may override a held Council without forged 7/7 votes',()=>{
+ const data=evidence();
+ data.report.memberAssessments[0].verdict='hold';
+ data.receipt.publication.members[0].conclusion='hold';
+ data.receipt.modelReview.results.Skeptic.verdict='hold';
+ const files=[{filename:'.github/workflows/council-debate.yml'}];
+ const signed=run({...data,files,overrideComment:override()});
+ assert.equal(signed.status,'owner-overridden');
+ assert.equal(signed.approvedCount,6);
+ assert.equal(signed.overrideSignatureVerified,true);
+ assert.equal(gatePasses(signed,HEAD,PR),true);
+ assert.equal(buildGateCheckRun(signed,{sha:HEAD,prNumber:PR}).conclusion,'success');
+ assert.equal(gatePasses({...signed,overrideSignatureVerified:false},HEAD,PR),false);
+ const wrongPr=pr();wrongPr.base.sha='c'.repeat(40);
+ assert.equal(run({...data,files,pr:wrongPr,overrideComment:override()}).status,'held');
+});
+
 test('without a pinned owner key the exception is unavailable (H3, fail-closed)',()=>{
  const files=[{filename:'.github/workflows/council-debate.yml'}];
  assert.equal(run({files,overrideComment:override(),ownerPublicJwk:null}).status,'held');

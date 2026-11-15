@@ -25,7 +25,7 @@ test('mixed malformed changed-file entries fail closed instead of clearing a sec
   }
 });
 
-test('forged override flags cannot publish a green check without all seven approvals',()=>{
+test('forged override flags lacking a trusted gate schema cannot publish a green check',()=>{
   const minimal={sourceSha:SHA,baseSha:BASE,prNumber:PR,
     status:'owner-overridden',overrideUsed:true,overrideSignatureVerified:true,
     securitySensitive:true,approvedCount:0};
