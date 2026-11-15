@@ -5,10 +5,13 @@ const pr=byId('pull-request'),prepare=byId('prepare'),diagnose=byId('diagnose'),
 const comment=byId('comment'),signable=byId('signable'),envelope=byId('envelope');
 const submit=byId('submit'),reconcile=byId('reconcile'),status=byId('status');
 const controls=byId('canary-controls'),load=byId('load-target');
+const pendingPanel=byId('pending-panel');
 let prepared=null,busy=false,submitted=false,authenticated=false;
-let targetVerified=false,selectedPr=null;
+let targetVerified=false,selectedPr=null,pendingHold=false;
 function setStatus(text){status.textContent=text;}
 function buttons(){
+ if(pendingPanel)pendingPanel.hidden=!pendingHold;
+ submit.hidden=pendingHold;
  const valid=/^[1-9][0-9]{0,8}$/.test(String(pr.value||'').trim());
  const loaded=targetVerified&&selectedPr===Number(pr.value);
  pr.disabled=busy||submitted||!!prepared;
@@ -53,16 +56,16 @@ async function hydrateStateOnLoad(){
  if(['in_flight','reconcile_required'].includes(data.state)&&
     typeof data.attemptId==='string'&&data.pullRequest===pullRequest){
   prepared={pullRequest,idempotencyKey:data.attemptId,bodySha256:data.bodySha256};
-  submitted=true;comment.value='';signable.value='';
+  pendingHold=true;submitted=true;comment.value='';signable.value='';
   setStatus('Recovered '+data.state+' for '+data.attemptId+'. Readback only; never re-submit.');
  }else if(data.state==='reserved'){
-  submitted=true;prepared={pullRequest,idempotencyKey:data.attemptId};
+  pendingHold=true;submitted=true;prepared={pullRequest,idempotencyKey:data.attemptId};
   setStatus('Previous attempt reserved before provider dispatch. New dispatch held; check the ledger first.');
  }else if(data.state==='completed'){
-  submitted=true;prepared=null;
+  pendingHold=false;submitted=true;prepared=null;
   setStatus('Verified persisted receipt: '+String(data.receipt?.details?.commentUrl||'completion recorded'));
  }else if(data.state==='idle'){
-  prepared=null;submitted=false;
+  pendingHold=false;prepared=null;submitted=false;
   setStatus('No pending execution for PR #'+pullRequest+'.');
  }else{throw Error('Unknown execution state; no new write permitted.');}
  buttons();
@@ -160,7 +163,7 @@ async function execute(mode){
   if(!signed||typeof signed.payload!=='string'||typeof signed.signature!=='string')
    return setStatus('The signed envelope must contain payload and signature.');
  }
- if(mode==='submit')submitted=true;
+ if(mode==='submit'){submitted=true;pendingHold=true;}
  busy=true;buttons();
  try{
   const value=mode==='reconcile'
@@ -168,9 +171,9 @@ async function execute(mode){
    :await call({mode:'submit',prepared,envelope:signed});
   if(value.ok&&value.receipt?.details?.commentUrl){
    setStatus('Verified '+value.status+': '+value.receipt.details.commentUrl);
-   envelope.value='';prepared=null;submitted=false;
+   envelope.value='';prepared=null;submitted=false;pendingHold=false;
   }else if(mode==='submit'&&value.httpStatus===403&&value.error==='authority-not-verified'){
-   submitted=false;
+   submitted=false;pendingHold=false;
    setStatus('Definitive authorization rejection (403): invalid signature before reservation. Sign a fresh grant; no provider write occurred.');
   }else{
    const stage=value.stage?' · stage: '+value.stage:'';
