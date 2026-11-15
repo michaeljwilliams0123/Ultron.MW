@@ -43,11 +43,12 @@ test('no credentials never claims AI; blocked input never reaches network',async
  assert.match(b.fallbackReason,/input-blocked/);assert.equal(called,0);
 });
 test('round records invocations and disagreement',async()=>{
- const verdicts={Builder:'proceed',Skeptic:'hold',Sentinel:'proceed'};
- let i=0;const order=['Builder','Skeptic','Sentinel'];
+ const verdicts={Builder:'proceed',Skeptic:'hold',Steward:'proceed',
+  Predictor:'proceed',Generator:'proceed',Sentinel:'proceed',Companion:'proceed'};
+ let i=0;const order=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
  const f=async()=>ok(JSON.stringify({verdict:verdicts[order[i++]],confidence:0.5,rationale:'r'}),true)();
  const r=await runReasoningRound({input:'add docs',env:{GEMINI_API_KEY:'k'},fetchImpl:f});
- assert.equal(r.modelInvocations,3);assert.equal(r.aiReasoned,true);assert.equal(r.disagreement,true);
+ assert.equal(r.modelInvocations,7);assert.equal(r.aiReasoned,true);assert.equal(r.disagreement,true);
  const d=await runReasoningRound({input:'add docs',env:{}});
  assert.equal(d.aiReasoned,false);assert.equal(d.modelInvocations,0);
 });
@@ -63,4 +64,15 @@ test('Council workflow forwards external model keys only to debate and ledger fl
  assert.match(debate,/GROQ_API_KEY/);
  assert.doesNotMatch(actions,/GEMINI_API_KEY|GROQ_API_KEY/);
  assert.match(actions,/COUNCIL_LEDGER_REQUIRED/);
+});
+
+test('all seven model roles are real prompts, not three prompts relabeled seven times',async()=>{
+ const {REASONING_ROLES}=await import('../src/council-reasoning.mjs');
+ assert.equal(Object.keys(REASONING_ROLES).length,7);
+ assert.equal(new Set(Object.values(REASONING_ROLES)).size,7);
+ const parsed=parseVerdict(JSON.stringify({verdict:'revise',confidence:0.8,
+  rationale:'Test the branch effect',findings:['lib/ledger.js: ambiguous commit'],
+  tests:['assert at-most-once dispatch'],disagreements:[]}));
+ assert.deepEqual(parsed.findings,['lib/ledger.js: ambiguous commit']);
+ assert.deepEqual(parsed.tests,['assert at-most-once dispatch']);
 });
