@@ -10,7 +10,7 @@ import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs'
 import {assessCouncil} from '../src/council-members.mjs';
 import {buildCouncilExactHeadEvidence} from '../src/council-exact-head-evidence.mjs';
 import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mjs';
-import {runReasoningRound} from '../src/council-reasoning.mjs';
+import {runReasoningRound,buildCouncilReasoningInput} from '../src/council-reasoning.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
 
 const ownerMode = ownerAutonomyEnabled();
@@ -163,7 +163,9 @@ if (ownerMode) {
 }
 actions.push('Promote durable outcomes into docs/council_precedents.md via a reviewed PR (workflow does not push main).');
 
-const reasoning = await runReasoningRound({ input: `${title}\n\n${body}` });
+const reasoning = await runReasoningRound({
+  input: buildCouncilReasoningInput({title,body,sourceSha,prNumber:itemNumber,reviewEvidence})
+});
 const reasoningSection = reasoning.modelInvocations > 0
   ? `\n### Model reasoning (advisory, free tier, public input only)\n${Object.entries(reasoning.results).map(([r, v]) => `- **${r}** — ${v.source === 'model' ? `${v.provider}/${v.modelId}` : `deterministic fallback (${v.fallbackReason})`}: ${v.verdict} (${v.confidence}) ${String(v.rationale).replace(/\s+/g, ' ').slice(0, 300)}`).join('\n')}\n${reasoning.disagreement ? '\n**Disagreement recorded between roles.**\n' : ''}`
   : '';
