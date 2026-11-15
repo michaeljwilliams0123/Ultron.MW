@@ -51,5 +51,7 @@ test('RED: council workflow suppresses identical reports and discloses identitie
   assert.match(yaml,/cancel-in-progress: false/);
   assert.match(script,/buildCouncilPublication/);
   assert.match(script,/assessCouncil/);
-  assert.match(script,/modelInvocations=0/);
+  assert.match(script,/reasoning\.modelInvocations/);
+  assert.match(script,/Specialized model review/);
+  assert.match(script,/deterministic role votes remain advisory/);
 });

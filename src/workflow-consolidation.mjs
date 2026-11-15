@@ -119,6 +119,7 @@ export const LEGACY_WORKFLOWS=Object.freeze([
 export const OIDC_JOBS=Object.freeze({
   'verify.yml':['attested-receipt'],
   'council-debate.yml':['council-debate'],
+  'council-required-status.yml':['trusted-council-status'],
   'cloud-pr.yml':['create-pr'],
   'lane-governed-task.yml':['work'],
   'owner-comment-router.yml':['issue-implementation','council-command'],

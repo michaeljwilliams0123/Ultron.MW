@@ -1,5 +1,5 @@
 import { db } from 'hatchable';
-import { verifyCouncilOidc, verifyCouncilWorkerOidc } from 'lib/council-oidc.js';
+import { verifyCouncilOidc, verifyCouncilWorkerOidc, verifyCouncilGateOidc } from 'lib/council-oidc.js';
 import { reserveExecution, transitionExecution, readExecution, listOpenExecutions } from 'lib/council-ledger.js';
 
 export const access = 'public';
@@ -23,16 +23,12 @@ export default async function handler(req, res) {
   if (typeof header !== 'string' || !header.startsWith('Bearer ')) {
     return response(res, 403, { ok: false, error: 'oidc-required' });
   }
-  let identity;
-  try {
-    identity = await verifyCouncilOidc({ token: header.slice(7), rawBody: raw });
-  } catch {
-    try {
-      identity = await verifyCouncilWorkerOidc({ token: header.slice(7), rawBody: raw });
-    } catch {
-      return response(res, 403, { ok: false, error: 'oidc-invalid' });
-    }
+  let identity = null;
+  for (const verifier of [verifyCouncilOidc,verifyCouncilWorkerOidc,verifyCouncilGateOidc]) {
+    try { identity = await verifier({token:header.slice(7),rawBody:raw}); break; }
+    catch { /* each trusted workflow has a disjoint, pinned OIDC claim set */ }
   }
+  if (!identity) return response(res, 403, { ok: false, error: 'oidc-invalid' });
 
   let body;
   try {

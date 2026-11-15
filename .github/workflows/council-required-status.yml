@@ -45,6 +45,7 @@ jobs:
       issues: read
       pull-requests: read
       checks: read
+      id-token: write
     steps:
       - name: Configure Git bare-repository policy
         run: git config --global safe.bareRepository explicit
@@ -55,6 +56,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+      - name: Install pinned AST parser for main-only code inspection
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Read live PR, changed files, reviews and owner comments as data
         id: prepare
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -108,6 +111,53 @@ jobs:
               core.warning('Council CI evidence remains unverified: '+error.message);
             }
             core.exportVariable('COUNCIL_REVIEW_EVIDENCE_FILE',write('exact-head-ci.json',observed));
+            // Trusted-main-only exact-head source context; no arbitrary PR
+            // code execution and no raw patch logging/provider forwarding.
+            const patchComplete=complete&&files.length<=80&&
+              files.every(f=>!f.patch||f.patch.length<=2400);
+            core.exportVariable('COUNCIL_PR_FILES_FILE',write('exact-head-pr-files.json',{
+              sourceSha:pr.head.sha,prNumber:pr.number,complete:patchComplete,
+              files:files.slice(0,80).map(f=>({
+                filename:f.filename,status:f.status,
+                additions:f.additions,deletions:f.deletions,
+                patch:typeof f.patch==='string'?f.patch.slice(0,2400):''
+              }))
+            }));
+            // Source is fetched at the verified PR head and parsed as data;
+            // only bounded taint findings are persisted, never raw code.
+            try{
+              const {scanCouncilChangedFiles}=await import(pathToFileURL(
+                path.join(process.env.GITHUB_WORKSPACE,'src/council-taint-evidence.mjs')).href);
+              const sources=[];
+              const candidates=files.filter(f=>f.status!=='removed'&&
+                /\.(?:mjs|cjs|js|ts|tsx|jsx)$/.test(f.filename)).slice(0,6);
+              for(const f of candidates){
+                let source=null;
+                try{
+                  const response=await github.rest.repos.getContent({
+                    owner,repo,path:f.filename,ref:pr.head.sha
+                  });
+                  const d=response.data;
+                  if(!Array.isArray(d)&&d?.type==='file'&&d.size<=64000&&
+                    d.encoding==='base64'&&typeof d.content==='string')
+                    source=Buffer.from(d.content,'base64').toString('utf8');
+                }catch{}
+                sources.push({filename:f.filename,source});
+              }
+              const liveAgain=(await github.rest.pulls.get({
+                owner,repo,pull_number:number
+              })).data;
+              if(liveAgain.head?.sha!==pr.head.sha||liveAgain.base?.sha!==pr.base.sha)
+                throw Error('council-ast-head-drift');
+              const e=scanCouncilChangedFiles({
+                sourceSha:pr.head.sha,prNumber:number,sources
+              });
+              core.exportVariable('COUNCIL_TAINT_EVIDENCE_FILE',write(
+                'exact-head-ast-taint.json',e));
+              core.info('Bounded Council AST scan source files: '+e.scannedFiles);
+            }catch(error){
+              core.warning?.('Council AST scan unavailable: '+error.message);
+            }
             core.exportVariable('COUNCIL_PR_FILE',write('pr.json',slim));
             core.exportVariable('COUNCIL_FILES_FILE',write('files.json',
               {complete,files:files.map(f=>({filename:f.filename,previous_filename:f.previous_filename,status:f.status}))}));
@@ -131,12 +181,32 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # Trusted pull_request_target runs only main-controlled source, not PR code.
+          COUNCIL_MASTER_SEED: ${{ secrets.COUNCIL_MASTER_SEED }}
         run: |
           set -euo pipefail
           TITLE=$(cat "$TITLE_FILE")
           BODY=$(cat "$BODY_FILE")
           export TITLE BODY
           node scripts/council-debate.mjs
+      - name: Verify seven role attestations with protected root and exact head
+        id: role-attestation
+        if: steps.prepare.outputs.skip == 'false'
+        continue-on-error: true
+        env:
+          COUNCIL_MASTER_SEED: ${{ secrets.COUNCIL_MASTER_SEED }}
+        run: node scripts/verify-council-role-attestations.mjs
+      - name: Retain exact-head role-attestation evidence
+        if: steps.prepare.outputs.skip == 'false'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: council-signed-role-evidence-${{ github.run_id }}
+          path: |
+            council-role-attestations.json
+            council-role-attestation-verification.json
+            council-receipt.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Apply seven-of-seven policy from main
         id: evaluate
         if: steps.prepare.outputs.skip == 'false'
@@ -144,6 +214,29 @@ jobs:
         env:
           COUNCIL_EVIDENCE_DIRECTORY: ${{ github.workspace }}
         run: node scripts/enforce-council-acceptance.mjs
+      - name: Execute one real Coordinator PR COMMENT review with durable readback
+        if: >-
+          steps.prepare.outputs.skip == 'false' &&
+          env.OWNER_MODE == '1' &&
+          vars.ULTRON_GITHUB_APP_ID == '5633654'
+        continue-on-error: true
+        env:
+          COUNCIL_COORDINATOR_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
+          COUNCIL_COORDINATOR_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+        run: |
+          if [ -f scripts/council-live-review.mjs ]; then
+            node scripts/council-live-review.mjs
+          else
+            echo "Council live review not yet on trusted main; no action."
+          fi
+      - name: Retain Council execution evidence
+        if: always() && steps.prepare.outputs.skip == 'false'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: council-live-review-${{ github.run_id }}
+          path: council-live-review-result.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Mint dedicated Council Gate App token
         id: app
         if: steps.prepare.outputs.skip == 'false' && vars.COUNCIL_GATE_APP_CLIENT_ID != ''

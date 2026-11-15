@@ -260,3 +260,33 @@ test('stale or unverified CI evidence cannot soften any security-language hold',
     role+' must reject unverified evidence');
  }
 });
+
+test('Skeptic COMMENT action writes a real PR review and readback resolves the exact marker',async()=>{
+ const actor=await authenticateCouncilAppActor({role:'Skeptic',sourceSha:SHA,
+  installationToken:'x'.repeat(20),profile:'owner-equivalent',expectedAppId:1,
+  githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,
+   app_slug:'ultron-mw-skeptic',repositories:['michaeljwilliams0123/Ultron.MW'],
+   permissions:{metadata:'read',administration:'write',actions:'write',contents:'write',
+    workflows:'write',issues:'write',pull_requests:'write',checks:'write',statuses:'write'}})});
+ const caseSha='d'.repeat(64),executionKey='e'.repeat(64),reviews=[],calls=[];
+ const fetchImpl=async(url,init={})=>{
+  calls.push({url,method:init.method,body:init.body});
+  if(init.method==='POST'){
+   const review={id:456,body:JSON.parse(init.body).body,
+    user:{login:'ultron-mw-skeptic[bot]',type:'Bot'},
+    performed_via_github_app:{id:1,slug:'ultron-mw-skeptic'}};
+   reviews.push(review);return{ok:true,status:201,json:async()=>review};
+  }
+  return{ok:true,status:200,json:async()=>reviews};
+ };
+ const target={number:9,caseSha,executionKey};
+ const result=await executeMemberAction(actor,'tok',{op:'review.comment',why:'Verify replay denial'},
+   target,{fetchImpl});
+ assert.equal(result.status,'done');
+ assert.equal(calls[0].url.endsWith('/pulls/9/reviews'),true);
+ assert.equal(JSON.parse(calls[0].body).event,'COMMENT');
+ const found=await probeCouncilEffect(actor,'tok',
+  {op:'review.comment',number:9,executionKey,caseSha},fetchImpl);
+ assert.equal(calls[1].url.includes('/pulls/9/reviews?'),true);
+ assert.equal(found?.receipt?.effect?.author,'ultron-mw-skeptic[bot]');
+});

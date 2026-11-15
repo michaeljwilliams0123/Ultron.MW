@@ -40,8 +40,11 @@ export function receiptValid(receipt) {
       !Number.isSafeInteger(receipt.installationId) || receipt.installationId < 1 ||
       !Number.isSafeInteger(receipt.app?.id) || receipt.app.id < 1 ||
       receipt.claims?.independentReview !== false || receipt.claims?.modelInvoked !== false) return false;
-    const coordinator = receipt.role === 'Builder' && receipt.app.id === COORDINATOR_APP_ID &&
-      COORDINATOR_SLUGS.includes(receipt.app.slug);
+    // Coordinator is one authenticated App for seven logical roles. The
+    // historical Builder alias must never authenticate another role.
+    const coordinator = receipt.app.id === COORDINATOR_APP_ID &&
+      (receipt.app.slug === 'ultron-coordinator' ||
+       (receipt.role === 'Builder' && receipt.app.slug === 'ultron-mw-builder-v2'));
     const member = receipt.app.id !== COORDINATOR_APP_ID &&
       receipt.app.slug === 'ultron-mw-' + receipt.role.toLowerCase();
     const bindingKey = coordinator ? 'coordinator-v2' : 'council-member';

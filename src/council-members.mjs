@@ -279,8 +279,14 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
   const marker=/^[a-f0-9]{64}$/.test(target.executionKey||'')?'\n\n<!-- council-exec:'+target.executionKey+' -->':'';
   const signed='**'+actor.role+'** (executed by `'+actor.appSlug+'`): ';
   switch(action.op){
-    case 'issue.comment':case 'pr.comment':case 'review.comment':
+    case 'issue.comment':case 'pr.comment':
       effect={path:'/issues/'+n+'/comments',data:await call('POST','/issues/'+n+'/comments',{body:signed+text+marker})};break;
+    case 'review.comment':
+      // A code review must be published on the PR review timeline, not
+      // silently downgraded to a generic Issue comment.
+      effect={path:'/pulls/'+n+'/reviews',data:await call('POST','/pulls/'+n+'/reviews',{
+        event:'COMMENT',body:signed+text+marker
+      })};break;
     case 'review.request-changes':
       effect={path:'/pulls/'+n+'/reviews',data:await call('POST','/pulls/'+n+'/reviews',{event:'REQUEST_CHANGES',body:signed+text+marker})};break;
     case 'review.approve':
@@ -360,7 +366,21 @@ export async function runMemberActions({role,sourceSha,token,assessment,target,c
           appId:actor.appId,appSlug:actor.appSlug,bindingKey:actor.bindingKey},
          expectedEffect:String(action.why||action.text||'').slice(0,300),
          targetUrl:'https://api.github.com/repos/'+REPO+'/issues/'+target.number},
-        execute:()=>executeMemberAction(actor,token,action,scoped,{fetchImpl,deps}),
+        execute:async()=>{
+         const out=await executeMemberAction(actor,token,action,scoped,{fetchImpl,deps});
+         if(action.op==='review.comment'&&out.status==='done'){
+          // A provider POST response alone is not independent readback.
+          // If GET fails, keep an uncertain ledger state; NEVER replay.
+          const found=await probeCouncilEffect(actor,token,{
+           op:action.op,number:target.number,executionKey:key,
+           caseSha:target.caseSha
+          },fetchImpl);
+          if(!found)throw Error('council-review-readback-unverified');
+          return {...out,receipt:found.receipt||undefined,
+           effect:{executor:found.executor||actor.botLogin,url:found.url}};
+         }
+         return out;
+        },
         probe:()=>probeCouncilEffect(actor,token,{op:action.op,number:target.number,executionKey:key,caseSha:target.caseSha},fetchImpl)}));
       continue;
     }
@@ -370,7 +390,7 @@ export async function runMemberActions({role,sourceSha,token,assessment,target,c
   return results;
 }
 
-const MARKED_OPS={'issue.comment':'c','pr.comment':'c','review.comment':'c','review.request-changes':'r','review.approve':'r'};
+const MARKED_OPS={'issue.comment':'c','pr.comment':'c','review.comment':'r','review.request-changes':'r','review.approve':'r'};
 /** Readback: find an already-landed write by its hidden execution marker. */
 export async function probeCouncilEffect(actor,token,{op,number,executionKey:key,caseSha},fetchImpl=fetch){
  const kind=MARKED_OPS[op];

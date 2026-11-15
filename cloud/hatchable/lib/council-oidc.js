@@ -5,6 +5,7 @@ const JWKS_URL = ISSUER + '/.well-known/jwks';
 const REPOSITORY = 'michaeljwilliams0123/Ultron.MW';
 const REPOSITORY_ID = '1424939667';
 const WORKFLOW = REPOSITORY + '/.github/workflows/council-debate.yml@refs/heads/main';
+const TRUSTED_GATE_WORKFLOW = REPOSITORY + '/.github/workflows/council-required-status.yml@refs/heads/main';
 // The council worker runs in the governed-task lane, which keeps a workflow
 // identity of its own (26 -> 8 step 3: the legacy worker ref was removed).
 const WORKER_LANE_WORKFLOW = REPOSITORY + '/.github/workflows/lane-governed-task.yml@refs/heads/main';
@@ -117,6 +118,16 @@ export async function verifyCouncilOidc({token,rawBody,fetchJwks=fetch,now=Date.
   eventNames:['issues','workflow_dispatch']});
  return Object.freeze({actor:identity.actor,sha:identity.sha,event:identity.event,
   audience:identity.audience});
+}
+
+/** Release-gate OIDC is accepted ONLY for the ledger, never for
+ * private-key release via /council-act. The workflow executes main only. */
+export async function verifyCouncilGateOidc({token,rawBody,fetchJwks=fetch,now=Date.now}={}){
+ const identity=await verifyIdentity({token,rawBody,fetchJwks,now,
+  audience:councilOidcAudience,workflowRefs:[TRUSTED_GATE_WORKFLOW],
+  eventNames:['pull_request_target']});
+ return Object.freeze({actor:identity.actor,sha:identity.sha,event:identity.event,
+  audience:identity.audience,source:'trusted-council-gate'});
 }
 
 export async function verifyCouncilWorkerOidc({token,rawBody,fetchJwks=fetch,now=Date.now}={}){
