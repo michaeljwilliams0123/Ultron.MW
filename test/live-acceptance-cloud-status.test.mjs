@@ -19,7 +19,7 @@ async function collect({status=200,body=valid,allowOrigin=ORIGIN,
    typeof value==='string'?value:JSON.stringify(value),{status:code,headers});
   if(url.endsWith('/commits/main'))return reply({sha:SHA});
   if(url.includes('/actions/workflows/verify.yml/runs'))return reply({workflow_runs:[
-   {id:18,head_sha:SHA,event:'push',status:'completed',conclusion:'success'}]});
+   {id:18,head_sha:SHA,head_branch:'main',workflow_id:388875616,event:'push',status:'completed',conclusion:'success'}]});
   if(url===ORIGIN+'/Ultron.MW/')return reply('<meta name="ultron-source-sha" content="'+SHA+'">');
   if(url===ORIGIN+'/Ultron.MW/app.js')return reply('/* module fixture */');
   if(url===CLOUD+'/')return reply('Ultron');
@@ -45,6 +45,10 @@ test('public audit requires valid cloud status and both trusted/foreign origin c
  assert.equal(report.counts.passed,11);
  assert.equal(report.publicReadiness,'observed-healthy');
  assert.equal(report.productionReadiness,'not-accepted');
+ const verifyCalls=calls.filter(call=>call.url.includes('/actions/workflows/verify.yml/runs'));
+ assert.equal(verifyCalls.length,1);
+ assert.match(verifyCalls[0].url,new RegExp('head_sha='+SHA));
+ assert.match(verifyCalls[0].url,/per_page=3/);
  const cloudCalls=calls.filter(call=>call.url.startsWith(CLOUD));
  assert.equal(cloudCalls.filter(call=>call.url.endsWith('/status-public')).length,2);
  for(const {options} of cloudCalls){
