@@ -16,7 +16,7 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     services:
       postgres:
@@ -45,6 +45,8 @@ jobs:
           node-version: '22'
       - name: Audit source for accidental credentials
         run: node scripts/audit-secret-isolation.mjs
+      - name: Check GitHub Actions workflow references before install
+        run: node scripts/check-workflow-references.mjs
       - name: Install audited locked model runtime
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
@@ -84,7 +86,7 @@ jobs:
           github.event.pull_request.user.id == 308995719) ||
          (github.event.pull_request.user.login == 'michaeljwilliams0123ultron' &&
           github.event.pull_request.user.id == 354634860))))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -108,7 +110,7 @@ jobs:
         with:
           subject-path: artifacts/github-verification-receipt.json
       - name: Retain receipt and Sigstore bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: attested-verification-${{ env.SOURCE_SHA }}-${{ github.run_attempt }}
           path: |
@@ -118,7 +120,7 @@ jobs:
           retention-days: 7
   fixed-comparison:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -147,7 +149,7 @@ jobs:
           node scripts/compare-acceptance-evidence.mjs "$BASE_SHA" "$CANDIDATE_SHA" artifacts/fixed-comparison.json
       - name: Preserve case-level task and event readbacks
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: fixed-comparison-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
           path: artifacts/fixed-comparison.json
