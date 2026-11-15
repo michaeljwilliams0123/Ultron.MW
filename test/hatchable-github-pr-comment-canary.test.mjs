@@ -82,7 +82,7 @@ function provider(prepared,{lost=false}={}){
   if(url.endsWith('/app/installations/179066535/access_tokens')){
    const body=JSON.parse(options.body);
    assert.deepEqual(body,{repository_ids:[1424939667],
-    permissions:{issues:'write',metadata:'read'}});
+    permissions:{issues:'write',pull_requests:'write',metadata:'read'}});
    return response(201,{token:'test-scoped-token',permissions:body.permissions,
     repositories:[{id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'}],
     expires_at:new Date(Date.now()+1800000).toISOString()});
@@ -274,7 +274,7 @@ test('token exchange accepts GitHub expiry stamped after our clock read, within 
   const h=await admitted(t);
   const fetchImpl=async(url,options={})=>{
    if(url.endsWith('/access_tokens'))return response(201,{token:'test-scoped-token',
-    permissions:{issues:'write',metadata:'read'},
+    permissions:{issues:'write',pull_requests:'write',metadata:'read'},
     repositories:[{id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'}],
     expires_at:new Date(expiresAt).toISOString()});
    throw Error('stop-after-exchange');

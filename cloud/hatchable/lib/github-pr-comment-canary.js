@@ -246,7 +246,7 @@ async function tokenForComment(raw,fetchImpl,clock){
  let jwt;
  try{jwt=unsigned+'.'+base64url(signRs256(c.privateKey,unsigned));}
  catch{fail('configuration-invalid');}
- const permissions={issues:'write',metadata:'read'};
+ const permissions={issues:'write',pull_requests:'write',metadata:'read'};
  let response;
  try{
   response=await provider(fetchImpl,
@@ -263,8 +263,8 @@ async function tokenForComment(raw,fetchImpl,clock){
  let body;
  try{body=await response.json();}catch{fail('token-response-invalid');}
  if(typeof body?.token!=='string'||!body.token||
-   body.permissions?.issues!=='write'||body.permissions?.metadata!=='read'||
-   Object.keys(body.permissions).length!==2||!Array.isArray(body.repositories)||
+   body.permissions?.issues!=='write'||body.permissions?.pull_requests!=='write'||
+   body.permissions?.metadata!=='read'||Object.keys(body.permissions).length!==3||!Array.isArray(body.repositories)||
    body.repositories.length!==1||body.repositories[0]?.id!==REPO_ID||
    body.repositories[0]?.full_name!==REPO||
    !(Date.parse(body.expires_at)>now&&
