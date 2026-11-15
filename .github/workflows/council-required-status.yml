@@ -82,8 +82,10 @@ jobs:
             const comments=await github.paginate(github.rest.issues.listComments,
               {owner,repo,issue_number:number,per_page:100});
             const live=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
-            if(live.head.sha!==pr.head.sha||live.base.sha!==pr.base.sha)
-              throw Error('Council PR head/base changed during readback');
+            if(gate.exactHeadReadState(pr,live)==='superseded'){
+              core.notice('Council run superseded during data read; newer exact-head run owns the decision.');
+              core.setOutput('skip','true');return;
+            }
             const complete=files.length===pr.changed_files&&files.length<3000;
             const override=[...comments].reverse().find(c=>
               gate.isOwnerAccount(c.user)&&typeof c.body==='string'&&
@@ -147,8 +149,10 @@ jobs:
               const liveAgain=(await github.rest.pulls.get({
                 owner,repo,pull_number:number
               })).data;
-              if(liveAgain.head?.sha!==pr.head.sha||liveAgain.base?.sha!==pr.base.sha)
-                throw Error('council-ast-head-drift');
+              if(gate.exactHeadReadState(pr,liveAgain)==='superseded'){
+                core.notice('Council run superseded during bounded source read; newer exact-head run owns the decision.');
+                core.setOutput('skip','true');return;
+              }
               const e=scanCouncilChangedFiles({
                 sourceSha:pr.head.sha,prNumber:number,sources
               });
@@ -267,8 +271,11 @@ jobs:
             const {owner,repo}=context.repo;
             const sha=process.env.TARGET_SOURCE_SHA,number=Number(process.env.ITEM_NUMBER);
             const live=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
-            if(live.state!=='open'||live.head.sha!==sha||live.base.sha!==process.env.TARGET_BASE_SHA)
-              throw Error('Council PR changed before publish; a newer run will decide');
+            const expected={number,state:'open',head:{sha},base:{sha:process.env.TARGET_BASE_SHA}};
+            if(gate.exactHeadReadState(expected,live)==='superseded'){
+              core.notice('Council run superseded before publish; newer exact-head run owns the decision.');
+              return;
+            }
             let result=null;
             try{result=JSON.parse(fs.readFileSync('council-release-gate.json','utf8'));}catch{result=null;}
             const body=gate.buildGateCheckRun(result,{sha,prNumber:number,

@@ -88,6 +88,15 @@ function held(reason,extra={}){
   overrideUsed:false,...extra});
 }
 
+/** A PR snapshot is usable only while the same open PR still has the exact
+ * head and base that were read. A changed snapshot is superseded by the
+ * newer pull_request_target run and must not turn the obsolete run red. */
+export function exactHeadReadState(expected,observed){
+ return expected&&observed&&observed.state==='open'&&
+  observed.number===expected.number&&observed.head?.sha===expected.head?.sha&&
+  observed.base?.sha===expected.base?.sha?'current':'superseded';
+}
+
 export function evaluateTrustedCouncilGate({report,receipt,pr,files,filesComplete,
  overrideComment=null,ownerPublicJwk=null,now=new Date().toISOString()}={}){
  if(!pr||pr.state!=='open'||!Number.isSafeInteger(pr.number)||pr.number<1||

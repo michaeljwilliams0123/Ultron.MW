@@ -79,7 +79,9 @@ test('publisher cannot be impersonated by a generic Actions token or malformed i
 
 test('trusted workflow retains dedicated App publication and immutable PR readback',()=>{
   const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
-  assert.match(y,/live\.head\.sha!==sha\|\|live\.base\.sha!==process\.env\.TARGET_BASE_SHA/);
+  assert.equal((y.match(/gate\.exactHeadReadState\(/g)||[]).length,3);
+  assert.match(y,/Council run superseded before publish; newer exact-head run owns the decision/);
+  assert.doesNotMatch(y,/Council PR changed before publish|Council PR head\/base changed during readback/);
   assert.match(y,/permission-checks: write/);
   assert.match(y,/github-token: \$\{\{ steps\.app\.outputs\.token \}\}/);
   assert.match(y,/Fail closed when the Council Gate App is not configured[\s\S]*exit 1/);
