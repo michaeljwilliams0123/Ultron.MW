@@ -33,7 +33,7 @@ const PREPARE=[
  " INSERT INTO brain_owner_passkey_challenges(grant_id,challenge,credential_id,",
  " actor,objective_id,operation,resource,policy_sha,administrative_change,",
  " profile_version,stop_version,expires_at)",
- " SELECT $1,$2,credential.credential_id,'worker:coordinator',$3,'pr.comment',$4,$5,FALSE,",
+ " SELECT $1,$2,credential.credential_id,'mcp:ultron',$3,'pr.comment',$4,$5,FALSE,",
  " policy.profile_version,policy.stop_version,now()+interval '5 minutes'",
  " FROM policy CROSS JOIN credential RETURNING grant_id,expires_at",
  ") SELECT grant_id,expires_at AS \"expiresAt\" FROM saved"
@@ -62,7 +62,7 @@ const CLAIM=[
  "), claimed AS (",
  " UPDATE brain_owner_passkey_challenges ch SET used_at=now()",
  " WHERE ch.grant_id=$2 AND ch.credential_id=$3 AND ch.challenge=$4",
- " AND ch.actor='worker:coordinator' AND ch.objective_id=$1",
+ " AND ch.actor='mcp:ultron' AND ch.objective_id=$1",
  " AND ch.operation='pr.comment' AND ch.resource=$5 AND ch.policy_sha=$6",
  " AND NOT ch.administrative_change AND ch.profile_version=$7 AND ch.stop_version=$8",
  " AND ch.used_at IS NULL AND ch.expires_at>clock_timestamp()",
