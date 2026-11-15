@@ -26,4 +26,7 @@ for(const directory of ['src','docs','scripts','test']){
 const hubs=await verifyGitHubs(root);
 console.log('Git-backed hubs verified:',hubs.accepted,hubs.indexSha256);
 const tests=(await sourceFiles('test')).filter(path=>path.endsWith('.test.mjs'));
-run(['--test',...tests]);
+// The standalone secondary Admin proof tests live under scripts; include them in
+// the required exact-head Verify job rather than relying on an optional npm script.
+const requiredScriptTests=['scripts/verify-secondary-admin.test.mjs'];
+run(['--test',...tests,...requiredScriptTests]);
