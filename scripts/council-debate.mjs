@@ -12,6 +12,7 @@ import {buildCouncilExactHeadEvidence} from '../src/council-exact-head-evidence.
 import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mjs';
 import {runReasoningRound,buildCouncilReasoningInput} from '../src/council-reasoning.mjs';
 import {buildCouncilPrContext,formatCouncilPrContext} from '../src/council-pr-context.mjs';
+import {signCouncilRoleVerdict,deriveCouncilRolePublicKeys} from '../src/council-role-attestation.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
 
 const ownerMode = ownerAutonomyEnabled();
@@ -179,6 +180,29 @@ actions.push('Promote durable outcomes into docs/council_precedents.md via a rev
 const reasoning = await runReasoningRound({
   input: buildCouncilReasoningInput({title,body,sourceSha,prNumber:itemNumber,reviewEvidence,prContext})
 });
+// A shared-root signature proves record integrity, not independent GitHub
+// reviewer identity. Only the trusted main-only gate receives the root seed.
+let roleAttestations=[],rolePublicKeys={};
+const root=process.env.COUNCIL_MASTER_SEED||'';
+if(root&&isPr&&/^[a-f0-9]{40}$/.test(sourceSha)){
+ try{
+  rolePublicKeys=deriveCouncilRolePublicKeys(root);
+  roleAttestations=Object.entries(reasoning.results).map(([role,v])=>
+   signCouncilRoleVerdict({role,prNumber:itemNumber,sourceSha,
+    verdict:v.verdict,confidence:v.confidence,source:v.source,
+    inputDigest:v.inputDigest,rationale:v.rationale,
+    findings:v.findings||[]},root));
+ }catch(error){
+  roleAttestations=[];rolePublicKeys={};
+  console.warn('Council role attestation held: '+String(error.message).slice(0,100));
+ }
+}
+writeFileSync('council-role-attestations.json',JSON.stringify({
+ schema:'ultron.council-role-attestations.v1',sourceSha,prNumber:itemNumber,
+ signedRoles:roleAttestations.length,independentGithubReview:false,
+ signerAuthority:'shared-council-controller',publicKeys:rolePublicKeys,
+ verdicts:roleAttestations
+},null,2));
 const modelRoleCount=Object.keys(reasoning.results).length;
 const codeEvidence=prContext?formatCouncilPrContext(prContext):
   'Exact-head diff was not fetched/verified. No file-specific conclusions can be claimed.';
@@ -252,7 +276,7 @@ ${codeEvidence}
 
 </details>
 
-${reasoningSection}
+**Role signing:** ${roleAttestations.length}/${modelRoleCount} Ed25519 role records signed by one shared Council controller; **not independent GitHub App approvals**.\n\n${reasoningSection}
 ### Proposed capabilities (execution requires independent receipts)
 ${roleAssessments}
 
@@ -298,6 +322,7 @@ writeFileSync('council-receipt.json', JSON.stringify({
   publication,
   // Preserve real provider provenance and dissent for trusted release evaluation.
   modelReview:reasoning,
+  roleSigning:{signedRoles:roleAttestations.length,independentGithubReview:false},
 }, null, 2));
 
 console.log(status);
