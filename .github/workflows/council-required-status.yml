@@ -108,6 +108,18 @@ jobs:
               core.warning('Council CI evidence remains unverified: '+error.message);
             }
             core.exportVariable('COUNCIL_REVIEW_EVIDENCE_FILE',write('exact-head-ci.json',observed));
+            // Trusted-main-only exact-head source context; no arbitrary PR
+            // code execution and no raw patch logging/provider forwarding.
+            const patchComplete=complete&&files.length<=80&&
+              files.every(f=>!f.patch||f.patch.length<=2400);
+            core.exportVariable('COUNCIL_PR_FILES_FILE',write('exact-head-pr-files.json',{
+              sourceSha:pr.head.sha,prNumber:pr.number,complete:patchComplete,
+              files:files.slice(0,80).map(f=>({
+                filename:f.filename,status:f.status,
+                additions:f.additions,deletions:f.deletions,
+                patch:typeof f.patch==='string'?f.patch.slice(0,2400):''
+              }))
+            }));
             core.exportVariable('COUNCIL_PR_FILE',write('pr.json',slim));
             core.exportVariable('COUNCIL_FILES_FILE',write('files.json',
               {complete,files:files.map(f=>({filename:f.filename,previous_filename:f.previous_filename,status:f.status}))}));
@@ -131,12 +143,24 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # Trusted pull_request_target runs only main-controlled source, not PR code.
+          COUNCIL_MASTER_SEED: ${{ secrets.COUNCIL_MASTER_SEED }}
         run: |
           set -euo pipefail
           TITLE=$(cat "$TITLE_FILE")
           BODY=$(cat "$BODY_FILE")
           export TITLE BODY
           node scripts/council-debate.mjs
+      - name: Retain exact-head role-attestation evidence
+        if: steps.prepare.outputs.skip == 'false'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: council-signed-role-evidence-${{ github.run_id }}
+          path: |
+            council-role-attestations.json
+            council-receipt.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Apply seven-of-seven policy from main
         id: evaluate
         if: steps.prepare.outputs.skip == 'false'
