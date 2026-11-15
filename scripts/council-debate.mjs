@@ -13,6 +13,7 @@ import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mj
 import {runReasoningRound,buildCouncilReasoningInput} from '../src/council-reasoning.mjs';
 import {buildCouncilPrContext,formatCouncilPrContext} from '../src/council-pr-context.mjs';
 import {signCouncilRoleVerdict,deriveCouncilRolePublicKeys} from '../src/council-role-attestation.mjs';
+import {formatCouncilTaintEvidence} from '../src/council-taint-evidence.mjs';
 import { buildInterSelfDialogue, formatDialogueMarkdown } from '../src/inter-self-dialogue.mjs';
 
 const ownerMode = ownerAutonomyEnabled();
@@ -113,6 +114,14 @@ try{
   }
  }
 }catch{prContext=null;}
+let taintEvidence=null;
+try{
+ if(isPr&&process.env.COUNCIL_TAINT_EVIDENCE_FILE){
+  const e=JSON.parse(readFileSync(process.env.COUNCIL_TAINT_EVIDENCE_FILE,'utf8'));
+  if(e.schema==='ultron.council-taint-evidence.v1'&&e.sourceSha===sourceSha&&
+    e.prNumber===itemNumber)taintEvidence=e;
+ }
+}catch{taintEvidence=null;}
 const memberAssessments=assessCouncil({
   title,body,isPr,itemNumber,sourceSha,flags,ownerMode,
   reviewEvidence:reviewEvidence?.sourceSha===sourceSha?reviewEvidence:null,
@@ -178,7 +187,7 @@ if (ownerMode) {
 actions.push('Promote durable outcomes into docs/council_precedents.md via a reviewed PR (workflow does not push main).');
 
 const reasoning = await runReasoningRound({
-  input: buildCouncilReasoningInput({title,body,sourceSha,prNumber:itemNumber,reviewEvidence,prContext})
+  input: buildCouncilReasoningInput({title,body,sourceSha,prNumber:itemNumber,reviewEvidence,prContext,taintEvidence})
 });
 // A shared-root signature proves record integrity, not independent GitHub
 // reviewer identity. Only the trusted main-only gate receives the root seed.
@@ -265,6 +274,10 @@ ${publication.marker}
 ${memberTable}
 
 **Identities:** \`${configuredCount}/7\` have credential fields configured (not authentication); \`${independentCount}/7\` have independently authenticated authorship proven by this report; \`${receiptProven}/7\` have verified App execution receipts. This report is posted by github-actions, not seven App accounts. App authentication must be established at execution time. ${modelNote}, not independent review.
+
+### Bounded static AST taint findings
+${taintEvidence?formatCouncilTaintEvidence(taintEvidence):
+  'Not observed. A missing AST finding does not prove security.'}
 
 ### Exact-head source evidence (untrusted code, bounded)
 
