@@ -15,13 +15,13 @@ const token={token:'TEST-INSTALLATION-TOKEN-NEVER-OUTPUT',
  expires_at:'2026-11-14T12:45:00Z',permissions:{metadata:'read'},repositories:[repo]};
 const credentials={appId:5633654,installationId:179066535,privateKey:'TEST PRIVATE KEY'};
 const response=(status,body)=>({status,json:async()=>body});
-function proofHarness({install=installation,repoInstall=installation,minted=token,repository=repo,failAt=0,failStatus=403}={}){
+function proofHarness({install=installation,repoInstall,minted=token,repository=repo,failAt=0,failStatus=403}={}){
  const calls=[];
  const fetchImpl=async(url,options)=>{
   calls.push({url,method:options.method||'GET',body:options.body,authorization:options.headers.Authorization});
   if(failAt===calls.length)return response(failStatus,{error:'UNTRUSTED-SENSITIVE-DIAGNOSTIC'});
   if(url.endsWith('/app/installations/179066535'))return response(200,install);
-  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/installation'))return response(200,repoInstall);
+  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/installation'))return response(200,repoInstall??install);
   if(url.endsWith('/app/installations/179066535/access_tokens'))return response(201,minted);
   if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW'))return response(200,repository);
   throw Error('Unrecognized provider call');
