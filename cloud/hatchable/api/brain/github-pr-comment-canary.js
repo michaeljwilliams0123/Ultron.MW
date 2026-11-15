@@ -190,6 +190,7 @@ export default async function handler(req,res){
   return reply(res,202,{ok:false,status:'reconcile-required',
    idempotencyKey:prepared.idempotencyKey,error:'provider-outcome-unresolved',
    reason:failure.reason,stage:failure.stage,dispatched:null,
-   ...(failure.providerHttpStatus?{providerHttpStatus:failure.providerHttpStatus}:{})});
+   ...(failure.providerHttpStatus?{providerHttpStatus:failure.providerHttpStatus}:{}),
+   ...(failure.permissionHint?{permissionHint:failure.permissionHint}:{})});
  }
 }
