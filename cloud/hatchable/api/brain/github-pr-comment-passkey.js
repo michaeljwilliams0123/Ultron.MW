@@ -1,6 +1,7 @@
 import {db,config} from 'hatchable';
 import {validatePreparedCanary,prCommentCanaryReadiness,
- prCommentCanaryEnabled,submitPrCommentCanary,classifyPrCommentFailure}
+ prCommentCanaryEnabled,submitPrCommentCanary,classifyPrCommentFailure,
+ diagnosePrCommentCanary}
  from 'lib/github-pr-comment-canary.js';
 import {beginC04PasskeyChallenge,verifyAndReserveC04Passkey}
  from 'lib/c04-passkey-comment.js';
@@ -59,6 +60,15 @@ export default async function handler(req,res){
   catch{return reply(res,400,HELD('invalid-passkey-proof'));}
   // Fail before consuming the five-minute assertion if App custody broke.
   const credentials=await appCredentials();
+  // A PR may close or lock after the owner's initial browser preparation.
+  // Revalidate the exact target through a GitHub GET before consuming WebAuthn.
+  const probe=await diagnosePrCommentCanary({
+   pullRequest:prepared.pullRequest,appCredentials:credentials});
+  if(probe.readOnly!==true||probe.repositoryHttpStatus!==200||
+    probe.issueHttpStatus!==200||probe.repositoryArchived!==false||
+    probe.isPullRequest!==true||probe.issueState!=='open'||
+    probe.issueLocked!==false)
+   return reply(res,409,HELD('target-not-open-or-unlocked'));
   const approval=await verifyAndReserveC04Passkey({db,prepared,proof:b.proof});
   if(!approval.ok)return reply(res,
    approval.reason==='execution-already-reserved'?409:403,approval);
