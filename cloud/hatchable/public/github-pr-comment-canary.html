@@ -66,7 +66,7 @@ footer code{overflow-wrap:anywhere}
 <textarea id="comment" readonly></textarea>
 <label for="signable">Exact owner-grant request (read-only)</label>
 <textarea id="signable" readonly></textarea>
-<details class="signing-guide" id="signing-guide"><summary>How to sign on your trusted computer</summary><p class="muted">Legacy signed-envelope alternative: the existing WebAuthn passkey cannot sign this older P-256 envelope. Use the existing Ultron owner-grant signing helper on the computer that holds your private JWK. The signing key remains on your device; never paste or upload it into Hatchable or GitHub.</p><p><code>node scripts/owner-grant.mjs sign PRIVATE_JWK REQUEST_JSON OUTPUT_ENVELOPE_JSON</code></p><p class="muted">Copy the read-only request above into REQUEST_JSON, sign it locally, then paste only the resulting payload and signature below. A signed grant expires quickly.</p></details>
+<details class="signing-guide" id="signing-guide"><summary>How to sign on your trusted computer</summary><p class="muted">Passkey enrollment does not sign the legacy P-256 envelope. The existing WebAuthn passkey authorizes a separate origin-bound C04 challenge instead. Use the existing Ultron owner-grant signing helper on the computer that holds your private JWK. The signing key remains on your device; never paste or upload it into Hatchable or GitHub.</p><p><code>node scripts/owner-grant.mjs sign PRIVATE_JWK REQUEST_JSON OUTPUT_ENVELOPE_JSON</code></p><p class="muted">Copy the read-only request above into REQUEST_JSON, sign it locally, then paste only the resulting payload and signature below. A signed grant expires quickly.</p></details>
 </section>
 <section aria-labelledby="submit-heading"><div class="step-kicker">Step 02 / Owner-authorized write</div><h2 id="submit-heading">Approve once or reconcile</h2><p class="muted">A registered owner passkey is the default. Authorization is bound to the exact prepared comment and one GitHub PR. A failed or unknown attempt is only reconciled by readback.</p>
 <div class="signing-guide" id="passkey-panel">
@@ -79,7 +79,7 @@ footer code{overflow-wrap:anywhere}
 <p class="muted">Only use this if you must sign through your existing P-256 owner-grant helper. A real WebAuthn assertion uses the buttons above instead.</p>
 <label for="envelope">Owner-signed envelope</label>
 <textarea id="envelope" autocomplete="off" spellcheck="false" placeholder='{"payload":"...","signature":"..."}'></textarea>
-<div class="actions"><button id="submit" disabled>Submit legacy signed envelope</button></div></details><div class="actions"><button id="reconcile" disabled>Read back existing attempt</button></div>
+<div class="actions"><button id="submit" disabled>Submit one App comment (legacy signed envelope)</button></div></details><div class="actions"><button id="reconcile" disabled>Read back existing attempt</button></div>
 <p class="status" id="status" role="status" aria-live="polite">No canary prepared. No GitHub write has been attempted.</p>
 </section>
 </div>
