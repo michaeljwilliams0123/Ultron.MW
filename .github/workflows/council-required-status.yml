@@ -45,6 +45,7 @@ jobs:
       issues: read
       pull-requests: read
       checks: read
+      id-token: write
     steps:
       - name: Configure Git bare-repository policy
         run: git config --global safe.bareRepository explicit
@@ -168,6 +169,29 @@ jobs:
         env:
           COUNCIL_EVIDENCE_DIRECTORY: ${{ github.workspace }}
         run: node scripts/enforce-council-acceptance.mjs
+      - name: Execute one real Coordinator PR COMMENT review with durable readback
+        if: >-
+          steps.prepare.outputs.skip == 'false' &&
+          env.OWNER_MODE == '1' &&
+          vars.ULTRON_GITHUB_APP_ID == '5633654'
+        continue-on-error: true
+        env:
+          COUNCIL_COORDINATOR_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
+          COUNCIL_COORDINATOR_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+        run: |
+          if [ -f scripts/council-live-review.mjs ]; then
+            node scripts/council-live-review.mjs
+          else
+            echo "Council live review not yet on trusted main; no action."
+          fi
+      - name: Retain Council execution evidence
+        if: always() && steps.prepare.outputs.skip == 'false'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: council-live-review-${{ github.run_id }}
+          path: council-live-review-result.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Mint dedicated Council Gate App token
         id: app
         if: steps.prepare.outputs.skip == 'false' && vars.COUNCIL_GATE_APP_CLIENT_ID != ''
