@@ -189,6 +189,13 @@ jobs:
           BODY=$(cat "$BODY_FILE")
           export TITLE BODY
           node scripts/council-debate.mjs
+      - name: Verify seven role attestations with protected root and exact head
+        id: role-attestation
+        if: steps.prepare.outputs.skip == 'false'
+        continue-on-error: true
+        env:
+          COUNCIL_MASTER_SEED: ${{ secrets.COUNCIL_MASTER_SEED }}
+        run: node scripts/verify-council-role-attestations.mjs
       - name: Retain exact-head role-attestation evidence
         if: steps.prepare.outputs.skip == 'false'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -196,6 +203,7 @@ jobs:
           name: council-signed-role-evidence-${{ github.run_id }}
           path: |
             council-role-attestations.json
+            council-role-attestation-verification.json
             council-receipt.json
           if-no-files-found: ignore
           retention-days: 30
