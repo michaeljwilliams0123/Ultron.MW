@@ -33,7 +33,7 @@ export function scanCouncilChangedFiles({sourceSha,prNumber,sources,maxFiles=6}=
  });
  return Object.freeze({schema:LANG,sourceSha,prNumber,
   candidateFiles:sources.length,scannedFiles:reports.filter(x=>x.status!=='source-unavailable').length,
-  complete:sources.filter(x=>allowedPath(x?.filename)).length===reports.length&&
+  complete:sources.length===reports.length&&
    reports.every(x=>x.status!=='source-unavailable'&&x.status!=='parse-error'),
   reports:Object.freeze(reports)});
 }
