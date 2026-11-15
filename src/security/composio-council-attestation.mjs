@@ -10,7 +10,6 @@
  * module deliberately does not register keys or install secrets.
  */
 import {verify as ed25519Verify} from 'node:crypto';
-import {gatePasses} from '../council-trusted-gate.mjs';
 import {createPostgresApprovalNonceStore} from './crypto_auth.mjs';
 
 const SCHEMA='ultron.composio.council-attestation.v1';
@@ -56,6 +55,17 @@ function normalize(attestation) {
     sourceSha:attestation.sourceSha,prNumber:attestation.prNumber},
  };
 }
+/** This is only a structural predicate for a *verified* v1 attestation.
+ * The caller MUST first authenticate the pinned Ed25519 signer and consume
+ * the durable nonce; this helper never authorizes a stand-alone vote. */
+export function passesVerifiedComposioCouncilDecision(result,sourceSha,prNumber){
+ const names=['status','approvedCount','securitySensitive','sourceSha','prNumber'];
+ return exact(result,names)&&result.status==='accepted'&&result.approvedCount===7&&
+  result.securitySensitive===false&&SHA.test(sourceSha||'')&&
+  result.sourceSha===sourceSha&&Number.isSafeInteger(prNumber)&&prNumber>0&&
+  result.prNumber===prNumber;
+}
+
 /** Exact bytes the separate Council signer must sign; never sign from agents. */
 export function councilAttestationSigningBytes(attestation) {
  return Buffer.from(DOMAIN+canonical(normalize(attestation)));
@@ -91,7 +101,7 @@ export function createTrustedComposioCouncilVerifier({
   if(sig.length!==64||sig.toString('base64url')!==attestation.signature||
      !ed25519Verify(null,councilAttestationSigningBytes(attestation),key,sig))
    fail('Council signature invalid');
-  if(!gatePasses(message.result,sourceSha,prNumber))
+  if(!passesVerifiedComposioCouncilDecision(message.result,sourceSha,prNumber))
    fail('verified Council decision is held');
   // This MUST be one atomic, durable consume-if-absent transaction. Network or
   // storage uncertainty fails closed, and the nonce is never retried silently.

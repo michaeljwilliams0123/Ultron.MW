@@ -78,7 +78,7 @@ jobs:
         run: node scripts/hf-heldout-cpu.mjs
       - name: Preserve immutable model and behavior scoring evidence
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hf-heldout-${{ matrix.profile }}-s${{ matrix.shard }}-${{ github.sha }}
           path: artifacts/hf-heldout/*.json
@@ -130,7 +130,7 @@ jobs:
         run: node scripts/hf-free-cpu-benchmark.mjs
       - name: Preserve exact-source, exact-model evaluation receipt
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hf-cpu-${{ matrix.profile }}-s${{ matrix.shard }}-${{ github.sha }}
           path: artifacts/hf-free-cpu/*.json
@@ -177,7 +177,7 @@ jobs:
         run: node scripts/c06-run-model.mjs
       - name: Preserve immutable success or held receipt without credential exposure
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: c06-model-output-${{ github.run_id }}
           path: c06-output/**
@@ -216,7 +216,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: c06-model-output-${{ github.run_id }}
           path: c06-output
@@ -264,7 +264,7 @@ jobs:
       github.event_name == 'workflow_dispatch' && inputs.lab_task == 'held-out-acceptance' && inputs.baseline_sha != '' && inputs.candidate_sha != ''
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Configure Git bare-repository policy
@@ -286,7 +286,7 @@ jobs:
         run: node scripts/held-out-acceptance-evaluation.mjs
       - name: Preserve seeded case outcomes
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: seeded-held-out-${{ github.run_id }}
           path: artifacts/seeded-held-out.json

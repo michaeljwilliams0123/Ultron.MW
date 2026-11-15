@@ -6,6 +6,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {
  createTrustedComposioCouncilVerifier,councilAttestationSigningBytes,
  isTrustedComposioCouncilVerifier,createPostgresComposioCouncilNonceStore,
+ passesVerifiedComposioCouncilDecision,
 } from '../../../src/security/composio-council-attestation.mjs';
 import {executeGovernedGitHubAppMutation} from '../index.mjs';
 import {createComposioDurableAppExecutor} from '../durable-readback.mjs';
@@ -42,6 +43,17 @@ function store(){
 function verifier({keys={[KID]:publicKey},nonceStore=store(),clock=()=>NOW}={}){
  return createTrustedComposioCouncilVerifier({keys,nonceStore,clock});
 }
+
+test('Composio v1 release decision binds exact PR and source, not unrelated v2 fields',()=>{
+ const valid={status:'accepted',approvedCount:7,securitySensitive:false,sourceSha:HEAD,prNumber:PR};
+ assert.equal(passesVerifiedComposioCouncilDecision(valid,HEAD,PR),true);
+ assert.equal(passesVerifiedComposioCouncilDecision(valid,'b'.repeat(40),PR),false);
+ assert.equal(passesVerifiedComposioCouncilDecision(valid,HEAD,PR+1),false);
+ assert.equal(passesVerifiedComposioCouncilDecision({...valid,approvedCount:6},HEAD,PR),false);
+ assert.equal(passesVerifiedComposioCouncilDecision({...valid,securitySensitive:true},HEAD,PR),false);
+ assert.equal(passesVerifiedComposioCouncilDecision({...valid,status:'owner-overridden'},HEAD,PR),false);
+ assert.equal(passesVerifiedComposioCouncilDecision({...valid,baseSha:'a'.repeat(40)},HEAD,PR),false);
+});
 
 test('rejects an unsigned Council verdict, a caller-crafted boolean or unbranded verifier',async()=>{
  let writes=0,tokens=0;
