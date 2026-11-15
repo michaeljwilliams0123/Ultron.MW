@@ -67,7 +67,7 @@ test('secondary Admin verifier is owner-gated in the protected canary lane',()=>
   assert.match(job,/github\.triggering_actor == 'michaeljwilliams0123'/);
   assert.match(job,/github\.ref == 'refs\/heads\/main'/);
   assert.match(job,/environment: ultron-secondary-admin/);
-  assert.match(job,/ULTRON_SECONDARY_ADMIN_PRIVATE_KEY: \\$\{\{ secrets\.ULTRON_SECONDARY_ADMIN_PRIVATE_KEY \}\}/);
+  assert.ok(job.includes('ULTRON_SECONDARY_ADMIN_PRIVATE_KEY: ${{ secrets.ULTRON_SECONDARY_ADMIN_PRIVATE_KEY }}'));
   assert.match(job,/persist-credentials: false/);
   assert.match(job,/node scripts\/verify-secondary-admin\.mjs/);
   assert.equal(list().includes('verify-secondary-admin.yml'),false);
