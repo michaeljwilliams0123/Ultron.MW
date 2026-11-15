@@ -56,6 +56,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+      - name: Install pinned AST parser for main-only code inspection
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Read live PR, changed files, reviews and owner comments as data
         id: prepare
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -121,6 +123,41 @@ jobs:
                 patch:typeof f.patch==='string'?f.patch.slice(0,2400):''
               }))
             }));
+            // Source is fetched at the verified PR head and parsed as data;
+            // only bounded taint findings are persisted, never raw code.
+            try{
+              const {scanCouncilChangedFiles}=await import(pathToFileURL(
+                path.join(process.env.GITHUB_WORKSPACE,'src/council-taint-evidence.mjs')).href);
+              const sources=[];
+              const candidates=files.filter(f=>f.status!=='removed'&&
+                /\.(?:mjs|cjs|js|ts|tsx|jsx)$/.test(f.filename)).slice(0,6);
+              for(const f of candidates){
+                let source=null;
+                try{
+                  const response=await github.rest.repos.getContent({
+                    owner,repo,path:f.filename,ref:pr.head.sha
+                  });
+                  const d=response.data;
+                  if(!Array.isArray(d)&&d?.type==='file'&&d.size<=64000&&
+                    d.encoding==='base64'&&typeof d.content==='string')
+                    source=Buffer.from(d.content,'base64').toString('utf8');
+                }catch{}
+                sources.push({filename:f.filename,source});
+              }
+              const liveAgain=(await github.rest.pulls.get({
+                owner,repo,pull_number:number
+              })).data;
+              if(liveAgain.head?.sha!==pr.head.sha||liveAgain.base?.sha!==pr.base.sha)
+                throw Error('council-ast-head-drift');
+              const e=scanCouncilChangedFiles({
+                sourceSha:pr.head.sha,prNumber:number,sources
+              });
+              core.exportVariable('COUNCIL_TAINT_EVIDENCE_FILE',write(
+                'exact-head-ast-taint.json',e));
+              core.info('Bounded Council AST scan source files: '+e.scannedFiles);
+            }catch(error){
+              core.warning?.('Council AST scan unavailable: '+error.message);
+            }
             core.exportVariable('COUNCIL_PR_FILE',write('pr.json',slim));
             core.exportVariable('COUNCIL_FILES_FILE',write('files.json',
               {complete,files:files.map(f=>({filename:f.filename,previous_filename:f.previous_filename,status:f.status}))}));
