@@ -287,6 +287,6 @@ test('Skeptic COMMENT action writes a real PR review and readback resolves the e
  assert.equal(JSON.parse(calls[0].body).event,'COMMENT');
  const found=await probeCouncilEffect(actor,'tok',
   {op:'review.comment',number:9,executionKey,caseSha},fetchImpl);
- assert.match(calls[1].url,/pulls\\/9\\/reviews\\?/);
+ assert.equal(calls[1].url.includes('/pulls/9/reviews?'),true);
  assert.equal(found?.receipt?.effect?.author,'ultron-mw-skeptic[bot]');
 });
