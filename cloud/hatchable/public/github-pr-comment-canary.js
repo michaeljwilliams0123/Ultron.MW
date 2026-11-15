@@ -24,11 +24,11 @@ function buttons(){
  copy.disabled=busy||!prepared||submitted||!authenticated||!signable.value;
  submit.disabled=busy||!prepared||submitted||!authenticated||!loaded;
  reconcile.disabled=busy||!prepared||!submitted||!authenticated;
- passkeyRefresh.disabled=busy||!authenticated||submitted||pendingHold;
- passkeySelect.disabled=busy||submitted||!!passkeyChallenge;
- passkeyPrepare.disabled=busy||!authenticated||!prepared||submitted||!loaded||
-  !ownerGrantRequest||!passkeySelect.value;
- passkeyConfirm.disabled=busy||!authenticated||!prepared||submitted||!loaded||
+ if(passkeyRefresh)passkeyRefresh.disabled=busy||!authenticated||submitted||pendingHold;
+ if(passkeySelect)passkeySelect.disabled=busy||submitted||!!passkeyChallenge;
+ if(passkeyPrepare)passkeyPrepare.disabled=busy||!authenticated||!prepared||submitted||!loaded||
+  !ownerGrantRequest||!passkeySelect?.value;
+ if(passkeyConfirm)passkeyConfirm.disabled=busy||!authenticated||!prepared||submitted||!loaded||
   !passkeyChallenge;
 }
 function sessionLost(){
@@ -181,7 +181,7 @@ async function passkeyCall(body){
  return {...value,httpStatus:response.status};
 }
 async function refreshPasskeys(){
- if(!authenticated)return;
+ if(!authenticated||!passkeySelect)return;
  const response=await fetch('/api/brain/owner-passkeys',{
   credentials:'same-origin',cache:'no-store'});
  if(!response.ok)throw Error('Owner passkey registry unavailable.');
@@ -202,19 +202,19 @@ async function refreshPasskeys(){
  if(!passkeySelect.value)setStatus('No active registered owner passkey. Enroll in Owner setup first.');
  buttons();
 }
-passkeyRefresh.addEventListener('click',async()=>{
+passkeyRefresh?.addEventListener('click',async()=>{
  if(busy||!authenticated)return;
  busy=true;passkeyChallenge=null;buttons();
  try{await refreshPasskeys();}
  catch(e){setStatus('Passkey registry: '+String(e.message||e));}
  finally{busy=false;buttons();}
 });
-passkeySelect.addEventListener('change',()=>{
+passkeySelect?.addEventListener('change',()=>{
  passkeyChallenge=null;
  setStatus('Passkey selected. Prepare a fresh challenge for this credential.');
  buttons();
 });
-passkeyPrepare.addEventListener('click',async()=>{
+passkeyPrepare?.addEventListener('click',async()=>{
  if(busy||submitted||!prepared||!ownerGrantRequest||!targetVerified||
     selectedPr!==prepared.pullRequest||!passkeySelect.value)
   return setStatus('First verify target, prepare exact comment and select an owner passkey.');
@@ -234,7 +234,7 @@ passkeyPrepare.addEventListener('click',async()=>{
  }catch(error){setStatus('Passkey preparation denied: '+String(error.message||error));}
  finally{busy=false;buttons();}
 });
-passkeyConfirm.addEventListener('click',async()=>{
+passkeyConfirm?.addEventListener('click',async()=>{
  if(busy||!authenticated||submitted||!prepared||!passkeyChallenge||!targetVerified||
    prepared.pullRequest!==selectedPr)return;
  if(!navigator.credentials?.get)
