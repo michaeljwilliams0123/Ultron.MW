@@ -68,3 +68,19 @@ test('model input contains bounded exact-head diff and ignores foreign-head patc
  assert.doesNotMatch(foreign,/safePermissionSignal/);
  assert.match(foreign,/patch evidence unavailable/);
 });
+
+test('AST taint evidence reaches model only for exact source SHA and is never a release approval',async()=>{
+ const {scanCouncilChangedFiles}=await import('../src/council-taint-evidence.mjs');
+ const taintEvidence=scanCouncilChangedFiles({sourceSha:SHA,prNumber:454,sources:[{
+  filename:'src/handler.mjs',
+  source:"import {exec} from 'node:child_process';\nexec(req.body.cmd);"
+ }]});
+ const input=buildCouncilReasoningInput({title:'Check command handling',body:'Verify the source',
+  sourceSha:SHA,prNumber:454,taintEvidence});
+ assert.match(input,/AST taint scan/);
+ assert.match(input,/sink exec/);
+ assert.match(input,/Release authorization: NOT ESTABLISHED/);
+ const foreign=buildCouncilReasoningInput({title:'Check command handling',
+  body:'Verify',sourceSha:'b'.repeat(40),prNumber:454,taintEvidence});
+ assert.doesNotMatch(foreign,/sink exec/);
+});
