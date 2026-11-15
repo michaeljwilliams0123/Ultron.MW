@@ -33,6 +33,22 @@ const PR_COMMENT_FAILURES=Object.freeze({
  'ledger-readback-unavailable':{stage:'reconciliation',dispatched:null},
  'receipt-persistence-unverified':{stage:'receipt_persistence',dispatched:null}
 });
+// Preserve only fixed permission names from GitHub's denial headers.
+// Never store raw response bodies, credentials, cookies or arbitrary headers.
+const PERMISSION_HINTS=new Set(['issues-write','pull-requests-write',
+ 'issues-or-pull-requests-write']);
+export function safeGithubPermissionSignal(headers){
+ let raw;
+ try{raw=headers?.get?.('x-accepted-github-permissions');}catch{return null;}
+ if(typeof raw!=='string'||raw.length<1||raw.length>160)return null;
+ const parts=raw.toLowerCase().replace(/\s/g,'').split(/[;,]/);
+ if(!parts.length||parts.some(x=>!['issues=write','pull_requests=write'].includes(x)))return null;
+ const values=new Set(parts);
+ if(values.size===2)return 'issues-or-pull-requests-write';
+ if(values.has('issues=write'))return 'issues-write';
+ if(values.has('pull_requests=write'))return 'pull-requests-write';
+ return null;
+}
 export function classifyPrCommentFailure(error){
  const message=typeof error?.message==='string'?error.message:'';
  const prefix='github-pr-comment-canary-';
@@ -41,27 +57,33 @@ export function classifyPrCommentFailure(error){
  const safeHttp=code==='provider-write-denied'&&
   Number.isInteger(error?.providerHttpStatus)&&error.providerHttpStatus>=400&&
   error.providerHttpStatus<=599?error.providerHttpStatus:null;
+ const permissionHint=code==='provider-write-denied'&&
+  PERMISSION_HINTS.has(error?.providerPermissionHint)?error.providerPermissionHint:null;
  return Object.freeze(detail?{stage:detail.stage,reason:code,dispatched:detail.dispatched,
-  ...(safeHttp!==null?{providerHttpStatus:safeHttp}:{})}:
+  ...(safeHttp!==null?{providerHttpStatus:safeHttp}:{}),
+  ...(permissionHint!==null?{permissionHint}:{})}:
   {stage:'unknown',reason:'unclassified',dispatched:null});
 }
 const SAFE_STAGES=new Set(['credential_scoped','credential_exchange_failed',
  'provider_write_intent','provider_acknowledged','remote_observed',
  'reconcile_required','reconciliation_started','reconciliation_unresolved']);
-async function recordPrCommentStage(db,prepared,stage,reason=null,providerHttpStatus=null){
+async function recordPrCommentStage(db,prepared,stage,reason=null,
+ providerHttpStatus=null,permissionHint=null){
  if(!SAFE_STAGES.has(stage)||(reason!==null&&reason!=='unclassified'&&
   !Object.hasOwn(PR_COMMENT_FAILURES,reason))||
   (providerHttpStatus!==null&&(reason!=='provider-write-denied'||
    !Number.isInteger(providerHttpStatus)||providerHttpStatus<400||
-   providerHttpStatus>599)))fail('stage-request-invalid');
+   providerHttpStatus>599))||
+  (permissionHint!==null&&(reason!=='provider-write-denied'||
+   !PERMISSION_HINTS.has(permissionHint))))fail('stage-request-invalid');
  // No token, signature, private key, provider body, or arbitrary exception string.
  // This append-only event is independent of the immutable execution receipt.
  const result=await db.query(`INSERT INTO brain_events(event_type,details)
   SELECT 'github-pr-comment-stage',
    jsonb_build_object('idempotencyKey',$1::text,'stage',$2::text,'reason',$3::text,
-    'providerHttpStatus',$4::int)
+    'providerHttpStatus',$4::int,'permissionHint',$5::text)
   WHERE EXISTS(SELECT 1 FROM github_pr_comment_executions WHERE idempotency_key=$1)
-  RETURNING id`,[prepared.idempotencyKey,stage,reason,providerHttpStatus]);
+  RETURNING id`,[prepared.idempotencyKey,stage,reason,providerHttpStatus,permissionHint]);
  if(result?.rows?.length!==1)fail('stage-persistence-unavailable');
 }
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -355,6 +377,7 @@ export async function submitPrCommentCanary({
    const error=Error('github-pr-comment-canary-provider-write-denied');
    if(Number.isInteger(response.status)&&response.status>=400&&
      response.status<=599)error.providerHttpStatus=response.status;
+   error.providerPermissionHint=safeGithubPermissionSignal(response.headers);
    throw error;
   }
   let created;try{created=await response.json();}catch{fail('provider-outcome-unknown');}
@@ -369,7 +392,7 @@ export async function submitPrCommentCanary({
   try{
    const failure=classifyPrCommentFailure(error);
    await recordPrCommentStage(db,prepared,'reconcile_required',
-    failure.reason,failure.providerHttpStatus??null);
+    failure.reason,failure.providerHttpStatus??null,failure.permissionHint??null);
   }catch{}
   throw error;
  }
