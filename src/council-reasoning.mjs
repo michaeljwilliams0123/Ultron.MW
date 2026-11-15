@@ -9,6 +9,35 @@ export const PROVIDERS=Object.freeze({
  groq:{id:'groq',model:'openai/gpt-oss-20b',keyEnv:'GROQ_API_KEY',
   url:()=>'https://api.groq.com/openai/v1/chat/completions'}
 });
+/**
+ * Summarize only independently verified, exact-head provider evidence for the
+ * advisory model prompt. This cannot authorize a release or an owner override.
+ * Never forward arbitrary fields from PR data or a provider response.
+ */
+export function buildCouncilReasoningInput({
+ title='',body='',sourceSha='',prNumber=0,reviewEvidence=null
+}={}){
+ const evidence=reviewEvidence;
+ const required=['test','fixed-comparison','attested-receipt'];
+ const verified=evidence?.schema==='ultron.council-exact-head-evidence.v1' &&
+   evidence.verified===true&&evidence.releaseAuthorized===false&&
+   evidence.baseUpToDate===true&&evidence.repositoryId===1424939667&&
+   evidence.providerAppId===15368&&
+   /^[a-f0-9]{40}$/.test(sourceSha)&&evidence.sourceSha===sourceSha&&
+   Number.isSafeInteger(prNumber)&&prNumber>0&&evidence.prNumber===prNumber&&
+   Array.isArray(evidence.checks)&&evidence.checks.length===required.length&&
+   required.every((check,i)=>evidence.checks[i]===check);
+ const summary=verified
+  ?'Trusted GitHub exact-head CI: VERIFIED\n'+
+   'PR #'+prNumber+'; source SHA: '+sourceSha+'\n'+
+   'GitHub Actions checks: '+required.join(', ')+'\n'+
+   'Base comparison: up-to-date'
+  :'Trusted GitHub exact-head CI: UNVERIFIED (missing, failed or stale)';
+ return String(title)+'\n\n'+String(body)+'\n\n[Provider readback; advisory only]\n'+
+  summary+'\nRelease authorization: NOT ESTABLISHED\n'+
+  'Do not infer Council approval, a signed owner exception, or permission to merge.';
+}
+
 export const REASONING_ROLES=Object.freeze({
  Builder:'You are Builder. Propose the smallest concrete change that satisfies the request. List steps and risks.',
  Skeptic:'You are Skeptic. Challenge the proposal: name the weakest assumption, a falsifying test, and any disagreement.',
