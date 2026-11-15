@@ -12,7 +12,7 @@ function harness(override={}){
  const service=async(url,options)=>{
   calls.push({url,method:options.method||'GET',authorization:options.headers.Authorization,body:options.body});
   if(url.endsWith('/app/installations/179066535'))return payload(200,override.installation??installation);
-  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/installation'))return payload(200,override.repoInstallation??installation);
+  if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW/installation'))return payload(200,override.repoInstallation??override.installation??installation);
   if(url.endsWith('/app/installations/179066535/access_tokens'))return payload(201,override.token??token);
   if(url.endsWith('/repos/michaeljwilliams0123/Ultron.MW'))return payload(200,override.repo??repo);
   throw Error('unexpected provider call');
@@ -114,4 +114,33 @@ test('rejects token expiry with an unreasonable provider skew',async()=>{
  const {service}=harness({token:{...token,expires_at:new Date(now+3600000+600000).toISOString()}});
  const proof=await probeGithubAppInstallation({credentials:config,fetchImpl:service,signJwt:sign,now});
  assert.equal(proof.reason,'token-scope-mismatch');
+});
+
+
+test('reports allowlisted effective GitHub App permissions without asserting admin execution',async()=>{
+ const permissions={metadata:'read',contents:'write',administration:'write',actions:'write',
+  issues:'write',pull_requests:'write',checks:'read',workflows:'read',
+  secrets:'write',variables:'read',webhooks:'none',UNTRUSTED:'PRIVATE-KEY-NEVER-RETURN'};
+ const {service}=harness({installation:{...installation,permissions}});
+ const proof=await probeGithubAppInstallation({credentials:config,fetchImpl:service,signJwt:sign,
+  now:Date.parse('2026-11-13T23:00:00Z')});
+ assert.equal(proof.state,'installation-and-scoped-read-verified');
+ assert.deepEqual(proof.observedPermissions,{
+  metadata:'read',contents:'write',administration:'write',actions:'write',
+  issues:'write',pull_requests:'write',checks:'read',workflows:'read',
+  secrets:'write',variables:'read',webhooks:'none'});
+ assert.equal(proof.administrationWritePermissionObserved,true);
+ assert.equal(proof.actionsWritePermissionObserved,true);
+ assert.equal(proof.adminOperationVerified,false);
+ assert.doesNotMatch(JSON.stringify(proof),/UNTRUSTED|PRIVATE-KEY-NEVER-RETURN|NEVER-ECHO|FAKE-TEST/);
+});
+test('contents write is not equivalent to owner or admin capability',async()=>{
+ const {service}=harness();
+ const proof=await probeGithubAppInstallation({credentials:config,fetchImpl:service,signJwt:sign,
+  now:Date.parse('2026-11-13T23:00:00Z')});
+ assert.equal(proof.observedPermissions.administration,'none');
+ assert.equal(proof.observedPermissions.actions,'none');
+ assert.equal(proof.administrationWritePermissionObserved,false);
+ assert.equal(proof.actionsWritePermissionObserved,false);
+ assert.equal(proof.adminOperationVerified,false);
 });

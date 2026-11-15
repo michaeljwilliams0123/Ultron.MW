@@ -104,7 +104,7 @@ test('worker workflow is owner-gated, main-only, bounded and SHA-pinned',()=>{
  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(y,/github\.ref == 'refs\/heads\/main'/);
  assert.match(y,/timeout-minutes: 5/);
- assert.match(y,/runs-on: ubuntu-latest/);
+ assert.match(y,/runs-on: ubuntu-24[.]04/);
  assert.match(y,/id-token: write/);
  assert.doesNotMatch(y,/pull_request_target|self-hosted|\$\{\{\s*github\.event\.[^}]*\}\}\s*$/m);
  for(const m of y.matchAll(/uses:\s*(\S+)@(\S+)/g))assert.match(m[2],/^[a-f0-9]{40}$/,m[1]);

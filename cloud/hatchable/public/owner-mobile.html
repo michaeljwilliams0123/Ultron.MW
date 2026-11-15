@@ -65,6 +65,13 @@ footer{padding:8px 0 28px;font-size:.9rem;color:#b4c6db}
 <div class="actions"><a id="canary-link" class="action" href="./github-pr-comment-canary.html">Open C04 cloud console</a></div>
 <p class="warning"><strong>Approval safeguard:</strong> C04 currently requires a separate owner grant signed with P-256 for a comment write. Face ID login alone cannot authorize that write. Until native C04 WebAuthn is reviewed and deployed, this phone page performs read-only status checks only.</p>
 </section>
+<section class="card">
+<h2>5. Cloudflare staging connection</h2>
+<p class="muted">This is the existing Ultron edge Worker, behind Hatchable. It is not a separate owner login and does not authorize GitHub writes.</p>
+<p id="cloudflare-state" class="status" role="status" aria-live="polite">Sign in as the Hatchable owner to check live Cloudflare staging health.</p>
+<div class="actions"><a class="action secondary" href="https://ultron-mw-edge-staging.mahoraga-mjw0123.workers.dev/healthz" rel="noopener noreferrer">View staging health response</a></div>
+<p class="muted">Signed ingress remains off until the protected delivery keys, replay tests and durable receiver readback are verified. No queue activity is needed for phone setup.</p>
+</section>
 <footer>
 <p>For convenience in Safari: Share → Add to Home Screen. The shortcut points to Hatchable's cloud page, not a local application.</p>
 <p><a href="/">Ultron Cloud Controls</a> · <a href="https://github.com/michaeljwilliams0123/Ultron.MW/issues/285" rel="noopener noreferrer">Acceptance issue #285</a></p>
