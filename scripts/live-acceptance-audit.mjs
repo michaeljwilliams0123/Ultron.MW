@@ -3,7 +3,7 @@
 // browser or cloud hostname. All private acceptance remains explicitly unknown.
 import {mkdir,writeFile,appendFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {evaluateAcceptance,parsePagesRevision,renderAcceptanceMarkdown} from '../src/live-acceptance-audit.mjs';
+import {evaluateAcceptance,parsePagesRevision,renderAcceptanceMarkdown,classifyExactMainVerify} from '../src/live-acceptance-audit.mjs';
 import {parseCloudStatus} from '../docs/core/cloud-status.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -42,14 +42,13 @@ export async function collectLiveChecks(){
  const sourceSha=head.status===200&&/^[0-9a-f]{40}$/.test(head.body?.sha||'')?head.body.sha:null;
  checks.push(observation('github-main',sourceSha?'pass':'unknown',
   sourceSha?'Current GitHub main SHA '+sourceSha.slice(0,12):'Main SHA unavailable'));
- const runs=await request(API+'/actions/workflows/verify.yml/runs?branch=main&event=push&per_page=30',{json:true,github:true});
- const verify=sourceSha&&Array.isArray(runs.body?.workflow_runs)?
-  runs.body.workflow_runs.find(r=>r.head_sha===sourceSha&&r.event==='push'):null;
- checks.push(observation('github-verify',!sourceSha||runs.status!==200?'unknown':
-  !verify?'unknown':verify.status!=='completed'?'unknown':
-  verify.conclusion==='success'?'pass':'fail',
-  !verify?'Exact-main push Verify not present in returned window':
-  'Exact-main run '+verify.id+' '+verify.status+'/'+verify.conclusion));
+ // Filter at GitHub by exact main SHA. Full workflow-run objects are large:
+ // downloading 30 at once can exceed the bounded HTTP response limit.
+ const verifyRuns=sourceSha?await request(
+  API+'/actions/workflows/verify.yml/runs?head_sha='+sourceSha+'&event=push&per_page=3',
+  {json:true,github:true}
+ ):null;
+ checks.push(classifyExactMainVerify(sourceSha,verifyRuns));
  const [page,module,production,admin,tick,cloud,foreignCloud]=await Promise.all([
   request(PAGES),request(PAGES+'app.js'),request(PRODUCTION+'/'),
   request(PRODUCTION+'/api/brain/control'),request(PRODUCTION+'/api/brain/tick'),
