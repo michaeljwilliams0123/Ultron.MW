@@ -16,17 +16,21 @@ test('mobile owner entry has iPhone viewport, large touch targets, and shared si
  assert.match(html,/href="https:\/\/support\.apple\.com\/guide\/iphone\//);
  assert.ok(html.indexOf('src="./sign-in.js"')<html.indexOf('src="./owner-mobile.js"'));
  assert.match(html,/C04.+requires.+separate.+owner.+grant/is);
+ assert.match(html,/id="cloudflare-state"/);
+ assert.match(html,/Cloudflare staging connection/);
 });
 
 async function start({signedIn=false,owner=true,pr='447',state='idle'}={}){
  const js=await read('owner-mobile.js');
- const ids=['session-state','pr-state','canary-link','device-state'];
+ const ids=['session-state','pr-state','canary-link','device-state','cloudflare-state'];
  const dom=Object.fromEntries(ids.map(id=>[id,{textContent:'',href:'',hidden:false}]));
  const calls=[],mounts=[];
  const fetch=async(path,opts={})=>{
   calls.push({path,method:opts.method??'GET'});
   if(path==='/api/brain/session')
    return {status:signedIn?(owner?200:403):401,ok:signedIn&&owner,json:async()=>signedIn?{authenticated:true,owner:owner?'michaeljwilliams0123':'another-owner'}:{error:'login_required'}};
+  if(path==='/api/brain/cloudflare-edge-health')
+   return {status:200,ok:true,json:async()=>({schema:'ultron.cloudflare-edge-health.v1',state:'observed',ingressAccepting:false,executionAuthorized:false})};
   if(path.startsWith('/api/brain/github-pr-comment-canary-status?pr='))
    return {status:200,ok:true,json:async()=>({state,pullRequest:Number(pr)})};
   throw Error('unexpected URL '+path);
@@ -47,7 +51,9 @@ test('unsigned visitor only requests session and cannot expose attempt status',a
 
 test('signed-in owner gets read-only durable status and target deep link',async()=>{
  const x=await start({signedIn:true});
- assert.deepEqual(x.calls.map(c=>c.method),['GET','GET']);
+ assert.deepEqual(x.calls.map(c=>c.method),['GET','GET','GET']);
+ assert.ok(x.calls.some(c=>c.path==='/api/brain/cloudflare-edge-health'));
+ assert.match(x.dom['cloudflare-state'].textContent,/online.*disabled/i);
  assert.equal(x.dom['canary-link'].href,'./github-pr-comment-canary.html?pr=447');
  assert.match(x.dom['pr-state'].textContent,/idle/i);
 });

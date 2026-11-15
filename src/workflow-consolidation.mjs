@@ -72,6 +72,8 @@ export const LEGACY_WORKFLOWS=Object.freeze([
     {note:'Dispatch input `mode` is now `matrix_mode`.'}),
   wf('mahoraga-connection1026.yml','owner-canary','absorbed',['verify'],
     {note:'Dispatch input `mode` is now `connection_mode`.'}),
+  wf('verify-secondary-admin.yml','owner-canary','absorbed',['secondary-admin-verify'],
+    {note:'Owner-only manual App proof is folded into the owner canary lane; requires protected environment approval and scoped readback.'}),
   wf('hf-free-cpu-tournament.yml','lab-evidence','absorbed',['cpu-evaluation'],{pinnedBy:[
     pin(HATCH+'workflow-lanes.js',"'hf-free-cpu-tournament':'tournament'",'Hatchable lab lane receipt key'),
   ]}),

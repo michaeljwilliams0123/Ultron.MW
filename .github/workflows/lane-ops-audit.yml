@@ -53,7 +53,7 @@ jobs:
     concurrency:
       group: ultron-live-readonly-audit-audit
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Configure Git bare-repository policy
@@ -76,7 +76,7 @@ jobs:
         run: node scripts/live-acceptance-audit.mjs
       - name: Publish non-sensitive evidence artifact
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: live-public-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/live-acceptance/
@@ -95,7 +95,7 @@ jobs:
     concurrency:
       group: ultron-self-scan-publication-self-scan-pr
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -139,7 +139,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Configure Git bare-repository policy
@@ -195,7 +195,7 @@ jobs:
     concurrency:
       group: reef-probe-${{ github.event.pull_request.number || github.ref }}-reef-runtime-probe
       cancel-in-progress: true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Configure Git bare-repository policy
@@ -271,7 +271,7 @@ jobs:
           python scripts/reef_paired_feedback.py
       - name: Upload runtime-only evidence, never credentials or logs
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: reef-runtime-probe-${{ github.sha }}-${{ github.run_attempt }}
           path: |
@@ -298,7 +298,7 @@ jobs:
     concurrency:
       group: council-self-repair-${{ github.event.workflow_run.id || github.run_id }}-diagnose
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -338,7 +338,7 @@ jobs:
     concurrency:
       group: council-self-repair-${{ github.event.workflow_run.id || github.run_id }}-act
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -375,7 +375,7 @@ jobs:
     concurrency:
       group: continuum-council-supervisor-reconcile
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     permissions:
       contents: read
@@ -394,7 +394,7 @@ jobs:
         with:
           node-version: '22'
       - name: Select outstanding issues and dispatch bounded council reviews
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

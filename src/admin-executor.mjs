@@ -250,13 +250,20 @@ export async function executeAdminOperation(plan,services){
  const before=await services.github.request('GET',path);
  assertPrecondition(plan,before);
  const assertCurrentAuthority=async()=>{
+  // An initial valid installation is not a permanent authorization. Refresh
+  // the trusted identity after each asynchronous boundary, including reserve.
+  const currentIdentity=await services.identity.read();
   const controls=await services.control.read();
   check(controls?.paused===false&&controls.revoked===false,
    'Admin stopped: paused or revoked');
-  // Sample after the asynchronous read, then check every expiring authority.
+  // Sample the clock after asynchronous reads so expired grants cannot race.
   const checkedAt=services.clock(),checkedTime=instant(checkedAt);
   validateAdminPlan(plan,checkedAt);
   assertIdentity(identity,plan.operation,checkedTime);
+  assertIdentity(currentIdentity,plan.operation,checkedTime);
+  check(currentIdentity.installationId===identity.installationId&&
+   currentIdentity.actorRef===identity.actorRef,
+   'Admin identity changed before dispatch');
   assertApproval(approval,validation.planDigest,validation.requiresStepUp,checkedTime);
   return checkedAt;
  };

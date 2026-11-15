@@ -14,6 +14,7 @@ on:
           - owner-actions-canary
           - owner-canary-matrix
           - mahoraga-connection1026
+          - secondary-admin-verifier
       actions_mode:
         description: 'owner-actions-canary: read-only by default; create means one isolated branch'
         type: choice
@@ -72,7 +73,7 @@ jobs:
     concurrency:
       group: owner-actions-canary-${{ github.run_id }}-read-only
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
       contents: read
@@ -92,7 +93,7 @@ jobs:
         run: node scripts/owner-actions-canary.mjs
       - name: Persist sanitized read-only evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: owner-actions-read-${{ github.run_id }}
           path: artifacts/owner-actions-canary-*.json
@@ -114,7 +115,7 @@ jobs:
     concurrency:
       group: owner-actions-canary-${{ github.run_id }}-one-branch
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
       contents: write
@@ -136,7 +137,7 @@ jobs:
         run: node scripts/owner-actions-canary.mjs
       - name: Persist sanitized write or uncertain-state evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: owner-actions-create-${{ github.run_id }}
           path: artifacts/owner-actions-canary-*.json
@@ -157,7 +158,7 @@ jobs:
     concurrency:
       group: owner-canary-matrix-${{ github.run_id }}-inspect-or-verify
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 4
     permissions:
       contents: read
@@ -180,7 +181,7 @@ jobs:
         run: node scripts/owner-canary-matrix.mjs
       - name: Upload sanitized independent readback receipt
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: owner-canary-read-${{ github.run_id }}
           path: artifacts/owner-canary-matrix-*.json
@@ -202,7 +203,7 @@ jobs:
     concurrency:
       group: owner-canary-matrix-${{ github.run_id }}-marker-write
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 4
     permissions:
       contents: write
@@ -227,7 +228,7 @@ jobs:
         run: node scripts/owner-canary-matrix.mjs
       - name: Upload sanitized marker or uncertain-state receipt
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: owner-canary-marker-${{ github.run_id }}
           path: artifacts/owner-canary-matrix-*.json
@@ -245,7 +246,7 @@ jobs:
     concurrency:
       group: mah-connection1026-${{ github.run_id }}-verify
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Configure Git bare-repository policy
@@ -261,3 +262,35 @@ jobs:
           MAHORAGA_PAT: ${{ secrets.ULTRON_MAHORAGA_CONNECTION1026 }}
           CANARY_MODE: ${{ inputs.connection_mode }}
         run: node scripts/mahoraga-connection1026.mjs
+
+  secondary-admin-verify:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.canary_task == 'secondary-admin-verifier' &&
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
+      github.actor == 'michaeljwilliams0123' &&
+      github.triggering_actor == 'michaeljwilliams0123' &&
+      github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    concurrency:
+      group: secondary-admin-${{ github.run_id }}-verify
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    environment: ultron-secondary-admin
+    timeout-minutes: 5
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '20'
+      - name: Verify scoped App token minting and canonical repository readback
+        env:
+          SECONDARY_ADMIN_APP_ID: ${{ vars.ULTRON_SECONDARY_ADMIN_APP_ID }}
+          SECONDARY_ADMIN_INSTALLATION_ID: ${{ vars.ULTRON_SECONDARY_ADMIN_INSTALLATION_ID }}
+          ULTRON_SECONDARY_ADMIN_PRIVATE_KEY: ${{ secrets.ULTRON_SECONDARY_ADMIN_PRIVATE_KEY }}
+        run: node scripts/verify-secondary-admin.mjs
