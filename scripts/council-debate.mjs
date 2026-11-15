@@ -207,16 +207,16 @@ const modelRoleCount=Object.keys(reasoning.results).length;
 const codeEvidence=prContext?formatCouncilPrContext(prContext):
   'Exact-head diff was not fetched/verified. No file-specific conclusions can be claimed.';
 const asLine=value=>String(value||'').replace(/\\s+/g,' ').slice(0,450);
-const reasoningSection='\\n### Specialized model review (advisory; not authenticated GitHub reviewers)\\n'+
+const reasoningSection='\n### Specialized model review (advisory; not authenticated GitHub reviewers)\n'+
  Object.entries(reasoning.results).map(([role,v])=>{
   const basis=v.source==='model'?v.provider+'/'+v.modelId:
     'deterministic fallback ('+v.fallbackReason+')';
-  return '- **'+role+'** — '+basis+'; **'+v.verdict+'** ('+v.confidence+')\\n'+
-   '  - Assessment: '+asLine(v.rationale)+'\\n'+
-   '  - Code hypotheses: '+(v.findings?.length?v.findings.map(asLine).join(' | '):'none evidenced')+'\\n'+
+  return '- **'+role+'** — '+basis+'; **'+v.verdict+'** ('+v.confidence+')\n'+
+   '  - Assessment: '+asLine(v.rationale)+'\n'+
+   '  - Code hypotheses: '+(v.findings?.length?v.findings.map(asLine).join(' | '):'none evidenced')+'\n'+
    '  - Falsifying tests: '+(v.tests?.length?v.tests.map(asLine).join(' | '):'none supplied');
- }).join('\\n')+
- (reasoning.disagreement?'\\n**Disagreement is unresolved.**\\n':'\\n');
+ }).join('\n')+
+ (reasoning.disagreement?'\n**Disagreement is unresolved.**\n':'\n');
 const modelNote=reasoning.modelInvocations+' of '+modelRoleCount+
  ' reasoning roles invoked a real free-tier model; deterministic role votes remain advisory';
 const stage1 = `# Stage 1 — Architect framing
