@@ -19,7 +19,7 @@ const migrations=['0001_tasks.sql','0002_events.sql','0008_admin_grants.sql',
  '0010_runtime_stop.sql','0013_continuum_outbox.sql','0016_owner_autonomy_profile.sql',
  '0033_owner_passkey_authority.sql','0034_owner_passkey_enrollment.sql',
  '0037_github_approval_nonces.sql','0039_github_idempotent_executions.sql',
- '0041_github_pr_comment_executions.sql'];
+ '0041_github_pr_comment_executions.sql','0050_c04_passkey_comment_authority.sql'];
 async function setup(t){
  const db=new PGlite();
  for(const m of migrations)await db.exec(await readFile(file('migrations/'+m),'utf8'));
