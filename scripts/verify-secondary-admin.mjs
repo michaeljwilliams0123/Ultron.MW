@@ -6,8 +6,7 @@ const TARGET = Object.freeze({ owner: 'michaeljwilliams0123', name: 'Ultron.MW',
 export function readConfiguration(env = process.env) {
   const appId = env.SECONDARY_ADMIN_APP_ID ?? env.ULTRON_SECONDARY_ADMIN_APP_ID;
   const installationId = env.SECONDARY_ADMIN_INSTALLATION_ID ?? env.ULTRON_SECONDARY_ADMIN_INSTALLATION_ID;
-  const privateKey = env.ULTRON_SECONDARY_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '
-');
+  const privateKey = env.ULTRON_SECONDARY_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
   if (!/^[1-9][0-9]*$/.test(appId ?? '') || !/^[1-9][0-9]*$/.test(installationId ?? '') || !privateKey) throw new Error('Missing or invalid secondary Admin App configuration.');
   return { appId, installationId, privateKey };
 }
