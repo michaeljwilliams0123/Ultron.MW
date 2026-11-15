@@ -80,3 +80,23 @@ test('identity evidence counts only distinct roles for the exact case and source
  s=summarizeCouncilIdentityEvidence(receipts,{caseSha,sourceSha});
  assert.equal(s.acceptanceMet,true);
 });
+
+test('one authenticated Coordinator App may sign all seven logical roles without claiming seven Apps',async()=>{
+ for(const role of COUNCIL_APP_ROLES){
+  const actor=await authenticateCouncilAppActor({role,sourceSha,
+   installationToken:'x'.repeat(20),expectedAppId:5633654,
+   githubProbe:async()=>({source:'github-installations-api',app_id:5633654,id:77,
+    app_slug:'ultron-coordinator',repositories:[repo],
+    permissions:{metadata:'read',contents:'read',issues:'write',
+     pull_requests:'write',checks:'read',actions:'read'}})});
+  const receipt=issueCouncilExecutionReceipt(actor,{
+   operation:'review.comment',caseSha,observedAt:'2026-11-15T00:00:00Z',
+   githubResponse:{source:'github-api-response',
+    url:'https://api.github.com/repos/'+repo+'/pulls/460/reviews/5',
+    id:5,author_login:'ultron-coordinator[bot]',author_type:'Bot',
+    app_id:5633654,app_slug:'ultron-coordinator'}});
+  assert.equal(verifyCouncilExecutionReceipt(receipt),true,role);
+  assert.equal(cloudReceiptValid(receipt),true,role);
+  assert.equal(receipt.claims.independentReview,false,role);
+ }
+});
