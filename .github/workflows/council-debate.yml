@@ -226,6 +226,44 @@ jobs:
               const source=path.join(dir,'exact-head-ci.json');
               fs.writeFileSync(source,JSON.stringify(observed));
               core.exportVariable('COUNCIL_REVIEW_EVIDENCE_FILE',source);
+              // Pull patches from GitHub in the trusted-main job and bind them
+              // to the same source SHA before the Council model receives data.
+              // Never log raw patches. Sensitive lines are rejected by the
+              // council-pr-context source gate before free-tier model calls.
+              try {
+                const {owner,repo}=context.repo;
+                const before=(await github.rest.pulls.get({
+                  owner,repo,pull_number:itemNumber
+                })).data;
+                if(before.state!=='open'||before.head?.sha!==sha)
+                  throw Error('council-patch-head-drift');
+                const observedFiles=await github.paginate(github.rest.pulls.listFiles,{
+                  owner,repo,pull_number:itemNumber,per_page:100
+                });
+                const after=(await github.rest.pulls.get({
+                  owner,repo,pull_number:itemNumber
+                })).data;
+                if(after.state!=='open'||after.head?.sha!==sha||
+                  after.base?.sha!==before.base?.sha)
+                  throw Error('council-patch-head-or-base-drift');
+                const complete=observedFiles.length===after.changed_files&&
+                  observedFiles.length<=80&&
+                  observedFiles.every(f=>!f.patch||f.patch.length<=2400);
+                const selected=observedFiles.slice(0,80).map(f=>({
+                  filename:f.filename,status:f.status,
+                  additions:f.additions,deletions:f.deletions,
+                  patch:typeof f.patch==='string'?f.patch.slice(0,2400):''
+                }));
+                const file=path.join(dir,'exact-head-pr-files.json');
+                fs.writeFileSync(file,JSON.stringify({
+                  sourceSha:sha,prNumber:itemNumber,complete,files:selected
+                }));
+                core.exportVariable('COUNCIL_PR_FILES_FILE',file);
+                core.info('Council GitHub patch evidence: '+selected.length+'/'+
+                  observedFiles.length+' files; complete='+complete);
+              } catch (error) {
+                core.warning('Council patch evidence unverified: '+error.message);
+              }
             }
 
       - name: Run owner-first council debate
