@@ -33,7 +33,11 @@ and nobody else. Delegated or bot accounts, including
 `michaeljwilliams0123ultron`, are never the owner (H1). Owner intent for the
 Companion/Steward roles is satisfied by an owner-authored PR or by an owner
 **APPROVED review on the exact head commit**. After approving, comment
-`/council recheck` to re-run the gate.
+`/council recheck` to re-run the gate. Once the reviewed manual dispatch
+trigger is merged into `main`, the owner can alternatively select **Ultron
+trusted Council release status** in GitHub Actions, choose **Run workflow**
+on `main`, and enter the open PR number. A manual recheck uses the same
+7/7 evaluation and dedicated App publisher; it is not an approval or bypass.
 
 ## Owner exception (signed)
 
@@ -66,9 +70,11 @@ gate stays closed. CRLF line endings are normalised before verification (M4).
 ## Trusted evaluation (C1)
 
 `.github/workflows/council-required-status.yml` triggers on
-`pull_request_target` and on owner `issue_comment` (`/council override` and
-`/council recheck`). For both triggers, GitHub takes the **workflow definition
-from `main`**. The job checks out `main` only and never fetches the PR head or
+`pull_request_target`, owner `issue_comment` (`/council override` and
+`/council recheck`), and owner-only `workflow_dispatch` with a required
+positive PR number. For all three triggers, the job loads and executes only
+trusted **`main`** code. Manual dispatch must exist on the default branch
+before it is available in the GitHub UI. The job checks out `main` only and never fetches the PR head or
 its merge ref. The PR's title, body, changed files, reviews and comments are
 read through the API and written to JSON or text files as data. The job then
 runs `scripts/council-debate.mjs` and `scripts/enforce-council-acceptance.mjs`

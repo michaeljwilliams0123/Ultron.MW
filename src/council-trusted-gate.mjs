@@ -61,6 +61,11 @@ export function classifyTrustedRisk({files,filesComplete}={}){
  if(filesComplete!==true||!Array.isArray(files)||files.length<1||files.length>=MAX_FILES)
   return Object.freeze({security:true,infra:true,complete:false,
    securityPaths:Object.freeze([]),reason:'changed-file-list-incomplete'});
+ if(!files.every(f=>f&&typeof f.filename==='string'&&f.filename.length>0&&
+   (f.previous_filename===undefined||
+    (typeof f.previous_filename==='string'&&f.previous_filename.length>0))))
+  return Object.freeze({security:true,infra:true,complete:false,
+   securityPaths:Object.freeze([]),reason:'changed-file-list-invalid'});
  const names=new Set();
  for(const f of files){
   for(const name of [f?.filename,f?.previous_filename]){
@@ -110,11 +115,13 @@ export function evaluateTrustedCouncilGate({report,receipt,pr,files,filesComplet
 }
 
 export function gatePasses(result,sha,prNumber){
- return !!result&&SHA.test(sha||'')&&result.sourceSha===sha&&
-  result.prNumber===prNumber&&
+ return !!result&&SHA.test(sha||'')&&SHA.test(result.baseSha||'')&&
+  result.sourceSha===sha&&result.prNumber===prNumber&&
+  result.schema==='ultron.council-trusted-gate.v2'&&
   ((result.status==='accepted'&&result.approvedCount===7&&
     result.securitySensitive===false)||
-   (result.status==='owner-overridden'&&result.overrideUsed===true&&
+   (result.status==='owner-overridden'&&result.securitySensitive===true&&
+    result.overrideUsed===true&&
     result.overrideSignatureVerified===true));
 }
 
@@ -153,4 +160,16 @@ export function resolveGatePublisher({appId,expectedSlug,mintedSlug}={}){
    mintedSlug!==expectedSlug)
   return null;
  return Object.freeze({appId:Number(appId),slug:expectedSlug});
+}
+
+// Resolve a target from trusted GitHub event metadata, never issue/PR prose.
+// Used by pull_request_target, signed-owner comments and owner-only manual recheck.
+export function selectCouncilTargetNumber(eventName,payload={}){
+  const raw=eventName==='pull_request_target'?payload?.pull_request?.number:
+    eventName==='issue_comment'?payload?.issue?.number:
+    eventName==='workflow_dispatch'?payload?.inputs?.pr_number:null;
+  if(typeof raw==='number')return Number.isSafeInteger(raw)&&raw>0?raw:null;
+  if(typeof raw!=='string'||!/^[1-9][0-9]*$/.test(raw))return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number)&&number>0?number:null;
 }

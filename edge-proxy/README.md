@@ -1,9 +1,18 @@
-# UUAM staging edge ingress (source-only)
+# UUAM staging edge ingress (deployed, fail-closed)
 
-This package is **not deployed or production-accepted**. Its staging
-`wrangler.toml` defaults to `HATCHABLE_INBOX_ENABLED = "false"`. No
-Cloudflare Queue, Worker, DB migration, or Hatchable secret is provisioned
-by committing this code.
+**Staging deployment checkpoint (2026-11-14):** Cloudflare Worker
+`ultron-mw-edge-staging` was uploaded from GitHub source SHA
+`e2eb6b48b132ee0c72756874b4ed6241530ccd6b` with producer bindings
+to the existing `ultron-staging-events` and `ultron-staging-events-dlq`
+queues. Both queues had zero backlog and **no consumers** at this checkpoint.
+The Worker is available on `ultron-mw-edge-staging.mahoraga-mjw0123.workers.dev`
+but has `HATCHABLE_INBOX_ENABLED = "false"`, no HMAC secrets, and **no
+operational ingress**. `GET /healthz` returned `200` with `accepting:false`;
+unsigned `POST /ingress` returned `503`. This is **not production acceptance**.
+
+Committing source does not provision Cloudflare resources or grant authority.
+`wrangler.toml` retains its default-disabled configuration; do not activate
+traffic based only on a successful deployment or unit test.
 
 ## Trust boundary
 
@@ -38,12 +47,18 @@ using a secure deployment secret mechanism, never committed to source:
 For production use, consider versioned key IDs and overlapping rotation
 windows. This staging implementation has neither.
 
-## Hatchable receiver implemented in source, NOT currently deployed
+## Hatchable receiver deployed but disabled
 
 The receiver implementation is now checked in as
 \`cloud/hatchable/api/brain/uuam-inbox.js\` and
 \`cloud/hatchable/lib/uuam-inbox.js\`, with PostgreSQL and signature
 regression coverage in \`test/uuam-hatchable-inbox.test.mjs\`.
+The receiver was deployed into the existing Hatchable project as **v111**;
+**v112** added an owner-only read-only Cloudflare staging health endpoint
+and iPhone owner setup status. Both
+`brain_signed_inbox` and `brain_omni_execution_state` had zero records
+after negative probes. The protected HMAC secret is **not configured** and
+the Hatchable intake switch is **false**, so staging delivery remains blocked.
 
 The Hatchable project's \`hatchable.toml\` declares an optional protected
 \`ULTRON_UUAM_DELIVERY_HMAC_KEY\` secret and a default-\`false\` boolean
@@ -63,8 +78,9 @@ returning the source queue acknowledgement receipt.
 
 The consumer targets exactly
 `https://ultron-mw-cloud.hatchable.site/api/brain/uuam-inbox`.
-Do not enable ingress until that endpoint exists and its real behavior is
-independently verified. The receiver MUST:
+The endpoint now exists and rejects unsigned/disabled requests (403/503);
+keep ingress disabled until the matching protected delivery key and a signed,
+durable PostgreSQL readback canary have been independently verified. The receiver MUST:
 
 1. Validate the staging environment, HTTPS delivery, `X-Ultron-Timestamp`,
    and `X-Ultron-Signature` over **exact POST bytes** using the matching
@@ -102,11 +118,14 @@ signing secrets are missing.
 The isolated built-in Node 22 test suite is:
 
 ```bash
-node --test test/uuam-edge-worker.test.mjs
+npm ci --ignore-scripts --no-audit --no-fund
+node --test test/uuam-edge-worker.test.mjs test/uuam-hatchable-inbox.test.mjs
 ```
 
 Core CI's `scripts/verify.mjs` also discovers the test automatically.
-This tests mocked queues and signed HTTPS receipts, **not** live outage
-acceptance. The $0 target requires checking account quotas before any
+On 2026-11-14, all **24** focused ingress and PostgreSQL tests passed
+with 0 failures and 0 skips; the owner-mobile/edge status set passed **32**
+targeted tests. Mocked delivery and embedded PostgreSQL tests do **not**
+prove live signed delivery or production acceptance. The $0 target requires checking account quotas before any
 cloud provisioning, monitoring backlog, and planning recovery within
 Cloudflare's free-tier message-retention window.

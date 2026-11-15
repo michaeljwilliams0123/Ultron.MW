@@ -2,7 +2,7 @@
 'use strict';
 const el=id=>document.getElementById(id);
 const session=el('session-state'),prStatus=el('pr-state');
-const link=el('canary-link'),device=el('device-state');
+const link=el('canary-link'),device=el('device-state'),cloudflare=el('cloudflare-state');
 const query=new URLSearchParams(location.search||'');
 const selected=query.get('pr');
 const target=selected&&/^[1-9][0-9]{0,8}$/.test(selected)?selected:null;
@@ -16,6 +16,30 @@ if(typeof window.PublicKeyCredential==='function'){
  device.textContent='This browser exposes passkey support. A prompt still requires a credential saved on or available to your device.';
 }else{
  device.textContent='Passkey availability could not be confirmed in this browser. Open the page in Safari and check Apple Passwords.';
+}
+async function checkCloudflare(){
+ if(!cloudflare)return;
+ try{
+  const response=await fetch('/api/brain/cloudflare-edge-health',{
+   method:'GET',credentials:'same-origin',cache:'no-store',
+   headers:{Accept:'application/json'}
+  });
+  if(response.status===401||response.status===403){
+   cloudflare.textContent='Owner authorization required to read Cloudflare status.';
+   return;
+  }
+  const data=await response.json().catch(()=>({}));
+  if(response.ok&&data.schema==='ultron.cloudflare-edge-health.v1'&&
+     data.state==='observed'&&data.executionAuthorized===false){
+   cloudflare.textContent=data.ingressAccepting===true
+    ?'Cloudflare staging edge is accepting signed events. This does not approve a GitHub write.'
+    :'Cloudflare staging Worker online. Signed ingress is disabled until the receiving system is fully verified.';
+  }else{
+   cloudflare.textContent='Cloudflare live health unavailable or invalid. Staging execution remains unverified.';
+  }
+ }catch{
+  cloudflare.textContent='Cloudflare health could not be checked. No task was dispatched.';
+ }
 }
 async function init(){
  try{
@@ -35,6 +59,7 @@ async function init(){
    return;
   }
   session.textContent='Owner session verified. You can inspect cloud readiness from this iPhone.';
+  await checkCloudflare();
   if(!target)return;
   try{
    const r=await fetch('/api/brain/github-pr-comment-canary-status?pr='+target,{

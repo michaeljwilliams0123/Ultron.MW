@@ -62,7 +62,7 @@ jobs:
           contains(github.event.comment.body, '/council'))
       )
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -87,7 +87,7 @@ jobs:
 
       # Payload via context in JS — never embed issue body expressions in YAML (workflow-security).
       - name: Extract context (owner-first, hardened)
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const fs = require('fs');
@@ -259,7 +259,7 @@ jobs:
 
       - name: Post council report + action board
         if: steps.debate.outputs.skipped != 'true'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           ITEM_NUMBER: ${{ env.ITEM_NUMBER }}
         with:
@@ -325,7 +325,7 @@ jobs:
 
       - name: Upload receipt artifact
         if: always() && steps.debate.outputs.skipped != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: council-debate-${{ github.run_id }}
           path: |
@@ -356,7 +356,7 @@ jobs:
     concurrency:
       group: council-identity-proof-${{ inputs.role }}-prove
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Configure Git bare-repository policy
@@ -391,7 +391,7 @@ jobs:
           role_lower="${ROLE_UPPER,,}"
           export COUNCIL_ROLE="${role_lower^}"
           node scripts/council-identity-proof.mjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: council-identity-proof-${{ inputs.role }}
@@ -410,7 +410,7 @@ jobs:
       )
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - name: Configure Git bare-repository policy
@@ -454,7 +454,7 @@ jobs:
         run: node scripts/verify-council-fleet.mjs
       - name: Retain sanitized proof or held reason
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: council-principal-readback-${{ github.sha }}-${{ github.run_attempt }}
           path: |
