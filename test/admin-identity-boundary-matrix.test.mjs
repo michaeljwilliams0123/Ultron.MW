@@ -267,3 +267,18 @@ test('successful reversible settings canary has explicit before, exact patch, af
  assert.equal(h.ledger.at(-1)[1].state,'verified');
  assert.equal(outcome.planDigest,digest(p));
 });
+
+test('alias ownership, wrong repository, paid execution and expired plans are rejected',async t=>{
+ const p=plan();
+ const cases=[
+  ['alias cannot claim ownership',{...p,owner:'michaeljwilliams0123ultron'}],
+  ['wrong repo cannot be targeted',{...p,repository:'michaeljwilliams0123ultron/Ultron.MW'}],
+  ['zero-cost ceiling cannot be raised',{...p,maxCostCents:1}],
+  ['expired request cannot enter executor',{...p,expiresAt:NOW}]
+ ];
+ for(const [name,candidate] of cases){
+  await t.test(name,()=>{
+   assert.throws(()=>validateAdminPlan(candidate,NOW),/scope, cost or expiry/);
+  });
+ }
+});
