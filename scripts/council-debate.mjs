@@ -8,6 +8,7 @@ import {buildCouncilPublication} from '../src/council-publication.mjs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
 import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
 import {assessCouncil} from '../src/council-members.mjs';
+import {deriveCouncilFlags} from '../src/council-case-flags.mjs';
 import {buildCouncilExactHeadEvidence} from '../src/council-exact-head-evidence.mjs';
 import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mjs';
 import {runReasoningRound,buildCouncilReasoningInput} from '../src/council-reasoning.mjs';
@@ -26,13 +27,8 @@ const isPr = process.env.IS_PR === 'true';
 const sourceSha = process.env.TARGET_SOURCE_SHA || '';
 const observedAt = new Date().toISOString();
 
-const lower = `${title}\n${body}`.toLowerCase();
-const flags = {
-  security: process.env.ORIGINAL_SECURITY_SIGNAL === '1' || ['secret', 'credential', 'token', 'password', 'bypass security', 'fail-open', 'delete main', 'force push'].some(k => lower.includes(k)),
-  autonomy: ['autonomy', 'always-on', 'unattended', 'self-merge', 'auto-merge'].some(k => lower.includes(k)),
-  multiFile: ['multi-file', 'multifile', 'across the codebase', 'refactor'].some(k => lower.includes(k)),
-  infra: /\b(workflow|github actions|ci|deploy)\b/.test(lower),
-};
+const flags = deriveCouncilFlags({title,body,isPr,
+  originalSecuritySignal:process.env.ORIGINAL_SECURITY_SIGNAL});
 
 const large = body.length > 2000;
 let evidenceCoverage = flags.security ? 0.35 : large ? 0.65 : 0.9;
@@ -248,7 +244,7 @@ const stage2 = `# Stage 2 — Crucible (Red Team + Pragmatist)
 1. Changed-file coverage: ${prContext ? prContext.filesRendered+'/'+prContext.filesObserved : 'unavailable'}. Source: ${sourceSha || '(issue)'}. No claim of AST taint proof without an AST analyzer.
 2. Highest-signal changed paths: ${prContext?.files.slice(0,5).map(f=>f.path+' ['+f.tag+']').join(', ') || 'none available'}. Model inputs are bounded; unsafe patches are omitted.
 3. No automatic push to protected main; do not replay uncertain external writes or treat role signatures as separate App approvals.
-${flags.security ? '4. Security-sensitive language detected — mandatory owner review.' : ''}
+${flags.security ? '4. Sensitive changed files or missing trusted file evidence — mandatory owner review.' : ''}
 ${flags.autonomy ? '5. Autonomy-expansion language present — confirm owner intent.' : ''}
 
 ### Pragmatist
