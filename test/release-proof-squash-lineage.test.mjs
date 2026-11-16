@@ -68,19 +68,22 @@ test('source check spoof, failed Council or missing deployed readback stays unve
  assert.equal(noDeployment.verified,false);
 });
 
-const response=v=>({ok:true,status:200,json:async()=>v});
+const response=(v,links='')=>({ok:true,status:200,json:async()=>v,
+ headers:{get:header=>header.toLowerCase()==='link'?links:null}});
 test('independent GitHub fetch binds PR merge to exact main and source check; no credentials',async()=>{
  const calls=[];
  const fetcher=async (url,options)=>{
   calls.push({url,options});
-  if(url.endsWith('/commits/'+MAIN+'/pulls?per_page=10'))return response([sourcePr]);
-  if(url.includes('/commits/'+HEAD+'/check-runs?'))return response({check_runs:[check]});
+  if(url.endsWith('/commits/'+MAIN+'/pulls?per_page=100'))return response([sourcePr]);
+  if(url.endsWith('/pulls/468'))return response(sourcePr);
+  if(url.includes('/commits/'+HEAD+'/check-runs?'))return response({total_count:1,check_runs:[check]});
+  if(url.endsWith('/git/ref/heads/main'))return response({object:{sha:MAIN}});
   throw Error('unexpected external URL '+url);
  };
  const r=await collectMergedCouncilReadback({commitSha:MAIN,fetchGithub:fetcher});
  assert.equal(r.sourcePr.number,468);
  assert.equal(r.councilCheck.id,10000);
- assert.equal(calls.length,2);
+ assert.equal(calls.length,4);
  for(const call of calls){
   assert.ok(call.url.startsWith('https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/'));
   assert.equal(call.options.headers.authorization,undefined);
@@ -96,12 +99,63 @@ test('unavailable GitHub, mismatched merge, ambiguous PR, wrong check or superse
  const noApi=await collectMergedCouncilReadback({commitSha:MAIN,fetchGithub:async()=>({ok:false,status:403})});
  assert.equal(noApi.councilCheck,null);
  const olderSuccess={...check,id:5},newerFailure={...check,id:6,conclusion:'failure'};
- const fetcher=async url=>url.includes('/pulls?')?response([sourcePr]):
-  response({check_runs:[olderSuccess,newerFailure]});
+ const fetcher=async url=>{
+  if(url.includes('/pulls?'))return response([sourcePr]);
+  if(url.endsWith('/pulls/468'))return response(sourcePr);
+  if(url.includes('/check-runs?'))return response({total_count:2,check_runs:[olderSuccess,newerFailure]});
+  if(url.endsWith('/git/ref/heads/main'))return response({object:{sha:MAIN}});
+  throw Error('unexpected-url');
+ };
  const result=await collectMergedCouncilReadback({commitSha:MAIN,fetchGithub:fetcher});
  assert.equal(result.councilCheck.conclusion,'failure');
  assert.equal((await buildReleaseProof({commitSha:MAIN,ci,deployment,sourcePr:result.sourcePr,
   councilCheck:result.councilCheck})).verified,false);
+});
+
+test('missing pagination bounds, schema drift and ambiguous associations fail closed',async()=>{
+ const scenarios=[
+  {prs:[sourcePr],link:'<https://api.github.com/next>; rel="next"'},
+  {prs:[sourcePr,{}],link:''},
+  {prs:[sourcePr],checks:{total_count:50,check_runs:[check]}},
+  {prs:[sourcePr],checks:{check_runs:[check]}}
+ ];
+ for(const scenario of scenarios){
+  const f=async url=>{
+   if(url.includes('/commits/'+MAIN+'/pulls?'))return response(scenario.prs,scenario.link||'');
+   if(url.endsWith('/pulls/468'))return response(sourcePr);
+   if(url.includes('/check-runs?'))return response(scenario.checks||{total_count:1,check_runs:[check]});
+   if(url.endsWith('/git/ref/heads/main'))return response({object:{sha:MAIN}});
+   throw Error('unexpected-url');
+  };
+  const r=await collectMergedCouncilReadback({commitSha:MAIN,fetchGithub:f});
+  assert.equal(r.councilCheck,null);
+ }
+});
+
+test('independent PR read disagreement and moving canonical main never promote Council evidence',async()=>{
+ for(const wrong of [
+  {...sourcePr,merge_commit_sha:HEAD},
+  {...sourcePr,head:{...sourcePr.head,sha:'d'.repeat(40)}},
+  {...sourcePr,base:{...sourcePr.base,repo:{id:1,full_name:'foreign/repo'}}},
+  null
+ ]){
+  const f=async url=>{
+   if(url.includes('/commits/'+MAIN+'/pulls?'))return response([sourcePr]);
+   if(url.endsWith('/pulls/468'))return response(wrong);
+   if(url.includes('/check-runs?'))return response({total_count:1,check_runs:[check]});
+   if(url.endsWith('/git/ref/heads/main'))return response({object:{sha:MAIN}});
+   throw Error('unexpected-url');
+  };
+  assert.equal((await collectMergedCouncilReadback({commitSha:MAIN,fetchGithub:f})).councilCheck,null);
+ }
+ const drift=async url=>{
+  if(url.includes('/commits/'+MAIN+'/pulls?'))return response([sourcePr]);
+  if(url.endsWith('/pulls/468'))return response(sourcePr);
+  if(url.includes('/check-runs?'))return response({total_count:1,check_runs:[check]});
+  if(url.endsWith('/git/ref/heads/main'))return response({object:{sha:HEAD}});
+  throw Error('unexpected-url');
+ };
+ assert.equal((await collectMergedCouncilReadback({commitSha:MAIN,fetchGithub:drift})).councilCheck,null);
 });
 
 test('owner GET route preserves independent deployment HOLD and source policy mirrors cloud',()=>{

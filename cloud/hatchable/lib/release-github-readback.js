@@ -1,5 +1,5 @@
-// Read-only, canonical GitHub evidence for a squash-merged Council-approved PR.
-// Not a deployment receipt. Never interpret user-controlled PR text as a gate.
+// Read-only GitHub source proof for a squash-merged Council-approved PR.
+// Never authorize execution or release from this data alone.
 const API='https://api.github.com/repos/michaeljwilliams0123/Ultron.MW';
 const SHA=/^[a-f0-9]{40}$/;
 const NAME='ultron/council-7of7';
@@ -9,7 +9,7 @@ const empty=()=>({sourcePr:null,councilCheck:null});
 
 function sourceIsMergedTo(pr,mainSha){
  return pr&&Number.isSafeInteger(pr.number)&&pr.number>0&&
-  pr.state==='closed'&&pr.draft!==true&&
+  pr.state==='closed'&&pr.draft===false&&
   typeof pr.merged_at==='string'&&Number.isFinite(Date.parse(pr.merged_at))&&
   pr.merge_commit_sha===mainSha&&SHA.test(pr.head?.sha||'')&&
   pr.base?.ref==='main'&&pr.base?.repo?.id===REPO_ID&&
@@ -23,29 +23,45 @@ export async function collectMergedCouncilReadback({commitSha,fetchGithub=fetch}
   const res=await fetchGithub(API+path,{method:'GET',cache:'no-store',
    headers:{Accept:'application/vnd.github+json','User-Agent':'UltronMW-ReleaseReadback'},
    signal:AbortSignal.timeout(7000)});
-  if(!res?.ok)throw Error('independent-github-readback-unavailable');
-  return res.json();
+  if(!res?.ok||res.status!==200)throw Error('independent-github-readback-unavailable');
+  const link=res.headers?.get?.('link');
+  return {body:await res.json(),hasNext:typeof link==='string'&&/rel="?next"?/i.test(link)};
  }
  try{
-  const prs=await read('/commits/'+commitSha+'/pulls?per_page=10');
-  if(!Array.isArray(prs))return empty();
-  const matched=prs.filter(pr=>sourceIsMergedTo(pr,commitSha));
-  // An ambiguous association must not select whichever PR has a green check.
-  if(matched.length!==1)return empty();
-  const sourcePr=matched[0];
-  const checkRows=await read('/commits/'+sourcePr.head.sha+
-   '/check-runs?check_name='+encodeURIComponent(NAME)+'&per_page=30');
-  if(!Array.isArray(checkRows?.check_runs))
-   return {sourcePr,councilCheck:null};
-  const candidates=checkRows.check_runs.filter(check=>
+  // Reject any ambiguous, incomplete or paginated PR association, including
+  // unknown schema entries that must not be silently filtered away.
+  const associated=await read('/commits/'+commitSha+'/pulls?per_page=100');
+  if(associated.hasNext||!Array.isArray(associated.body)||
+     associated.body.length!==1)return empty();
+  const sourcePr=associated.body[0];
+  if(!sourceIsMergedTo(sourcePr,commitSha))return empty();
+
+  // Independently re-read the canonical PR, not only the commit association.
+  // Inconsistent merge metadata or a changed source head is an uncertainty.
+  const fresh=await read('/pulls/'+sourcePr.number);
+  if(fresh.hasNext||!sourceIsMergedTo(fresh.body,commitSha)||
+     fresh.body.head.sha!==sourcePr.head.sha)return empty();
+
+  const checks=await read('/commits/'+sourcePr.head.sha+
+   '/check-runs?check_name='+encodeURIComponent(NAME)+'&per_page=100');
+  const rows=checks.body?.check_runs;
+  if(checks.hasNext||!Array.isArray(rows)||
+     !Number.isSafeInteger(checks.body?.total_count)||
+     checks.body.total_count!==rows.length||rows.length===100)
+   return empty();
+  const candidates=rows.filter(check=>
    Number.isSafeInteger(check?.id)&&check.id>0&&
    check.name===NAME&&check.head_sha===sourcePr.head.sha);
-  // Never choose an older green check over a more recent HOLD.
+  // A newer HOLD supersedes an older success, regardless of App identity.
   const latest=candidates.reduce((last,check)=>
    !last||check.id>last.id?check:last,null);
-  return {sourcePr,councilCheck:latest};
+
+  // Re-read current main last: a merge during the lookup cannot be certified
+  // using an old main CI/deployment observation.
+  const current=await read('/git/ref/heads/main');
+  if(current.hasNext||current.body?.object?.sha!==commitSha)return empty();
+  return {sourcePr:fresh.body,councilCheck:latest};
  }catch{
-  // Network, API and JSON faults are unavailable evidence, never success.
   return empty();
  }
 }
