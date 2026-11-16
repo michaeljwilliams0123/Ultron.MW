@@ -197,9 +197,11 @@ jobs:
             // Execute read-only CI validation within this *trusted* extraction
             // step. Council runs from main; no PR-supplied code is executed.
             if (isPr === 'true') {
+              // Both exact-head CI and changed-file readbacks must share this
+              // SHA; a try-block-local declaration silently broke the latter.
+              const sha = targetSourceSha;
               let observed = {};
               try {
-                const sha = targetSourceSha;
                 if (!/^[a-f0-9]{40}$/.test(sha||'') ||
                     !Number.isSafeInteger(itemNumber) || itemNumber<1)
                   throw Error('invalid-exact-head-pr-target');
