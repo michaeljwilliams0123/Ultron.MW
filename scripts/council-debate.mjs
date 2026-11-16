@@ -26,12 +26,27 @@ const item = String(process.env.ITEM_NUMBER || '0');
 const isPr = process.env.IS_PR === 'true';
 const sourceSha = process.env.TARGET_SOURCE_SHA || '';
 const observedAt = new Date().toISOString();
+const itemNumber=Number(item)||0;
+
+// Caller is trusted main-workflow GitHub REST readback; never PR text.
+// Read this before deliberation so verified exact-head CI, rather than PR prose
+// length, determines evidence coverage. Partial or stale evidence remains held.
+let reviewEvidence=null;
+try{
+ const path=process.env.COUNCIL_REVIEW_EVIDENCE_FILE;
+ if(path&&isPr){
+  const data=JSON.parse(readFileSync(path,'utf8'));
+  reviewEvidence=buildCouncilExactHeadEvidence(data);
+ }
+}catch{reviewEvidence=null;}
+const exactHeadEvidence=reviewEvidence?.verified===true&&
+ reviewEvidence.sourceSha===sourceSha&&reviewEvidence.prNumber===itemNumber;
 
 const flags = deriveCouncilFlags({title,body,isPr,
   originalSecuritySignal:process.env.ORIGINAL_SECURITY_SIGNAL});
 
 const large = body.length > 2000;
-let evidenceCoverage = flags.security ? 0.35 : large ? 0.65 : 0.9;
+let evidenceCoverage = flags.security ? 0.35 : exactHeadEvidence ? 0.9 : large ? 0.65 : 0.9;
 let calibratedConfidence = flags.security ? 0.3 : 0.85;
 let knownUnknowns = [];
 let materialConflictCount = 0;
@@ -88,17 +103,6 @@ const roleLabels={
   'ultron-generator':'Generator','ultron-sentinel':'Sentinel',
   'ultron-companion':'Companion'
 };
-const itemNumber=Number(item)||0;
-// Caller is trusted main-workflow GitHub REST readback; never PR text.
-// Absent, partial or stale evidence remains unverified (no advisory softening).
-let reviewEvidence=null;
-try{
- const path=process.env.COUNCIL_REVIEW_EVIDENCE_FILE;
- if(path&&isPr){
-  const data=JSON.parse(readFileSync(path,'utf8'));
-  reviewEvidence=buildCouncilExactHeadEvidence(data);
- }
-}catch{reviewEvidence=null;}
 // Read only provider-fetched exact-head files from the trusted workflow.
 let prContext=null;
 try{
