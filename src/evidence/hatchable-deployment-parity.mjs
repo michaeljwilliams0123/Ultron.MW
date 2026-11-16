@@ -25,7 +25,7 @@ function inventory(rows,kind){
 function digestInventory(map,kind){
  return 'sha256:'+hash(JSON.stringify([...map.values()].map(row=>({
   path:row.path,hash:kind==='source'?row.sha256:row.hash
- })).sort((a,b)=>a.path.localeCompare(b.path))));
+ })).sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0)));
 }
 export function compareHatchableDeployment({sourceSha,version,sourceFiles,deployedFiles}={}){
  if(!SHA40.test(sourceSha??'')||!Number.isSafeInteger(version)||version<1)
