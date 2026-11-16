@@ -1,5 +1,5 @@
 import {existsSync} from 'node:fs';
-import {join} from 'node:path';
+import {win32} from 'node:path';
 import {platform} from 'node:os';
 
 /** Resolve a visible authorization browser without invoking shell URL associations. */
@@ -14,8 +14,9 @@ export function resolveSiwcBrowserCommand(url,{
   throw Error('chatgpt-plan-browser-destination-invalid');
  if(os==='win32'){
   const roots=[env.PROGRAMFILES,env['ProgramFiles(x86)'],env.LOCALAPPDATA];
+  // Use Windows path rules even when tests run on a Linux CI host.
   const chrome=roots.filter(Boolean).map(root=>
-   join(root,'Google','Chrome','Application','chrome.exe')).find(exists);
+   win32.join(root,'Google','Chrome','Application','chrome.exe')).find(exists);
   if(!chrome)throw Error('chatgpt-plan-chrome-unavailable');
   return {command:chrome,args:['--new-window',url],windowsHide:false};
  }

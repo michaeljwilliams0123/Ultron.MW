@@ -16,6 +16,16 @@ test('Windows opens the official OpenAI authorization in an explicit visible Chr
  assert.equal(spec.windowsHide,false);
 });
 
+test('Windows path resolution handles ProgramFiles x86 without host-dependent separators',()=>{
+ const root='C:\\Program Files (x86)';
+ const wanted='C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
+ const r=resolveSiwcBrowserCommand(url,{
+  os:'win32',env:{'ProgramFiles(x86)':root},exists:path=>path===wanted
+ });
+ assert.equal(r.command,wanted);
+ assert.equal(r.windowsHide,false);
+});
+
 test('Windows refuses a silent browser fallback if Chrome cannot be found',()=>{
  assert.throws(()=>resolveSiwcBrowserCommand(url,{
   os:'win32',env:{PROGRAMFILES:'C:\\Missing'},exists:()=>false
