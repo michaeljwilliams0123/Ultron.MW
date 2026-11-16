@@ -11,6 +11,20 @@ const OWNER_TITLE=/^Signed owner exception #([1-9][0-9]*)$/;
 const hash=async s=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',
  new TextEncoder().encode(s)))).map(n=>n.toString(16).padStart(2,'0')).join('');
 
+// GitHub's canonical PR association proves which reviewed source became the
+// current squash-merge commit. A check on a different PR or repo never counts.
+function trustedSquashLineage(pr,mainSha){
+ if(!pr||!Number.isSafeInteger(pr.number)||pr.number<1||
+  pr.state!=='closed'||pr.draft===true||
+  typeof pr.merged_at!=='string'||!Number.isFinite(Date.parse(pr.merged_at))||
+  pr.merge_commit_sha!==mainSha||!SHA.test(pr.head?.sha||'')||
+  pr.base?.ref!=='main'||pr.base?.repo?.id!==1424939667||
+  pr.head?.repo?.id!==1424939667||
+  pr.base?.repo?.full_name!==REPO||pr.head?.repo?.full_name!==REPO)
+   return null;
+ return Object.freeze({headSha:pr.head.sha,prNumber:pr.number});
+}
+
 function trustedGateDecision(check,commitSha,prNumber){
  if(!check||!Number.isSafeInteger(check.id)||check.id<1||
   !Number.isSafeInteger(prNumber)||prNumber<1||
@@ -42,12 +56,15 @@ function trustedGateDecision(check,commitSha,prNumber){
 }
 
 export async function buildReleaseProof({commitSha,ci,councilCheck=null,
- prNumber=null,deployment={}}={}){
+ prNumber=null,sourcePr=null,deployment={}}={}){
  if(!SHA.test(commitSha||''))throw Error('release-proof-invalid-sha');
  const ciValid=ci?.verified===true&&ci?.status==='verified'&&
   ci?.headSha===commitSha&&ci?.workflowId===388875616&&
   Number.isSafeInteger(ci?.runId)&&ci.runId>0;
- const council=trustedGateDecision(councilCheck,commitSha,prNumber);
+ const source=sourcePr===null?null:trustedSquashLineage(sourcePr,commitSha);
+ const councilHead=sourcePr===null?commitSha:source?.headSha;
+ const councilPr=sourcePr===null?prNumber:source?.prNumber;
+ const council=councilHead?trustedGateDecision(councilCheck,councilHead,councilPr):null;
  const councilValid=council!==null;
  const deploymentValid=deployment?.target?.startsWith('hatchable-v')&&
   deployment?.sourceSha===commitSha&&DIGEST.test(deployment?.artifactDigest||'')&&
@@ -61,6 +78,8 @@ export async function buildReleaseProof({commitSha,ci,councilCheck=null,
   council:Object.freeze({quorum:council?.mode??'unverified',
    distinctAppIds:councilValid?1:0,publisherAppId:councilValid?GATE.id:null,
    checkRunId:councilValid?councilCheck.id:null,
+   sourceHeadSha:councilValid?councilHead:null,
+   prNumber:councilValid?councilPr:null,
    ownerExceptionUsed:council?.ownerExceptionUsed??false,verified:councilValid}),
   deployment:Object.freeze({target:deployment?.target??null,
    artifactDigest:deployment?.artifactDigest??null,receiptId:deployment?.receiptId??null,
