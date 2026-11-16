@@ -15,8 +15,9 @@ import {homedir,platform} from 'node:os';
 import {join} from 'node:path';
 import {mkdir,readFile,writeFile,rename,chmod,unlink} from 'node:fs/promises';
 import {spawn,execFileSync} from 'node:child_process';
-import {createAuthorizationAttempt,validateAuthorizationCallback,
+import {createAuthorizationAttempt,
  completeAuthorization,refreshChatgptSession} from '../src/providers/chatgpt-siwc-auth.mjs';
+import {createOneTimeSiwcCallback} from '../src/providers/chatgpt-siwc-callback.mjs';
 import {listChatgptPlanModels} from '../src/providers/openai-chatgpt-plan.mjs';
 import {reasonAsRole} from '../src/council-reasoning.mjs';
 
@@ -114,36 +115,31 @@ function openBrowser(url){
 async function login(){
  const saved=await loadSession();
  const chosen=await hostId();
- let attempt,finished=false,resolve,reject;
+ let attempt,gate,finished=false,resolve,reject;
  const authorization=new Promise((res,rej)=>{resolve=res;reject=rej});
  const server=createServer(async(req,res)=>{
   if(!req.url?.startsWith('/auth/callback?')||req.method!=='GET'){
    res.writeHead(404);res.end('Not found');return;
   }
-  if(finished){res.writeHead(410);res.end('Authorization already handled');return;}
-  finished=true;
-  try{
-   const {code,clientId}=validateAuthorizationCallback(
-    'http://127.0.0.1:'+server.address().port+req.url,attempt);
-   // Local callback contains only authorization code, never access tokens.
-   const credentials=await completeAuthorization({
-    code,clientId,verifier:attempt.verifier,redirectUri:attempt.redirectUri,
-    nonce:attempt.nonce,hostId:chosen
-   });
-   if(saved&&saved.subject!==credentials.subject)
-    throw Error('chatgpt-plan-account-mismatch');
-   await store(SESSION_FILE,credentials);
+  if(finished||!gate){
+   res.writeHead(finished?410:503);res.end('Authorization not available');return;
+  }
+  const result=await gate.handle(
+   'http://127.0.0.1:'+server.address().port+req.url);
+  if(result.status===200){
    res.writeHead(200,{'content-type':'text/html; charset=utf-8',
     'cache-control':'no-store','x-content-type-options':'nosniff'});
    res.end('<!doctype html><title>Ultron.MW Council connected</title>'+
     '<p>ChatGPT authorization complete. You can close this tab.</p>');
-   resolve({connected:true,planEnabled:credentials.scope.split(/\s+/).includes(SCOPE)});
-  }catch(e){
-   res.writeHead(400,{'content-type':'text/plain; charset=utf-8',
-    'cache-control':'no-store'});res.end('Sign in unsuccessful. Return to Ultron.MW.');
-   reject(new Error(String(e.message).startsWith('siwc-')?e.message:
-    'chatgpt-plan-login-not-completed'));
-  }finally{server.close()}
+   resolve({connected:true,planEnabled:result.planEnabled});
+  }else{
+   res.writeHead(result.status,{'content-type':'text/plain; charset=utf-8',
+    'cache-control':'no-store','x-content-type-options':'nosniff'});
+   res.end(result.status===410?'Authorization already handled':
+    'Sign in unsuccessful. Return to Ultron.MW.');
+   if(result.terminal)reject(Error(result.reason||'chatgpt-plan-login-not-completed'));
+  }
+  if(result.terminal){finished=true;server.close()}
  });
  try{
   await new Promise((res,rej)=>{
@@ -152,6 +148,16 @@ async function login(){
   });
   attempt=createAuthorizationAttempt({hostId:chosen,
    port:server.address().port,clientId:saved?.client_id??null});
+  gate=createOneTimeSiwcCallback({attempt,consume:async({code,clientId})=>{
+   const credentials=await completeAuthorization({
+    code,clientId,verifier:attempt.verifier,redirectUri:attempt.redirectUri,
+    nonce:attempt.nonce,hostId:chosen
+   });
+   if(saved&&saved.subject!==credentials.subject)
+    throw Error('chatgpt-plan-account-mismatch');
+   await store(SESSION_FILE,credentials);
+   return {planEnabled:credentials.scope.split(/\s+/).includes(SCOPE)};
+  }});
   console.log('ChatGPT OAuth consent is required in the Windows browser.');
   console.log('Credentials will stay on this owner-controlled computer.');
   openBrowser(attempt.authorizationUrl);
