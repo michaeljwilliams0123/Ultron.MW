@@ -88,6 +88,15 @@ function held(reason,extra={}){
   overrideUsed:false,...extra});
 }
 
+/** A PR snapshot is usable only while the same open PR still has the exact
+ * head and base that were read. A changed snapshot is superseded by the
+ * newer pull_request_target run and must not turn the obsolete run red. */
+export function exactHeadReadState(expected,observed){
+ return expected&&observed&&observed.state==='open'&&
+  observed.number===expected.number&&observed.head?.sha===expected.head?.sha&&
+  observed.base?.sha===expected.base?.sha?'current':'superseded';
+}
+
 export function evaluateTrustedCouncilGate({report,receipt,pr,files,filesComplete,
  overrideComment=null,ownerPublicJwk=null,now=new Date().toISOString()}={}){
  if(!pr||pr.state!=='open'||!Number.isSafeInteger(pr.number)||pr.number<1||
@@ -162,14 +171,59 @@ export function resolveGatePublisher({appId,expectedSlug,mintedSlug}={}){
  return Object.freeze({appId:Number(appId),slug:expectedSlug});
 }
 
+// Pin the existing trusted verify.yml workflow ID, not workflow_run.name:
+// run-name is intentionally the PR title and cannot identify its publisher.
+const CORE_CI_WORKFLOW_ID=388875616;
+const ACTIONS_APP_ID=15368;
+const REQUIRED_EXACT_CI=['test','fixed-comparison','reef-runtime-probe','attested-receipt'];
+/** A Council verdict is meaningful only after the newest check run in each
+ * required CI context has completed successfully on the same PR head.
+ * Missing, stale, skipped, failed or truncated evidence cannot admit a gate.
+ * No GitHub App release check is included here (avoids circular dependency).
+ */
+export function councilExactHeadCiReady(inventory,sourceSha){
+ if(!SHA.test(sourceSha||'')||!Array.isArray(inventory?.check_runs)||
+  !Number.isSafeInteger(inventory.total_count)||inventory.total_count<4||
+  inventory.total_count>100||inventory.check_runs.length!==inventory.total_count)
+  return false;
+ for(const name of REQUIRED_EXACT_CI){
+  const matches=inventory.check_runs.filter(c=>c?.name===name);
+  if(matches.length<1)return false;
+  const ordered=matches.sort((a,b)=>Date.parse(b.started_at)-Date.parse(a.started_at));
+  const latest=ordered[0];
+  if(!Number.isFinite(Date.parse(latest?.started_at))||
+   latest.head_sha!==sourceSha||latest.app?.id!==ACTIONS_APP_ID||
+   latest.status!=='completed'||latest.conclusion!=='success')
+   return false;
+ }
+ return true;
+}
+/** Only a completed successful same-repo run of the PINNED core workflow
+ * can trigger a post-CI recheck. PR head/base are later independently
+ * reread, and all code still comes exclusively from trusted main.
+ */
+function completedCorePrNumber(payload){
+ const run=payload?.workflow_run,prs=run?.pull_requests;
+ if(payload?.action!=='completed'||run?.workflow_id!==CORE_CI_WORKFLOW_ID||
+  run?.event!=='pull_request'||run?.status!=='completed'||
+  run?.conclusion!=='success'||run?.head_repository?.id!==REPO_ID||
+  !SHA.test(run?.head_sha||'')||!Array.isArray(prs)||prs.length!==1)
+  return null;
+ const p=prs[0];
+ if(p?.head?.sha!==run.head_sha||p.head?.repo?.id!==REPO_ID||
+  p?.base?.ref!=='main'||p.base?.repo?.id!==REPO_ID||
+  !SHA.test(p.base?.sha||''))return null;
+ return p.number;
+}
 // Resolve a target from trusted GitHub event metadata, never issue/PR prose.
-// Used by pull_request_target, signed-owner comments and owner-only manual recheck.
+// Includes verified completed core CI; never trusts workflow_run.run-name.
 export function selectCouncilTargetNumber(eventName,payload={}){
-  const raw=eventName==='pull_request_target'?payload?.pull_request?.number:
-    eventName==='issue_comment'?payload?.issue?.number:
-    eventName==='workflow_dispatch'?payload?.inputs?.pr_number:null;
-  if(typeof raw==='number')return Number.isSafeInteger(raw)&&raw>0?raw:null;
-  if(typeof raw!=='string'||!/^[1-9][0-9]*$/.test(raw))return null;
-  const number=Number(raw);
-  return Number.isSafeInteger(number)&&number>0?number:null;
+ const raw=eventName==='pull_request_target'?payload?.pull_request?.number:
+  eventName==='issue_comment'?payload?.issue?.number:
+  eventName==='workflow_dispatch'?payload?.inputs?.pr_number:
+  eventName==='workflow_run'?completedCorePrNumber(payload):null;
+ if(typeof raw==='number')return Number.isSafeInteger(raw)&&raw>0?raw:null;
+ if(typeof raw!=='string'||!/^[1-9][0-9]*$/.test(raw))return null;
+ const number=Number(raw);
+ return Number.isSafeInteger(number)&&number>0?number:null;
 }
