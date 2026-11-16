@@ -437,6 +437,9 @@ test('read-only preflight reports missing PR with only safe bounded HTTP metadat
 
 test('trusted permission header is retained as safe ledger metadata after a 403 without another POST',async t=>{
  const h=await admitted(t),github=provider(h.prepared);
+ // Migration 0048 defines the immutable denied_no_effect terminal state.
+ await h.db.exec(await readFile(new URL('../cloud/hatchable/migrations/0048_github_pr_comment_denied_no_effect.sql',
+  import.meta.url),'utf8'));
  let writeCount=0;
  const fetchImpl=async(url,options={})=>{
   if(options.method==='POST'&&url.endsWith('/issues/'+h.prepared.pullRequest+'/comments')){
@@ -462,7 +465,12 @@ test('trusted permission header is retained as safe ledger metadata after a 403 
   x.permissionHint==='issues-or-pull-requests-write'));
  assert.doesNotMatch(JSON.stringify(events),/SHOULD_NOT_LEAK|Bearer|x-untrusted/);
  assert.equal((await h.db.query('SELECT state FROM github_pr_comment_executions')).rows[0].state,'reconcile_required');
+ const terminal=await reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,fetchImpl});
+ assert.deepEqual(terminal,{status:'denied_no_effect',receipt:null});
+ assert.equal((await h.db.query('SELECT state FROM github_pr_comment_executions')).rows[0].state,
+  'denied_no_effect');
  await assert.rejects(reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
-  operationDigest:h.digest,fetchImpl}),/readback-not-found/);
+  operationDigest:h.digest,fetchImpl}),/reconciliation-not-admitted/);
  assert.equal(writeCount,1,'reconciliation must never dispatch a second provider POST');
 });
