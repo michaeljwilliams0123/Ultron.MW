@@ -23,6 +23,7 @@ import {createOneTimeSiwcCallback} from '../src/providers/chatgpt-siwc-callback.
 import {listChatgptPlanModels} from '../src/providers/openai-chatgpt-plan.mjs';
 import {reasonAsRole} from '../src/council-reasoning.mjs';
 import {assertOwnerConfirmedPlanOnly} from '../src/providers/chatgpt-plan-only-policy.mjs';
+import {resolveSiwcBrowserCommand} from '../src/providers/chatgpt-siwc-browser.mjs';
 
 const HOME=join(homedir(),'.ultron','chatgpt-plan');
 const HOST_FILE=join(HOME,'host-id.json');
@@ -102,7 +103,7 @@ async function updateSession({allowRefresh=true}={}){
   await lock.close();await unlink(PENDING_FILE).catch(()=>{});
  }
 }
-function openBrowser(url){
+async function openBrowser(url){
  if(process.env.ULTRON_SIWC_MANUAL_BROWSER==='1'){
   const destination=new URL(url);
   if(destination.origin!=='https://auth.openai.com'||destination.searchParams.has('id_token_hint'))
@@ -110,18 +111,14 @@ function openBrowser(url){
   console.log('OpenAI authorization: '+destination.href);
   return;
  }
- if(platform()==='win32'){
-  // No secrets or ID token hints are included in the first registration URL.
-  const cmd=`Start-Process -FilePath '${url.replaceAll("'","''")}'`;
-  const encoded=Buffer.from(cmd,'utf16le').toString('base64');
-  const child=spawn('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',encoded],
-   {stdio:'ignore',windowsHide:true,detached:true});
-  child.unref();
- }else{
-  const child=spawn(platform()==='darwin'?'open':'xdg-open',[url],
-   {stdio:'ignore',detached:true});
-  child.unref();
- }
+ // Launch Chrome directly on Windows. Shell URL associations previously
+ // reported successful process startup without opening a visible consent tab.
+ const {command,args,windowsHide}=resolveSiwcBrowserCommand(url);
+ await new Promise((resolve,reject)=>{
+  const child=spawn(command,args,{stdio:'ignore',detached:true,windowsHide});
+  child.once('error',()=>reject(Error('chatgpt-plan-browser-start-unavailable')));
+  child.once('spawn',()=>{child.unref();resolve()});
+ });
 }
 async function login(){
  const saved=await loadSession();
@@ -171,7 +168,7 @@ async function login(){
   }});
   console.log('ChatGPT OAuth consent is required in the Windows browser.');
   console.log('Credentials will stay on this owner-controlled computer.');
-  openBrowser(attempt.authorizationUrl);
+  await openBrowser(attempt.authorizationUrl);
   // Bound one-time listener. No asynchronous background handoff promise.
   const timeout=setTimeout(()=>{
    if(!finished){finished=true;reject(Error('chatgpt-plan-login-not-completed'));server.close()}
