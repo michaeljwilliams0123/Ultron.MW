@@ -32,6 +32,12 @@ function completeFilesPayload(){
   files:[{filename:'README.md',status:'modified',additions:1,deletions:1,
    patch:'@@ -1 +1 @@\\n-old\\n+new'}]};
 }
+function exactHeadFiles(){return {
+ sourceSha:HEAD,prNumber:PR,complete:true,
+ files:[{filename:'README.md',status:'modified',additions:1,deletions:0,
+   patch:'@@ -1 +1 @@\\n+documented proof'}]
+};}
+
 function runDebate({evidence=exactHeadPayload(),security='0',
   files=completeFilesPayload()}={}){
  const cwd=mkdtempSync(join(tmpdir(),'ultron-council-evidence-'));
@@ -88,4 +94,17 @@ test('trusted CI without a complete changed-file inventory still holds',()=>{
  const {receipt}=runDebate({files:null});
  assert.equal(receipt.metacognition.evidenceCoverage,0.45);
  assert.equal(receipt.decision,'hold');
+});
+
+
+test('trusted workflow scopes the same SHA across CI and file readbacks',()=>{
+ const yaml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
+ const slice=yaml.split('// Execute read-only CI validation within this *trusted* extraction')[1]
+   ?.split('      - name: Run owner-first council debate')[0]||'';
+ assert.ok(slice,'trusted extraction step must exist');
+ const declaration=slice.indexOf('const sha = targetSourceSha;');
+ const readbackTry=slice.indexOf('try {');
+ assert.ok(declaration>=0&&declaration<readbackTry,
+   'sourceSha must be defined outside both independently caught readbacks');
+ assert.equal((slice.match(/const sha = targetSourceSha;/g)||[]).length,1);
 });
