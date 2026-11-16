@@ -53,6 +53,8 @@ test('CLI rejects an independently observed manifest for a different version',t=
  const d=mkdtempSync(join(tmpdir(),'ultron-deploy-parity-'));
  t.after(()=>rmSync(d,{recursive:true,force:true}));
  const p=join(d,'manifest.json');
+ writeFileSync(p,JSON.stringify(deployedFiles));
+ assert.throws(()=>run(['--source',sha,'--manifest',p,'--version','120'],()=>sourceFiles),/manifest-input-invalid/);
  writeFileSync(p,JSON.stringify({version:119,file_manifest:deployedFiles}));
  assert.throws(()=>run(['--source',sha,'--manifest',p,'--version','120'],()=>sourceFiles),/manifest-input-invalid/);
  writeFileSync(p,JSON.stringify({version:120,file_manifest:deployedFiles}));
