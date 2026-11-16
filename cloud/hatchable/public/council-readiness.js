@@ -1,7 +1,10 @@
 (()=>{'use strict';
 const tile=document.getElementById('connection-council');
+const refreshButton=document.getElementById('connection-refresh');
+if(!tile||!refreshButton)return;
 const value=tile.querySelector('.connection-value');
 const detail=tile.querySelector('.connection-detail');
+if(!value||!detail)return;
 let refreshing=false;
 async function refresh(){
  if(refreshing)return;
@@ -19,19 +22,24 @@ async function refresh(){
   if(data?.schema!=='ultron.council.wiring-readiness.v1'||
      !Number.isSafeInteger(data.roleCount)||
      !Number.isSafeInteger(data.githubRoleInstallationsObserved)||
-     !Array.isArray(data.missingTables)||!Array.isArray(data.rolesUnverified))
+     !Array.isArray(data.missingTables)||!Array.isArray(data.rolesUnverified)||
+     typeof data.readyForProduction!=='boolean'||
+     data.roleCount<1||data.githubRoleInstallationsObserved<0||
+     data.githubRoleInstallationsObserved>data.roleCount)
    throw Error('readback-invalid');
-  tile.dataset.state=data.readyForProduction===true?'good':'warning';
-  value.textContent=data.readyForProduction===true?'Release ready':'Not release ready';
+  // Wiring readiness is not an independently signed production release.
+  // The release-proof endpoint is a separate owner-only acceptance boundary.
+  tile.dataset.state='warning';
+  value.textContent=data.readyForProduction===true?'Council wiring ready':'Council wiring incomplete';
   detail.textContent=data.githubRoleInstallationsObserved+' of '+data.roleCount+
    ' GitHub App identities verified · '+data.missingTables.length+
-   ' missing tables · read-only assessment';
+   ' missing tables · release acceptance checked separately';
  }catch{
   tile.dataset.state='error';
   value.textContent='Unverified';
   detail.textContent='Owner-only Council wiring readback unavailable';
  }finally{refreshing=false}
 }
-document.getElementById('connection-refresh').addEventListener('click',refresh);
+refreshButton.addEventListener('click',refresh);
 refresh();
 })();
