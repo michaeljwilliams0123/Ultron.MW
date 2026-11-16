@@ -10,7 +10,8 @@ function filePath(v){
  v.split('/').every(s=>s.length>0&&s!=='.'&&s!=='..');
 }
 function inventory(rows,kind){
- if(!Array.isArray(rows)||rows.length>1000)throw Error(kind+'-inventory-invalid');
+ if(!Array.isArray(rows)||rows.length===0||rows.length>1000)
+  throw Error(kind+'-inventory-invalid');
  const map=new Map();
  for(const row of rows){
   const digest=kind==='source'?row.sha256:row.hash;

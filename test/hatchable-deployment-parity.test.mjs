@@ -49,6 +49,17 @@ test('rejects malformed or duplicate external inventories',()=>{
  assert.throws(()=>compareHatchableDeployment({...base,sourceSha:'main'}),/provenance-invalid/);
  assert.throws(()=>compareHatchableDeployment({...base,deployedFiles:[{path:'a',hash:'invalid'}]}),/inventory-invalid/);
 });
+test('fail closed: zero-record inventories can never prove byte-exact parity',()=>{
+ const base={sourceSha:sha,version,
+  sourceFiles:[{path:'api/ok.js',sha256:hash('ok')}],
+  deployedFiles:[{path:'api/ok.js',hash:hash('ok')}]};
+ for(const variant of [
+  {sourceFiles:[],deployedFiles:[]},
+  {sourceFiles:[]},
+  {deployedFiles:[]}
+ ])assert.throws(()=>compareHatchableDeployment({...base,...variant}),
+  /inventory-invalid/);
+});
 test('CLI rejects an independently observed manifest for a different version',t=>{
  const d=mkdtempSync(join(tmpdir(),'ultron-deploy-parity-'));
  t.after(()=>rmSync(d,{recursive:true,force:true}));
