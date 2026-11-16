@@ -76,3 +76,41 @@ test('all seven model roles are real prompts, not three prompts relabeled seven 
  assert.deepEqual(parsed.findings,['lib/ledger.js: ambiguous commit']);
  assert.deepEqual(parsed.tests,['assert at-most-once dispatch']);
 });
+
+test('Groq GPT-OSS uses documented strict structured output; real HOLD remains HOLD',async()=>{
+ let request;
+ const hold=JSON.stringify({verdict:'hold',confidence:0.8,rationale:'Missing proven SQL context',
+  findings:['lib/safe.mjs: context partial'],tests:['node --test test/safe.test.mjs'],
+  disagreements:[]});
+ const f=async(url,opts)=>{request={url,...opts,body:JSON.parse(opts.body)};
+  return {ok:true,status:200,headers:new Map(),json:async()=>({choices:[{message:{content:hold}}]})};};
+ const result=await reasonAsRole({role:'Sentinel',input:'review public C04 code evidence',
+  env:{GROQ_API_KEY:'test'},order:['groq'],fetchImpl:f});
+ assert.equal(result.source,'model');
+ assert.equal(result.verdict,'hold','structured response cannot automatically approve a review');
+ assert.equal(result.paidInference,false);
+ assert.equal(request.body.model,'openai/gpt-oss-20b');
+ assert.equal(request.body.reasoning_effort,'low');
+ assert.equal(request.body.include_reasoning,false);
+ assert.equal(request.body.response_format.type,'json_schema');
+ const schema=request.body.response_format.json_schema;
+ assert.equal(schema.strict,true);
+ assert.deepEqual(schema.schema.required,
+  ['verdict','confidence','rationale','findings','tests','disagreements']);
+ assert.equal(schema.schema.additionalProperties,false);
+ assert.deepEqual(schema.schema.properties.verdict.enum,['proceed','hold','revise']);
+});
+test('Gemini generateContent asks for bounded structured JSON response',async()=>{
+ let request;
+ const f=async(url,opts)=>{request=JSON.parse(opts.body);
+  return {ok:true,status:200,headers:new Map(),json:async()=>({
+   candidates:[{content:{parts:[{text:JSON.stringify({verdict:'proceed',confidence:0.9,
+    rationale:'Code evidence sufficient',findings:[],tests:[],disagreements:[]})}]}}]})};};
+ const result=await reasonAsRole({role:'Skeptic',input:'public unit-test analysis',
+  env:{GEMINI_API_KEY:'test'},order:['google'],fetchImpl:f});
+ assert.equal(result.source,'model');
+ assert.equal(result.verdict,'proceed');
+ assert.equal(request.generationConfig.responseMimeType,'application/json');
+ assert.deepEqual(request.generationConfig.responseJsonSchema.properties.verdict.enum,
+  ['proceed','hold','revise']);
+});
