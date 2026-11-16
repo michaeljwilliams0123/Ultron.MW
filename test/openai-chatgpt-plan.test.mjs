@@ -91,6 +91,25 @@ test('unlisted model and non-OpenAI endpoint cannot be selected',async()=>{
  assert.equal(post,0);
 });
 
+test('SSE CRLF framing survives a chunk boundary between CR and LF',async()=>{
+ const records=successEvents.map(e=>'data: '+JSON.stringify(e)+'\r\n\r\n').join('');
+ const bytes=new TextEncoder().encode(records);
+ const chunks=[];let start=0;
+ for(let i=0;i<bytes.length;i++){
+  if(bytes[i]===13){chunks.push(bytes.slice(start,i+1));start=i+1}
+ }
+ if(start<bytes.length)chunks.push(bytes.slice(start));
+ const fetchImpl=async url=>url.endsWith('/models')?ok(catalog):{
+  ok:true,status:200,body:new ReadableStream({start(c){
+   for(const chunk of chunks)c.enqueue(chunk);
+   c.close();
+  }})
+ };
+ const text=await invokeChatgptPlan({credential:CREDENTIAL,model,now,
+  input:'public test',instructions:'review',fetchImpl});
+ assert.equal(text,successText);
+});
+
 test('a failed or incomplete SSE cannot masquerade as model success',async()=>{
  const variants=[
   [{type:'response.output_text.delta',delta:successText}],

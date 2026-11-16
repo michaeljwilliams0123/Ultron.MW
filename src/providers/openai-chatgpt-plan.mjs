@@ -97,7 +97,8 @@ export async function invokeChatgptPlan({
    if(next.done)break;
    total+=next.value.byteLength;
    if(total>MAX_BYTES)throw Error('chatgpt-plan-stream-too-large');
-   data+=decoder.decode(next.value,{stream:true}).replace(/\r\n/g,'\n');
+   // Normalize only after joining chunks: CR and LF may arrive separately.
+   data=(data+decoder.decode(next.value,{stream:true})).replace(/\r\n/g,'\n');
    while(data.includes('\n\n')){
     const boundary=data.indexOf('\n\n'),raw=data.slice(0,boundary);
     data=data.slice(boundary+2);
