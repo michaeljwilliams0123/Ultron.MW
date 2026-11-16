@@ -80,7 +80,9 @@ test('RELEASE-04 owner route exposes unknown release honestly',()=>{
  const source=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8');
  assert.match(source,/access='admin'/);
  assert.match(source,/methods=\['GET'\]/);
- assert.match(source,/councilCheck:null,prNumber:null,deployment:\{\}/);
+ assert.match(source,/collectMergedCouncilReadback/);
+ assert.match(source,/councilCheck:councilSource\.councilCheck/);
+ assert.match(source,/sourcePr:councilSource\.sourcePr,deployment:\{\}/);
 });
 test('RELEASE-05 source and Hatchable proof policies stay byte-identical',()=>{
  const node=readFileSync(new URL('../src/evidence/release-proof.mjs',import.meta.url),'utf8');
