@@ -17,9 +17,9 @@ const config={
 };
 const jwks={keys:[{...publicKey.export({format:'jwk'}),kid,alg:'RS256',use:'sig'}]};
 const b64=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
-function signedIdToken({aud=CLIENT,nonce='verified-nonce',sub='owner-sub',exp=Math.floor(NOW/1000)+3600,iss='https://auth.openai.com'}={}){
+function signedIdToken({aud=CLIENT,azp,nonce='verified-nonce',sub='owner-sub',exp=Math.floor(NOW/1000)+3600,iss='https://auth.openai.com'}={}){
  const header=b64({alg:'RS256',kid,typ:'JWT'});
- const body=b64({iss,aud,nonce,sub,iat:Math.floor(NOW/1000)-10,exp,email:'test@example.com'});
+ const body=b64({iss,aud,...(azp===undefined?{}:{azp}),nonce,sub,iat:Math.floor(NOW/1000)-10,exp,email:'test@example.com'});
  const signing=header+'.'+body;
  const s=createSign('RSA-SHA256');s.update(signing);s.end();
  return signing+'.'+s.sign(privateKey).toString('base64url');
@@ -108,6 +108,27 @@ test('cryptographically validates OpenAI OIDC JWT signature, issuer, audience, n
   await assert.rejects(()=>validateIdToken(bad,{clientId:CLIENT,nonce:'verified-nonce',
    fetchImpl:fetchOidc({}),now:NOW}));
  }
+});
+
+test('OpenAI singleton audience array validates without optional azp, multi-audience requires matching azp',async()=>{
+ const opts={clientId:CLIENT,nonce:'verified-nonce',fetchImpl:fetchOidc({}),now:NOW};
+ const singleton=await validateIdToken(signedIdToken({aud:[CLIENT]}),opts);
+ assert.equal(singleton.sub,'owner-sub');
+ const multi=await validateIdToken(signedIdToken({aud:[CLIENT,'secondary-client'],azp:CLIENT}),opts);
+ assert.equal(multi.sub,'owner-sub');
+ await assert.rejects(()=>validateIdToken(signedIdToken({aud:[CLIENT,'secondary-client']}),opts),
+  {message:'siwc-id-token-audience-invalid'});
+ await assert.rejects(()=>validateIdToken(signedIdToken({aud:[CLIENT,'secondary-client'],azp:'wrong'}),opts),
+  {message:'siwc-id-token-audience-invalid'});
+ await assert.rejects(()=>validateIdToken(signedIdToken({aud:[CLIENT],azp:'wrong'}),opts),
+  {message:'siwc-id-token-audience-invalid'});
+ const issued=await completeAuthorization({
+  code:'authorization-code',clientId:CLIENT,verifier:'a'.repeat(64),
+  redirectUri:'http://127.0.0.1:1455/auth/callback',
+  nonce:'verified-nonce',hostId:HOST,now:NOW,
+  fetchImpl:fetchOidc({...token(),id_token:signedIdToken({aud:[CLIENT]})})
+ });
+ assert.equal(issued.subject,'owner-sub');
 });
 
 test('verified OAuth exchange returns scoped credential, never API billing key',async()=>{

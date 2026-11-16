@@ -28,9 +28,18 @@ export function createOneTimeSiwcCallback({attempt,consume}={}){
    try{
     const result=await consume(payload);
     return {status:200,terminal:true,planEnabled:result?.planEnabled===true};
-   }catch{
+   }catch(e){
+    const safeReasons=new Set(['siwc-provider-unavailable','siwc-oauth-token-invalid',
+     'siwc-id-token-format-invalid','siwc-id-token-algorithm-invalid',
+     'siwc-id-token-provider-mismatch','siwc-id-token-key-invalid',
+     'siwc-id-token-signature-invalid','siwc-id-token-claims-invalid',
+     'siwc-id-token-issuer-invalid','siwc-id-token-nonce-invalid',
+     'siwc-id-token-audience-invalid','siwc-id-token-subject-invalid',
+     'siwc-id-token-expiration-invalid','siwc-id-token-issued-at-invalid',
+     'siwc-id-token-not-before-invalid',
+     'chatgpt-plan-account-mismatch','chatgpt-plan-private-storage-unavailable']);
     return {status:400,terminal:true,planEnabled:false,
-     reason:'siwc-exchange-or-custody-unverified'};
+     reason:safeReasons.has(e?.message)?e.message:'siwc-exchange-or-custody-unverified'};
    }
   }
  });

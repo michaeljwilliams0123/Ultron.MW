@@ -103,6 +103,13 @@ async function updateSession({allowRefresh=true}={}){
  }
 }
 function openBrowser(url){
+ if(process.env.ULTRON_SIWC_MANUAL_BROWSER==='1'){
+  const destination=new URL(url);
+  if(destination.origin!=='https://auth.openai.com'||destination.searchParams.has('id_token_hint'))
+   throw Error('chatgpt-plan-manual-browser-unavailable');
+  console.log('OpenAI authorization: '+destination.href);
+  return;
+ }
  if(platform()==='win32'){
   // No secrets or ID token hints are included in the first registration URL.
   const cmd=`Start-Process -FilePath '${url.replaceAll("'","''")}'`;

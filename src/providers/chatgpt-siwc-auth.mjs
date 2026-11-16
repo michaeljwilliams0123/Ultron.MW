@@ -105,15 +105,23 @@ export async function validateIdToken(idToken,{
   publicKey,Buffer.from(parts[2],'base64url'));
  if(!authentic)throw Error('siwc-id-token-signature-invalid');
  const seconds=Math.floor(now/1000);
- const audience=claims.aud;
- if(claims.iss!==ISSUER||claims.nonce!==nonce||
-    !(audience===clientId||(Array.isArray(audience)&&
-      audience.includes(clientId)&&claims.azp===clientId))||
-    typeof claims.sub!=='string'||!claims.sub||
-    !Number.isInteger(claims.exp)||claims.exp<=seconds||
-    !Number.isInteger(claims.iat)||claims.iat>seconds+60||
-    (claims.nbf!==undefined&&claims.nbf>seconds+60))
-  throw Error('siwc-id-token-claims-invalid');
+ const audience=typeof claims.aud==='string'?[claims.aud]:claims.aud;
+ if(claims.iss!==ISSUER)throw Error('siwc-id-token-issuer-invalid');
+ if(claims.nonce!==nonce)throw Error('siwc-id-token-nonce-invalid');
+ // A single audience needs no azp; multiple audiences require the authorized party.
+ if(!Array.isArray(audience)||audience.length===0||
+    !audience.every(x=>typeof x==='string'&&x.length>0)||
+    !audience.includes(clientId)||
+    (audience.length>1&&claims.azp!==clientId)||
+    (claims.azp!==undefined&&claims.azp!==clientId))
+  throw Error('siwc-id-token-audience-invalid');
+ if(typeof claims.sub!=='string'||!claims.sub)throw Error('siwc-id-token-subject-invalid');
+ if(!Number.isInteger(claims.exp)||claims.exp<=seconds)
+  throw Error('siwc-id-token-expiration-invalid');
+ if(!Number.isInteger(claims.iat)||claims.iat>seconds+60)
+  throw Error('siwc-id-token-issued-at-invalid');
+ if(claims.nbf!==undefined&&claims.nbf>seconds+60)
+  throw Error('siwc-id-token-not-before-invalid');
  return Object.freeze({sub:claims.sub,
   email:typeof claims.email==='string'?claims.email:null});
 }
