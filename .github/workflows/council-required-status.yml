@@ -245,6 +245,7 @@ jobs:
       - name: Execute one real Coordinator PR COMMENT review with durable readback
         if: >-
           steps.prepare.outputs.skip == 'false' &&
+          github.event_name != 'workflow_run' &&
           env.OWNER_MODE == '1' &&
           vars.ULTRON_GITHUB_APP_ID == '5633654'
         continue-on-error: true
