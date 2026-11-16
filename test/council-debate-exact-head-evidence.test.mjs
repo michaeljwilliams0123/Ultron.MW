@@ -27,10 +27,18 @@ function exactHeadPayload({head=HEAD}={}){
  };
 }
 
-function runDebate({evidence=exactHeadPayload(),security='0'}={}){
+function completeFilesPayload(){
+ return {sourceSha:HEAD,prNumber:PR,complete:true,
+  files:[{filename:'README.md',status:'modified',additions:1,deletions:1,
+   patch:'@@ -1 +1 @@\\n-old\\n+new'}]};
+}
+function runDebate({evidence=exactHeadPayload(),security='0',
+  files=completeFilesPayload()}={}){
  const cwd=mkdtempSync(join(tmpdir(),'ultron-council-evidence-'));
  const evidencePath=join(cwd,'exact-head-ci.json');
+ const filesPath=join(cwd,'exact-head-files.json');
  writeFileSync(evidencePath,JSON.stringify(evidence));
+ if(files)writeFileSync(filesPath,JSON.stringify(files));
  try{
   const result=spawnSync(process.execPath,[SCRIPT.pathname],{
    cwd,encoding:'utf8',env:{...process.env,
@@ -38,6 +46,7 @@ function runDebate({evidence=exactHeadPayload(),security='0'}={}){
     BODY:LONG_BODY,ITEM_NUMBER:String(PR),IS_PR:'true',OWNER_MODE:'1',
     TARGET_SOURCE_SHA:HEAD,ORIGINAL_SECURITY_SIGNAL:security,
     COUNCIL_REVIEW_EVIDENCE_FILE:evidencePath,
+    COUNCIL_PR_FILES_FILE:files?filesPath:'',
     GEMINI_API_KEY:'',GROQ_API_KEY:'',COUNCIL_MASTER_SEED:''
    }
   });
@@ -49,7 +58,7 @@ function runDebate({evidence=exactHeadPayload(),security='0'}={}){
  }finally{rmSync(cwd,{recursive:true,force:true})}
 }
 
-test('trusted exact-head CI outranks PR-description length for non-security deliberation',()=>{
+test('complete trusted exact-head CI and file inventory outrank PR-description length for non-security deliberation',()=>{
  const {receipt,members}=runDebate();
  assert.equal(LONG_BODY.length>2237,true,'fixture must reproduce PR #469 scale');
  assert.equal(receipt.metacognition.evidenceCoverage,0.9);
@@ -62,9 +71,9 @@ test('trusted exact-head CI outranks PR-description length for non-security deli
 
 test('long PR prose without matching exact-head evidence remains held',()=>{
  const {receipt}=runDebate({evidence:exactHeadPayload({head:'c'.repeat(40)})});
- assert.equal(receipt.metacognition.evidenceCoverage,0.65);
+ assert.equal(receipt.metacognition.evidenceCoverage,0.45);
  assert.equal(receipt.decision,'hold');
- assert.equal(receipt.positions.filter(position=>position.conclusion==='proceed').length,2);
+ assert.ok(receipt.positions.some(position=>position.conclusion==='hold'));
 });
 
 test('trusted exact-head CI never lifts the security classification',()=>{
@@ -73,4 +82,10 @@ test('trusted exact-head CI never lifts the security classification',()=>{
  assert.equal(receipt.decision,'hold');
  assert.equal(members.hold,true);
  assert.ok(members.memberAssessments.some(member=>member.verdict==='hold'));
+});
+
+test('trusted CI without a complete changed-file inventory still holds',()=>{
+ const {receipt}=runDebate({files:null});
+ assert.equal(receipt.metacognition.evidenceCoverage,0.45);
+ assert.equal(receipt.decision,'hold');
 });
