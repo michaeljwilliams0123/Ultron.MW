@@ -329,6 +329,44 @@ async function complete(db,prepared,digest,comment,status){
   fail('receipt-persistence-unverified');
  return Object.freeze({status,receipt:stored.receipt});
 }
+/**
+ * A definitive GitHub 403 is only a candidate terminal denial. Exactly one
+ * owner-approved comment POST must already be reflected in the durable event
+ * ledger, and a complete authenticated readback must have found no matching
+ * comment. Missing/ambiguous evidence remains reconcile_required.
+ *
+ * The terminal transition and its audit event are one SQL statement so
+ * persistence failure cannot quietly create an unaudited terminal state.
+ */
+async function markDeniedNoEffect(db,prepared,digest){
+ const r=await db.query(`WITH denial AS (
+  SELECT 1 FROM brain_events
+  WHERE event_type='github-pr-comment-stage'
+   AND details->>'idempotencyKey'=$1
+   AND details->>'stage'='reconcile_required'
+   AND details->>'reason'='provider-write-denied'
+   AND details->>'providerHttpStatus'='403'
+  LIMIT 1
+ ), moved AS (
+  UPDATE github_pr_comment_executions
+  SET state='denied_no_effect',updated_at=now()
+  WHERE idempotency_key=$1 AND operation_digest=$2
+   AND state='reconcile_required' AND EXISTS(SELECT 1 FROM denial)
+  RETURNING idempotency_key
+ ), evidence AS (
+  INSERT INTO brain_events(event_type,details)
+  SELECT 'github-pr-comment-stage',
+   jsonb_build_object('idempotencyKey',idempotency_key,
+    'stage','denied_no_effect','reason','readback-not-found')
+  FROM moved RETURNING id
+ ) SELECT (SELECT count(*)::int FROM moved) AS claims,
+   (SELECT count(*)::int FROM evidence) AS events`,
+ [prepared.idempotencyKey,digest]);
+ const counts=r?.rows?.[0];
+ if(counts?.claims===0&&counts?.events===0)return null;
+ if(counts?.claims!==1||counts?.events!==1)fail('reconciliation-not-admitted');
+ return Object.freeze({status:'denied_no_effect',receipt:null});
+}
 export async function submitPrCommentCanary({
  db,prepared,operationDigest:digest,appCredentials,fetchImpl=globalThis.fetch,
  clock=Date.now
@@ -418,6 +456,7 @@ export async function reconcilePrCommentCanary({
  const since=Number.isFinite(reservedAt)?
   '&since='+encodeURIComponent(new Date(reservedAt-60000).toISOString()):'';
  const matches=[];
+ let completeScan=false;
  for(let page=1;page<=5;page++){
   const response=await provider(fetchImpl,
    `${API}/repos/${REPO}/issues/${prepared.pullRequest}/comments?per_page=100&page=${page}${since}`,{
@@ -426,7 +465,14 @@ export async function reconcilePrCommentCanary({
   let comments;try{comments=await response.json();}catch{fail('readback-unavailable');}
   if(!Array.isArray(comments))fail('readback-unavailable');
   matches.push(...comments.filter(comment=>verifiedComment(comment,prepared)));
-  if(comments.length<100)break;
+  if(comments.length<100){completeScan=true;break;}
+ }
+ // Five full pages never establish absence or uniqueness: results might be
+ // truncated, so leave the reservation pending rather than infer no effect.
+ if(!completeScan)fail('readback-unavailable');
+ if(matches.length===0){
+  const terminal=await markDeniedNoEffect(db,prepared,digest);
+  if(terminal)return terminal;
  }
  if(matches.length!==1){
   await markReconcile(db,prepared);
