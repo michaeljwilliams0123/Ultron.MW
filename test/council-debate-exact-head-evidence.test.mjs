@@ -5,11 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {fileURLToPath} from 'node:url';
 
 const HEAD='a'.repeat(40);
 const BASE='b'.repeat(40);
 const PR=469;
-const SCRIPT=new URL('../scripts/council-debate.mjs',import.meta.url);
+const SCRIPT=fileURLToPath(new URL('../scripts/council-debate.mjs',import.meta.url));
 const LONG_BODY=('Acceptance: exact-head tests verify the release behavior and rollback. ')
   .repeat(40);
 
