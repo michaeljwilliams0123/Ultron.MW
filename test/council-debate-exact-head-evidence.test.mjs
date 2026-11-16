@@ -5,7 +5,6 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {fileURLToPath} from 'node:url';
 
 const HEAD='a'.repeat(40);
 const BASE='b'.repeat(40);
@@ -48,7 +47,7 @@ function runDebate({evidence=exactHeadPayload(),security='0',
  writeFileSync(evidencePath,JSON.stringify(evidence));
  if(files)writeFileSync(filesPath,JSON.stringify(files));
  try{
-  const result=spawnSync(process.execPath,[fileURLToPath(SCRIPT)],{
+  const result=spawnSync(process.execPath,[SCRIPT],{
    cwd,encoding:'utf8',env:{...process.env,
     TITLE:'fix(release): bind the Council gate to verified evidence',
     BODY:LONG_BODY,ITEM_NUMBER:String(PR),IS_PR:'true',OWNER_MODE:'1',
