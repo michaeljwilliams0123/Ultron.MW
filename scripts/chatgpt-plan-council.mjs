@@ -7,6 +7,7 @@
  *   node scripts/chatgpt-plan-council.mjs status
  *   node scripts/chatgpt-plan-council.mjs login
  *   node scripts/chatgpt-plan-council.mjs models
+ *   node scripts/chatgpt-plan-council.mjs confirm-plan-only
  *   node scripts/chatgpt-plan-council.mjs canary <model-slug>
  */
 import {createServer} from 'node:http';
@@ -15,15 +16,18 @@ import {homedir,platform} from 'node:os';
 import {join} from 'node:path';
 import {mkdir,readFile,writeFile,rename,chmod,unlink} from 'node:fs/promises';
 import {spawn,execFileSync} from 'node:child_process';
+import {createInterface} from 'node:readline/promises';
 import {createAuthorizationAttempt,
  completeAuthorization,refreshChatgptSession} from '../src/providers/chatgpt-siwc-auth.mjs';
 import {createOneTimeSiwcCallback} from '../src/providers/chatgpt-siwc-callback.mjs';
 import {listChatgptPlanModels} from '../src/providers/openai-chatgpt-plan.mjs';
 import {reasonAsRole} from '../src/council-reasoning.mjs';
+import {assertOwnerConfirmedPlanOnly} from '../src/providers/chatgpt-plan-only-policy.mjs';
 
 const HOME=join(homedir(),'.ultron','chatgpt-plan');
 const HOST_FILE=join(HOME,'host-id.json');
 const SESSION_FILE=join(HOME,'selected-session.json');
+const PLAN_ONLY_POLICY_FILE=join(HOME,'owner-plan-only-confirmation.json');
 const PENDING_FILE=join(HOME,'refresh.lock');
 const SCOPE='chatgpt.tokens.use.direct';
 const PRIVATE_FILE_MODE=0o600;
@@ -172,25 +176,63 @@ async function login(){
   }finally{clearTimeout(timeout)}
  }finally{server.close()}
 }
+async function confirmPlanOnly(){
+ const credential=await updateSession({allowRefresh:false});
+ if(!process.stdin.isTTY||!process.stdout.isTTY)
+  throw Error('chatgpt-plan-owner-console-required');
+ const rl=createInterface({input:process.stdin,output:process.stdout});
+ try{
+  console.log('Open ChatGPT Settings > Usage > App limits for Ultron.MW Council.');
+  console.log('The app limit must be BELOW 100%, and app credit use must be OFF.');
+  console.log('This is your on-device confirmation, not independent OpenAI settings readback.');
+  const raw=(await rl.question('Enter the saved app weekly usage limit (1-99%): ')).trim();
+  if(!/^(?:[1-9]|[1-9][0-9])$/.test(raw))
+   throw Error('chatgpt-plan-only-settings-not-confirmed');
+  const credits=(await rl.question('Type CREDITS OFF after confirming app credit use is disabled: ')).trim();
+  if(credits!=='CREDITS OFF')
+   throw Error('chatgpt-plan-only-settings-not-confirmed');
+  const confirmation={
+   kind:'owner-confirmed-plan-only-settings',
+   clientId:credential.client_id,hostId:credential.ext_agent_host_id,
+   subject:credential.subject,appLimitPercent:Number(raw),
+   appCreditsEnabled:false,confirmedAt:new Date().toISOString()
+  };
+  assertOwnerConfirmedPlanOnly(credential,confirmation);
+  await store(PLAN_ONLY_POLICY_FILE,confirmation);
+  console.log('PLAN_ONLY_OWNER_CONFIRMATION_SAVED=true');
+  console.log('Actual credit blocking is enforced by your <100% limit in ChatGPT settings.');
+ }finally{rl.close()}
+}
 async function main(){
  const cmd=process.argv[2]??'status';
  if(cmd==='status'){
   const c=await loadSession();
   const valid=Boolean(c?.scope?.split(/\s+/).includes(SCOPE));
   const active=Boolean(c&&Date.parse(c.saved_at)+c.expires_in*1000>Date.now()+30000);
+  let planOnlyAcknowledged=false;
+  try{
+   assertOwnerConfirmedPlanOnly(c,await readJson(PLAN_ONLY_POLICY_FILE));
+   planOnlyAcknowledged=true;
+  }catch{}
   console.log(JSON.stringify({provider:'openai-chatgpt',mode:'oss-local-siwc',
    connected:!!c,planPermission:valid,accessTokenActive:active,
-   costs:'no additional API billing; uses consented ChatGPT plan allowance'}));
+   planOnlyAcknowledged,planOnlyServerVerified:false,
+   creditPolicy:'App weekly limit <100% plus app credits OFF required before inference'}));
  }else if(cmd==='login')await login();
  else if(cmd==='models'){
   const c=await updateSession();
   const available=await listChatgptPlanModels({credential:c});
   console.log(JSON.stringify({provider:'openai-chatgpt',
    models:available.map(m=>({slug:m.slug,display_name:m.display_name}))}));
- }else if(cmd==='canary'){
+ }else if(cmd==='confirm-plan-only')await confirmPlanOnly();
+ else if(cmd==='canary'){
   const model=process.argv[3];
   if(!model)throw Error('model-selection-required: run models first');
   const credential=await updateSession();
+  // No billable-risk canary without recent, account-bound owner confirmation.
+  // The ChatGPT app limit below 100% is the actual server-side credit barrier.
+  assertOwnerConfirmedPlanOnly(credential,
+   await readJson(PLAN_ONLY_POLICY_FILE));
   const r=await reasonAsRole({
    role:'Skeptic',input:'Synthetic public unit-test fixture: a function adds two integers. '+
     'What test could falsify its behavior? This is advisory only.',

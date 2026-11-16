@@ -18,6 +18,7 @@ From the source checkout:
 node scripts/chatgpt-plan-council.mjs status
 node scripts/chatgpt-plan-council.mjs login
 node scripts/chatgpt-plan-council.mjs models
+node scripts/chatgpt-plan-council.mjs confirm-plan-only
 node scripts/chatgpt-plan-council.mjs canary <MODEL_SLUG_FROM_MODELS>
 ```
 
@@ -25,7 +26,11 @@ node scripts/chatgpt-plan-council.mjs canary <MODEL_SLUG_FROM_MODELS>
 
 Tokens live under the current user's `~/.ultron/chatgpt-plan/` directory, outside the repository, protected with Unix mode `0600` or a Windows account-specific ACL. The CLI never displays token values, sends them through arguments, or makes a billable API-key call. The native OAuth refresh endpoint rotates short-lived access and refresh tokens under the issued client ID; a local lock prevents two simultaneous refreshes. After revocation, reconnect with `login`.
 
-On ChatGPT, review **Settings → Usage** and app limits/credit settings; disable optional credit spending if necessary to enforce $0 incremental spend. The provider **never uses the separately billed OpenAI API key**, but plan access shares your existing ChatGPT allowance and may be rate-limited.
+**Zero-additional-spend rule:** In ChatGPT **Settings → Usage**, locate the registered **Ultron.MW Council** app, turn off the optional setting that lets participating apps use credits, and set that app's saved **weekly usage limit below 100%** (for example, 95%). OpenAI says a below-100% app limit prevents credit usage for that app, even if credits are otherwise available. Its limit is a share of your existing plan allowance—not unlimited usage or an extra pool. Do **not** enable automatic credit purchases or add an OpenAI API billing key.
+
+After verifying the saved settings yourself, run `confirm-plan-only` in the same owner's terminal. It prompts you to enter the actual below-100% limit and to confirm credits are off. The CLI stores a private, account/host-bound acknowledgment valid for 24 hours, and refuses the `canary` before any inference if no matching current confirmation exists. **This acknowledgment is not an independent API readback of ChatGPT settings**; the below-100% limit in your account is the server-enforced safeguard. Other direct consumers of the library must enforce equivalent authorization and spending checks before live inference.
+
+The provider **never uses a separately billed OpenAI API key**. Included plan usage is finite and may reach its plan or app limit; the correct behavior is to stop until usage resets, never switch to Codex credits or paid API billing.
 
 ## Council integration
 
