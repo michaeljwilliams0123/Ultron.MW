@@ -90,3 +90,16 @@ test('trusted Council workflow waits for completed core CI without loading untru
  assert.match(yaml,/ref: main\s*\n\s*persist-credentials: false/);
  assert.match(yaml,/github-token: \$\{\{ steps\.app\.outputs\.token \}\}/);
 });
+
+test('automatic CI completion never executes the Coordinator PR-comment side effect',()=>{
+ const yaml=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
+ const effect=yaml.split('- name: Execute one real Coordinator PR COMMENT review')[1]
+  ?.split('- name: Retain Council execution evidence')[0];
+ assert.ok(effect,'effectful Coordinator step must remain separately gated');
+ assert.match(effect,/steps\.prepare\.outputs\.skip == 'false'/);
+ assert.match(effect,/github\.event_name != 'workflow_run'/,
+  'the automatic post-CI check must not dispatch a new GitHub comment');
+ assert.match(effect,/env\.OWNER_MODE == '1'/);
+ assert.match(yaml,/name: Publish check run as the Council Gate App/,
+  'post-CI status publisher must remain functional');
+});
