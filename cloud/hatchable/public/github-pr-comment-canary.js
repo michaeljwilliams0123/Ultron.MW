@@ -73,6 +73,11 @@ async function hydrateStateOnLoad(){
  }else if(data.state==='completed'){
   pendingHold=false;submitted=true;prepared=null;
   setStatus('Verified persisted receipt: '+String(data.receipt?.details?.commentUrl||'completion recorded'));
+ }else if(data.state==='denied_no_effect'){
+  // A terminal ledger denial is not an idle attempt. Never replay this grant.
+  pendingHold=false;submitted=true;prepared=null;
+  comment.value='';signable.value='';
+  setStatus('Terminal denied_no_effect: GitHub comment was not observed after reconciliation. This authorization cannot be replayed.');
  }else if(data.state==='idle'){
   pendingHold=false;prepared=null;submitted=false;
   setStatus('No pending execution for PR #'+pullRequest+'.');
