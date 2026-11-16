@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {generateKeyPairSync,sign} from 'node:crypto';
 import {evaluateTrustedCouncilGate,classifyTrustedRisk,ownerIntent,isOwnerAccount,
- gatePasses,buildGateCheckRun,resolveGatePublisher,selectCouncilTargetNumber,GATE_CHECK_NAME}
+ gatePasses,buildGateCheckRun,resolveGatePublisher,selectCouncilTargetNumber,
+ exactHeadReadState,GATE_CHECK_NAME}
  from '../src/council-trusted-gate.mjs';
 
 const HEAD='a'.repeat(40),BASE='b'.repeat(40),PR=456,REPO='michaeljwilliams0123/Ultron.MW';
@@ -126,6 +127,20 @@ test('fork, closed, non-main or stale evidence PRs hold',()=>{
  const m=evidence();m.receipt.modelReview.results.Skeptic.verdict='hold';
  assert.equal(run(m).status,'held');
 });
+test('exact-head API read races classify only an unchanged open PR as current',()=>{
+ const expected=pr();
+ const observed=pr();
+ assert.equal(exactHeadReadState(expected,observed),'current');
+ for(const mutate of [
+  p=>{p.head.sha='c'.repeat(40);},
+  p=>{p.base.sha='d'.repeat(40);},
+  p=>{p.state='closed';},
+  p=>{p.number=PR+1;},
+ ]){
+  const changed=pr();mutate(changed);
+  assert.equal(exactHeadReadState(expected,changed),'superseded');
+ }
+});
 test('check run is pass only for proven results and is named for the ruleset',()=>{
  const ok=buildGateCheckRun(run(),{sha:HEAD,prNumber:PR,detailsUrl:'https://x'});
  assert.equal(ok.name,GATE_CHECK_NAME);
@@ -146,7 +161,12 @@ test('trusted workflow loads only main, never runs PR code, and cannot forge via
  const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8')
   .replace(/\r\n/g,'\n');
  assert.match(y,/\n  pull_request_target:\n/);
- assert.doesNotMatch(y,/\n  pull_request:\n|workflow_run:/);
+ assert.doesNotMatch(y,/\n  pull_request:\n/);
+ assert.match(y,/\n  workflow_run:\n/);
+ assert.match(y,/workflow_run\.workflow_id == 388875616/);
+ assert.match(y,/workflow_run\.event == 'pull_request'/);
+ assert.match(y,/workflow_run\.conclusion == 'success'/);
+ assert.match(y,/workflow_run\.head_repository\.id == 1424939667/);
  // Every checkout is main; the PR head is never fetched.
  const checkouts=[...y.matchAll(/actions\/checkout@[a-f0-9]{40}[^\n]*\n\s+with:\n\s+ref: ([^\n]+)/g)].map(m=>m[1]);
  assert.deepEqual(checkouts,['main']);
@@ -157,6 +177,9 @@ test('trusted workflow loads only main, never runs PR code, and cannot forge via
  assert.match(y,/github-token: \$\{\{ steps\.app\.outputs\.token \}\}/);
  assert.match(y,/core\.exportVariable\('ORIGINAL_SECURITY_SIGNAL',risk\.security/);
  assert.match(y,/core\.exportVariable\('OWNER_MODE',intent\.owner/);
+ assert.equal((y.match(/gate\.exactHeadReadState\(/g)||[]).length,3,
+  'prepare, bounded-source read and final publication each reject superseded snapshots');
+ assert.doesNotMatch(y,/throw Error\('Council PR (?:head\/base changed during readback|changed before publish)/);
  assert.doesNotMatch(y,/354634860|michaeljwilliams0123ultron/);
  assert.doesNotMatch(y,/\$\{\{\s*github\.event\.(?:pull_request|issue)\.(?:title|body)/);
  assert.match(y,/Fail closed when the Council Gate App is not configured[\s\S]*exit 1/);
@@ -167,7 +190,9 @@ test('trusted gate supplies live exact-head CI evidence to its own debate',()=>{
  const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
  assert.match(y,/checks\.listForRef\(\{owner,repo,ref:pr\.head\.sha,per_page:100\}\)/);
  assert.match(y,/compareCommits\(\{owner,repo,base:pr\.base\.sha,head:pr\.head\.sha\}\)/);
- assert.match(y,/total_count>100/);
+ assert.match(y,/gate\.councilExactHeadCiReady\(checks\.data,pr\.head\.sha\)/);
+ assert.match(readFileSync(new URL('../src/council-trusted-gate.mjs',import.meta.url),'utf8'),
+  /inventory\.total_count>100/);
  assert.match(y,/COUNCIL_REVIEW_EVIDENCE_FILE.*write\('exact-head-ci.json',observed\)/);
  assert.ok(y.indexOf("COUNCIL_REVIEW_EVIDENCE_FILE")<y.indexOf('name: Run Council debate'));
 });

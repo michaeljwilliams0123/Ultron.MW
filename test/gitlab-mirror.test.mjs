@@ -49,6 +49,52 @@ test('mirror fast-forwards exactly, is idempotent, and never overwrites divergen
     assert.notEqual(bareGit(dst,'rev-parse','HEAD'),git(src,'rev-parse','HEAD'));
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+test('a superseded verified source exits neutrally without mutating the mirror',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ultron-mirror-race-'));
+  const src=join(dir,'source'),dst=join(dir,'mirror.git');
+  const canonical=join(dir,'canonical.git'),updater=join(dir,'updater');
+  try{
+    git(dir,'init','-b','main','source');
+    git(src,'config','user.name','Ultron CI');git(src,'config','user.email','ultron@example.test');
+    git(src,'-c','commit.gpgsign=false','commit','--allow-empty','-m','initial');
+    git(dir,'clone','--bare',src,dst);
+    const mirrorBefore=bareGit(dst,'rev-parse','refs/heads/main');
+
+    git(src,'-c','commit.gpgsign=false','commit','--allow-empty','-m','verified candidate');
+    const staleSource=git(src,'rev-parse','HEAD');
+    git(dir,'clone','--bare',src,canonical);
+    git(dir,'clone',canonical,updater);
+    git(updater,'config','user.name','Ultron Main');git(updater,'config','user.email','main@example.test');
+    git(updater,'-c','commit.gpgsign=false','commit','--allow-empty','-m','newer main');
+    git(updater,'push','origin','HEAD:main');
+    const currentMain=bareGit(canonical,'rev-parse','refs/heads/main');
+    assert.notEqual(currentMain,staleSource);
+
+    const run=spawnSync(bash,[script,dst,canonical],{cwd:src,encoding:'utf8'});
+    assert.equal(run.status,0,run.stderr);
+    assert.match(run.stdout,/SUPERSEDED/);
+    assert.equal(bareGit(dst,'rev-parse','refs/heads/main'),mirrorBefore,
+      'an obsolete run must not publish its older verified commit');
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('an unreadable canonical main fails closed without mutating the mirror',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ultron-mirror-unreadable-'));
+  const src=join(dir,'source'),dst=join(dir,'mirror.git');
+  const missing=join(dir,'missing-canonical.git');
+  try{
+    git(dir,'init','-b','main','source');
+    git(src,'config','user.name','Ultron CI');git(src,'config','user.email','ultron@example.test');
+    git(src,'-c','commit.gpgsign=false','commit','--allow-empty','-m','initial');
+    git(dir,'clone','--bare',src,dst);
+    const mirrorBefore=bareGit(dst,'rev-parse','refs/heads/main');
+    git(src,'-c','commit.gpgsign=false','commit','--allow-empty','-m','candidate');
+
+    const run=spawnSync(bash,[script,dst,missing],{cwd:src,encoding:'utf8'});
+    assert.equal(run.status,6);
+    assert.match(run.stderr,/canonical main missing or unreadable/i);
+    assert.equal(bareGit(dst,'rev-parse','refs/heads/main'),mirrorBefore);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
 test('mirror action stays disabled until owner config and retains no checkout credential',async()=>{
   const yml=legacyView('gitlab-mirror.yml');
   assert.match(yml,/ULTRON_GITLAB_MIRROR_ENABLED == 'true'/);
@@ -62,6 +108,8 @@ test('mirror action stays disabled until owner config and retains no checkout cr
   assert.match(yml,/\.conclusion == /);
   assert.match(yml,/\.status == /);
   assert.match(yml,/BLOCKED: no successful independent main Verify/);
+  assert.match(yml,/bash scripts\/mirror-gitlab\.sh https:\/\/gitlab\.com\/michaelj\.williams0123\/Ultron\.MW\.git https:\/\/github\.com\/michaeljwilliams0123\/Ultron\.MW\.git/);
+  assert.doesNotMatch(yml,/BLOCKED: exact-head GitHub main changed since verification/);
   assert.ok(yml.indexOf('Confirm independent successful Verify') <
     yml.indexOf('Verify canonical head then fast-forward GitLab'),
     'exact-main verified status must precede any token-authenticated push');

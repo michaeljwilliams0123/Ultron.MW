@@ -10,6 +10,11 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, edited]
   issue_comment:
     types: [created]
+  # Dependency trigger: core VERIFY must finish before a Gate App decision.
+  # Privileged job still checks out only trusted main, never PR code.
+  workflow_run:
+    workflows: ["Ultron core verification"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -30,6 +35,13 @@ jobs:
         github.event.comment.user.id == 308995719 &&
         (startsWith(github.event.comment.body, '/council override ') ||
          startsWith(github.event.comment.body, '/council recheck'))) ||
+       (github.event_name == 'workflow_run' &&
+        github.event.action == 'completed' &&
+        github.event.workflow_run.workflow_id == 388875616 &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.id == 1424939667 &&
+        github.event.workflow_run.pull_requests[0].number > 0) ||
        (github.event_name == 'workflow_dispatch' &&
         github.actor == 'michaeljwilliams0123' &&
         github.actor_id == '308995719' &&
@@ -38,7 +50,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     concurrency:
-      group: trusted-council-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
+      group: trusted-council-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -82,8 +94,18 @@ jobs:
             const comments=await github.paginate(github.rest.issues.listComments,
               {owner,repo,issue_number:number,per_page:100});
             const live=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
-            if(live.head.sha!==pr.head.sha||live.base.sha!==pr.base.sha)
-              throw Error('Council PR head/base changed during readback');
+            if(gate.exactHeadReadState(pr,live)==='superseded'){
+              core.notice('Council run superseded during data read; newer exact-head run owns the decision.');
+              core.setOutput('skip','true');return;
+            }
+            // A completed run might be superseded by a newer PR head/base;
+            // GitHub's workflow_run.run-name is not a trustworthy identifier.
+            if(context.eventName==='workflow_run' &&
+              (context.payload.workflow_run.head_sha!==pr.head.sha||
+               context.payload.workflow_run.pull_requests?.[0]?.base?.sha!==pr.base.sha)){
+              core.notice('Completed CI belongs to a superseded exact PR head/base.');
+              core.setOutput('skip','true');return;
+            }
             const complete=files.length===pr.changed_files&&files.length<3000;
             const override=[...comments].reverse().find(c=>
               gate.isOwnerAccount(c.user)&&typeof c.body==='string'&&
@@ -105,10 +127,14 @@ jobs:
                 github.rest.checks.listForRef({owner,repo,ref:pr.head.sha,per_page:100}),
                 github.rest.repos.compareCommits({owner,repo,base:pr.base.sha,head:pr.head.sha})
               ]);
-              if(checks.data?.total_count>100)throw Error('check-inventory-truncated');
+              if(!gate.councilExactHeadCiReady(checks.data,pr.head.sha)){
+                core.notice('Council CI incomplete; deferring Gate App decision until all exact-head checks finish.');
+                core.setOutput('skip','true');return;
+              }
               observed={pr,comparison:comparison.data,checkRuns:checks.data};
             } catch(error) {
               core.warning('Council CI evidence remains unverified: '+error.message);
+              core.setOutput('skip','true');return;
             }
             core.exportVariable('COUNCIL_REVIEW_EVIDENCE_FILE',write('exact-head-ci.json',observed));
             // Trusted-main-only exact-head source context; no arbitrary PR
@@ -147,8 +173,10 @@ jobs:
               const liveAgain=(await github.rest.pulls.get({
                 owner,repo,pull_number:number
               })).data;
-              if(liveAgain.head?.sha!==pr.head.sha||liveAgain.base?.sha!==pr.base.sha)
-                throw Error('council-ast-head-drift');
+              if(gate.exactHeadReadState(pr,liveAgain)==='superseded'){
+                core.notice('Council run superseded during bounded source read; newer exact-head run owns the decision.');
+                core.setOutput('skip','true');return;
+              }
               const e=scanCouncilChangedFiles({
                 sourceSha:pr.head.sha,prNumber:number,sources
               });
@@ -217,6 +245,7 @@ jobs:
       - name: Execute one real Coordinator PR COMMENT review with durable readback
         if: >-
           steps.prepare.outputs.skip == 'false' &&
+          github.event_name != 'workflow_run' &&
           env.OWNER_MODE == '1' &&
           vars.ULTRON_GITHUB_APP_ID == '5633654'
         continue-on-error: true
@@ -267,8 +296,11 @@ jobs:
             const {owner,repo}=context.repo;
             const sha=process.env.TARGET_SOURCE_SHA,number=Number(process.env.ITEM_NUMBER);
             const live=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
-            if(live.state!=='open'||live.head.sha!==sha||live.base.sha!==process.env.TARGET_BASE_SHA)
-              throw Error('Council PR changed before publish; a newer run will decide');
+            const expected={number,state:'open',head:{sha},base:{sha:process.env.TARGET_BASE_SHA}};
+            if(gate.exactHeadReadState(expected,live)==='superseded'){
+              core.notice('Council run superseded before publish; newer exact-head run owns the decision.');
+              return;
+            }
             let result=null;
             try{result=JSON.parse(fs.readFileSync('council-release-gate.json','utf8'));}catch{result=null;}
             const body=gate.buildGateCheckRun(result,{sha,prNumber:number,
