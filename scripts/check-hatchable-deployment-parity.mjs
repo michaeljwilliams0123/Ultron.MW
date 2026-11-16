@@ -36,9 +36,9 @@ export function run(args,sourceCollector=collectSourceFiles){
  const [,sourceSha,,manifestPath,,versionString]=args;
  if(!/^[1-9][0-9]*$/.test(versionString))throw Error('version-invalid');
  const decoded=JSON.parse(readFileSync(resolve(manifestPath),'utf8'));
- if(!Array.isArray(decoded)&&!(decoded&&decoded.version===Number(versionString)&&
-   Array.isArray(decoded.file_manifest)))throw Error('manifest-input-invalid');
- const deployedFiles=Array.isArray(decoded)?decoded:decoded.file_manifest;
+ if(!decoded||Array.isArray(decoded)||decoded.version!==Number(versionString)||
+   !Array.isArray(decoded.file_manifest))throw Error('manifest-input-invalid');
+ const deployedFiles=decoded.file_manifest;
  return compareHatchableDeployment({sourceSha,version:Number(versionString),
   sourceFiles:sourceCollector({sha:sourceSha}),deployedFiles:deployedFiles.filter(f=>f.path!=='README.md')});
 }
