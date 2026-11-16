@@ -161,7 +161,12 @@ test('trusted workflow loads only main, never runs PR code, and cannot forge via
  const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8')
   .replace(/\r\n/g,'\n');
  assert.match(y,/\n  pull_request_target:\n/);
- assert.doesNotMatch(y,/\n  pull_request:\n|workflow_run:/);
+ assert.doesNotMatch(y,/\n  pull_request:\n/);
+ assert.match(y,/\n  workflow_run:\n/);
+ assert.match(y,/workflow_run\.workflow_id == 388875616/);
+ assert.match(y,/workflow_run\.event == 'pull_request'/);
+ assert.match(y,/workflow_run\.conclusion == 'success'/);
+ assert.match(y,/workflow_run\.head_repository\.id == 1424939667/);
  // Every checkout is main; the PR head is never fetched.
  const checkouts=[...y.matchAll(/actions\/checkout@[a-f0-9]{40}[^\n]*\n\s+with:\n\s+ref: ([^\n]+)/g)].map(m=>m[1]);
  assert.deepEqual(checkouts,['main']);
@@ -185,7 +190,9 @@ test('trusted gate supplies live exact-head CI evidence to its own debate',()=>{
  const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
  assert.match(y,/checks\.listForRef\(\{owner,repo,ref:pr\.head\.sha,per_page:100\}\)/);
  assert.match(y,/compareCommits\(\{owner,repo,base:pr\.base\.sha,head:pr\.head\.sha\}\)/);
- assert.match(y,/total_count>100/);
+ assert.match(y,/gate\.councilExactHeadCiReady\(checks\.data,pr\.head\.sha\)/);
+ assert.match(readFileSync(new URL('../src/council-trusted-gate.mjs',import.meta.url),'utf8'),
+  /inventory\.total_count>100/);
  assert.match(y,/COUNCIL_REVIEW_EVIDENCE_FILE.*write\('exact-head-ci.json',observed\)/);
  assert.ok(y.indexOf("COUNCIL_REVIEW_EVIDENCE_FILE")<y.indexOf('name: Run Council debate'));
 });

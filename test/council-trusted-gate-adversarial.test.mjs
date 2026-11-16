@@ -129,7 +129,7 @@ test('Council dispatch and repo identity cannot be made into a locally hosted or
   const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
   assert.match(y,/runs-on: ubuntu-24[.]04/);
   assert.ok(!y.includes('runs-on: self-hosted')&&!y.includes('127.0.0.1')&&!y.includes('SD009WC7'));
-  assert.ok(y.includes('github.event.pull_request.number || github.event.issue.number || inputs.pr_number'));
+  assert.ok(y.includes('github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number'));
   assert.match(y,/cancel-in-progress: false/);
   assert.match(y,/github[.]actor == 'michaeljwilliams0123'/);
   assert.match(y,/github[.]actor_id == '308995719'/);
