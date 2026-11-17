@@ -163,8 +163,15 @@ function fallback(base,reason,deterministic){
 
 /** Builder proposes, Skeptic challenges, Sentinel checks security. */
 export async function runReasoningRound({input,deterministic,...opts}){
- const results={};
- for(const role of Object.keys(REASONING_ROLES))results[role]=await reasonAsRole({role,input,deterministic:deterministic?.[role],...opts});
+ // Only Builder, Skeptic and Sentinel are release-critical model-backed roles.
+ // Invoke them before consuming the remainder of the finite free-tier quota.
+ // Keep published result keys in the canonical seven-role order so identity
+ // attestations, role receipts and public reporting remain stable.
+ const critical=['Builder','Skeptic','Sentinel'];
+ const order=[...critical,...Object.keys(REASONING_ROLES).filter(role=>!critical.includes(role))];
+ const invoked={};
+ for(const role of order)invoked[role]=await reasonAsRole({role,input,deterministic:deterministic?.[role],...opts});
+ const results=Object.fromEntries(Object.keys(REASONING_ROLES).map(role=>[role,invoked[role]]));
  const vs=Object.values(results).map(r=>r.verdict);
  const disagreement=new Set(vs).size>1;
  return Object.freeze({results,disagreement,
