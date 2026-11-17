@@ -16,6 +16,10 @@ export function scoreCouncilEvidenceCoverage({
   if (securitySensitive) return 0.35;
   // Non-PR planning does not use a PR check-run inventory.
   if (!isPr) return 0.9;
+  // Identical malformed IDs are not provenance. Validate their shape before
+  // allowing independently fetched evidence to earn the verified score.
+  if (!/^[a-f0-9]{40}$/.test(sourceSha) ||
+      !Number.isSafeInteger(prNumber) || prNumber < 1) return 0.45;
 
   // Both independently fetched inputs must refer to the same exact PR head.
   const exactHeadChecks = reviewEvidence?.verified === true &&

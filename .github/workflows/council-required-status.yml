@@ -140,13 +140,13 @@ jobs:
             // Trusted-main-only exact-head source context; no arbitrary PR
             // code execution and no raw patch logging/provider forwarding.
             const patchComplete=complete&&files.length<=80&&
-              files.every(f=>!f.patch||f.patch.length<=2400);
+              files.every(f=>!f.patch||f.patch.length<=12000);
             core.exportVariable('COUNCIL_PR_FILES_FILE',write('exact-head-pr-files.json',{
-              sourceSha:pr.head.sha,prNumber:pr.number,complete:patchComplete,
+              sourceSha:pr.head.sha,baseSha:pr.base.sha,prNumber:pr.number,complete:patchComplete,
               files:files.slice(0,80).map(f=>({
                 filename:f.filename,status:f.status,
                 additions:f.additions,deletions:f.deletions,
-                patch:typeof f.patch==='string'?f.patch.slice(0,2400):''
+                patch:typeof f.patch==='string'?f.patch.slice(0,12000):''
               }))
             }));
             // Source is fetched at the verified PR head and parsed as data;
@@ -251,7 +251,7 @@ jobs:
         continue-on-error: true
         env:
           COUNCIL_COORDINATOR_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
-          COUNCIL_COORDINATOR_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+          COUNCIL_COORDINATOR_PRIVATE_KEY: ${{ secrets.ULTRON_COORDINATOR_PRIVATE_KEY }}
         run: |
           if [ -f scripts/council-live-review.mjs ]; then
             node scripts/council-live-review.mjs
