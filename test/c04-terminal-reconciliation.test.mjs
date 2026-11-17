@@ -13,14 +13,19 @@ function setup({providerDenied403=false,commentsPerPage=0,completeRace=false}={}
  const prepared={pullRequest:number,idempotencyKey:key,commentBody,
   bodySha256:createHash('sha256').update(commentBody).digest('hex')};
  const digest='d'.repeat(64);
- const state={value:'reconcile_required',events:[],queries:[],writes:0,gets:0};
+ const completedReceipt={idempotencyKey:key,status:'reconciled_success',race:'completed',
+  details:{repository:'michaeljwilliams0123/Ultron.MW',operationDigest:digest,
+   pullRequest:number,bodySha256:prepared.bodySha256,commentId:12345,
+   commentUrl:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/478#issuecomment-12345',
+   actor:'ultron-coordinator[bot]',appId:5633654,personaRole:'builder',remoteVerified:true}};
+ const state={value:'reconcile_required',events:[],queries:[],writes:0,gets:0,completedReceipt};
  const db={async query(sql,params){
   state.queries.push({sql,params});
   if(sql.includes('SELECT idempotency_key,state,operation_digest')){
    return {rows:[{state:state.value,operation_digest:digest,
     target_number:number,body_sha256:prepared.bodySha256,
     created_at:new Date(Date.now()-60000).toISOString(),
-    receipt:state.value==='completed'?{race:'completed'}:null}]};
+    receipt:state.value==='completed'?completedReceipt:null}]};
   }
   if(sql.includes('WITH denial AS') && sql.includes('denied_no_effect')){
    if(completeRace){
@@ -80,7 +85,7 @@ test('a concurrent completion wins over the denial compare-and-set without being
  const t=setup({providerDenied403:true,completeRace:true});
  const r=await reconcilePrCommentCanary({db:t.db,prepared:t.prepared,
   operationDigest:t.digest,fetchImpl:t.fetchImpl});
- assert.deepEqual(r,{status:'recovered_success',receipt:{race:'completed'}});
+ assert.deepEqual(r,{status:'recovered_success',receipt:t.state.completedReceipt});
  assert.equal(t.state.value,'completed');
  assert.equal(t.state.writes,0);
  assert.equal(t.state.gets,1);
