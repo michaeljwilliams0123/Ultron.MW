@@ -304,6 +304,27 @@ async function row(db,key){
  if(result?.rows?.length!==1)fail('ledger-readback-unavailable');
  return result.rows[0];
 }
+// A terminal label alone is not evidence of a successful provider write.
+// The durable receipt must be bound to this exact signed operation and to
+// an independently read-back Coordinator App comment. No network is needed.
+function verifiedStoredReceipt(stored,prepared,digest){
+ const receipt=stored?.receipt,details=receipt?.details;
+ const canonical='https://github.com/'+REPO+'/pull/'+prepared.pullRequest+
+  '#issuecomment-'+details?.commentId;
+ const alternate='https://github.com/'+REPO+'/issues/'+prepared.pullRequest+
+  '#issuecomment-'+details?.commentId;
+ if(receipt?.idempotencyKey!==prepared.idempotencyKey||
+   !['success','reconciled_success'].includes(receipt?.status)||
+   details?.repository!==REPO||details?.operationDigest!==digest||
+   details?.pullRequest!==prepared.pullRequest||
+   details?.bodySha256!==prepared.bodySha256||
+   !Number.isSafeInteger(details?.commentId)||details.commentId<1||
+   (details?.commentUrl!==canonical&&details?.commentUrl!==alternate)||
+   details?.actor!==BOT_LOGIN||details?.appId!==APP_ID||
+   details?.personaRole!=='builder'||details?.remoteVerified!==true)
+  fail('receipt-persistence-unverified');
+ return receipt;
+}
 async function markReconcile(db,prepared){
  try{await db.query(`UPDATE github_pr_comment_executions
   SET state='reconcile_required',updated_at=now()
@@ -327,7 +348,52 @@ async function complete(db,prepared,digest,comment,status){
  const stored=await row(db,prepared.idempotencyKey);
  if(stored.state!=='completed'||stored.receipt?.details?.commentId!==Number(comment.id))
   fail('receipt-persistence-unverified');
- return Object.freeze({status,receipt:stored.receipt});
+ return Object.freeze({status,receipt:verifiedStoredReceipt(stored,prepared,digest)});
+}
+/**
+ * A definitive GitHub 403 is only a candidate terminal denial. Exactly one
+ * owner-approved comment POST must already be reflected in the durable event
+ * ledger, and a complete authenticated readback must have found no matching
+ * comment. Missing/ambiguous evidence remains reconcile_required.
+ *
+ * The terminal transition and its audit event are one SQL statement so
+ * persistence failure cannot quietly create an unaudited terminal state.
+ */
+async function markDeniedNoEffect(db,prepared,digest){
+ const r=await db.query(`WITH denial AS (
+  SELECT 1 FROM brain_events
+  WHERE event_type='github-pr-comment-stage'
+   AND details->>'idempotencyKey'=$1
+   AND details->>'stage'='reconcile_required'
+   AND details->>'reason'='provider-write-denied'
+   AND details->>'providerHttpStatus'='403'
+  LIMIT 1
+ ), write_intent AS (
+  SELECT count(*)::int AS total FROM brain_events
+  WHERE event_type='github-pr-comment-stage'
+   AND details->>'idempotencyKey'=$1
+   AND details->>'stage'='provider_write_intent'
+ ), moved AS (
+  UPDATE github_pr_comment_executions
+  SET state='denied_no_effect',updated_at=now()
+  WHERE idempotency_key=$1 AND operation_digest=$2
+   AND state='reconcile_required'
+   AND EXISTS(SELECT 1 FROM denial)
+   AND (SELECT total FROM write_intent)=1
+  RETURNING idempotency_key
+ ), evidence AS (
+  INSERT INTO brain_events(event_type,details)
+  SELECT 'github-pr-comment-stage',
+   jsonb_build_object('idempotencyKey',idempotency_key,
+    'stage','denied_no_effect','reason','readback-not-found')
+  FROM moved RETURNING id
+ ) SELECT (SELECT count(*)::int FROM moved) AS claims,
+   (SELECT count(*)::int FROM evidence) AS events`,
+ [prepared.idempotencyKey,digest]);
+ const counts=r?.rows?.[0];
+ if(counts?.claims===0&&counts?.events===0)return null;
+ if(counts?.claims!==1||counts?.events!==1)fail('reconciliation-not-admitted');
+ return Object.freeze({status:'denied_no_effect',receipt:null});
 }
 export async function submitPrCommentCanary({
  db,prepared,operationDigest:digest,appCredentials,fetchImpl=globalThis.fetch,
@@ -407,7 +473,8 @@ export async function reconcilePrCommentCanary({
  const stored=await row(db,prepared.idempotencyKey);
  if(stored.operation_digest!==digest||databaseId(stored.target_number)!==prepared.pullRequest||
    stored.body_sha256!==prepared.bodySha256)fail('intent-conflict');
- if(stored.state==='completed')return Object.freeze({status:'recovered_success',receipt:stored.receipt});
+ if(stored.state==='completed')return Object.freeze({status:'recovered_success',
+  receipt:verifiedStoredReceipt(stored,prepared,digest)});
  if(!['in_flight','reconcile_required'].includes(stored.state))fail('reconciliation-not-admitted');
  await recordPrCommentStage(db,prepared,'reconciliation_started');
  const token=appCredentials?await tokenForComment(appCredentials,fetchImpl,clock):'';
@@ -418,6 +485,7 @@ export async function reconcilePrCommentCanary({
  const since=Number.isFinite(reservedAt)?
   '&since='+encodeURIComponent(new Date(reservedAt-60000).toISOString()):'';
  const matches=[];
+ let completeScan=false;
  for(let page=1;page<=5;page++){
   const response=await provider(fetchImpl,
    `${API}/repos/${REPO}/issues/${prepared.pullRequest}/comments?per_page=100&page=${page}${since}`,{
@@ -426,7 +494,23 @@ export async function reconcilePrCommentCanary({
   let comments;try{comments=await response.json();}catch{fail('readback-unavailable');}
   if(!Array.isArray(comments))fail('readback-unavailable');
   matches.push(...comments.filter(comment=>verifiedComment(comment,prepared)));
-  if(comments.length<100)break;
+  if(comments.length<100){completeScan=true;break;}
+ }
+ // Five full pages never establish absence or uniqueness: results might be
+ // truncated, so leave the reservation pending rather than infer no effect.
+ if(!completeScan)fail('readback-unavailable');
+ if(matches.length===0){
+  const terminal=await markDeniedNoEffect(db,prepared,digest);
+  if(terminal)return terminal;
+  // A second reconciler can complete the reservation after our bounded
+  // readback but before the denial compare-and-set. Do not overwrite or
+  // downgrade that terminal outcome; return its durable result instead.
+  const current=await row(db,prepared.idempotencyKey);
+  if(current.state==='completed')
+   return Object.freeze({status:'recovered_success',
+    receipt:verifiedStoredReceipt(current,prepared,digest)});
+  if(current.state==='denied_no_effect')
+   return Object.freeze({status:'denied_no_effect',receipt:null});
  }
  if(matches.length!==1){
   await markReconcile(db,prepared);
