@@ -4,7 +4,7 @@
  * Includes multi-turn inter-self dialogue transcripts.
  */
 import { writeFileSync, readFileSync } from 'node:fs';
-import {buildCouncilPublication} from '../src/council-publication.mjs';
+import {buildCouncilPublication,fingerprintCouncilEvidence} from '../src/council-publication.mjs';
 import { deliberatePlan } from '../src/grokbot-governor.mjs';
 import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs';
 import {assessCouncil} from '../src/council-members.mjs';
@@ -53,6 +53,9 @@ try{
 
 const flags = deriveCouncilFlags({title,body,isPr,
   originalSecuritySignal:process.env.ORIGINAL_SECURITY_SIGNAL});
+const evidenceFingerprint=fingerprintCouncilEvidence({
+ sourceSha,reviewEvidence,fileEvidence
+});
 
 let evidenceCoverage = scoreCouncilEvidenceCoverage({
  isPr,securitySensitive:flags.security,reviewEvidence,fileEvidence,
@@ -106,7 +109,7 @@ const dialogue = buildInterSelfDialogue({
 
 const publication=buildCouncilPublication({
   title,body,isPr,sourceSha,positions:receipt.positions,
-  ownerMode,flags
+  evidenceFingerprint,ownerMode,flags
 });
 const roleLabels={
   'ultron-builder':'Builder','ultron-skeptic':'Skeptic',
