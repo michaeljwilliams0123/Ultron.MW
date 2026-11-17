@@ -473,6 +473,14 @@ export async function reconcilePrCommentCanary({
  if(matches.length===0){
   const terminal=await markDeniedNoEffect(db,prepared,digest);
   if(terminal)return terminal;
+  // A second reconciler can complete the reservation after our bounded
+  // readback but before the denial compare-and-set. Do not overwrite or
+  // downgrade that terminal outcome; return its durable result instead.
+  const current=await row(db,prepared.idempotencyKey);
+  if(current.state==='completed')
+   return Object.freeze({status:'recovered_success',receipt:current.receipt});
+  if(current.state==='denied_no_effect')
+   return Object.freeze({status:'denied_no_effect',receipt:null});
  }
  if(matches.length!==1){
   await markReconcile(db,prepared);

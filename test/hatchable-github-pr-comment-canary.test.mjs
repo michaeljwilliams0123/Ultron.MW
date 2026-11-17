@@ -470,6 +470,13 @@ test('trusted permission header is retained as safe ledger metadata after a 403 
  assert.deepEqual(terminal,{status:'denied_no_effect',receipt:null});
  assert.equal((await h.db.query('SELECT state FROM github_pr_comment_executions')).rows[0].state,
   'denied_no_effect');
+ const terminalStages=(await h.db.query(`SELECT details->>'stage' AS stage
+  FROM brain_events WHERE event_type='github-pr-comment-stage'`)).rows.map(row=>row.stage);
+ assert.equal(terminalStages.filter(stage=>stage==='denied_no_effect').length,1,
+  'the migration-backed terminal transition records exactly one audit event');
+ await assert.rejects(h.db.query(`UPDATE github_pr_comment_executions
+  SET state='reconcile_required' WHERE idempotency_key=$1`,[h.prepared.idempotencyKey]),
+ /github-pr-comment-terminal-immutable/);
  await assert.rejects(reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
   operationDigest:h.digest,fetchImpl}),/reconciliation-not-admitted/);
  assert.equal(writeCount,1,'reconciliation must never dispatch a second provider POST');
