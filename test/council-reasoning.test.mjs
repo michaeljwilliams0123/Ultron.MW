@@ -53,17 +53,17 @@ test('round records invocations and disagreement',async()=>{
  assert.equal(d.aiReasoned,false);assert.equal(d.modelInvocations,0);
 });
 
-test('Council workflow forwards external model keys only to debate and ledger flag only to actions',()=>{
+test('Council workflow exposes model keys only to debate',()=>{
  const workflow=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
  assert.match(workflow,/GEMINI_API_KEY:\s*\$\{\{ secrets\.GEMINI_API_KEY \}\}/);
  assert.match(workflow,/GROQ_API_KEY:\s*\$\{\{ secrets\.GROQ_API_KEY \}\}/);
- assert.match(workflow,/COUNCIL_LEDGER_REQUIRED:\s*\$\{\{ vars\.COUNCIL_LEDGER_REQUIRED \}\}/);
  const debate=workflow.split('- name: Run owner-first council debate')[1]?.split('- name: Post council report')[0]||'';
  const actions=workflow.split('- name: Council members act under their own App identities')[1]?.split('- name: Upload receipt artifact')[0]||'';
  assert.match(debate,/GEMINI_API_KEY/);
  assert.match(debate,/GROQ_API_KEY/);
  assert.doesNotMatch(actions,/GEMINI_API_KEY|GROQ_API_KEY/);
- assert.match(actions,/COUNCIL_LEDGER_REQUIRED/);
+ assert.match(actions,/node scripts\/council-act\.mjs/);
+ assert.doesNotMatch(actions,/COUNCIL_LEDGER_REQUIRED/);
 });
 
 test('all seven model roles are real prompts, not three prompts relabeled seven times',async()=>{

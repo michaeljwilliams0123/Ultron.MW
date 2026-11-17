@@ -182,3 +182,13 @@ test('fails closed: no ledger, no external write',async()=>{
  const r=await runLedgeredAction({ledger,intent:intent(),execute:async()=>{writes++;return{status:'done'};}});
  assert.equal(r.status,'blocked');assert.equal(r.reason,'ledger-unavailable');assert.equal(writes,0);
 });
+
+test('provider readback after an interrupted write requires durable acknowledgment',{skip},async()=>{
+ const db=await freshDb();
+ const ledger=createLedgerClient(transportFor(db,{dropAck:true}));
+ const receipt=await receiptFor();
+ const r=await runLedgeredAction({ledger,sleepMs:1,intent:intent(),
+  probe:async()=>({receipt}),execute:async()=>{throw Error('timeout after server accepted');}});
+ assert.equal(r.status,'ack-interrupted');
+ assert.equal((await cloud.readExecution(db,r.executionKey)).state,'dispatched');
+});

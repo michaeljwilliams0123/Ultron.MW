@@ -426,8 +426,6 @@ jobs:
           steps.debate.outputs.skipped != 'true' &&
           env.OWNER_MODE == '1' &&
           (github.event_name == 'issues' || github.event_name == 'workflow_dispatch')
-        env:
-          COUNCIL_LEDGER_REQUIRED: ${{ vars.COUNCIL_LEDGER_REQUIRED }}
         run: node scripts/council-act.mjs
 
       - name: Upload receipt artifact
