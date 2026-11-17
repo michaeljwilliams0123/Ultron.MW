@@ -347,11 +347,18 @@ async function markDeniedNoEffect(db,prepared,digest){
    AND details->>'reason'='provider-write-denied'
    AND details->>'providerHttpStatus'='403'
   LIMIT 1
+ ), write_intent AS (
+  SELECT count(*)::int AS total FROM brain_events
+  WHERE event_type='github-pr-comment-stage'
+   AND details->>'idempotencyKey'=$1
+   AND details->>'stage'='provider_write_intent'
  ), moved AS (
   UPDATE github_pr_comment_executions
   SET state='denied_no_effect',updated_at=now()
   WHERE idempotency_key=$1 AND operation_digest=$2
-   AND state='reconcile_required' AND EXISTS(SELECT 1 FROM denial)
+   AND state='reconcile_required'
+   AND EXISTS(SELECT 1 FROM denial)
+   AND (SELECT total FROM write_intent)=1
   RETURNING idempotency_key
  ), evidence AS (
   INSERT INTO brain_events(event_type,details)
