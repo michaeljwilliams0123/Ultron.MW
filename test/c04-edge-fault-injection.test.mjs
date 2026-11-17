@@ -8,7 +8,7 @@ const source=readFileSync(new URL('../cloud/hatchable/lib/github-pr-comment-cana
 const {canonicalCanaryComment,reconcilePrCommentCanary}=await import(
  'data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const NUMBER=479,KEY='ultron-task-c04-pr479-'+'a'.repeat(24),DIGEST='b'.repeat(64);
-const URL='https://github.com/michaeljwilliams0123/Ultron.MW/pull/479#issuecomment-12345';
+const COMMENT_URL='https://github.com/michaeljwilliams0123/Ultron.MW/pull/479#issuecomment-12345';
 function prepared(){
  const commentBody=canonicalCanaryComment({pullRequest:NUMBER,idempotencyKey:KEY});
  return {pullRequest:NUMBER,idempotencyKey:KEY,commentBody,
@@ -18,11 +18,11 @@ function validReceipt(p=prepared(),digest=DIGEST){
  return {idempotencyKey:p.idempotencyKey,status:'success',details:{
   repository:'michaeljwilliams0123/Ultron.MW',operationDigest:digest,
   pullRequest:p.pullRequest,bodySha256:p.bodySha256,commentId:12345,
-  commentUrl:URL,actor:'ultron-coordinator[bot]',appId:5633654,
+  commentUrl:COMMENT_URL,actor:'ultron-coordinator[bot]',appId:5633654,
   personaRole:'builder',remoteVerified:true}};
 }
 function botComment(p=prepared()){
- return {id:12345,body:p.commentBody,html_url:URL,
+ return {id:12345,body:p.commentBody,html_url:COMMENT_URL,
   user:{login:'ultron-coordinator[bot]',id:353078104,type:'Bot'},
   performed_via_github_app:{id:5633654,slug:'ultron-coordinator'}};
 }
