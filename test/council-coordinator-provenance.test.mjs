@@ -22,6 +22,11 @@ test('trusted Council source extraction carries full GitHub patch into bounded r
  assert.doesNotMatch(y,/f\.patch\.slice\(0,2400\)/);
 });
 
+test('trusted Council file inventory pins the CI base SHA as well as the PR head',()=>{
+ const y=workflow();
+ assert.match(y,/sourceSha:pr\.head\.sha,baseSha:pr\.base\.sha,prNumber:pr\.number,complete:patchComplete/);
+});
+
 test('bounded source review retains late complete-scan and denial guards instead of front-only truncation',()=>{
  const lines=['@@ -329,1 +329,100 @@',
   '+ const persisted403 = providerWriteDenied === true;',
