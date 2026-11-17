@@ -1,0 +1,56 @@
+name: Ultron artifact compatibility canary
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/artifact-compatibility-canary.yml'
+permissions:
+  contents: read
+jobs:
+  roundtrip:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Create public synthetic exact-head evidence
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p evidence
+          printf '%s\n' "$SOURCE_SHA" > evidence/source-sha.txt
+          printf '%s\n' 'Ultron issue 334 synthetic artifact roundtrip' > evidence/payload.txt
+          (cd evidence && sha256sum source-sha.txt payload.txt > SHA256SUMS)
+      - name: Upload current v6 baseline
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: issue334-v6-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload v7 candidate using compatible zipped mode
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: issue334-v7-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
+          path: evidence/
+          archive: true
+          if-no-files-found: error
+          retention-days: 7
+      - name: Download v6 with existing consumer
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: issue334-v6-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
+          path: readback/v6
+      - name: Download v7 with existing consumer
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: issue334-v7-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
+          path: readback/v7
+      - name: Verify downloaded contents and source binding
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for version in v6 v7; do
+            (cd "readback/$version" && sha256sum --check SHA256SUMS)
+            test "$(cat "readback/$version/source-sha.txt")" = "$SOURCE_SHA"
+            diff -ru evidence "readback/$version"
+          done
+          diff -ru readback/v6 readback/v7
