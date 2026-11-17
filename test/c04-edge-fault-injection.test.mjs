@@ -37,10 +37,12 @@ function makeCase({state='reconcile_required',receipt=null,pages={1:[]},listStat
     body_sha256:bodySha??p.bodySha256,created_at:new Date('2026-11-17T00:00:00Z').toISOString(),
     receipt:storedReceipt}]};
   }
+  // Compound terminal SQL contains a nested INSERT; match the full CTE
+  // before the generic append-only event fixture.
+  if(sql.includes('WITH denial AS'))return {rows:[deniedCounts]};
   if(sql.includes('INSERT INTO brain_events')){
    events.push(params);return {rows:[{id:events.length}]};
   }
-  if(sql.includes('WITH denial AS'))return {rows:[deniedCounts]};
   if(sql.includes("SET state='reconcile_required'")){if(current==='in_flight')current='reconcile_required';return {rows:[]};}
   if(sql.includes("SET\n   state='completed'")||sql.includes("SET state='completed'")||
       (sql.includes("UPDATE github_pr_comment_executions SET")&&sql.includes("state='completed'"))){
