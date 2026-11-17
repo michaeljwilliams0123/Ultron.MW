@@ -10,7 +10,10 @@ const PRIVATE=/\b(mahoraga[-_ ]?private|confidential|internal[-_ ]only|do not sh
 const SECRET_PATH=/(^|\/)(\.env(?:\.|$)|\.npmrc$|id_rsa$|[^/]+\.pem$|[^/]+\.key$)/i;
 const clamp=(v,min,max,defaultValue)=>Number.isSafeInteger(v)&&v>=min&&v<=max?v:defaultValue;
 function safePath(value){
+ // GitHub filenames are untrusted too: a token in a path must not be
+ // exposed in the model-facing file header even when the patch is clean.
  if(typeof value!=='string'||value.length>220||!value||
+  SECRET.test(value)||PRIVATE.test(value)||
   /[\x00-\x1f\x7f]/.test(value)||value.startsWith('/')||
   value.split('/').some(segment=>segment==='..'||segment==='.'||!segment))return null;
  return value;
