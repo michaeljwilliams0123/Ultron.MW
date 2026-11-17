@@ -126,3 +126,31 @@ test('P0: readback uses persisted digest and existing API, not a new mutation en
  assert.match(api,/req\.member\?\.handle/);
  assert.doesNotMatch(api,/\/reserve'|c04_execution_attempts|router\.post/);
 });
+
+
+test('terminal denied-no-effect remains visible to owner status GET',async()=>{
+ const queries=[];
+ const handler=statusHandler({query:async(sql,params)=>{
+  queries.push({sql,params});
+  return {rows:[{state:'denied_no_effect',
+   idempotency_key:'ultron-task-c04-pr448-'+'d'.repeat(24),
+   target_number:448,body_sha256:'b'.repeat(64),receipt:null}]};
+ }});
+ const res=response();
+ await handler({member:{handle:'michaeljwilliams0123'},query:{pr:'448'}},res);
+ assert.equal(res.statusCode,200);
+ assert.equal(res.body.state,'denied_no_effect');
+ assert.match(queries[0].sql,/denied_no_effect/,'terminal status must not be filtered from the database');
+ assert.deepEqual(Array.from(queries[0].params),['michaeljwilliams0123/Ultron.MW',448]);
+});
+
+test('terminal denied-no-effect UI blocks replay and tells owner what happened',async()=>{
+ const app=browser({state:'denied_no_effect'});
+ await app.flush();
+ assert.equal(app.nodes['load-target'].disabled,true);
+ assert.equal(app.nodes.prepare.disabled,true);
+ assert.equal(app.nodes.submit.disabled,true);
+ assert.equal(app.nodes.reconcile.disabled,true);
+ assert.match(app.nodes.status.textContent,/denied_no_effect|terminal/i);
+ assert.equal(app.calls.filter(c=>c.mode==='submit'||c.mode==='reconcile').length,0);
+});

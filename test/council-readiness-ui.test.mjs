@@ -26,7 +26,7 @@ test('Council UI shows unverified App identities without implying release approv
   readyForProduction:false,githubRoleInstallationsObserved:0,roleCount:7,
   missingTables:[],rolesUnverified:['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion']});
  assert.equal(result.tile.dataset.state,'warning');
- assert.match(result.value.textContent,/Not release ready/);
+ assert.match(result.value.textContent,/Council wiring incomplete/);
  assert.match(result.detail.textContent,/0 of 7 GitHub App identities verified/);
  assert.equal(result.calls[0].url,'/api/brain/council-readiness');
  assert.equal(result.calls[0].options.credentials,'same-origin');
@@ -37,4 +37,21 @@ test('Council UI marks failed readiness readback as unverified',async()=>{
  assert.equal(result.tile.dataset.state,'error');
  assert.match(result.value.textContent,/Unverified/);
  assert.doesNotMatch(result.detail.textContent,/ready/i);
+});
+
+test('wiring readiness never claims independently accepted production release',async()=>{
+ const result=await render({schema:'ultron.council.wiring-readiness.v1',
+  readyForProduction:true,githubRoleInstallationsObserved:7,roleCount:7,
+  missingTables:[],rolesUnverified:[]});
+ assert.equal(result.tile.dataset.state,'warning');
+ assert.equal(result.value.textContent,'Council wiring ready');
+ assert.match(result.detail.textContent,/release acceptance checked separately/);
+ assert.doesNotMatch(result.value.textContent,/Release ready|Release accepted/);
+});
+test('inconsistent identity counts fail closed instead of a misleading readiness status',async()=>{
+ const result=await render({schema:'ultron.council.wiring-readiness.v1',
+  readyForProduction:true,githubRoleInstallationsObserved:8,roleCount:7,
+  missingTables:[],rolesUnverified:[]});
+ assert.equal(result.tile.dataset.state,'error');
+ assert.equal(result.value.textContent,'Unverified');
 });

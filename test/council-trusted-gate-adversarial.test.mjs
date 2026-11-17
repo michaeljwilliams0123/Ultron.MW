@@ -79,7 +79,9 @@ test('publisher cannot be impersonated by a generic Actions token or malformed i
 
 test('trusted workflow retains dedicated App publication and immutable PR readback',()=>{
   const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
-  assert.match(y,/live\.head\.sha!==sha\|\|live\.base\.sha!==process\.env\.TARGET_BASE_SHA/);
+  assert.equal((y.match(/gate\.exactHeadReadState\(/g)||[]).length,3);
+  assert.match(y,/Council run superseded before publish; newer exact-head run owns the decision/);
+  assert.doesNotMatch(y,/Council PR changed before publish|Council PR head\/base changed during readback/);
   assert.match(y,/permission-checks: write/);
   assert.match(y,/github-token: \$\{\{ steps\.app\.outputs\.token \}\}/);
   assert.match(y,/Fail closed when the Council Gate App is not configured[\s\S]*exit 1/);
@@ -127,7 +129,7 @@ test('Council dispatch and repo identity cannot be made into a locally hosted or
   const y=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
   assert.match(y,/runs-on: ubuntu-24[.]04/);
   assert.ok(!y.includes('runs-on: self-hosted')&&!y.includes('127.0.0.1')&&!y.includes('SD009WC7'));
-  assert.ok(y.includes('github.event.pull_request.number || github.event.issue.number || inputs.pr_number'));
+  assert.ok(y.includes('github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number'));
   assert.match(y,/cancel-in-progress: false/);
   assert.match(y,/github[.]actor == 'michaeljwilliams0123'/);
   assert.match(y,/github[.]actor_id == '308995719'/);
