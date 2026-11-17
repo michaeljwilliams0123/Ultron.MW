@@ -114,3 +114,25 @@ test('Gemini generateContent asks for bounded structured JSON response',async()=
  assert.deepEqual(request.generationConfig.responseJsonSchema.properties.verdict.enum,
   ['proceed','hold','revise']);
 });
+
+test('release-critical real model roles run before advisory roles under free-tier quota',async()=>{
+ const {REASONING_ROLES}=await import('../src/council-reasoning.mjs');
+ const used=[];
+ const response=JSON.stringify({verdict:'proceed',confidence:0.7,rationale:'bounded source reviewed',
+  findings:[],tests:[],disagreements:[]});
+ const fetchImpl=async(_url,opts)=>{
+  const req=JSON.parse(opts.body);
+  const prompt=req.systemInstruction.parts[0].text;
+  const role=Object.entries(REASONING_ROLES).find(([,text])=>prompt.startsWith(text))?.[0];
+  used.push(role);
+  return {ok:true,status:200,headers:new Map(),
+   json:async()=>({candidates:[{content:{parts:[{text:response}]}}]})};
+ };
+ const round=await runReasoningRound({input:'public simulated exact-head source',
+  env:{GEMINI_API_KEY:'test'},fetchImpl,order:['google']});
+ assert.deepEqual(used.slice(0,3),['Builder','Skeptic','Sentinel'],
+  'critical Council release reviewers must not consume leftover quota');
+ assert.deepEqual(Object.keys(round.results),Object.keys(REASONING_ROLES),
+  'role publication order and identity labels must remain stable');
+ assert.equal(round.aiReasoned,true);
+});
