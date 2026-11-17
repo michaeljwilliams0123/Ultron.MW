@@ -126,6 +126,29 @@ jobs:
               originalIssueBody = String(issue.body || '');
               itemNumber = Number(issue.number) || 0;
               isPr = issue.pull_request ? 'true' : 'false';
+              if (isPr === 'true') {
+                // An issue_comment webhook has no PR head SHA. Read the current
+                // PR from GitHub before collecting exact-head CI/patch evidence.
+                if (comment.user?.login !== 'michaeljwilliams0123' ||
+                    context.actor !== 'michaeljwilliams0123' ||
+                    !/^\s*\/council(?:\s|$)/.test(body))
+                  throw Error('council-pr-comment-owner-command-required');
+                const {data:pr} = await github.rest.pulls.get({
+                  owner:context.repo.owner,repo:context.repo.repo,
+                  pull_number:itemNumber
+                });
+                if (pr.state !== 'open' || pr.base?.ref !== 'main' ||
+                    pr.head?.repo?.id !== 1424939667 ||
+                    pr.base?.repo?.id !== 1424939667)
+                  throw Error('council-pr-comment-out-of-scope');
+                targetSourceSha = String(pr.head?.sha || '');
+                if (!/^[a-f0-9]{40}$/.test(targetSourceSha))
+                  throw Error('council-pr-comment-head-sha-invalid');
+                // Give the model the authoritative PR description and GitHub
+                // exact-head evidence, never the slash command as its spec.
+                title = String(pr.title || title);
+                body = String(pr.body || originalIssueBody || '').slice(0,6000);
+              }
             } else if (context.eventName === 'workflow_dispatch') {
               const inputs = context.payload.inputs || {};
               itemNumber = Number(inputs.item_number);
@@ -197,9 +220,13 @@ jobs:
             // Execute read-only CI validation within this *trusted* extraction
             // step. Council runs from main; no PR-supplied code is executed.
             if (isPr === 'true') {
+              // Both exact-head CI and changed-file readbacks must share this
+              // SHA; a try-block-local declaration silently broke the latter.
+              const sha = targetSourceSha;
+              // Capture the CI base once; a later files readback must match it.
+              let ciBaseSha = '';
               let observed = {};
               try {
-                const sha = targetSourceSha;
                 if (!/^[a-f0-9]{40}$/.test(sha||'') ||
                     !Number.isSafeInteger(itemNumber) || itemNumber<1)
                   throw Error('invalid-exact-head-pr-target');
@@ -221,6 +248,7 @@ jobs:
                 ]);
                 if (checks.data?.total_count>100)
                   throw Error('check-inventory-truncated');
+                ciBaseSha = current.base.sha;
                 observed={pr:current,comparison:comparison.data,checkRuns:checks.data};
               } catch (error) {
                 core.warning?.('Council CI evidence remains unverified: '+error.message);
@@ -237,8 +265,9 @@ jobs:
                 const before=(await github.rest.pulls.get({
                   owner,repo,pull_number:itemNumber
                 })).data;
-                if(before.state!=='open'||before.head?.sha!==sha)
-                  throw Error('council-patch-head-drift');
+                if(before.state!=='open'||before.head?.sha!==sha||
+                  before.base?.sha !== ciBaseSha)
+                  throw Error('council-patch-head-or-base-drift');
                 const observedFiles=await github.paginate(github.rest.pulls.listFiles,{
                   owner,repo,pull_number:itemNumber,per_page:100
                 });
@@ -246,7 +275,8 @@ jobs:
                   owner,repo,pull_number:itemNumber
                 })).data;
                 if(after.state!=='open'||after.head?.sha!==sha||
-                  after.base?.sha!==before.base?.sha)
+                  after.base?.sha!==before.base?.sha||
+                  after.base?.sha !== ciBaseSha)
                   throw Error('council-patch-head-or-base-drift');
                 const complete=observedFiles.length===after.changed_files&&
                   observedFiles.length<=80&&
@@ -258,7 +288,8 @@ jobs:
                 }));
                 const file=path.join(dir,'exact-head-pr-files.json');
                 fs.writeFileSync(file,JSON.stringify({
-                  sourceSha:sha,prNumber:itemNumber,complete,files:selected
+                  sourceSha:sha,baseSha:ciBaseSha,
+                  prNumber:itemNumber,complete,files:selected
                 }));
                 core.exportVariable('COUNCIL_PR_FILES_FILE',file);
                 // Full source stays in runner memory. Only bounded AST

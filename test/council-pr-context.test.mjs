@@ -47,3 +47,46 @@ test('bad head or invalid file list never becomes accepted exact-head analysis',
  const context=buildCouncilPrContext({sourceSha:sha,prNumber:1,files:[],complete:false});
  assert.equal(context.complete,false);
 });
+
+test('bounded patch review keeps a late relevant source change and release caveat',async()=>{
+ const {buildCouncilPrContext,formatCouncilPrContext}=await import('../src/council-pr-context.mjs');
+ const {buildCouncilReasoningInput}=await import('../src/council-reasoning.mjs');
+ const lines=['@@ -1,27 +1,27 @@',
+  ...Array.from({length:24},(_,i)=>'+ const phase'+i+' = '+i+';'),
+  '+ const terminalDeniedNoEffect = durableReadbackConfirmed;',
+  '- return reconcile_required;'];
+ const context=buildCouncilPrContext({sourceSha:'a'.repeat(40),prNumber:479,
+  files:[{filename:'cloud/hatchable/lib/github-pr-comment-canary.js',
+   status:'modified',additions:26,deletions:1,patch:lines.join('\n')},
+   {filename:'test/c04-terminal-reconciliation.test.mjs',status:'modified',
+   additions:2,deletions:1,patch:'@@ -1 +1 @@\n- assert.fail();\n+ assert.equal(state,"denied_no_effect");'}]});
+ const patch=formatCouncilPrContext(context);
+ assert.match(patch,/terminalDeniedNoEffect = durableReadbackConfirmed/);
+ const prompt=buildCouncilReasoningInput({title:'Prove C04 reconciliation',
+  body:'description '.repeat(200),sourceSha:'a'.repeat(40),prNumber:479,
+  prContext:context});
+ assert.match(prompt,/terminalDeniedNoEffect = durableReadbackConfirmed/);
+ assert.match(prompt,/Release authorization: NOT ESTABLISHED/);
+ assert.ok(prompt.length<=5990);
+ assert.doesNotMatch(prompt,/ghp_[A-Za-z0-9]{15,}/);
+});
+test('long patch beyond bounded limit remains explicitly partial',()=>{
+ const lines=['@@ -1,100 +1,100 @@',...Array.from({length:100},(_,i)=>'+ const x'+i+' = '+i+';')];
+ const ctx=buildCouncilPrContext({sourceSha:sha,prNumber:479,
+  files:[file('src/safe.mjs',lines.join('\n'))]});
+ assert.equal(ctx.complete,false);
+ assert.match(formatCouncilPrContext(ctx),/partial\/unverified/);
+});
+
+test('source-heavy C04 SQL excerpt reaches its terminal and readback guards',()=>{
+ const lines=['@@ -329,1 +329,52 @@',
+  ...Array.from({length:39},(_,i)=>'+ const validatedColumn'+i+' = "durable-'+i+'";'),
+  '+ const completeAuthenticatedReadback = true;',
+  '+ const terminalDenialRequiresStored403 = true;'];
+ const ctx=buildCouncilPrContext({sourceSha:sha,prNumber:479,
+  files:[file('cloud/hatchable/lib/github-pr-comment-canary.js',lines.join('\n'))]});
+ const excerpt=formatCouncilPrContext(ctx);
+ assert.match(excerpt,/completeAuthenticatedReadback/);
+ assert.match(excerpt,/terminalDenialRequiresStored403/);
+ assert.ok(excerpt.length<=ctx.maxTextChars);
+});
