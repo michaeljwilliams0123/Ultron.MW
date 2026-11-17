@@ -10,6 +10,7 @@ import { ownerAutonomyEnabled, autonomyLimits } from '../src/owner-autonomy.mjs'
 import {assessCouncil} from '../src/council-members.mjs';
 import {deriveCouncilFlags} from '../src/council-case-flags.mjs';
 import {buildCouncilExactHeadEvidence} from '../src/council-exact-head-evidence.mjs';
+import {scoreCouncilEvidenceCoverage} from '../src/council-evidence-coverage.mjs';
 import {summarizeCouncilIdentityEvidence} from '../src/council-app-identities.mjs';
 import {runReasoningRound,buildCouncilReasoningInput} from '../src/council-reasoning.mjs';
 import {buildCouncilPrContext,formatCouncilPrContext} from '../src/council-pr-context.mjs';
@@ -39,14 +40,24 @@ try{
   reviewEvidence=buildCouncilExactHeadEvidence(data);
  }
 }catch{reviewEvidence=null;}
-const exactHeadEvidence=reviewEvidence?.verified===true&&
- reviewEvidence.sourceSha===sourceSha&&reviewEvidence.prNumber===itemNumber;
+// GitHub's trusted-main workflow supplies the exact-head file inventory.
+// A missing/partial inventory cannot be replaced by a short PR description.
+let fileEvidence=null;
+try{
+ const path=process.env.COUNCIL_PR_FILES_FILE;
+ if(path&&isPr){
+  const data=JSON.parse(readFileSync(path,'utf8'));
+  if(data.sourceSha===sourceSha&&data.prNumber===itemNumber)fileEvidence=data;
+ }
+}catch{fileEvidence=null;}
 
 const flags = deriveCouncilFlags({title,body,isPr,
   originalSecuritySignal:process.env.ORIGINAL_SECURITY_SIGNAL});
 
-const large = body.length > 2000;
-let evidenceCoverage = flags.security ? 0.35 : exactHeadEvidence ? 0.9 : large ? 0.65 : 0.9;
+let evidenceCoverage = scoreCouncilEvidenceCoverage({
+ isPr,securitySensitive:flags.security,reviewEvidence,fileEvidence,
+ sourceSha,prNumber:itemNumber
+});
 let calibratedConfidence = flags.security ? 0.3 : 0.85;
 let knownUnknowns = [];
 let materialConflictCount = 0;
@@ -106,13 +117,7 @@ const roleLabels={
 // Read only provider-fetched exact-head files from the trusted workflow.
 let prContext=null;
 try{
- const path=process.env.COUNCIL_PR_FILES_FILE;
- if(path&&isPr){
-  const payload=JSON.parse(readFileSync(path,'utf8'));
-  if(payload.sourceSha===sourceSha&&payload.prNumber===itemNumber){
-   prContext=buildCouncilPrContext(payload);
-  }
- }
+ if(fileEvidence)prContext=buildCouncilPrContext(fileEvidence);
 }catch{prContext=null;}
 let taintEvidence=null;
 try{

@@ -17,6 +17,7 @@ test('valid GitHub Actions exact-head checks produce advisory evidence, not rele
  const evidence=run();
  assert.equal(evidence.verified,true);
  assert.equal(evidence.sourceSha,SHA);
+ assert.equal(evidence.baseSha,BASE);
  assert.equal(evidence.prNumber,397);
  assert.equal(evidence.providerAppId,APP);
  assert.deepEqual(evidence.checks,['test','fixed-comparison','attested-receipt']);
