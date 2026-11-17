@@ -1,14 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {authenticateCouncilAppActor,verifyCouncilExecutionReceipt}
  from '../src/council-app-identities.mjs';
-import {receiptValid as cloudReceiptValid}
+import {receiptValid as cloudReceiptValid,reserveExecution,transitionExecution}
  from '../cloud/hatchable/lib/council-ledger.js';
 import {probeCouncilEffect} from '../src/council-members.mjs';
+import {advance,recordIntent} from '../src/council-execution-ledger.mjs';
 
 const SHA='a'.repeat(40),KEY='e'.repeat(64),CASE='b'.repeat(64);
 const REPO='michaeljwilliams0123/Ultron.MW',PR=484,REVIEW=5944624969;
 const MARKER='<!-- council-exec:'+KEY+' -->';
+const intent={role:'Skeptic',operation:'review.comment',caseSha:CASE,sourceSha:SHA};
+const ledgerMigration=readFileSync(new URL(
+ '../cloud/hatchable/migrations/0028_council_execution_ledger.sql',import.meta.url),'utf8');
+let PGlite;
+try{({PGlite}=await import('@electric-sql/pglite'));}catch{}
 async function actor(){
  return authenticateCouncilAppActor({role:'Skeptic',sourceSha:SHA,
   expectedAppId:5633654,installationToken:'tested-installation-token',
@@ -26,14 +33,14 @@ const review=(changes={})=>({
  user:{id:353078104,login:'ultron-coordinator[bot]',type:'Bot'},
  state:'COMMENTED',commit_id:SHA,...changes
 });
-async function probe(a,items){
+async function probe(a,items,executionKey=KEY){
  const calls=[];
  const fetchImpl=async(url,options={})=>{
   calls.push({url,method:options.method});
   return {ok:true,status:200,json:async()=>items};
  };
  const result=await probeCouncilEffect(a,'installation-token',{
-  op:'review.comment',number:PR,executionKey:KEY,caseSha:CASE
+  op:'review.comment',number:PR,executionKey,caseSha:CASE
  },fetchImpl);
  return {result,calls};
 }
@@ -152,4 +159,40 @@ test('ten full pages mean readback is incomplete and no receipt is authorized',a
  const {result,calls}=await paginatedProbe(a,pages);
  assert.equal(result?.receipt,undefined);
  assert.equal(calls.length,10);
+});
+
+async function receiptForExecution(key){
+ const {result}=await probe(await actor(),[
+  review({body:'Falsifiable regression finding.\n<!-- council-exec:'+key+' -->'})
+ ],key);
+ assert.equal(result?.receipt?.effect.executionKey,key);
+ return result.receipt;
+}
+
+test('dual-source receipt cannot verify another ordinal in the source ledger',async()=>{
+ const dispatched=ordinal=>advance(advance(recordIntent({...intent,ordinal}),'reserved'),'dispatched');
+ const first=dispatched(0),second=dispatched(1);
+ const receipt=await receiptForExecution(first.key);
+ assert.throws(()=>advance(second,'verified',{receipt}),/council-execution-receipt-mismatch/);
+ assert.equal(advance(first,'verified',{receipt}).receiptDigest,receipt.digest);
+});
+
+test('dual-source receipt cannot verify another ordinal in the Hatchable ledger',
+ {skip:PGlite?false:'@electric-sql/pglite not installed'},async t=>{
+ const db=new PGlite();
+ t.after(()=>db.close());
+ await db.exec(ledgerMigration);
+ const dispatch=async ordinal=>{
+  const {record}=await reserveExecution(db,{...intent,caseDigest:CASE,ordinal});
+  const dispatched=await transitionExecution(db,{key:record.key,from:'reserved',to:'dispatched'});
+  assert.equal(dispatched.ok,true);
+  return record.key;
+ };
+ const first=await dispatch(0),second=await dispatch(1);
+ const receipt=await receiptForExecution(first);
+ const settle=key=>transitionExecution(db,{key,from:'dispatched',to:'verified',detail:{receipt}});
+ const rejected=await settle(second);
+ assert.equal(rejected.error,'receipt-mismatch');
+ assert.equal(rejected.record.state,'dispatched');
+ assert.equal((await settle(first)).record.receiptDigest,receipt.digest);
 });

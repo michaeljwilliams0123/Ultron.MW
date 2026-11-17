@@ -133,7 +133,8 @@ export async function transitionExecution(db, { key, from, to, detail = {} } = {
   if (to === 'verified') {
     const x = detail.receipt;
     if (!receiptValid(x) || x.role !== current.role || x.operation !== current.operation ||
-      x.caseSha !== current.caseDigest || x.sourceSha !== current.sourceSha) {
+      x.caseSha !== current.caseDigest || x.sourceSha !== current.sourceSha ||
+      (x.claims.authorshipFromGithubResponse === false && x.effect.executionKey !== current.key)) {
       return { ok: false, error: 'receipt-mismatch', record: current };
     }
     executor = x.effect.author;
