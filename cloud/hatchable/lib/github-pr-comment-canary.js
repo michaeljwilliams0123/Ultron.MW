@@ -304,6 +304,27 @@ async function row(db,key){
  if(result?.rows?.length!==1)fail('ledger-readback-unavailable');
  return result.rows[0];
 }
+// A terminal label alone is not evidence of a successful provider write.
+// The durable receipt must be bound to this exact signed operation and to
+// an independently read-back Coordinator App comment. No network is needed.
+function verifiedStoredReceipt(stored,prepared,digest){
+ const receipt=stored?.receipt,details=receipt?.details;
+ const canonical='https://github.com/'+REPO+'/pull/'+prepared.pullRequest+
+  '#issuecomment-'+details?.commentId;
+ const alternate='https://github.com/'+REPO+'/issues/'+prepared.pullRequest+
+  '#issuecomment-'+details?.commentId;
+ if(receipt?.idempotencyKey!==prepared.idempotencyKey||
+   !['success','reconciled_success'].includes(receipt?.status)||
+   details?.repository!==REPO||details?.operationDigest!==digest||
+   details?.pullRequest!==prepared.pullRequest||
+   details?.bodySha256!==prepared.bodySha256||
+   !Number.isSafeInteger(details?.commentId)||details.commentId<1||
+   (details?.commentUrl!==canonical&&details?.commentUrl!==alternate)||
+   details?.actor!==BOT_LOGIN||details?.appId!==APP_ID||
+   details?.personaRole!=='builder'||details?.remoteVerified!==true)
+  fail('receipt-persistence-unverified');
+ return receipt;
+}
 async function markReconcile(db,prepared){
  try{await db.query(`UPDATE github_pr_comment_executions
   SET state='reconcile_required',updated_at=now()
@@ -327,7 +348,7 @@ async function complete(db,prepared,digest,comment,status){
  const stored=await row(db,prepared.idempotencyKey);
  if(stored.state!=='completed'||stored.receipt?.details?.commentId!==Number(comment.id))
   fail('receipt-persistence-unverified');
- return Object.freeze({status,receipt:stored.receipt});
+ return Object.freeze({status,receipt:verifiedStoredReceipt(stored,prepared,digest)});
 }
 /**
  * A definitive GitHub 403 is only a candidate terminal denial. Exactly one
@@ -452,7 +473,8 @@ export async function reconcilePrCommentCanary({
  const stored=await row(db,prepared.idempotencyKey);
  if(stored.operation_digest!==digest||databaseId(stored.target_number)!==prepared.pullRequest||
    stored.body_sha256!==prepared.bodySha256)fail('intent-conflict');
- if(stored.state==='completed')return Object.freeze({status:'recovered_success',receipt:stored.receipt});
+ if(stored.state==='completed')return Object.freeze({status:'recovered_success',
+  receipt:verifiedStoredReceipt(stored,prepared,digest)});
  if(!['in_flight','reconcile_required'].includes(stored.state))fail('reconciliation-not-admitted');
  await recordPrCommentStage(db,prepared,'reconciliation_started');
  const token=appCredentials?await tokenForComment(appCredentials,fetchImpl,clock):'';
@@ -485,7 +507,8 @@ export async function reconcilePrCommentCanary({
   // downgrade that terminal outcome; return its durable result instead.
   const current=await row(db,prepared.idempotencyKey);
   if(current.state==='completed')
-   return Object.freeze({status:'recovered_success',receipt:current.receipt});
+   return Object.freeze({status:'recovered_success',
+    receipt:verifiedStoredReceipt(current,prepared,digest)});
   if(current.state==='denied_no_effect')
    return Object.freeze({status:'denied_no_effect',receipt:null});
  }
