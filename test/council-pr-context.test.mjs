@@ -77,3 +77,16 @@ test('long patch beyond bounded limit remains explicitly partial',()=>{
  assert.equal(ctx.complete,false);
  assert.match(formatCouncilPrContext(ctx),/partial\/unverified/);
 });
+
+test('source-heavy C04 SQL excerpt reaches its terminal and readback guards',()=>{
+ const lines=['@@ -329,1 +329,52 @@',
+  ...Array.from({length:39},(_,i)=>'+ const validatedColumn'+i+' = "durable-'+i+'";'),
+  '+ const completeAuthenticatedReadback = true;',
+  '+ const terminalDenialRequiresStored403 = true;'];
+ const ctx=buildCouncilPrContext({sourceSha:sha,prNumber:479,
+  files:[file('cloud/hatchable/lib/github-pr-comment-canary.js',lines.join('\n'))]});
+ const excerpt=formatCouncilPrContext(ctx);
+ assert.match(excerpt,/completeAuthenticatedReadback/);
+ assert.match(excerpt,/terminalDenialRequiresStored403/);
+ assert.ok(excerpt.length<=ctx.maxTextChars);
+});
