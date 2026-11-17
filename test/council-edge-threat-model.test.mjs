@@ -61,7 +61,7 @@ test('edge Council: private and internal-only diff markers trigger fail-closed r
 });
 test('edge Council: binary or omitted patch can never produce a complete score claim',()=>{
  for(const patch of ['',null,undefined]){
-  const c=context([change('assets/binary.png',patch)]);
+  const c=context([{...change('assets/binary.png'),patch}]);
   assert.equal(c.complete,false);
   assert.match(formatCouncilPrContext(c),/patch unavailable/);
  }
