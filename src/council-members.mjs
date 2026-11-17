@@ -402,11 +402,24 @@ export async function probeCouncilEffect(actor,token,{op,number,executionKey:key
   const hit=items.find(i=>typeof i.body==='string'&&i.body.includes(marker));
   if(hit){
    const url='https://api.github.com/repos/'+REPO+base+'/'+hit.id;
+   // The exact operation marker must occur once and be the sole valid
+   // council-exec marker. A duplicate or substituted marker is not evidence.
+   const validMarkers=String(hit.body||'').match(/<!-- council-exec:[a-f0-9]{64} -->/g)||[];
+   const markerUnique=validMarkers.length===1&&validMarkers[0]===marker;
+   const app=hit.performed_via_github_app;
+   const response=kind==='r'&&!app
+    ?{source:'github-review-readback',url,id:hit.id,
+      author_login:hit.user?.login,author_type:hit.user?.type,
+      author_id:hit.user?.id,review_state:hit.state,
+      review_commit_sha:hit.commit_id,review_pr_number:number,
+      execution_key:key,markerProof:markerUnique}
+    :{source:'github-api-response',url,id:hit.id,
+      author_login:hit.user?.login,author_type:hit.user?.type,
+      app_id:app?.id,app_slug:app?.slug};
    try{
+    if(!markerUnique)throw Error('council-execution-marker-not-unique');
     return{url,receipt:issueCouncilExecutionReceipt(actor,{operation:op,caseSha,
-      githubResponse:{source:'github-api-response',url,id:hit.id,author_login:hit.user?.login,author_type:hit.user?.type,
-       app_id:hit.performed_via_github_app?.id,app_slug:hit.performed_via_github_app?.slug},
-     observedAt:new Date().toISOString()})};
+      githubResponse:response,observedAt:new Date().toISOString()})};
    }catch{return{url,executor:String(hit.user?.login||'unattributed')};}
   }
   if(items.length<100)break;
