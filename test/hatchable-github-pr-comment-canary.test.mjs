@@ -481,3 +481,53 @@ test('trusted permission header is retained as safe ledger metadata after a 403 
   operationDigest:h.digest,fetchImpl}),/reconciliation-not-admitted/);
  assert.equal(writeCount,1,'reconciliation must never dispatch a second provider POST');
 });
+
+test('a complete empty readback without durable 403 evidence remains reconcile_required',async t=>{
+ const h=await admitted(t),github=provider(h.prepared);
+ await h.db.exec(await readFile(new URL('../cloud/hatchable/migrations/0048_github_pr_comment_denied_no_effect.sql',
+  import.meta.url),'utf8'));
+ await h.db.query(`UPDATE github_pr_comment_executions
+  SET state='reconcile_required',updated_at=now() WHERE idempotency_key=$1`,
+ [h.prepared.idempotencyKey]);
+ await assert.rejects(reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,fetchImpl:github.fetchImpl}),/readback-not-found/);
+ const state=(await h.db.query(`SELECT state FROM github_pr_comment_executions
+  WHERE idempotency_key=$1`,[h.prepared.idempotencyKey])).rows[0].state;
+ assert.equal(state,'reconcile_required');
+ const terminalEvents=(await h.db.query(`SELECT count(*)::int AS count FROM brain_events
+  WHERE event_type='github-pr-comment-stage' AND details->>'stage'='denied_no_effect'`)).rows[0];
+ assert.equal(terminalEvents.count,0);
+ assert.equal(github.calls.filter(call=>call.method==='POST').length,0);
+});
+
+test('a terminal audit-insert failure rolls back the denial state transition atomically',async t=>{
+ const h=await admitted(t),github=provider(h.prepared);
+ await h.db.exec(await readFile(new URL('../cloud/hatchable/migrations/0048_github_pr_comment_denied_no_effect.sql',
+  import.meta.url),'utf8'));
+ const fetchImpl=async(url,options={})=>{
+  if(options.method==='POST'&&url.endsWith('/issues/'+h.prepared.pullRequest+'/comments'))
+   return {status:403,ok:false,headers:new Headers(),json:async()=>({})};
+  return github.fetchImpl(url,options);
+ };
+ await assert.rejects(submitPrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,appCredentials:APP,fetchImpl}),/provider-write-denied/);
+ await h.db.exec(`CREATE FUNCTION reject_denied_no_effect_audit() RETURNS trigger AS $$
+ BEGIN
+  IF NEW.event_type='github-pr-comment-stage' AND NEW.details->>'stage'='denied_no_effect' THEN
+   RAISE EXCEPTION 'forced-denied-audit-failure';
+  END IF;
+  RETURN NEW;
+ END;
+ $$ LANGUAGE plpgsql;
+ CREATE TRIGGER reject_denied_no_effect_audit BEFORE INSERT ON brain_events
+ FOR EACH ROW EXECUTE FUNCTION reject_denied_no_effect_audit();`);
+ await assert.rejects(reconcilePrCommentCanary({db:h.db,prepared:h.prepared,
+  operationDigest:h.digest,fetchImpl}),/forced-denied-audit-failure/);
+ const state=(await h.db.query(`SELECT state FROM github_pr_comment_executions
+  WHERE idempotency_key=$1`,[h.prepared.idempotencyKey])).rows[0].state;
+ assert.equal(state,'reconcile_required');
+ const terminalEvents=(await h.db.query(`SELECT count(*)::int AS count FROM brain_events
+  WHERE event_type='github-pr-comment-stage' AND details->>'stage'='denied_no_effect'`)).rows[0];
+ assert.equal(terminalEvents.count,0);
+ assert.equal(github.calls.filter(call=>call.method==='POST').length,1);
+});

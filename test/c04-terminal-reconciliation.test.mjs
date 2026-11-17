@@ -63,6 +63,8 @@ test('unverified provider outcome never becomes a terminal denial after zero-mat
  await assert.rejects(reconcilePrCommentCanary({db:t.db,prepared:t.prepared,
   operationDigest:t.digest,fetchImpl:t.fetchImpl}),/readback-not-found/);
  assert.equal(t.state.value,'reconcile_required');
+ assert.ok(t.state.queries.some(q=>q.sql.includes('WITH denial AS')),
+  'the terminal compare-and-set is attempted but has no matching 403 evidence');
  assert.equal(t.state.writes,0);
 });
 test('five full pages of comments cannot certify absence or produce a terminal denial',async()=>{
