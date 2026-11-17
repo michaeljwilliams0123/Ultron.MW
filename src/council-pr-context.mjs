@@ -58,9 +58,22 @@ export function buildCouncilPrContext({sourceSha,prNumber,files,complete=true,ma
    const critical=tag==='source'||tag==='security-path'||tag==='database';
    const lineBudget=critical?60:tag==='test'?14:18;
    const charBudget=critical?2650:tag==='test'?520:650;
-   const selected=lines.slice(0,lineBudget).map(line=>'| '+line.slice(0,160)).join('\n');
-   excerpt=selected.slice(0,charBudget);
-   if(lines.length>lineBudget||selected.length>charBudget)coverage=false;
+   const annotated=lines.map(line=>'| '+line.slice(0,160));
+   const firstWindow=annotated.slice(0,lineBudget).join('\n');
+   if(critical&&(annotated.length>lineBudget||firstWindow.length>charBudget)){
+    // Source hunks can be longer than the prompt. Sample BOTH ends rather
+    // than concealing a late readback guard behind front-only truncation.
+    // The omitted middle is explicitly marked; this is never full proof.
+    const marker='| [noncontiguous source excerpt: middle changed lines omitted]';
+    const head=annotated.slice(0,25).join('\n').slice(0,Math.floor(charBudget*0.49));
+    const tailRoom=charBudget-head.length-marker.length-2;
+    const tail=annotated.slice(-20).join('\n').slice(-Math.max(0,tailRoom));
+    excerpt=head+'\n'+marker+'\n'+tail;
+    coverage=false;
+   }else{
+    excerpt=firstWindow.slice(0,charBudget);
+    if(lines.length>lineBudget||firstWindow.length>charBudget)coverage=false;
+   }
   }
   const header=path+' ('+status+', +'+additions+'/-'+deletions+', '+tag+')';
   let segment=header+'\n'+excerpt;
