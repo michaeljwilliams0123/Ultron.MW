@@ -51,6 +51,22 @@ export function receiptValid(receipt) {
     const kind = coordinator ? 'coordinator' : 'council-member';
     if ((!coordinator && !member) || receipt.app.bindingKey !== bindingKey ||
       receipt.app.kind !== kind || receipt.effect?.author !== receipt.app.slug + '[bot]') return false;
+    const claims = receipt.claims || {};
+    if (claims.authorshipFromGithubResponse === false) {
+      const effect = receipt.effect || {};
+      if (claims.appIdentityFromAuthenticatedInstallation !== true ||
+          claims.botReviewCommitReadbackVerified !== true ||
+          receipt.operation !== 'review.comment' ||
+          !Number.isSafeInteger(effect.id) || effect.id < 1 ||
+          !Number.isSafeInteger(effect.authorId) || effect.authorId < 1 ||
+          !Number.isSafeInteger(effect.prNumber) || effect.prNumber < 1 ||
+          !SHA64.test(effect.executionKey || '') || !SHA40.test(receipt.sourceSha || '') ||
+          effect.reviewCommitSha !== receipt.sourceSha ||
+          effect.url !== 'https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/' +
+             'pulls/' + effect.prNumber + '/reviews/' + effect.id) return false;
+    } else if (claims.authorshipFromGithubResponse !== true ||
+               claims.appIdentityFromAuthenticatedInstallation !== undefined ||
+               claims.botReviewCommitReadbackVerified !== undefined) return false;
     const { digest, ...body } = receipt;
     return createHash('sha256').update(canonicalJson(body)).digest('hex') === digest;
   } catch {
