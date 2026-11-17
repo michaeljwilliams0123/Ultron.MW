@@ -10,7 +10,7 @@ const source=name=>readFileSync(new URL(name,dir),'utf8');
 const spec={
   'cloud-pr.yml':{triggers:['workflow_call','issues'],jobs:['create-pr']},
   'council-debate.yml':{triggers:['issues','pull_request','workflow_call','workflow_dispatch'],jobs:['council-debate','prove','verify-principal']},
-  'council-required-status.yml':{triggers:['pull_request_target','issue_comment','workflow_dispatch'],jobs:['trusted-council-status']},
+  'council-required-status.yml':{triggers:['pull_request_target','issue_comment','workflow_run','workflow_dispatch'],jobs:['trusted-council-status']},
   'lane-governed-task.yml':{triggers:['issues','workflow_dispatch'],jobs:['work']},
   'lane-lab-evidence.yml':{triggers:['workflow_dispatch'],jobs:['heldout-evaluation','cpu-evaluation','generate','publish','held-out']},
   'lane-ops-audit.yml':{triggers:['workflow_run','pull_request','schedule','workflow_dispatch'],jobs:['audit','self-scan-pr','mirror','reef-runtime-probe','diagnose','act','reconcile']},

@@ -2,9 +2,22 @@
 # Non-force, source-exact Git transport. Refuses divergence and verifies destination SHA.
 set -euo pipefail
 remote="$1"
+canonical_remote="${2:-}"
 source_sha="$(git rev-parse HEAD)"
 if ! [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then echo 'Invalid upstream commit' >&2; exit 2; fi
-read_head(){ git ls-remote "$remote" refs/heads/main | awk '$2 == "refs/heads/main" {print $1}'; }
+read_remote_head(){ git ls-remote "$1" refs/heads/main | awk '$2 == "refs/heads/main" {print $1}'; }
+if [[ -n "$canonical_remote" ]]; then
+  if ! canonical_sha="$(read_remote_head "$canonical_remote" 2>/dev/null)" ||
+     ! [[ "$canonical_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    echo 'Canonical main missing or unreadable; abort' >&2
+    exit 6
+  fi
+  if [[ "$canonical_sha" != "$source_sha" ]]; then
+    echo "SUPERSEDED $source_sha by canonical main $canonical_sha; no mirror write"
+    exit 0
+  fi
+fi
+read_head(){ read_remote_head "$remote"; }
 target_sha="$(read_head)"
 if ! [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]; then echo 'GitLab main missing or unreadable; abort' >&2; exit 3; fi
 if [[ "$target_sha" == "$source_sha" ]]; then echo "PARITY $source_sha"; exit 0; fi

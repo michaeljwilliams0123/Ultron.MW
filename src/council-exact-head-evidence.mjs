@@ -11,7 +11,7 @@ const SHA=/^[a-f0-9]{40}$/;
 
 function denied(reason){
  return Object.freeze({schema:'ultron.council-exact-head-evidence.v1',
-   verified:false,reason,sourceSha:null,prNumber:null,
+   verified:false,reason,sourceSha:null,baseSha:null,prNumber:null,
    repositoryId:REPO_ID,providerAppId:ACTIONS_APP_ID,
    checks:Object.freeze([]),baseUpToDate:false,releaseAuthorized:false});
 }
@@ -46,7 +46,7 @@ export function buildCouncilExactHeadEvidence({pr,comparison,checkRuns}={}){
  }
  return Object.freeze({
   schema:'ultron.council-exact-head-evidence.v1',
-  verified:true,reason:null,sourceSha:pr.head.sha,prNumber:pr.number,
+  verified:true,reason:null,sourceSha:pr.head.sha,baseSha:pr.base.sha,prNumber:pr.number,
   repositoryId:REPO_ID,providerAppId:ACTIONS_APP_ID,
   checks:Object.freeze([...REQUIRED]),baseUpToDate:true,
   releaseAuthorized:false

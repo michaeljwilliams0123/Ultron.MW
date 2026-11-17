@@ -22,7 +22,7 @@ export default async function handler(req,res){
   const result=await db.query(`SELECT idempotency_key,state,target_number,body_sha256,
    receipt,created_at FROM github_pr_comment_executions
    WHERE repository=$1 AND target_number=$2
-     AND state IN ('reserved','in_flight','reconcile_required','completed')
+     AND state IN ('reserved','in_flight','reconcile_required','completed','denied_no_effect')
    ORDER BY CASE WHEN state IN ('in_flight','reconcile_required') THEN 0
      WHEN state='reserved' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`,[REPO,pr]);
   const row=result?.rows?.[0];

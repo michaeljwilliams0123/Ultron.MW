@@ -23,12 +23,12 @@ function classification(path){
  if(/\.md$/.test(path))return 'docs';
  return 'source';
 }
-export function buildCouncilPrContext({sourceSha,prNumber,files,complete=true,maxFiles=20,maxTextChars=3500}={}){
+export function buildCouncilPrContext({sourceSha,prNumber,files,complete=true,maxFiles=20,maxTextChars=4300}={}){
  if(!SHA.test(sourceSha||''))throw Error('source-sha-invalid');
  if(!Number.isSafeInteger(prNumber)||prNumber<1)throw Error('pr-number-invalid');
  if(!Array.isArray(files))throw Error('file-list-unavailable');
  const limit=clamp(maxFiles,1,80,20);
- const textLimit=clamp(maxTextChars,1000,5000,3500);
+ const textLimit=clamp(maxTextChars,1000,5000,4300);
  let coverage=complete===true&&files.length<=limit;
  let redactedFiles=0;
  const entries=[];
@@ -52,9 +52,15 @@ export function buildCouncilPrContext({sourceSha,prNumber,files,complete=true,ma
    coverage=false;
   }else{
    const lines=raw.split('\n').filter(line=>/^(?:@@|\+[^+]|-[^-])/.test(line));
-   const selected=lines.slice(0,18).map(line=>'| '+line.slice(0,160)).join('\n');
-   excerpt=selected.slice(0,850);
-   if(lines.length>18||selected.length>850)coverage=false;
+   // Review high-signal source and database changes with enough context to
+   // include complete SQL guards; cap test/docs excerpts so one long fixture
+   // cannot displace the actual implementation. All snippets remain untrusted.
+   const critical=tag==='source'||tag==='security-path'||tag==='database';
+   const lineBudget=critical?60:tag==='test'?14:18;
+   const charBudget=critical?2650:tag==='test'?520:650;
+   const selected=lines.slice(0,lineBudget).map(line=>'| '+line.slice(0,160)).join('\n');
+   excerpt=selected.slice(0,charBudget);
+   if(lines.length>lineBudget||selected.length>charBudget)coverage=false;
   }
   const header=path+' ('+status+', +'+additions+'/-'+deletions+', '+tag+')';
   let segment=header+'\n'+excerpt;
