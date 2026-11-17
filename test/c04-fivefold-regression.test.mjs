@@ -21,7 +21,11 @@ function prepared(){
 function fakeReconcile({state='reconcile_required',storedDigest=DIGEST,status=200}={}){
  let gets=0,posts=0,queries=0;
  const p=prepared();
- const receipt={case:'existing-completion'};
+ const receipt={idempotencyKey:p.idempotencyKey,status:'reconciled_success',case:'existing-completion',
+  details:{repository:'michaeljwilliams0123/Ultron.MW',operationDigest:DIGEST,
+   pullRequest:p.pullRequest,bodySha256:p.bodySha256,commentId:12345,
+   commentUrl:'https://github.com/michaeljwilliams0123/Ultron.MW/pull/478#issuecomment-12345',
+   actor:'ultron-coordinator[bot]',appId:5633654,personaRole:'builder',remoteVerified:true}};
  const db={async query(sql){
   queries++;
   if(sql.includes('SELECT idempotency_key,state,operation_digest'))
