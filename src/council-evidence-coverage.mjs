@@ -32,6 +32,13 @@ export function scoreCouncilEvidenceCoverage({
       typeof file.patch === 'string' && file.patch.length > 0
     );
 
-  // Missing, stale, failed or partial inputs seek evidence; no prose fallback.
-  return exactHeadChecks && fullFiles ? 0.9 : 0.45;
+  // CI and changed-file readbacks must be from the *same base and head*.
+  // A concurrent base refresh otherwise fabricates complete evidence.
+  const sameBase = /^[a-f0-9]{40}$/.test(reviewEvidence?.baseSha||'') &&
+    reviewEvidence.baseSha === fileEvidence?.baseSha;
+
+  // This is a pre-review advisory score, never final release admission.
+  // Signed attestations, model dissent, owner approval and reviewer provenance
+  // are independently verified by the protected acceptance workflow.
+  return exactHeadChecks && fullFiles && sameBase ? 0.9 : 0.45;
 }

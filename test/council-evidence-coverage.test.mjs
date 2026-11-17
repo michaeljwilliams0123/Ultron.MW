@@ -20,7 +20,7 @@ const trustedChecks=()=>({
  }))}
 });
 const trustedFiles=()=>({
- sourceSha:SHA,prNumber:PR,complete:true,
+ sourceSha:SHA,baseSha:BASE,prNumber:PR,complete:true,
  files:[{filename:'README.md',status:'modified',additions:1,deletions:1,
    patch:'@@ -1 +1 @@\\n-old\\n+new'}]
 });
@@ -29,7 +29,7 @@ test('advisory evidence score cannot be inflated by PR text or missing trusted i
  const score=(reviewEvidence,fileEvidence,securitySensitive=false)=>
    scoreCouncilEvidenceCoverage({isPr:true,securitySensitive,
      reviewEvidence,fileEvidence,sourceSha:SHA,prNumber:PR});
- const valid={verified:true,sourceSha:SHA,prNumber:PR,baseUpToDate:true};
+ const valid={verified:true,sourceSha:SHA,baseSha:BASE,prNumber:PR,baseUpToDate:true};
  assert.equal(score(valid,trustedFiles()),0.9);
  assert.equal(score(null,trustedFiles()),0.45);
  assert.equal(score(valid,null),0.45);
@@ -40,7 +40,8 @@ test('advisory evidence score cannot be inflated by PR text or missing trusted i
  assert.equal(score(valid,trustedFiles(),true),0.35);
 });
 
-function runDebate(length,{badCi=false,noFiles=false,security=false,staleFileSha=false}={}){
+function runDebate(length,{badCi=false,noFiles=false,security=false,staleFileSha=false,
+  staleBaseSha=false,ownerMode=false}={}){
  const dir=mkdtempSync(join(tmpdir(),'ultron-evidence-470-'));
  try{
   const ci=trustedChecks();
@@ -49,6 +50,7 @@ function runDebate(length,{badCi=false,noFiles=false,security=false,staleFileSha
   writeFileSync(ciPath,JSON.stringify(ci));
   const files=trustedFiles();
   if(staleFileSha)files.sourceSha='c'.repeat(40);
+  if(staleBaseSha)files.baseSha='d'.repeat(40);
   if(!noFiles)writeFileSync(filesPath,JSON.stringify(files));
   const env={...process.env,
     TITLE:'Documentation clarification',BODY:'x'.repeat(length),
@@ -56,7 +58,7 @@ function runDebate(length,{badCi=false,noFiles=false,security=false,staleFileSha
     COUNCIL_REVIEW_EVIDENCE_FILE:ciPath,
     COUNCIL_PR_FILES_FILE:noFiles?'':filesPath,
     ORIGINAL_SECURITY_SIGNAL:security?'1':'0',
-    OWNER_MODE:'0',ULTRON_AUTONOMY:'0',ULTRON_VELOCITY:'0',
+    OWNER_MODE:ownerMode?'1':'0',ULTRON_AUTONOMY:'0',ULTRON_VELOCITY:'0',
     GEMINI_API_KEY:'',GROQ_API_KEY:'',COUNCIL_MASTER_SEED:'',
     COUNCIL_EXECUTION_RECEIPTS_FILE:'',COUNCIL_TAINT_EVIDENCE_FILE:''
   };
@@ -77,7 +79,8 @@ test('1,900 and 2,100 character PR descriptions get identical trusted-evidence o
 });
 test('failed or incomplete/stale GitHub evidence holds even with a tiny PR description',()=>{
  for(const options of [
-   {badCi:true},{noFiles:true},{staleFileSha:true}
+   {badCi:true},{noFiles:true},{staleFileSha:true},
+   {staleBaseSha:true},{staleBaseSha:true,ownerMode:true}
  ]){
   const r=runDebate(12,options);
   assert.equal(r.metacognition.evidenceCoverage,0.45);

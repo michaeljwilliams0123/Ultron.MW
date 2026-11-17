@@ -200,6 +200,8 @@ jobs:
               // Both exact-head CI and changed-file readbacks must share this
               // SHA; a try-block-local declaration silently broke the latter.
               const sha = targetSourceSha;
+              // Capture the CI base once; a later files readback must match it.
+              let ciBaseSha = '';
               let observed = {};
               try {
                 if (!/^[a-f0-9]{40}$/.test(sha||'') ||
@@ -223,6 +225,7 @@ jobs:
                 ]);
                 if (checks.data?.total_count>100)
                   throw Error('check-inventory-truncated');
+                ciBaseSha = current.base.sha;
                 observed={pr:current,comparison:comparison.data,checkRuns:checks.data};
               } catch (error) {
                 core.warning?.('Council CI evidence remains unverified: '+error.message);
@@ -239,8 +242,9 @@ jobs:
                 const before=(await github.rest.pulls.get({
                   owner,repo,pull_number:itemNumber
                 })).data;
-                if(before.state!=='open'||before.head?.sha!==sha)
-                  throw Error('council-patch-head-drift');
+                if(before.state!=='open'||before.head?.sha!==sha||
+                  before.base?.sha !== ciBaseSha)
+                  throw Error('council-patch-head-or-base-drift');
                 const observedFiles=await github.paginate(github.rest.pulls.listFiles,{
                   owner,repo,pull_number:itemNumber,per_page:100
                 });
@@ -248,7 +252,8 @@ jobs:
                   owner,repo,pull_number:itemNumber
                 })).data;
                 if(after.state!=='open'||after.head?.sha!==sha||
-                  after.base?.sha!==before.base?.sha)
+                  after.base?.sha!==before.base?.sha||
+                  after.base?.sha !== ciBaseSha)
                   throw Error('council-patch-head-or-base-drift');
                 const complete=observedFiles.length===after.changed_files&&
                   observedFiles.length<=80&&
@@ -260,7 +265,8 @@ jobs:
                 }));
                 const file=path.join(dir,'exact-head-pr-files.json');
                 fs.writeFileSync(file,JSON.stringify({
-                  sourceSha:sha,prNumber:itemNumber,complete,files:selected
+                  sourceSha:sha,baseSha:ciBaseSha,
+                  prNumber:itemNumber,complete,files:selected
                 }));
                 core.exportVariable('COUNCIL_PR_FILES_FILE',file);
                 // Full source stays in runner memory. Only bounded AST

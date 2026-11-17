@@ -29,16 +29,10 @@ function exactHeadPayload({head=HEAD}={}){
 }
 
 function completeFilesPayload(){
- return {sourceSha:HEAD,prNumber:PR,complete:true,
+ return {sourceSha:HEAD,baseSha:BASE,prNumber:PR,complete:true,
   files:[{filename:'README.md',status:'modified',additions:1,deletions:1,
    patch:'@@ -1 +1 @@\\n-old\\n+new'}]};
 }
-function exactHeadFiles(){return {
- sourceSha:HEAD,prNumber:PR,complete:true,
- files:[{filename:'README.md',status:'modified',additions:1,deletions:0,
-   patch:'@@ -1 +1 @@\\n+documented proof'}]
-};}
-
 function runDebate({evidence=exactHeadPayload(),security='0',
   files=completeFilesPayload()}={}){
  const cwd=mkdtempSync(join(tmpdir(),'ultron-council-evidence-'));
