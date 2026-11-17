@@ -111,3 +111,45 @@ test('dual-source receipt claims, effect URL, source SHA, digest, and identity c
   assert.equal(cloudReceiptValid({...r,...change}),false);
  }
 });
+
+async function paginatedProbe(a,pages){
+ const calls=[];
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,method:options.method});
+  const idx=Number(new URL(url).searchParams.get('page'))-1;
+  return {ok:true,status:200,json:async()=>pages[idx]||[]};
+ };
+ const result=await probeCouncilEffect(a,'installation-token',{
+  op:'review.comment',number:PR,executionKey:KEY,caseSha:CASE
+ },fetchImpl);
+ return {result,calls};
+}
+test('multiple matching reviews on one page are ambiguous and cannot become verified',async()=>{
+ const a=await actor();
+ const {result}=await paginatedProbe(a,[[review({id:11}),review({id:12})]]);
+ assert.equal(result?.receipt,undefined);
+});
+test('duplicate matching reviews across pages are ambiguous, not first-match success',async()=>{
+ const a=await actor();
+ const first=Array.from({length:100},(_,i)=>review({id:i+1,body:'other review'}));
+ first[88]=review({id:950});
+ const {result,calls}=await paginatedProbe(a,[first,[review({id:951})]]);
+ assert.equal(result?.receipt,undefined);
+ assert.equal(calls.length,2,'scan all pages before establishing uniqueness');
+});
+test('one matching review on a later page is recoverable only after complete scan',async()=>{
+ const a=await actor();
+ const first=Array.from({length:100},(_,i)=>review({id:i+1,body:'old review'}));
+ const {result,calls}=await paginatedProbe(a,[first,[review({id:999})]]);
+ assert.equal(result?.receipt?.effect?.id,999);
+ assert.equal(cloudReceiptValid(result?.receipt),true);
+ assert.equal(calls.length,2);
+});
+test('ten full pages mean readback is incomplete and no receipt is authorized',async()=>{
+ const a=await actor();
+ const pages=Array.from({length:10},(_,p)=>Array.from({length:100},(_,i)=>
+  review({id:p*100+i+1,body:p===0&&i===8?MARKER:'historical review'})));
+ const {result,calls}=await paginatedProbe(a,pages);
+ assert.equal(result?.receipt,undefined);
+ assert.equal(calls.length,10);
+});
