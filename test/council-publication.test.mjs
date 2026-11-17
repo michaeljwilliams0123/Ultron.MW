@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {buildCouncilPublication,alreadyPublished,COUNCIL_ROLES}
+import {buildCouncilPublication,alreadyPublished,COUNCIL_ROLES,fingerprintCouncilEvidence}
  from '../src/council-publication.mjs';
 
 const positions=()=>COUNCIL_ROLES.map((role,i)=>({
@@ -26,13 +26,42 @@ test('RED: same evidence gives the same council publication ID despite different
   assert.equal(a.members[1].conclusion,'hold');
   assert.ok(a.members[1].unknowns.includes('independent-review-missing'));
 });
-test('RED: changing actual source, evidence, or role dissent changes the publication ID',()=>{
+test('RED: changing actual source, exact-head evidence, or role dissent changes the publication ID',()=>{
   const initial=buildCouncilPublication(base());
   assert.notEqual(initial.fingerprint,buildCouncilPublication({...base(),sourceSha:'b'.repeat(40)}).fingerprint);
   assert.notEqual(initial.fingerprint,buildCouncilPublication({...base(),body:'New owner constraint'}).fingerprint);
+  assert.notEqual(initial.fingerprint,buildCouncilPublication({...base(),
+    evidenceFingerprint:'b'.repeat(64)}).fingerprint);
   const changed=positions();changed[1]={...changed[1],dissentTags:['new-security-gate']};
   assert.notEqual(initial.fingerprint,buildCouncilPublication({...base(),positions:changed}).fingerprint);
 });
+test('RED: publication changes after exact-head CI passes, then dedupes unchanged evidence',()=>{
+  const sha='a'.repeat(40);
+  const before={schema:'ultron.council-exact-head-evidence.v1',verified:false,
+    reason:'required-check-not-verified',sourceSha:null,baseSha:null,
+    prNumber:null,checks:[]};
+  const after={...before,verified:true,reason:null,sourceSha:sha,
+    baseSha:'b'.repeat(40),prNumber:479,
+    checks:['test','fixed-comparison','attested-receipt']};
+  const files={sourceSha:sha,baseSha:'b'.repeat(40),prNumber:479,
+    complete:true,files:[{filename:'src/council-publication.mjs'}]};
+  const fingerprintBefore=fingerprintCouncilEvidence({sourceSha:sha,
+    reviewEvidence:before,fileEvidence:files});
+  const fingerprintAfter=fingerprintCouncilEvidence({sourceSha:sha,
+    reviewEvidence:after,fileEvidence:files});
+  assert.notEqual(fingerprintBefore,fingerprintAfter);
+  const original=buildCouncilPublication({...base(),evidenceFingerprint:fingerprintBefore});
+  const updated=buildCouncilPublication({...base(),evidenceFingerprint:fingerprintAfter});
+  assert.notEqual(original.marker,updated.marker);
+  assert.equal(alreadyPublished(updated,[{user:{login:'github-actions[bot]'},
+    body:'# Ultron Council Report\n'+original.marker}]),false);
+  assert.equal(alreadyPublished(updated,[{user:{login:'github-actions[bot]'},
+    body:'# Ultron Council Report\n'+updated.marker}]),true);
+  assert.equal(fingerprintAfter,fingerprintCouncilEvidence({sourceSha:sha,
+    reviewEvidence:{...after,observedAt:'2026-11-17T06:00:00Z'},
+    fileEvidence:{...files,observedAt:'2026-11-17T07:00:00Z'}}));
+});
+
 test('RED: only a previously posted GitHub Actions report, not owner text, can establish dedupe',()=>{
   const report=buildCouncilPublication(base());
   const body='# Ultron Council Report\n'+report.marker+'\n';
@@ -40,7 +69,7 @@ test('RED: only a previously posted GitHub Actions report, not owner text, can e
   assert.equal(alreadyPublished(report,[{user:{login:'michaeljwilliams0123'},body}]),false);
   assert.equal(alreadyPublished(report,[{user:{login:'github-actions[bot]'},body}]),true);
   assert.equal(alreadyPublished(report,[{user:{login:'github-actions[bot]'},
-    body:'# Ultron Council Report\n<!-- ultron-council-evidence-v2:'+'f'.repeat(64)+' -->'}]),false);
+    body:'# Ultron Council Report\n<!-- ultron-council-evidence-v3:'+'f'.repeat(64)+' -->'}]),false);
 });
 test('RED: council workflow suppresses identical reports and discloses identities and no model inference',()=>{
   const yaml=readFileSync(new URL('../.github/workflows/council-debate.yml',import.meta.url),'utf8');
@@ -50,6 +79,7 @@ test('RED: council workflow suppresses identical reports and discloses identitie
   assert.match(yaml,/github\.event\.inputs\.item_number/);
   assert.match(yaml,/cancel-in-progress: false/);
   assert.match(script,/buildCouncilPublication/);
+  assert.match(script,/evidenceFingerprint/);
   assert.match(script,/assessCouncil/);
   assert.match(script,/reasoning\.modelInvocations/);
   assert.match(script,/Specialized model review/);

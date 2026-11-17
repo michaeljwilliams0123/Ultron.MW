@@ -11,12 +11,35 @@ const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex
 const strings=value=>Array.isArray(value)?
   [...new Set(value.filter(v=>typeof v==='string'&&v.length<=300))].sort():[];
 
+export function fingerprintCouncilEvidence({
+  sourceSha='',reviewEvidence=null,fileEvidence=null
+}={}){
+  return hash({
+    sourceSha,
+    review:reviewEvidence?{
+      schema:reviewEvidence.schema,verified:reviewEvidence.verified===true,
+      reason:reviewEvidence.reason??null,sourceSha:reviewEvidence.sourceSha??null,
+      baseSha:reviewEvidence.baseSha??null,prNumber:reviewEvidence.prNumber??null,
+      checks:Array.isArray(reviewEvidence.checks)?[...reviewEvidence.checks]:[]
+    }:null,
+    files:fileEvidence?{
+      sourceSha:fileEvidence.sourceSha??null,
+      baseSha:fileEvidence.baseSha??null,
+      prNumber:fileEvidence.prNumber??null,
+      complete:fileEvidence.complete===true,
+      count:Array.isArray(fileEvidence.files)?fileEvidence.files.length:0
+    }:null
+  });
+}
+
 export function buildCouncilPublication({
-  title,body,isPr,sourceSha='',positions,ownerMode=false,flags={}
+  title,body,isPr,sourceSha='',evidenceFingerprint='',positions,ownerMode=false,flags={}
 }={}){
   if(typeof title!=='string'||!title.trim()||typeof body!=='string'||
     typeof isPr!=='boolean'||typeof ownerMode!=='boolean'||
     typeof sourceSha!=='string'||(sourceSha!==''&&!/^[a-f0-9]{40}$/.test(sourceSha))||
+    typeof evidenceFingerprint!=='string'||
+    (evidenceFingerprint!==''&&!/^[a-f0-9]{64}$/.test(evidenceFingerprint))||
     !Array.isArray(positions)||positions.length!==COUNCIL_ROLES.length)
     throw Error('council-publication-input-invalid');
   const byRole=new Map();
@@ -29,7 +52,7 @@ export function buildCouncilPublication({
     byRole.set(p.individualId,p);
   }
   const context=Object.freeze({
-    schema:'ultron.council-publication.v2',title,body,isPr,sourceSha,ownerMode,
+    schema:'ultron.council-publication.v3',title,body,isPr,sourceSha,evidenceFingerprint,ownerMode,
     flags:Object.fromEntries(Object.entries(flags).sort(([a],[b])=>a.localeCompare(b))
       .filter(([,v])=>typeof v==='boolean'))
   });
@@ -47,9 +70,9 @@ export function buildCouncilPublication({
     })});
   });
   const fingerprint=hash({contextSha,
-    members:members.map(m=>m.fingerprint),version:'council-evidence-v2'});
+    members:members.map(m=>m.fingerprint),version:'council-evidence-v3'});
   return Object.freeze({fingerprint,
-    marker:'<!-- ultron-council-evidence-v2:'+fingerprint+' -->',
+    marker:'<!-- ultron-council-evidence-v3:'+fingerprint+' -->',
     members:Object.freeze(members)});
 }
 export function alreadyPublished(publication,comments){
