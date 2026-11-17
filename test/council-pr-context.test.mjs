@@ -71,7 +71,7 @@ test('bounded patch review keeps a late relevant source change and release cavea
  assert.doesNotMatch(prompt,/ghp_[A-Za-z0-9]{15,}/);
 });
 test('long patch beyond bounded limit remains explicitly partial',()=>{
- const lines=['@@ -1,60 +1,60 @@',...Array.from({length:55},(_,i)=>'+ const x'+i+' = '+i+';')];
+ const lines=['@@ -1,100 +1,100 @@',...Array.from({length:100},(_,i)=>'+ const x'+i+' = '+i+';')];
  const ctx=buildCouncilPrContext({sourceSha:sha,prNumber:479,
   files:[file('src/safe.mjs',lines.join('\n'))]});
  assert.equal(ctx.complete,false);

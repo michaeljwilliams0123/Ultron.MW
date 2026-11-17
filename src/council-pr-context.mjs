@@ -52,9 +52,15 @@ export function buildCouncilPrContext({sourceSha,prNumber,files,complete=true,ma
    coverage=false;
   }else{
    const lines=raw.split('\n').filter(line=>/^(?:@@|\+[^+]|-[^-])/.test(line));
-   const selected=lines.slice(0,28).map(line=>'| '+line.slice(0,160)).join('\n');
-   excerpt=selected.slice(0,1150);
-   if(lines.length>28||selected.length>1150)coverage=false;
+   // Review high-signal source and database changes with enough context to
+   // include complete SQL guards; cap test/docs excerpts so one long fixture
+   // cannot displace the actual implementation. All snippets remain untrusted.
+   const critical=tag==='source'||tag==='security-path'||tag==='database';
+   const lineBudget=critical?60:tag==='test'?14:18;
+   const charBudget=critical?2650:tag==='test'?520:650;
+   const selected=lines.slice(0,lineBudget).map(line=>'| '+line.slice(0,160)).join('\n');
+   excerpt=selected.slice(0,charBudget);
+   if(lines.length>lineBudget||selected.length>charBudget)coverage=false;
   }
   const header=path+' ('+status+', +'+additions+'/-'+deletions+', '+tag+')';
   let segment=header+'\n'+excerpt;
