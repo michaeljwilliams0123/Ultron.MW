@@ -142,7 +142,7 @@ jobs:
             const patchComplete=complete&&files.length<=80&&
               files.every(f=>!f.patch||f.patch.length<=12000);
             core.exportVariable('COUNCIL_PR_FILES_FILE',write('exact-head-pr-files.json',{
-              sourceSha:pr.head.sha,prNumber:pr.number,complete:patchComplete,
+              sourceSha:pr.head.sha,baseSha:pr.base.sha,prNumber:pr.number,complete:patchComplete,
               files:files.slice(0,80).map(f=>({
                 filename:f.filename,status:f.status,
                 additions:f.additions,deletions:f.deletions,
