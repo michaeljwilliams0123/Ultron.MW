@@ -173,6 +173,7 @@ async function post(res,req){
    }
   }else if(action==='conversation.rename'){
    rows=(await db.query('UPDATE council_room_threads SET title=$2,updated_at=now() WHERE room_key=$1 RETURNING room_key',[room,title])).rows;
+   if(!rows.length)return reply(res,404,{ok:false,error:'conversation-not-found'});
   }else{
    if(typeof req.body.value!=='boolean')return reply(res,400,{ok:false,error:'conversation-value-invalid'});
    if(action==='conversation.archive'&&room==='owner-main'&&req.body.value)

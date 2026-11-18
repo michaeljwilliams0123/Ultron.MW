@@ -58,6 +58,7 @@ test('owner boundary, invalid names and unknown rooms fail before thread writes'
  for(const title of ['', 'x'.repeat(121),'password: example'])
   assert.equal((await call('POST',{action:'conversation.create',room:a,title})).status,400);
  assert.equal((await call('GET',{}, {room:a})).status,404);
+ assert.equal((await call('POST',{action:'conversation.rename',room:a,title:'Missing'})).status,404);
  assert.equal((await call('GET',{}, {room:'../bad'})).status,400);
  assert.equal((await db.query('SELECT count(*)::int AS n FROM council_room_threads')).rows[0].n,1);
 });
