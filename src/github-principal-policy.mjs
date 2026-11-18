@@ -130,7 +130,23 @@ export function assertOperationAuthorization(authorization,{
  * Issue #209 contains the owner-approved queue; PR #200 requires technical
  * security evaluation (#201), not a second human signer. #198 remains parked.
  */
-export function evaluateProtectedHead(evidence,{headSha,principalActorRef,prNumber,now}={}){
+function hasIndependentEvaluation(evidence,{headSha,principalActorRef,instant}){
+ const evalGate=evidence?.independentEvaluation;
+ const evaluatedAt=parseInstant(evalGate?.evaluatedAt);
+ const evaluatorId=evalGate?.evaluator?.id;
+ return Boolean(
+  evalGate&&typeof evalGate==='object'&&
+  evalGate.disposition==='Accepted'&&
+  evalGate.evaluationHeadSha===headSha&&
+  evalGate.evaluator?.origin==='external-independent'&&
+  typeof evaluatorId==='string'&&evaluatorId.trim().length>0&&
+  evaluatorId!==principalActorRef&&
+  Number.isFinite(evaluatedAt)&&
+  instant-evaluatedAt>=0&&instant-evaluatedAt<=5*60*1000
+ );
+}
+
+export function evaluateProtectedHead(evidence,{headSha,principalActorRef,prNumber,now,affectedFollowOn=false}={}){
  const instant=parseInstant(now),observed=parseInstant(evidence?.observedAt);
  const checks=Array.isArray(evidence?.checks)?evidence.checks:[];
  const required=new Set(['test','fixed-comparison']);
@@ -164,12 +180,16 @@ export function evaluateProtectedHead(evidence,{headSha,principalActorRef,prNumb
    evidence?.securityEvaluation?.status==='cleared')&&
   // #198 proposes a separate Admin App inconsistent with the single principal.
   prNumber!==198;
+ const followOnReady=!affectedFollowOn||hasIndependentEvaluation(evidence,{
+  headSha,principalActorRef,instant,
+ });
  const ready=Number.isFinite(instant)&&Number.isFinite(observed)&&
   instant-observed>=0&&instant-observed<=5*60*1000&&SHA.test(headSha||'')&&
   typeof principalActorRef==='string'&&principalActorRef.length>0&&
   evidence?.source==='github-protected-head-readback'&&evidence?.verified===true&&
   evidence?.headSha===headSha&&[...required].every(name=>passed.has(name))&&
-  ownerApproved&&githubEligible&&securityReady;
+  ownerApproved&&githubEligible&&securityReady&&followOnReady;
  return Object.freeze({ready,executable:false,headSha,
-  reason:ready?'exact-head-checks-and-owner-authorization':'protected-head-evidence-incomplete'});
+  reason:ready?'exact-head-checks-and-owner-authorization':
+   (!followOnReady?'independent-head-evaluation-required':'protected-head-evidence-incomplete')});
 }

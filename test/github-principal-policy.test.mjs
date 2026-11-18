@@ -214,3 +214,56 @@ test('RED owner authority: authenticated queue approval is sufficient without a 
  }},{...opts,prNumber:198});
  assert.equal(parked.ready,false,'parked Admin App cannot skip architecture reconciliation');
 });
+
+test('follow-on PRs require head-bound external-independent evaluation separate from operation grants',()=>{
+ const ownerApproval={
+  source:'github-owner-queue-attestation',verified:true,
+  actor:'michaeljwilliams0123',repository:ULTRON_REPOSITORY,
+  issueNumber:209,commentId:6579368546,scope:'routine-source-squash',
+  decision:'approved',approvedPrNumbers:[212]
+ };
+ const independentEvaluation={
+  disposition:'Accepted',
+  evaluationHeadSha:SHA,
+  evaluatedAt:'2026-10-31T19:58:00Z',
+  evaluator:{id:'reef-external-evaluator',origin:'external-independent'}
+ };
+ const evidence={
+  source:'github-protected-head-readback',verified:true,headSha:SHA,
+  observedAt:'2026-10-31T19:59:00Z',
+  checks:[
+   {name:'test',status:'completed',conclusion:'success',headSha:SHA},
+   {name:'fixed-comparison',status:'completed',conclusion:'success',headSha:SHA}
+  ],
+  ownerApproval,
+  githubRules:{source:'github-enforced-merge-readback',verified:true,eligible:true},
+  dependenciesSatisfied:true,materialSecurityFindingsClear:true,
+  independentEvaluation
+ };
+ const opts={headSha:SHA,prNumber:212,principalActorRef:'github-app:ultron-operator',now:NOW,affectedFollowOn:true};
+ const passed=evaluateProtectedHead(evidence,opts);
+ assert.deepEqual(passed,{ready:true,executable:false,headSha:SHA,
+  reason:'exact-head-checks-and-owner-authorization'});
+
+ for(const badEval of [
+  undefined,
+  {...independentEvaluation,disposition:'Rejected'},
+  {...independentEvaluation,evaluationHeadSha:'d'.repeat(40)},
+  {...independentEvaluation,evaluator:{id:'reef-external-evaluator',origin:'candidate'}},
+  {...independentEvaluation,evaluator:{id:'github-app:ultron-operator',origin:'external-independent'}},
+  {...independentEvaluation,evaluatedAt:'2026-10-31T19:50:00Z'},
+ ]){
+  const blocked=evaluateProtectedHead({...evidence,independentEvaluation:badEval},opts);
+  assert.equal(blocked.ready,false);
+  assert.equal(blocked.executable,false);
+  assert.equal(blocked.reason,'independent-head-evaluation-required');
+ }
+
+ // Operation authorization remains isolated from Reef evaluation evidence
+ const op='actions.rerun_failed';
+ const auth=assertOperationAuthorization(
+  authorization(op,'owner-standing-authorization'),
+  {operation:op,planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',installationId:9123,now:NOW}
+ );
+ assert.equal(auth.authorization,'standing');
+});
