@@ -84,3 +84,22 @@ test('lost ACK is reconciled and cannot be submitted again with stale generation
     })).verified,false);
   }finally{await db.close();}
 });
+
+test('owner pause after reservation invalidates sent-state CAS before provider POST',async()=>{
+  const db=await database();
+  try{
+    const store=outbox(db);
+    const reserved=await store.reserve({
+      idempotencyKey:KEY,requestDigest:SHA,fencingEpoch:5,
+    });
+    assert.equal(reserved.ok,true);
+    await db.query('UPDATE brain_runtime_control SET paused=true WHERE id=1');
+    const sent=await store.markSent({
+      idempotencyKey:KEY,requestDigest:SHA,fencingEpoch:reserved.fencingEpoch,
+    });
+    assert.equal(sent.ok,false);
+    const persisted=await db.query('SELECT last_result FROM brain_tasks WHERE id=$1',
+      [reserved.fencingEpoch]);
+    assert.equal(persisted.rows[0].last_result.state,'reserved');
+  }finally{await db.close();}
+});
