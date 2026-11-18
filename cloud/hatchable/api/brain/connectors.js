@@ -1,6 +1,7 @@
 import {config, api, db} from 'hatchable';
 import {verifiedProviderMutations} from 'lib/connector-evidence.js';
 import {probeGithubOperator} from 'lib/github-operator-probe.js';
+import {providerManifestReadiness} from 'lib/provider-manifest-readiness.js';
 
 export const access='admin';
 export const methods=['GET'];
@@ -76,6 +77,7 @@ export default async function(req,res){
   gitlab:{read:gitlabRead,writeScopeReadProbe:gitlabWrite,
    writeMutationVerified:verified.gitlabBranchVerified},
   githubOauth,
+  providerManifests:providerManifestReadiness({githubOauth,gitlabRead,gitlabWrite}),
   graph:{state:present.ULTRON_GRAPH_WORKBOOK_BINDING&&
    present.ULTRON_GRAPH_DELEGATED_TOKEN?'credentials-present-unverified':'not-configured'},
   hatchable:{ownerSession:'authenticated-collaborator',
