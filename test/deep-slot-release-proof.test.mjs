@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
-import {classifySlot,recordSlot,completeSlot,planRecovery,slotKey}
+import {classifySlot,recordSlot,completeSlot,reconcileSchedulerSlots,planRecovery,slotKey}
  from '../src/scheduler/slot-ledger.mjs';
 import {buildReleaseProof} from '../src/evidence/release-proof.mjs';
 const S='2026-11-11T21:00Z',HEAD='a'.repeat(40);
@@ -122,4 +122,41 @@ test('SLOT-09 configured threshold and failed pickup remain breached after termi
  assert.equal((await completeSlot({db,key:slot,status:'done'})).updated,true);
  const row=(await db.query('SELECT evidence FROM brain_scheduler_slots WHERE slot_key=$1',[slot])).rows[0];
  assert.deepEqual(row.evidence,{primaryOnTime:false,sloBreach:true});
+});
+
+test('SLOT-10 reconciles only durable, independently receipted terminal hourly outcomes',async t=>{
+ const db=new PGlite();t.after(()=>db.close());
+ await db.exec('CREATE TABLE brain_authority_grants(grant_id TEXT PRIMARY KEY)');
+ await db.exec(readFileSync(new URL('../cloud/hatchable/migrations/0045_deep_mutation_and_slots.sql',import.meta.url),'utf8'));
+ await db.exec('CREATE TABLE brain_tasks(id BIGSERIAL PRIMARY KEY,task_key TEXT UNIQUE NOT NULL,status TEXT NOT NULL)');
+ await db.exec('CREATE TABLE brain_events(id BIGSERIAL PRIMARY KEY,task_id BIGINT,event_type TEXT NOT NULL)');
+ const hours=['2026-11-11T18:00Z','2026-11-11T19:00Z','2026-11-11T20:00Z'];
+ for(const key of hours)await recordSlot({db,slot:classifySlot({
+  scheduledHour:key,actualPickupAt:key.replace(':00Z',':18:00Z')
+ })});
+ for(let h=18;h<=20;h++){
+  const suffix='20261111'+String(h);
+  for(const prefix of ['hourly-','council-hourly-']){
+   const key=prefix+suffix;
+   const state=h===20&&prefix==='council-hourly-'?'blocked':'done';
+   const added=await db.query('INSERT INTO brain_tasks(task_key,status) VALUES($1,$2) RETURNING id',[key,state]);
+   // Slot 19 lacks the council observed receipt; status alone proves nothing.
+   if(h===19&&prefix==='council-hourly-')continue;
+   const event=state==='blocked'?'attempt-limit':'observed';
+   await db.query('INSERT INTO brain_events(task_id,event_type) VALUES($1,$2)',[added.rows[0].id,event]);
+  }
+ }
+ const first=await reconcileSchedulerSlots({db,now:'2026-11-11T21:15:00Z'});
+ assert.equal(first.completed,1);
+ assert.equal(first.failed,1);
+ const rows=(await db.query('SELECT slot_key,completion_status FROM brain_scheduler_slots ORDER BY slot_key')).rows;
+ assert.deepEqual(rows.map(row=>row.completion_status),['done','pending','failed']);
+ const second=await reconcileSchedulerSlots({db,now:'2026-11-11T21:15:00Z'});
+ assert.equal(second.completed,0);
+ assert.equal(second.failed,0);
+});
+test('SLOT-11 active run wires terminal slot reconciliation, not tick admission',()=>{
+ const runner=readFileSync(new URL('../cloud/hatchable/api/brain/run.js',import.meta.url),'utf8');
+ assert.match(runner,/reconcileSchedulerSlots\(\{db/);
+ assert.match(runner,/slot_reconciliation/);
 });
