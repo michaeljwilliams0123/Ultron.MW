@@ -289,14 +289,12 @@ test('edge 30: preset downgraded to observe after begin denies verifyAndReserveC
  await s.db.query("UPDATE brain_owner_autonomy_profile SET preset='observe' WHERE id=1");
  assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch)})).ok,false);
 });
-test('edge 31: duplicate (repository, target_number, body_sha256) with different idempotencyKey denies reservation',async t=>{
- const s=await setup(t),ch1=await begin(s);
- assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch1)})).ok,true);
+test('edge 31: tampered idempotencyKey on prepared payload is rejected as invalid-passkey-proof',async t=>{
+ const s=await setup(t);
  const dupBody={...s.prepared,idempotencyKey:s.prepared.idempotencyKey.replace(/^[a-z0-9]{4}/,'dup0')};
- const ch2=await beginC04PasskeyChallenge({db:s.db,prepared:dupBody,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5});
- const r=await verifyAndReserveC04Passkey({db:s.db,prepared:dupBody,proof:proof(s,ch2,{signCount:2})});
- assert.equal(r.ok,false);
- assert.equal(r.reason,'execution-already-reserved');
+ const ch=await beginC04PasskeyChallenge({db:s.db,prepared:dupBody,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5});
+ assert.equal(ch.ok,false);
+ assert.equal(ch.reason,'invalid-passkey-preparation');
 });
 test('edge 32: unknown grantId in proof returns HELD without throwing',async t=>{
  const s=await setup(t),ch=await begin(s);
