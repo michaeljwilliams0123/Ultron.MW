@@ -1,6 +1,7 @@
 import { db,browser,scheduler,config,events } from 'hatchable';
 import {notifyOwner} from 'lib/owner-live-events.js';
 import { runOne } from 'lib/brain-runner.js';
+import {reconcileSchedulerSlots} from 'lib/slot-ledger.js';
 import { readOwnerProfile } from 'lib/owner-autonomy-control.js';
 import { resumePendingMahoragaActions } from 'lib/mahoraga-actions.js';
 export const access='scheduler';
@@ -35,8 +36,11 @@ export default async function(req,res){
    catch(_e){continuation_scheduled=false;}
   }
  }
+ let slot_reconciliation;
+ try{slot_reconciliation=await reconcileSchedulerSlots({db});}
+ catch{slot_reconciliation={unavailable:true,completed:0,failed:0};}
  if(results.some(r=>['done','failed','lost-lease'].includes(r.status)))
   await notifyOwner(events,'task');
  return res.json({trigger:'owner-requested',count:results.filter(r=>r.status==='done').length,
-  continuation_scheduled,mahoraga,results});
+  continuation_scheduled,mahoraga,slot_reconciliation,results});
 }
