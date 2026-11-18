@@ -140,7 +140,8 @@ function hasIndependentEvaluation(evidence,{headSha,principalActorRef,instant}){
   evalGate.evaluationHeadSha===headSha&&
   evalGate.evaluator?.origin==='external-independent'&&
   typeof evaluatorId==='string'&&evaluatorId.trim().length>0&&
-  evaluatorId!==principalActorRef&&
+  typeof principalActorRef==='string'&&
+  evaluatorId.trim()!==principalActorRef.trim()&&
   Number.isFinite(evaluatedAt)&&
   instant-evaluatedAt>=0&&instant-evaluatedAt<=5*60*1000
  );

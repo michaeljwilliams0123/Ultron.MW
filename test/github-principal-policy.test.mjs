@@ -267,3 +267,305 @@ test('follow-on PRs require head-bound external-independent evaluation separate 
  );
  assert.equal(auth.authorization,'standing');
 });
+
+// 33 advanced, unique, and purposely confusing edge-case tests (#173 Phase 3)
+const followOnBase=()=>{
+ const ownerApproval={
+  source:'github-owner-queue-attestation',verified:true,
+  actor:'michaeljwilliams0123',repository:ULTRON_REPOSITORY,
+  issueNumber:209,commentId:6579368546,scope:'routine-source-squash',
+  decision:'approved',approvedPrNumbers:[212]
+ };
+ return {
+  source:'github-protected-head-readback',verified:true,headSha:SHA,
+  observedAt:'2026-10-31T19:59:00Z',
+  checks:[
+   {name:'test',status:'completed',conclusion:'success',headSha:SHA},
+   {name:'fixed-comparison',status:'completed',conclusion:'success',headSha:SHA}
+  ],
+  ownerApproval,
+  githubRules:{source:'github-enforced-merge-readback',verified:true,eligible:true},
+  dependenciesSatisfied:true,materialSecurityFindingsClear:true,
+  independentEvaluation:{
+   disposition:'Accepted',
+   evaluationHeadSha:SHA,
+   evaluatedAt:'2026-10-31T19:58:00Z',
+   evaluator:{id:'reef-external-evaluator',origin:'external-independent'}
+  }
+ };
+};
+const followOnOpts=(overrides={})=>({
+ headSha:SHA,prNumber:212,principalActorRef:'github-app:ultron-operator',
+ now:NOW,affectedFollowOn:true,...overrides
+});
+
+test('edge 01: whitespace-padded evaluator id matching principalActorRef is blocked',()=>{
+ const ev=followOnBase();
+ ev.independentEvaluation.evaluator.id='  github-app:ultron-operator  ';
+ const r=evaluateProtectedHead(ev,followOnOpts());
+ assert.equal(r.ready,false);
+ assert.equal(r.reason,'independent-head-evaluation-required');
+});
+
+test('edge 02: whitespace-only evaluator id is blocked',()=>{
+ const ev=followOnBase();
+ ev.independentEvaluation.evaluator.id=' \t ';
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+});
+
+test('edge 03: non-string evaluator id (number/object) is blocked',()=>{
+ for(const id of [123,{name:'reef'}]){
+  const ev=followOnBase();
+  ev.independentEvaluation.evaluator.id=id;
+  assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+ }
+});
+
+test('edge 04: future evaluatedAt (1ms ahead of now) is blocked',()=>{
+ const ev=followOnBase();
+ ev.independentEvaluation.evaluatedAt='2026-10-31T20:00:00.001Z';
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+});
+
+test('edge 05: evaluatedAt exactly at 5m00s boundary passes; 5m00.001s fails',()=>{
+ const evOk=followOnBase();
+ evOk.independentEvaluation.evaluatedAt='2026-10-31T19:55:00.000Z';
+ assert.equal(evaluateProtectedHead(evOk,followOnOpts()).ready,true);
+ const evStale=followOnBase();
+ evStale.independentEvaluation.evaluatedAt='2026-10-31T19:54:59.999Z';
+ assert.equal(evaluateProtectedHead(evStale,followOnOpts()).ready,false);
+});
+
+test('edge 06: evaluatedAt with invalid calendar date (Feb 30) is blocked',()=>{
+ const ev=followOnBase();
+ ev.independentEvaluation.evaluatedAt='2026-02-30T19:58:00Z';
+ assert.equal(evaluateProtectedHead(ev,followOnOpts({now:'2026-03-02T20:00:00Z'})).ready,false);
+});
+
+test('edge 07: uppercase evaluationHeadSha does not match lowercase headSha',()=>{
+ const ev=followOnBase();
+ ev.independentEvaluation.evaluationHeadSha='A'.repeat(40);
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+});
+
+test('edge 08: protected-base origin is insufficient for affectedFollowOn (requires external-independent)',()=>{
+ const ev=followOnBase();
+ ev.independentEvaluation.evaluator.origin='protected-base';
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+});
+
+test('edge 09: Inconclusive and Blocked dispositions block affectedFollowOn',()=>{
+ for(const disposition of ['Inconclusive','Blocked','accepted']){
+  const ev=followOnBase();
+  ev.independentEvaluation.disposition=disposition;
+  assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+ }
+});
+
+test('edge 10: affectedFollowOn=false ignores Rejected independentEvaluation for routine PRs',()=>{
+ const ev=followOnBase();
+ ev.independentEvaluation.disposition='Rejected';
+ assert.equal(evaluateProtectedHead(ev,followOnOpts({affectedFollowOn:false})).ready,true);
+});
+
+test('edge 11: leap-year 2024-02-29 and century-400 2000-02-29 parse; 2026-02-29 and 2100-02-29 fail',async()=>{
+ const {parseInstant}=await import('../src/github-principal-policy.mjs');
+ assert.ok(Number.isFinite(parseInstant('2024-02-29T12:00:00Z')));
+ assert.ok(Number.isFinite(parseInstant('2000-02-29T12:00:00Z')));
+ assert.ok(Number.isNaN(parseInstant('2026-02-29T12:00:00Z')));
+ assert.ok(Number.isNaN(parseInstant('2100-02-29T12:00:00Z')));
+});
+
+test('edge 12: negative timezone offset -14:00 parses while -14:01 and lowercase t/z fail',async()=>{
+ const {parseInstant}=await import('../src/github-principal-policy.mjs');
+ assert.ok(Number.isFinite(parseInstant('2026-11-01T12:00:00-14:00')));
+ assert.ok(Number.isNaN(parseInstant('2026-11-01T12:00:00-14:01')));
+ assert.ok(Number.isNaN(parseInstant('2026-11-01t12:00:00z')));
+});
+
+test('edge 13: check passing on different headSha never satisfies required check on target headSha',()=>{
+ const ev=followOnBase();
+ ev.checks=[
+  {name:'test',status:'completed',conclusion:'success',headSha:'b'.repeat(40)},
+  {name:'fixed-comparison',status:'completed',conclusion:'success',headSha:SHA},
+ ];
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+});
+
+test('edge 14: in_progress check with conclusion=success is rejected',()=>{
+ const ev=followOnBase();
+ ev.checks[0].status='in_progress';
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+});
+
+test('edge 15: duplicate required check where second is neutral/cancelled rejects',()=>{
+ for(const conclusion of ['neutral','cancelled','skipped','timed_out']){
+  const ev=followOnBase();
+  ev.checks.push({name:'fixed-comparison',status:'completed',conclusion,headSha:SHA});
+  assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+ }
+});
+
+test('edge 16: observedAt in the future relative to now is rejected',()=>{
+ const ev=followOnBase();
+ ev.observedAt='2026-10-31T20:00:01Z';
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+});
+
+test('edge 17: approvedPrNumbers containing non-integer or non-positive alongside valid prNumber rejects',()=>{
+ for(const badList of [[212,0],[212,-1],[212,1.5],[212,'212']]){
+  const ev=followOnBase();
+  ev.ownerApproval.approvedPrNumbers=badList;
+  assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+ }
+});
+
+test('edge 18: PR #200 with criticalSecurityHold=false still requires trusted-automated-security-evaluation',()=>{
+ const ev=followOnBase();
+ ev.ownerApproval.approvedPrNumbers=[200];
+ assert.equal(evaluateProtectedHead(ev,followOnOpts({prNumber:200})).ready,false);
+ ev.securityEvaluation={source:'trusted-automated-security-evaluation',verified:true,status:'cleared'};
+ assert.equal(evaluateProtectedHead(ev,followOnOpts({prNumber:200})).ready,true);
+});
+
+test('edge 19: criticalSecurityHold=true on non-200 PR blocks without securityEvaluation',()=>{
+ const ev=followOnBase();
+ ev.criticalSecurityHold=true;
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+ ev.securityEvaluation={source:'trusted-automated-security-evaluation',verified:true,status:'cleared'};
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,true);
+});
+
+test('edge 20: securityEvaluation with status!==cleared or verified=false remains blocked',()=>{
+ const ev=followOnBase();
+ ev.criticalSecurityHold=true;
+ ev.securityEvaluation={source:'trusted-automated-security-evaluation',verified:false,status:'cleared'};
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+ ev.securityEvaluation={source:'trusted-automated-security-evaluation',verified:true,status:'held'};
+ assert.equal(evaluateProtectedHead(ev,followOnOpts()).ready,false);
+});
+
+test('edge 21: identity readback rejects expiresAt equal to now or > 1 hour ahead',()=>{
+ assert.throws(()=>assertUnifiedGitHubIdentity(
+  identity('repair.branch.update',{expiresAt:NOW}),{operation:'repair.branch.update',now:NOW}
+ ),/identity|profile/i);
+ assert.throws(()=>assertUnifiedGitHubIdentity(
+  identity('repair.branch.update',{expiresAt:'2026-10-31T21:00:00.001Z'}),
+  {operation:'repair.branch.update',now:NOW}
+ ),/identity|profile/i);
+});
+
+test('edge 22: identity readback rejects invalid actorRef format or uppercase',()=>{
+ for(const actorRef of ['github-app:ab','github-app:Upper','user:ultron-operator','']){
+  assert.throws(()=>assertUnifiedGitHubIdentity(
+   identity('identity.read',{actorRef}),{operation:'identity.read',now:NOW}
+  ),/identity|profile/i);
+ }
+});
+
+test('edge 23: identity readback rejects wrong repositoryId or non-integer installationId',()=>{
+ assert.throws(()=>assertUnifiedGitHubIdentity(
+  identity('identity.read',{repositoryId:999}),{operation:'identity.read',now:NOW}
+ ),/identity|profile/i);
+ for(const installationId of [0,-5,1.5,'9123']){
+  assert.throws(()=>assertUnifiedGitHubIdentity(
+   identity('identity.read',{installationId}),{operation:'identity.read',now:NOW}
+  ),/identity|profile/i);
+ }
+});
+
+test('edge 24: identity readback rejects array permissions or missing permission key',()=>{
+ assert.throws(()=>assertUnifiedGitHubIdentity(
+  identity('repair.branch.update',{permissions:['metadata','contents']}),
+  {operation:'repair.branch.update',now:NOW}
+ ),/identity|profile/i);
+ assert.throws(()=>assertUnifiedGitHubIdentity(
+  identity('repair.branch.update',{permissions:{metadata:'read'}}),
+  {operation:'repair.branch.update',now:NOW}
+ ),/identity|profile/i);
+});
+
+test('edge 25: operation authorization rejects expiresAt equal to now or > 10 minutes ahead',()=>{
+ const common={planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',installationId:9123,now:NOW};
+ assert.throws(()=>assertOperationAuthorization(
+  authorization('actions.rerun_failed','owner-standing-authorization',{expiresAt:NOW}),
+  {operation:'actions.rerun_failed',...common}
+ ),/authorization/i);
+ assert.throws(()=>assertOperationAuthorization(
+  authorization('actions.rerun_failed','owner-standing-authorization',{expiresAt:'2026-10-31T20:10:00.001Z'}),
+  {operation:'actions.rerun_failed',...common}
+ ),/authorization/i);
+ assert.equal(assertOperationAuthorization(
+  authorization('actions.rerun_failed','owner-standing-authorization',{expiresAt:'2026-10-31T20:10:00Z'}),
+  {operation:'actions.rerun_failed',...common}
+ ).authorization,'standing');
+});
+
+test('edge 26: operation authorization rejects mismatched planDigest, idempotencyKey, or installationId',()=>{
+ const common={operation:'actions.rerun_failed',planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',installationId:9123,now:NOW};
+ for(const patch of [{planDigest:'c'.repeat(64)},{idempotencyKey:'other'},{installationId:9124}]){
+  assert.throws(()=>assertOperationAuthorization(
+   authorization('actions.rerun_failed','owner-standing-authorization',patch),common
+  ),/authorization/i);
+ }
+});
+
+test('edge 27: operation authorization rejects short or invalid grantId',()=>{
+ const common={operation:'actions.rerun_failed',planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',installationId:9123,now:NOW};
+ for(const grantId of ['short','grant with space','-leading-dash','']){
+  assert.throws(()=>assertOperationAuthorization(
+   authorization('actions.rerun_failed','owner-standing-authorization',{grantId}),common
+  ),/authorization/i);
+ }
+});
+
+test('edge 28: operation authorization rejects non-canonical actor',()=>{
+ const common={operation:'actions.rerun_failed',planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',installationId:9123,now:NOW};
+ assert.throws(()=>assertOperationAuthorization(
+  authorization('actions.rerun_failed','owner-standing-authorization',{actor:'github-actions[bot]'}),common
+ ),/authorization/i);
+});
+
+test('edge 29: returned objects from assertUnifiedGitHubIdentity, assertOperationAuthorization, and evaluateProtectedHead are frozen',()=>{
+ const id=assertUnifiedGitHubIdentity(identity('identity.read'),{operation:'identity.read',now:NOW});
+ const auth=assertOperationAuthorization(
+  authorization('actions.rerun_failed','owner-standing-authorization'),
+  {operation:'actions.rerun_failed',planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',installationId:9123,now:NOW}
+ );
+ const head=evaluateProtectedHead(followOnBase(),followOnOpts());
+ assert.equal(Object.isFrozen(id),true);
+ assert.equal(Object.isFrozen(auth),true);
+ assert.equal(Object.isFrozen(head),true);
+});
+
+test('edge 30: mutating returned requiredTokenPermissions does not mutate internal PROFILES',()=>{
+ const perms=requiredTokenPermissions('repair.branch.update');
+ assert.throws(()=>{perms.administration='write';});
+ assert.deepEqual(requiredTokenPermissions('repair.branch.update'),{metadata:'read',contents:'write'});
+});
+
+test('edge 31: evaluateProtectedHead handles null/undefined evidence without throwing',()=>{
+ for(const ev of [null,undefined,{}]){
+  const r=evaluateProtectedHead(ev,followOnOpts());
+  assert.equal(r.ready,false);
+  assert.equal(r.executable,false);
+ }
+});
+
+test('edge 32: all step-up profiles reject standing authorization',()=>{
+ for(const op of ['actions.enable','actions.disable','repository.settings.update','webhooks.ping']){
+  assert.throws(()=>assertOperationAuthorization(
+   authorization(op,'owner-standing-authorization'),
+   {operation:op,planDigest:'b'.repeat(64),idempotencyKey:'admin:unified-001',installationId:9123,now:NOW}
+  ),/authorization/i);
+ }
+});
+
+test('edge 33: ownerApproval wrong issueNumber or wrong scope is rejected',()=>{
+ const ev1=followOnBase();
+ ev1.ownerApproval.issueNumber=210;
+ assert.equal(evaluateProtectedHead(ev1,followOnOpts()).ready,false);
+ const ev2=followOnBase();
+ ev2.ownerApproval.scope='emergency-bypass';
+ assert.equal(evaluateProtectedHead(ev2,followOnOpts()).ready,false);
+});
