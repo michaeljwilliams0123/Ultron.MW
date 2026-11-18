@@ -35,7 +35,7 @@ test('Streamable HTTP MCP handles 2026-07-28 server/discover and tools/call stat
     id: 1,
     method: 'server/discover',
     params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} } },
-  }, { headers: { authorization: 'Bearer ' + token } }));
+  }, { headers: { authorization: 'Bearer ' + token, 'mcp-method': 'server/discover' } }));
   assert.equal(discover.status, 200);
   assert.equal(discover.headers.get('cache-control'), 'no-store');
   const payload = await discover.json();
@@ -45,7 +45,10 @@ test('Streamable HTTP MCP handles 2026-07-28 server/discover and tools/call stat
 
 test('Streamable HTTP MCP returns 202 Accepted for notifications/initialized', async () => {
   const handle = createStreamableHttpMcpHandler(CONFIG, { githubGet });
-  const res = await handle(req({ jsonrpc: '2.0', method: 'notifications/initialized' }));
+  const res = await handle(req({ jsonrpc: '2.0', method: 'notifications/initialized',
+    params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {} } } },
+    { headers: { 'mcp-method': 'notifications/initialized' } }));
   assert.equal(res.status, 202);
 });
 
