@@ -125,7 +125,11 @@ export async function verifyCouncilOidc({token,rawBody,fetchJwks=fetch,now=Date.
 export async function verifyCouncilGateOidc({token,rawBody,fetchJwks=fetch,now=Date.now}={}){
  const identity=await verifyIdentity({token,rawBody,fetchJwks,now,
   audience:councilOidcAudience,workflowRefs:[TRUSTED_GATE_WORKFLOW],
-  eventNames:['pull_request_target']});
+  eventNames:['pull_request_target','workflow_dispatch']});
+ // Owner-dispatched trusted-main rechecks are permitted only for the
+ // authenticated primary owner. This does not authorize other workflows,
+ // automation actors, arbitrary branches, or unsigned release admission.
+ if(identity.event==='workflow_dispatch'&&identity.actor!=='michaeljwilliams0123')deny();
  return Object.freeze({actor:identity.actor,sha:identity.sha,event:identity.event,
   audience:identity.audience,source:'trusted-council-gate'});
 }
