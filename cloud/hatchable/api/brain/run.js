@@ -1,6 +1,7 @@
 import { db,browser,scheduler,config,events } from 'hatchable';
 import {notifyOwner} from 'lib/owner-live-events.js';
 import { runOne } from 'lib/brain-runner.js';
+import {reconcileRecentNaturalSlots} from 'lib/scheduler-slot-reconciliation.js';
 import { readOwnerProfile } from 'lib/owner-autonomy-control.js';
 import { resumePendingMahoragaActions } from 'lib/mahoraga-actions.js';
 export const access='scheduler';
@@ -16,6 +17,16 @@ export default async function(req,res){
   const result=await runOne({db,browser});
   results.push(result);
   if(result.status==='idle'||result.status==='lost-lease'||result.status==='paused')break;
+ }
+ // Only terminal task outcomes with authentic cron admissions and unique
+ // observed receipts may complete a natural slot. Never rewrite history.
+ let slot_reconciliation={checked:0,completed:0,failed:0};
+ try{slot_reconciliation=await reconcileRecentNaturalSlots({db,outcomes:results});}
+ catch(_error){
+  // Task effects already committed. Surface an uncertain telemetry boundary
+  // without replaying work or pretending slot acceptance was proved.
+  slot_reconciliation={status:'unavailable',checked:0,completed:0,failed:0};
+  console.warn('scheduler-slot-terminal-reconciliation-unavailable');
  }
  // Only the hourly scheduler can visit persisted Mahoraga actions. Owner
  // commands and read-only queue continuations cannot activate this lane.
@@ -38,5 +49,5 @@ export default async function(req,res){
  if(results.some(r=>['done','failed','lost-lease'].includes(r.status)))
   await notifyOwner(events,'task');
  return res.json({trigger:'owner-requested',count:results.filter(r=>r.status==='done').length,
-  continuation_scheduled,mahoraga,results});
+  continuation_scheduled,mahoraga,slot_reconciliation,results});
 }
