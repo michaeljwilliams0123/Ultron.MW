@@ -50,7 +50,8 @@ export function advance(record,next,detail={}){
   // Verified requires provider readback bound to this exact intent.
   if(!verifyCouncilExecutionReceipt(receipt)||receipt.role!==record.role||
     receipt.operation!==record.operation||receipt.caseSha!==record.caseSha||
-    receipt.sourceSha!==record.sourceSha)
+    receipt.sourceSha!==record.sourceSha||
+    (receipt.claims.authorshipFromGithubResponse===false&&receipt.effect.executionKey!==record.key))
    throw Error('council-execution-receipt-mismatch');
   out.receiptDigest=receipt.digest;
   out.receipt=receipt;
