@@ -103,7 +103,7 @@ test('C04 denies stale profile version, changed body digest, expired challenge, 
  assert.equal((await verifyAndReserveC04Passkey({db:s1.db,prepared:s1.prepared,proof:proof(s1,ch1)})).ok,false);
  await s1.db.query('UPDATE brain_owner_autonomy_profile SET version=7 WHERE id=1');
  assert.equal((await verifyAndReserveC04Passkey({db:s1.db,prepared:{...s1.prepared,bodySha256:'f'.repeat(64)},proof:proof(s1,ch1)})).ok,false);
- await s1.db.query("UPDATE brain_owner_passkey_challenges SET expires_at=now()-interval '1 minute'");
+ await s1.db.query("UPDATE brain_owner_passkey_challenges SET created_at=now()-interval '10 minutes', expires_at=now()-interval '1 minute'");
  assert.equal((await verifyAndReserveC04Passkey({db:s1.db,prepared:s1.prepared,proof:proof(s1,ch1)})).ok,false);
  assert.equal((await s1.db.query('SELECT count(*)::int AS n FROM github_pr_comment_executions')).rows[0].n,0);
 
@@ -150,15 +150,13 @@ test('edge 06: beginC04PasskeyChallenge denies observe preset',async t=>{
  await s.db.query("UPDATE brain_owner_autonomy_profile SET preset='observe' WHERE id=1");
  assert.equal((await begin(s)).ok,false);
 });
-test('edge 07: beginC04PasskeyChallenge denies nonzero max_paid_cents',async t=>{
+test('edge 07: DB check constraint rejects nonzero max_paid_cents',async t=>{
  const s=await setup(t);
- await s.db.query('UPDATE brain_owner_autonomy_profile SET max_paid_cents=1 WHERE id=1');
- assert.equal((await begin(s)).ok,false);
+ await assert.rejects(()=>s.db.query('UPDATE brain_owner_autonomy_profile SET max_paid_cents=1 WHERE id=1'),/max_paid_cents_check/);
 });
 test('edge 08: beginC04PasskeyChallenge denies when pr.comment is removed from allowed_operations',async t=>{
  const s=await setup(t);
- await s.db.query("UPDATE brain_owner_autonomy_profile SET allowed_operations='[]'::jsonb WHERE id=1");
- assert.equal((await begin(s)).ok,false);
+ await assert.rejects(()=>s.db.query("UPDATE brain_owner_autonomy_profile SET allowed_operations='[]'::jsonb WHERE id=1"),/allowed_operations_check/);
 });
 test('edge 09: beginC04PasskeyChallenge denies when runtime control is paused',async t=>{
  const s=await setup(t);
@@ -276,10 +274,10 @@ test('edge 27: monotonic signCount advances across sequential challenges and rej
  assert.equal(replayed.ok,false);
  assert.equal(replayed.reason,'passkey-counter-replayed');
 });
-test('edge 28: max_paid_cents flipped nonzero after begin denies verifyAndReserveC04Passkey',async t=>{
- const s=await setup(t),ch=await begin(s);
- await s.db.query('UPDATE brain_owner_autonomy_profile SET max_paid_cents=50 WHERE id=1');
- assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch)})).ok,false);
+test('edge 28: DB check constraint rejects nonzero max_paid_cents even after begin',async t=>{
+ const s=await setup(t);
+ await begin(s);
+ await assert.rejects(()=>s.db.query('UPDATE brain_owner_autonomy_profile SET max_paid_cents=50 WHERE id=1'),/max_paid_cents_check/);
 });
 test('edge 29: runtime control paused after begin denies verifyAndReserveC04Passkey',async t=>{
  const s=await setup(t),ch=await begin(s);
@@ -294,7 +292,7 @@ test('edge 30: preset downgraded to observe after begin denies verifyAndReserveC
 test('edge 31: duplicate (repository, target_number, body_sha256) with different idempotencyKey denies reservation',async t=>{
  const s=await setup(t),ch1=await begin(s);
  assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch1)})).ok,true);
- const dupBody={...s.prepared,idempotencyKey:s.prepared.idempotencyKey+'-dup'};
+ const dupBody={...s.prepared,idempotencyKey:s.prepared.idempotencyKey.replace(/^[a-z0-9]{4}/,'dup0')};
  const ch2=await beginC04PasskeyChallenge({db:s.db,prepared:dupBody,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5});
  const r=await verifyAndReserveC04Passkey({db:s.db,prepared:dupBody,proof:proof(s,ch2,{signCount:2})});
  assert.equal(r.ok,false);
