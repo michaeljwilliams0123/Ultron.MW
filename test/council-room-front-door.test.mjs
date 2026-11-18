@@ -260,7 +260,7 @@ test('every page carries the shared nav; passkeys and connectors reuse the sign-
 test('Council Room: composer disabled when signed out, live pill bound to room state, accessible composer',async()=>{
  const [html,js,css]=await Promise.all(['council-room.html','council-room.js','council-room.css'].map(pub));
  assert.match(js,/composerEnabled\(false\);pill\('signin'\)/);
- assert.match(js,/composerEnabled\(true\)/);
+ assert.match(js,/composerEnabled\(!data.room\?\.archived\)/);
  assert.match(html,/id="system-pill"[^>]*role="status"/);
  assert.doesNotMatch(html,/<span><\/span> Hatchable live<\/div>/);
  assert.match(html,/id="composer-body" aria-label="Message the council"/);
