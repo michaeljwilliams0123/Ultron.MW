@@ -7,7 +7,7 @@ const countOne=value=>Number(value)===1;
 
 export function classifyTerminalSlotEvidence(row){
  if(!row||typeof row.slot_key!=='string')return null;
- if(!['scheduled'].includes(row.classification??'scheduled'))return null;
+ if(row.classification!=='scheduled')return null;
  // Two distinct, exactly-once cron admissions must exist. A recovered/manual
  // event can never be upgraded to a natural scheduled admission.
  for(const field of ['repo_admissions','council_admissions',
