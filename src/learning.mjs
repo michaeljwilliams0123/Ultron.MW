@@ -143,6 +143,10 @@ export function evaluateImprovementCandidate({
     return { ...base, disposition: 'Blocked', metrics: null,
       reason: 'Candidate cannot self-evaluate or share artifact hash with evaluator.' };
   }
+  if (normalizedEvaluator.kind === 'council-advice') {
+    return { ...base, disposition: 'Blocked', metrics: null,
+      reason: 'Council advice is advisory only and cannot replace an independent evaluator.' };
+  }
   if (candidate.method === 'reef-assisted' &&
       (candidate.reef?.runtimeVerified !== true ||
        typeof candidate.reef?.recordId !== 'string' || !candidate.reef.recordId.trim())) {

@@ -227,3 +227,307 @@ test('runtime learning summary uses the real experience and routing ledgers', ()
     observationCount: 19, candidateCount: 3, promotionCount: 2,
   });
 });
+
+// 34 advanced, unique, and purposely confusing edge-case tests (#173)
+test('edge 01: council-advice evaluator kind is blocked even with external-independent origin', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ origin: 'external-independent', kind: 'council-advice' }),
+  });
+  assert.equal(r.disposition, 'Blocked');
+  assert.match(r.reason, /advisory only/);
+});
+
+test('edge 02: evaluator sharing baseline artifact sha256 with protected-base origin is allowed', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ sha256: HASH('b'), origin: 'protected-base' }),
+  });
+  assert.equal(r.disposition, 'Accepted');
+});
+
+test('edge 03: evaluator with uppercase hex sha256 is rejected', () => {
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ sha256: 'E'.repeat(64) }),
+  }), /invalid evaluator identity/);
+});
+
+test('edge 04: evaluator with whitespace-only id or version is rejected', () => {
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ id: '   ' }),
+  }), /invalid evaluator identity/);
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ version: '\t\n' }),
+  }), /invalid evaluator identity/);
+});
+
+test('edge 05: evaluator with unknown origin or kind throws invalid evaluator identity', () => {
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ origin: 'self-certified' }),
+  }), /invalid evaluator identity/);
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ kind: 'llm-judge' }),
+  }), /invalid evaluator identity/);
+});
+
+test('edge 06: evaluator passed as primitive string or array throws invalid evaluator identity', () => {
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(), evaluator: 'reef-eval',
+  }), /invalid evaluator identity/);
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(), evaluator: [],
+  }), /invalid evaluator identity/);
+});
+
+test('edge 07: null evaluator is treated as missing and returns Blocked', () => {
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: cases(), evaluator: null });
+  assert.equal(r.disposition, 'Blocked');
+});
+
+test('edge 08: unknown v3 domain throws unsupported evaluation domain', () => {
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(), evaluator: evaluator(),
+    domain: 'autonomous-merge', groundTruth: { source: 'external' },
+  }), /unsupported evaluation domain/);
+});
+
+test('edge 09: all four v3 domains abstain when groundTruth is missing or non-external', () => {
+  for (const domain of ['forecast-calibration', 'scenario-reproducibility', 'portfolio-policy', 'generated-capability-safety']) {
+    const r = evaluateImprovementCandidate({
+      candidate: candidate(), cases: cases(), evaluator: evaluator(), domain,
+    });
+    assert.equal(r.disposition, 'Inconclusive');
+  }
+});
+
+test('edge 10: humanReviewed claim rejected for deterministic-evaluator even with external groundTruth', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ kind: 'deterministic-evaluator' }),
+    groundTruth: { source: 'external' },
+    claims: { humanReviewed: true },
+  });
+  assert.equal(r.disposition, 'Rejected');
+});
+
+test('edge 11: humanReviewed claim accepted when evaluator kind is independent-reviewer', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(),
+    evaluator: evaluator({ origin: 'external-independent', kind: 'independent-reviewer' }),
+    groundTruth: { source: 'external' },
+    claims: { humanReviewed: true },
+  });
+  assert.equal(r.disposition, 'Accepted');
+});
+
+test('edge 12: humanResponseObserved claim accepted only when groundTruth confirms it', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(), evaluator: evaluator(),
+    domain: 'scenario-reproducibility',
+    groundTruth: { source: 'external', humanResponseObserved: true },
+    claims: { humanResponseObserved: true },
+  });
+  assert.equal(r.disposition, 'Accepted');
+});
+
+test('edge 13: modelWeightsTrained and reefHarnessOptimized claims always reject even with external groundTruth', () => {
+  for (const claims of [{ modelWeightsTrained: true }, { reefHarnessOptimized: true }]) {
+    const r = evaluateImprovementCandidate({
+      candidate: candidate(), cases: cases(), evaluator: evaluator(),
+      groundTruth: { source: 'external', humanResponseObserved: true, modelCreditVerified: true },
+      claims,
+    });
+    assert.equal(r.disposition, 'Rejected');
+  }
+});
+
+test('edge 14: modelCredit claim rejected without modelCreditVerified=true in groundTruth', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(), evaluator: evaluator(),
+    groundTruth: { source: 'external', modelCreditVerified: false },
+    claims: { modelCredit: true },
+  });
+  assert.equal(r.disposition, 'Rejected');
+});
+
+test('edge 15: modelCredit claim accepted when groundTruth.modelCreditVerified=true', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate(), cases: cases(), evaluator: evaluator(),
+    groundTruth: { source: 'external', modelCreditVerified: true },
+    claims: { modelCredit: true },
+  });
+  assert.equal(r.disposition, 'Accepted');
+});
+
+test('edge 16: reef-assisted candidate with whitespace-only recordId is Blocked', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate({ method: 'reef-assisted', reef: { runtimeVerified: true, recordId: '   ' } }),
+    cases: cases(), evaluator: evaluator(),
+  });
+  assert.equal(r.disposition, 'Blocked');
+});
+
+test('edge 17: reef-assisted candidate with valid recordId and runtimeVerified=true is Accepted', () => {
+  const r = evaluateImprovementCandidate({
+    candidate: candidate({ method: 'reef-assisted', reef: { runtimeVerified: true, recordId: 'reef-run-42' } }),
+    cases: cases(), evaluator: evaluator(),
+  });
+  assert.equal(r.disposition, 'Accepted');
+});
+
+test('edge 18: development failures do not block acceptance when held-out improves cleanly', () => {
+  const c = cases();
+  for (let i = 0; i < 4; i++) c[i].candidate = result(0, { status: 'failed', invariantsPassed: false });
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Accepted');
+});
+
+test('edge 19: non-critical held-out regression still accepts if net average and improvements hold', () => {
+  const c = cases();
+  c[4].candidate = result(0.5); // critical tie (not regression)
+  c[5].candidate = result(0.45); // non-critical regression
+  c[6].candidate = result(0.95);
+  c[7].candidate = result(0.95);
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Accepted');
+  assert.equal(r.metrics.regressions, 1);
+  assert.equal(r.metrics.criticalRegressions, 0);
+});
+
+test('edge 20: microscopic critical held-out regression (1e-12) rejects candidate', () => {
+  const c = cases();
+  c[4].baseline = result(0.5);
+  c[4].candidate = result(0.5 - 1e-12);
+  c[5].candidate = result(1.0);
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Rejected');
+  assert.equal(r.metrics.criticalRegressions, 1);
+});
+
+test('edge 21: exact tie on all held-out cases is Rejected (no improvement demonstrated)', () => {
+  const c = cases();
+  for (let i = 4; i < 8; i++) { c[i].baseline = result(0.7); c[i].candidate = result(0.7); }
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Rejected');
+  assert.equal(r.metrics.improvements, 0);
+});
+
+test('edge 22: one improved held-out case offset by larger non-critical regression yields delta <= 0 and Rejects', () => {
+  const c = cases();
+  c[4].candidate = result(0.5); // critical tie
+  c[5].candidate = result(0.6); // +0.1
+  c[6].candidate = result(0.2); // -0.3
+  c[7].candidate = result(0.5); // tie
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Rejected');
+  assert.equal(r.metrics.improvements, 1);
+  assert.ok(r.metrics.delta < 0);
+});
+
+test('edge 23: floating-point trap 0.1 + 0.2 baseline vs 0.3 candidate is Rejected not Accepted', () => {
+  const c = cases();
+  for (let i = 4; i < 8; i++) {
+    c[i].baseline = result(0.1 + 0.2);
+    c[i].candidate = result(0.3);
+  }
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Rejected');
+});
+
+test('edge 24: held-out baseline ineligible returns Inconclusive even when candidate succeeds', () => {
+  const c = cases();
+  c[4].baseline = result(0.5, { status: 'ineligible' });
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Inconclusive');
+});
+
+test('edge 25: held-out baseline independentlyObserved=false returns Inconclusive', () => {
+  const c = cases();
+  c[7].baseline = result(0.5, { independentlyObserved: false });
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Inconclusive');
+});
+
+test('edge 26: evaluator change alters deterministic fingerprint', () => {
+  const r1 = evaluateImprovementCandidate({ candidate: candidate(), cases: cases(), evaluator: evaluator({ id: 'eval-a' }) });
+  const r2 = evaluateImprovementCandidate({ candidate: candidate(), cases: cases(), evaluator: evaluator({ id: 'eval-b' }) });
+  assert.notEqual(r1.fingerprint, r2.fingerprint);
+});
+
+test('edge 27: duplicate feedbackReceiptIds throws invalid candidate identity', () => {
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate({ feedbackReceiptIds: ['r1', 'r1'] }),
+    cases: cases(), evaluator: evaluator(),
+  }), /invalid candidate identity/);
+});
+
+test('edge 28: cross-kind artifact replacement (skill -> harness) is rejected', () => {
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate({ candidateArtifact: { kind: 'harness', id: 'repo-review', version: '2', sha256: HASH('c') } }),
+    cases: cases(), evaluator: evaluator(),
+  }), /same versioned artifact/);
+});
+
+test('edge 29: cross-id artifact replacement is rejected', () => {
+  assert.throws(() => evaluateImprovementCandidate({
+    candidate: candidate({ candidateArtifact: { kind: 'skill', id: 'other-skill', version: '2', sha256: HASH('c') } }),
+    cases: cases(), evaluator: evaluator(),
+  }), /same versioned artifact/);
+});
+
+test('edge 30: negative or NaN latencyMs / costUsd throws invalid result', () => {
+  for (const bad of [{ latencyMs: -1 }, { latencyMs: NaN }, { costUsd: -0.01 }, { costUsd: Infinity }]) {
+    const c = cases();
+    c[4].candidate = result(0.8, bad);
+    assert.throws(() => evaluateImprovementCandidate({
+      candidate: candidate(), cases: c, evaluator: evaluator(),
+    }), /invalid case-4 candidate result/);
+  }
+});
+
+test('edge 31: score out of [0, 1] or NaN throws invalid result', () => {
+  for (const score of [-0.001, 1.001, NaN, Infinity]) {
+    const c = cases();
+    c[5].baseline = result(0.5, { score });
+    assert.throws(() => evaluateImprovementCandidate({
+      candidate: candidate(), cases: c, evaluator: evaluator(),
+    }), /invalid case-5 baseline result/);
+  }
+});
+
+test('edge 32: humanInterventionCases counts both baseline and candidate interventions without double-counting same case', () => {
+  const c = cases();
+  c[4].baseline = result(0.5, { humanIntervention: true });
+  c[4].candidate = result(0.6, { humanIntervention: true });
+  c[5].candidate = result(0.6, { humanIntervention: true });
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.disposition, 'Accepted');
+  assert.equal(r.metrics.humanInterventionCases, 2);
+});
+
+test('edge 33: observed baseline and candidate costs sum accurately when all held-out cases report numeric costUsd', () => {
+  const c = cases();
+  for (let i = 4; i < 8; i++) {
+    c[i].baseline = result(0.5, { costUsd: 0.25 });
+    c[i].candidate = result(0.7, { costUsd: 0.1 });
+  }
+  const r = evaluateImprovementCandidate({ candidate: candidate(), cases: c, evaluator: evaluator() });
+  assert.equal(r.metrics.baselineCostUsd, 1);
+  assert.ok(Math.abs(r.metrics.candidateCostUsd - 0.4) < 1e-9);
+});
+
+test('edge 34: summarizeLearningEvidence ignores negative or non-integer eligible counts and missing objects', () => {
+  assert.deepEqual(summarizeLearningEvidence({ eligible: -5 }), {
+    acceptedVersion: 'baseline', routingVersion: 'routing-v1',
+    observationCount: 0, candidateCount: 0, promotionCount: 0,
+  });
+  assert.deepEqual(summarizeLearningEvidence({ eligible: 3.5 }), {
+    acceptedVersion: 'baseline', routingVersion: 'routing-v1',
+    observationCount: 0, candidateCount: 0, promotionCount: 0,
+  });
+});
