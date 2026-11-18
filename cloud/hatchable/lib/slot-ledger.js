@@ -58,3 +58,54 @@ export function planRecovery({now,existingKeys=[],lookbackHours=6}={}){
  return Object.freeze(Array.from({length:lookbackHours},(_,i)=>slotKey(current-(i+1)*HOUR))
   .filter(key=>!known.has(key)).reverse());
 }
+
+/**
+ * #184 terminal reconciliation is deliberately separate from cron pickup.
+ * A 200 tick and a done task row without its durable observed event cannot
+ * attest that the hourly slot completed. Failed slots require terminal
+ * blocking evidence; queued/leased work is never marked failed prematurely.
+ * This routine never schedules work, retries provider mutations or opens a
+ * second coordinator.
+ */
+export async function reconcileSchedulerSlots({db,now=new Date().toISOString(),limit=48}={}){
+ if(typeof db?.query!=='function'||!Number.isSafeInteger(limit)||limit<1||limit>168)
+  fail('invalid-input');
+ const cutoff=slotKey(new Date(instant(now)-HOUR).toISOString());
+ const result=await db.query(`
+  SELECT s.slot_key,
+   inspect.status AS inspect_status,council.status AS council_status,
+   EXISTS(SELECT 1 FROM brain_events e
+     WHERE e.task_id=inspect.id AND e.event_type='observed') AS inspect_observed,
+   EXISTS(SELECT 1 FROM brain_events e
+     WHERE e.task_id=council.id AND e.event_type='observed') AS council_observed,
+   EXISTS(SELECT 1 FROM brain_events e
+     WHERE e.task_id=inspect.id AND e.event_type IN ('attempt-limit','failed'))
+     AS inspect_failed_receipt,
+   EXISTS(SELECT 1 FROM brain_events e
+     WHERE e.task_id=council.id AND e.event_type IN ('attempt-limit','failed'))
+     AS council_failed_receipt
+  FROM brain_scheduler_slots s
+  LEFT JOIN brain_tasks inspect ON inspect.task_key='hourly-'||
+    regexp_replace(left(s.slot_key,13),'[^0-9]','','g')
+  LEFT JOIN brain_tasks council ON council.task_key='council-hourly-'||
+    regexp_replace(left(s.slot_key,13),'[^0-9]','','g')
+  WHERE s.completion_status='pending' AND s.slot_key<=$1::text
+  ORDER BY s.slot_key DESC LIMIT $2::integer`,[cutoff,limit]);
+ if(!Array.isArray(result?.rows))fail('terminal-readback-unavailable');
+ let completed=0,failed=0;
+ for(const row of result.rows){
+  let status=null;
+  if(row.inspect_status==='done'&&row.council_status==='done'&&
+     row.inspect_observed===true&&row.council_observed===true)
+   status='done';
+  else if((row.inspect_status==='blocked'&&row.inspect_failed_receipt===true)||
+          (row.council_status==='blocked'&&row.council_failed_receipt===true))
+   status='failed';
+  if(status!==null){
+   const updated=await completeSlot({db,key:row.slot_key,status});
+   if(updated.updated){if(status==='done')completed++;else failed++;}
+  }
+ }
+ return Object.freeze({examined:result.rows.length,completed,failed,
+  pending:result.rows.length-completed-failed});
+}
