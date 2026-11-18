@@ -6,9 +6,44 @@ const value=tile.querySelector('.connection-value');
 const detail=tile.querySelector('.connection-detail');
 if(!value||!detail)return;
 let refreshing=false;
+let schemaReady=false;
+const probeButton=document.createElement('button');
+probeButton.type='button';
+probeButton.textContent='Verify GitHub App connection';
+probeButton.disabled=true;
+tile.appendChild(probeButton);
+async function probe(){
+ if(!schemaReady||probeButton.disabled)return;
+ probeButton.disabled=true;
+ value.textContent='Verifying GitHub App…';
+ try{
+  const response=await fetch('/api/brain/github-app-proof',{
+   method:'POST',credentials:'same-origin',cache:'no-store',
+   headers:{Accept:'application/json','Content-Type':'application/json'},
+   body:JSON.stringify({mode:'probe'}),signal:AbortSignal.timeout(45000)
+  });
+  const proof=await response.json();
+  if(!response.ok||proof?.schema!=='ultron.github-app-installation-proof.v1'||
+   proof.state!=='installation-and-scoped-read-verified'||
+   proof.installationVerified!==true||proof.repositoryReadVerified!==true||
+   proof.repository!=='michaeljwilliams0123/Ultron.MW'||proof.repositoryId!==1424939667||
+   proof.appId!==5633654||proof.installationId!==179066535)
+   throw Error('app-proof-unverified');
+  tile.dataset.state='good';
+  value.textContent='GitHub App connected';
+  detail.textContent='Council schema present · App 5633654 / installation 179066535 verified · '+
+   'repository metadata read verified · seven reasoning roles · release acceptance checked separately';
+ }catch{
+  tile.dataset.state='warning';
+  value.textContent='GitHub App unverified';
+  detail.textContent='Council schema present · App probe did not verify the pinned installation · retry verification';
+ }finally{probeButton.disabled=!schemaReady;}
+}
+probeButton.addEventListener('click',probe);
 async function refresh(){
  if(refreshing)return;
  refreshing=true;
+ schemaReady=false;probeButton.disabled=true;
  tile.dataset.state='warning';
  value.textContent='Checking…';
  detail.textContent='Reading owner-only Council wiring evidence';
@@ -30,10 +65,11 @@ async function refresh(){
   // Wiring readiness is not an independently signed production release.
   // The release-proof endpoint is a separate owner-only acceptance boundary.
   tile.dataset.state='warning';
-  value.textContent=data.readyForProduction===true?'Council wiring ready':'Council wiring incomplete';
-  detail.textContent=data.githubRoleInstallationsObserved+' of '+data.roleCount+
-   ' GitHub App identities verified · '+data.missingTables.length+
-   ' missing tables · release acceptance checked separately';
+  schemaReady=data.missingTables.length===0;
+  value.textContent=schemaReady?'Council schema ready':'Council schema incomplete';
+  detail.textContent=data.missingTables.length+' missing tables · '+data.roleCount+
+   ' reasoning roles · GitHub App connection not checked · use Verify GitHub App connection';
+  probeButton.disabled=!schemaReady;
  }catch{
   tile.dataset.state='error';
   value.textContent='Unverified';
