@@ -8,10 +8,16 @@ state.threads=[];state.roomInfo={id:state.room,title:'Conversation'};
 state.archived=false;state.search='';
 let loadRevision=0,threadMode='rename',searchTimer;
 const drafts=new Map();
-function rememberDraft(){drafts.set(state.room,{body:$('composer-body').value,attachment:$('attachment-url').value,key:state.pendingKey});}
+function checkedMentions(){return [...document.querySelectorAll('#mention-row input:checked')].map(x=>x.value);}
+function rememberDraft(){drafts.set(state.room,{body:$('composer-body').value,attachment:$('attachment-url').value,
+ mentions:checkedMentions(),includeMahoraga:$('include-mahoraga').checked,key:state.pendingKey,payload:state.pendingPayload});}
+
 async function selectRoom(id,push=true){
  if(!roomPattern.test(id)||id===state.room)return;
- rememberDraft();composerEnabled(false);state.room=id;state.pendingKey=drafts.get(id)?.key;
+ rememberDraft();composerEnabled(false);state.room=id;state.pendingKey=drafts.get(id)?.key;state.pendingPayload=drafts.get(id)?.payload;
+ state.roomInfo={id,title:'Loading conversation',archived:false};$('room-title').textContent='Loading conversation';
+ document.querySelectorAll('#mention-row input').forEach(x=>x.checked=!!drafts.get(id)?.mentions?.includes(x.value));
+ $('include-mahoraga').checked=drafts.get(id)?.includeMahoraga??true;
  $('composer-body').value=drafts.get(id)?.body||'';
  $('attachment-url').value=drafts.get(id)?.attachment||'';
  $('char-count').textContent=$('composer-body').value.length+' / 6000';
@@ -68,10 +74,16 @@ function pill(state){
 }
 // Signed out: the composer is disabled so nothing looks sendable.
 function composerEnabled(on){
- for(const id of ['composer-body','send','include-mahoraga','attachment-url'])if($(id))$(id).disabled=!on;
- document.querySelectorAll('#mention-row input').forEach(x=>x.disabled=!on);
- $('composer-body').placeholder=on?'Ask the council to inspect, plan, compare, explain, or prepare the next action…':'Sign in to message the Council.';
+ state.ready=on;
+ const locked=!!state.pendingPayload;
+ for(const id of ['composer-body','include-mahoraga','attachment-url'])if($(id))$(id).disabled=!on||locked;
+ document.querySelectorAll('#mention-row input').forEach(x=>x.disabled=!on||locked);
+ $('send').disabled=!on||state.sending;
+ $('send').textContent=state.sending?'Sending…':locked?'Retry original message':'Send to council ↗';
+ $('composer-body').placeholder=on?'Ask the council to inspect, plan, compare, explain, or prepare the next action…':
+  state.roomInfo.archived?'Restore this conversation to send a message.':'Refresh or sign in to reconnect to this conversation.';
 }
+
 function timeLabel(value){try{return new Intl.DateTimeFormat(undefined,{hour:'numeric',minute:'2-digit',month:'short',day:'numeric'}).format(new Date(value))}catch{return ''}}
 function node(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;if(text!==undefined)x.textContent=text;return x}
 function renderMembers(){
@@ -215,8 +227,8 @@ async function load(before=null){
   if(response.status===401||(response.status===403&&data.error==='owner-required')||data.error==='login_required')
    return showSignIn(data,response.status);
   if(!response.ok||!data.ok)throw Error(data.error||('HTTP '+response.status));
-  $('sign-in-card').hidden=true;composerEnabled(!data.room?.archived);
-  state.roomInfo=data.room;state.threads=data.threads||[];renderThreads();
+  $('sign-in-card').hidden=true;state.roomInfo=data.room;composerEnabled(!data.room?.archived);
+ state.threads=data.threads||[];renderThreads();
   state.members=data.members||[];state.jobs=data.jobs||[];state.nextCursor=data.nextCursor;
   state.messages=[...new Map((before?[...(data.messages||[]),...state.messages]:(data.messages||[])).map(m=>[m.id,m])).values()];
   renderMembers();renderMessages(!!before);renderJobs();
@@ -231,29 +243,38 @@ async function load(before=null){
  }
 }
 async function send(){
- if(state.sending)return;
+ if(state.sending||!state.ready)return;
  const body=$('composer-body').value.trim();if(!body)return status('Write a message before sending.',true);
- state.sending=true;$('send').disabled=true;status('Persisting your message and waking the council…');
- const mentions=[...document.querySelectorAll('#mention-row input:checked')].map(x=>x.value);
+ state.sending=true;status('Persisting your message and waking the council…');
+ const mentions=checkedMentions();
  const room=state.room;
  state.pendingKey=state.pendingKey||'room:'+crypto.randomUUID();
- const payload={room,messageKey:state.pendingKey,body,mentions,
+ const payload=state.pendingPayload||{room,messageKey:state.pendingKey,body,mentions,
   kind:body.trim().endsWith('?')?'question':'message',
   includeMahoraga:$('include-mahoraga').checked,
   attachmentUrl:$('attachment-url').value.trim()||null};
+ state.pendingPayload=payload;composerEnabled(state.ready);
  try{
   const response=await fetch(api,{method:'POST',credentials:'same-origin',cache:'no-store',
    headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const data=await response.json().catch(()=>({}));
-  if(!response.ok||!data.ok)throw Error(data.error||('HTTP '+response.status));
+  if(!response.ok||!data.ok){
+   // A definite validation/auth rejection has no effect; uncertain failures keep the same intent for retry.
+   if([400,401,403,404,422].includes(response.status)){
+    const saved=drafts.get(room);if(saved){saved.payload=null;saved.key=null;}
+    if(state.room===room){state.pendingPayload=null;state.pendingKey=null;}
+   }
+   if(state.room===room&&(response.status===401||response.status===403)){showSignIn(data,response.status);return;}
+   throw Error(data.error||('HTTP '+response.status));
+  }
   drafts.delete(room);
   if(state.room!==room)return;
-  state.pendingKey=null;
+  state.pendingKey=null;state.pendingPayload=null;
   $('composer-body').value='';$('attachment-url').value='';$('char-count').textContent='0 / 6000';
   document.querySelectorAll('#mention-row input').forEach(x=>x.checked=false);
   await load();status(data.scheduled?'Message recorded; council runner is awake.':'Message recorded; runner wake will retry from the durable queue.');
- }catch(error){if(state.room===room)status('Message not confirmed: '+String(error.message||error)+'. Your text remains in the composer; retry keeps the same message key.',true)}
- finally{state.sending=false;$('send').disabled=!!state.roomInfo.archived;}
+ }catch(error){if(state.room===room)status('Message not confirmed: '+String(error.message||error)+(state.pendingPayload?'. Your original message is preserved. Retry sends that same message once; refresh checks recorded history.':'. Your text is preserved. Correct it and try again.'),true)}
+ finally{state.sending=false;composerEnabled(state.ready);}
 }
 // Draft hand-off from Workspace or the GitHub Pages console: prefill only,
 // never auto-send. The draft travels in the URL fragment (not sent to servers).

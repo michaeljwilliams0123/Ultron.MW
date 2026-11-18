@@ -91,3 +91,17 @@ body.ultron-ui #repair-connection{background:#edf4ee;color:var(--u-ink);border-c
 body.ultron-ui .repair-meta,body.ultron-ui main>footer{color:var(--u-muted)}
 body.ultron-ui .repair-next{color:var(--u-ink)}
 body.ultron-ui .repair-phase{background:#edf4ee;color:var(--u-accent);border-color:var(--u-line)}
+
+/* Release hardening: readable secondary text, long names and touch input. */
+body.ultron-ui .u-breadcrumb{color:#65766d}
+body.ultron-ui .conversation-head>div{min-width:0}
+body.ultron-ui .conversation-head h2{overflow-wrap:anywhere;hyphens:auto}
+body.ultron-ui .u-chat-search::placeholder{color:#b0c6bc;opacity:1}
+body.ultron-ui .composer textarea::placeholder{color:#596d64;opacity:1}
+body.ultron-ui .u-sidebar-foot small{color:#a6bdb3}
+body.ultron-ui .u-chat-link small{color:#a6bdb3}
+body.ultron-ui .u-header-help{font-size:12px}
+@media(max-width:800px){body.ultron-ui .u-module,body.ultron-ui button,body.ultron-ui .u-chat-link{min-height:44px}body.ultron-ui input:not([type=checkbox]):not([type=radio]),body.ultron-ui textarea,body.ultron-ui select{font-size:16px!important}body.ultron-ui .bubble>p{font-size:16px}body.ultron-ui .conversation-head p{font-size:14px}body.ultron-ui .u-chat-list{min-height:100px}}
+@media(max-height:650px){body.ultron-ui.u-council .conversation{height:auto;min-height:calc(100dvh - var(--u-header));max-height:none;overflow:visible}body.ultron-ui.u-council .messages{min-height:180px;max-height:60dvh;flex:none}}
+
+@media(max-width:800px){body.ultron-ui.u-council .conversation{height:auto;max-height:none;min-height:calc(100dvh - var(--u-header));overflow:visible}body.ultron-ui.u-council .messages{flex:1 0 220px;min-height:220px;max-height:55dvh}}

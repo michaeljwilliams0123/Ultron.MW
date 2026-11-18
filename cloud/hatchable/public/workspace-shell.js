@@ -26,10 +26,19 @@
  const breadcrumb=el('div','u-breadcrumb');breadcrumb.append(el('span','','Workspace'),el('span','','/'),el('strong','',selected[1]));
  const hint=el('a','u-header-help','Owner settings');hint.href='/passkey-owner.html';header.append(toggle,breadcrumb,hint);
  const shade=el('button','u-shade');shade.type='button';shade.setAttribute('aria-label','Close navigation');
- const close=()=>{document.body.classList.remove('u-nav-open');toggle.setAttribute('aria-expanded','false');};
- toggle.addEventListener('click',()=>{const open=document.body.classList.toggle('u-nav-open');toggle.setAttribute('aria-expanded',String(open));});shade.addEventListener('click',close);
- document.addEventListener('keydown',e=>{if(e.key==='Escape'){close();if(matchMedia('(max-width:800px)').matches)toggle.focus();}});
- document.addEventListener('ultron:close-navigation',close);
+ const close=(returnFocus=false)=>{const wasOpen=document.body.classList.contains('u-nav-open');document.body.classList.remove('u-nav-open');toggle.setAttribute('aria-expanded','false');if(returnFocus&&wasOpen)toggle.focus();};
+ toggle.addEventListener('click',()=>{const open=document.body.classList.toggle('u-nav-open');toggle.setAttribute('aria-expanded',String(open));if(open)nav.querySelector('a')?.focus();});shade.addEventListener('click',()=>close(true));
+ document.addEventListener('keydown',e=>{
+  if(!document.body.classList.contains('u-nav-open')||!matchMedia('(max-width:800px)').matches)return;
+  if(e.key==='Escape'){e.preventDefault();close(true);return;}
+  if(e.key==='Tab'){
+   const items=[...nav.querySelectorAll('a[href],button:not(:disabled),input:not(:disabled)')].filter(x=>x.getClientRects().length);
+   const first=items[0],last=items.at(-1);if(!first)return;
+   if(e.shiftKey&&(document.activeElement===first||!nav.contains(document.activeElement))){e.preventDefault();last.focus();}
+   else if(!e.shiftKey&&(document.activeElement===last||!nav.contains(document.activeElement))){e.preventDefault();first.focus();}
+  }
+ });
+ document.addEventListener('ultron:close-navigation',()=>close());
  const skip=el('a','u-skip','Skip to content');skip.href='#u-main-content';
  const main=document.querySelector('main')||document.querySelector('.main');if(main){main.id=main.id||'u-main-content';skip.href='#'+main.id;}
  document.body.prepend(skip,nav,header,shade);
