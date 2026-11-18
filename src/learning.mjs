@@ -5,6 +5,18 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const METHODS = new Set(['native', 'reef-assisted']);
 const KINDS = new Set(['skill', 'harness']);
 const STATUSES = new Set(['succeeded', 'failed', 'incomplete', 'ineligible']);
+const EVALUATOR_ORIGINS = new Set(['protected-base', 'external-independent', 'candidate']);
+const EVALUATOR_KINDS = new Set([
+  'deterministic-evaluator',
+  'independent-reviewer',
+  'council-advice',
+]);
+const V3_DOMAINS = new Set([
+  'forecast-calibration',
+  'scenario-reproducibility',
+  'portfolio-policy',
+  'generated-capability-safety',
+]);
 
 const fail = message => { throw new Error('Improvement evidence rejected: ' + message); };
 
@@ -14,6 +26,24 @@ function artifact(value, label) {
       !SHA256.test(value.sha256 || '')) fail('invalid ' + label + ' artifact lineage');
   return { kind: value.kind, id: value.id, version: value.version,
     sha256: value.sha256 };
+}
+
+function normalizeEvaluator(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || typeof value.id !== 'string' || !value.id.trim() ||
+      typeof value.version !== 'string' || !value.version.trim() ||
+      !SHA256.test(value.sha256 || '') ||
+      !EVALUATOR_ORIGINS.has(value.origin) ||
+      !EVALUATOR_KINDS.has(value.kind)) {
+    fail('invalid evaluator identity');
+  }
+  return {
+    id: value.id,
+    version: value.version,
+    sha256: value.sha256,
+    origin: value.origin,
+    kind: value.kind,
+  };
 }
 
 function observedResult(value, label) {
@@ -41,13 +71,26 @@ function mean(values) {
  * Candidate selection only. Publishing still requires the protected GitHub PR
  * path and independent post-merge verification.
  */
-export function evaluateImprovementCandidate({ candidate, cases } = {}) {
+export function evaluateImprovementCandidate({
+  candidate,
+  cases,
+  evaluator,
+  domain,
+  groundTruth,
+  claims,
+} = {}) {
   if (!candidate || typeof candidate.id !== 'string' || !candidate.id.trim() ||
       !METHODS.has(candidate.method) || !SHA40.test(candidate.sourceSha || '') ||
       !Array.isArray(candidate.feedbackReceiptIds) || !candidate.feedbackReceiptIds.length ||
       candidate.feedbackReceiptIds.some(id => typeof id !== 'string' || !id.trim()) ||
       new Set(candidate.feedbackReceiptIds).size !== candidate.feedbackReceiptIds.length ||
       !Array.isArray(candidate.developmentCaseIds)) fail('invalid candidate identity or receipts');
+
+  if (domain !== undefined && domain !== null && !V3_DOMAINS.has(domain)) {
+    fail('unsupported evaluation domain');
+  }
+
+  const normalizedEvaluator = normalizeEvaluator(evaluator);
   const baseline = artifact(candidate.baselineArtifact, 'baseline');
   const proposed = artifact(candidate.candidateArtifact, 'candidate');
   if (baseline.kind !== proposed.kind || baseline.id !== proposed.id)
@@ -81,6 +124,7 @@ export function evaluateImprovementCandidate({ candidate, cases } = {}) {
     sourceSha: candidate.sourceSha,
     baselineArtifact: { ...baseline }, candidateArtifact: { ...proposed },
     feedbackReceiptIds: [...candidate.feedbackReceiptIds],
+    evaluator: normalizedEvaluator,
   };
   const fingerprint = createHash('sha256').update(JSON.stringify({ lineage,
     cases: [...development, ...heldout] })).digest('hex');
@@ -89,12 +133,44 @@ export function evaluateImprovementCandidate({ candidate, cases } = {}) {
     method: candidate.method, lineage, fingerprint,
     publication: 'not-performed', releaseAuthority: 'github-protected-pr',
   };
+
+  if (!normalizedEvaluator) {
+    return { ...base, disposition: 'Blocked', metrics: null,
+      reason: 'An independent evaluator identity is required.' };
+  }
+  if (normalizedEvaluator.origin === 'candidate' ||
+      normalizedEvaluator.sha256 === proposed.sha256) {
+    return { ...base, disposition: 'Blocked', metrics: null,
+      reason: 'Candidate cannot self-evaluate or share artifact hash with evaluator.' };
+  }
   if (candidate.method === 'reef-assisted' &&
       (candidate.reef?.runtimeVerified !== true ||
        typeof candidate.reef?.recordId !== 'string' || !candidate.reef.recordId.trim())) {
     return { ...base, disposition: 'Blocked', metrics: null,
       reason: 'A Reef-assisted candidate requires a verified real Reef runtime record.' };
   }
+
+  if (claims && typeof claims === 'object') {
+    const unverifiedHumanResponse = claims.humanResponseObserved === true &&
+      groundTruth?.humanResponseObserved !== true;
+    const unverifiedHumanReview = claims.humanReviewed === true &&
+      normalizedEvaluator.kind !== 'independent-reviewer';
+    const unsupportedTrainingClaim = claims.modelWeightsTrained === true ||
+      claims.reefHarnessOptimized === true;
+    const unverifiedModelCredit = claims.modelCredit === true &&
+      groundTruth?.modelCreditVerified !== true;
+    if (unverifiedHumanResponse || unverifiedHumanReview ||
+        unsupportedTrainingClaim || unverifiedModelCredit) {
+      return { ...base, disposition: 'Rejected', metrics: null,
+        reason: 'Unverified improvement, training, or human-response claim rejected.' };
+    }
+  }
+
+  if (domain && groundTruth?.source !== 'external') {
+    return { ...base, disposition: 'Inconclusive', metrics: null,
+      reason: 'v3 evaluation domain requires external ground truth; abstaining.' };
+  }
+
   const isObservedTerminal = result => result.independentlyObserved &&
     ['succeeded', 'failed'].includes(result.status);
   if (heldout.some(item => !isObservedTerminal(item.baseline) ||
