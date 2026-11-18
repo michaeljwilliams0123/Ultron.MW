@@ -25,6 +25,10 @@ function canonicalDigest(value) {
 }
 
 /** Stable exact-intent digest: caller must not supply a digest to be trusted. */
+/** Deterministic fingerprint of the exact independently read-back receipt. */
+export function cloudReceiptFingerprint(receipt) {
+  return canonicalDigest(receipt);
+}
 export function cloudOperationDigest(task, stopVersion) {
   return canonicalDigest({
     provider:task.provider,operation:task.operation,target:task.target,
@@ -281,7 +285,7 @@ export async function executeUniversalCloudTask({
   // Step 4: Trajectory fingerprint for Reef-gated skill distillation
   const trajectory = Object.freeze({
     schema: 'ultron.cloud-trajectory.v1',
-    fingerprint: canonicalDigest(receipt),
+    fingerprint: cloudReceiptFingerprint(receipt),
     provider: task.provider,
     operation: task.operation,
     outcome: 'succeeded',
