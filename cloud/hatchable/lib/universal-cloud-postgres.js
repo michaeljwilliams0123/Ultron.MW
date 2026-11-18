@@ -69,7 +69,17 @@ export function createPostgresUniversalCloudOutbox({
         WHERE id=$1 AND task_key=$2 AND objective='universal.cloud'
           AND status='external' AND last_result->>'state'='reserved'
           AND last_result->>'requestDigest'=$3
-        RETURNING id`,[fencingEpoch,taskKey(idempotencyKey),requestDigest]);
+          AND EXISTS (
+            SELECT 1 FROM brain_owner_autonomy_profile p
+            JOIN brain_runtime_control control ON control.id=1
+            WHERE p.id=1 AND p.owner='michaeljwilliams0123'
+              AND p.preset IN ('build','release') AND p.version=$4
+              AND p.max_paid_cents=0
+              AND jsonb_exists(p.allowed_operations,$6::text)
+              AND NOT control.paused AND control.version=$5
+          )
+        RETURNING id`,[fencingEpoch,taskKey(idempotencyKey),requestDigest,
+          profileVersion,stopVersion,operation]);
       return {ok:count(response)===1};
     },
     async markReconcile({idempotencyKey,fencingEpoch,reason}={}){
