@@ -332,7 +332,7 @@ async function endpointUnderTest(name){
  const mahoraga=dependency('export const resumePendingMahoragaActions=(...args)=>globalThis.__cloudEndpoint.resumePendingMahoragaActions(...args);');
  const profile=dependency('export const readOwnerProfile=async()=>globalThis.__cloudEndpoint.readOwnerProfile?.()??{limits:{maxSteps:4}};');
  const recovery=dependency('export const recoverMissedHours=async()=>({recoveredCount:0,windowHours:6});');
- const slots=dependency('export const classifySlot=()=>({pickupLagSeconds:0,sloBreach:false});export const recordSlot=async()=>({created:true});');
+ const slots=dependency('export const classifySlot=()=>({pickupLagSeconds:0,sloBreach:false});export const recordSlot=async()=>({created:true});export const reconcileSchedulerSlots=async()=>({examined:0,completed:0,failed:0,pending:0});');
  const transformed=source.replace("from 'hatchable'","from '"+platform+"'")
   .replace("from 'lib/brain-runner.js'","from '"+runner+"'")
   .replace("from 'lib/mahoraga-actions.js'","from '"+mahoraga+"'")
