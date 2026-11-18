@@ -88,8 +88,9 @@ export async function runLedgeredAction({ledger,intent,execute,probe=async()=>nu
   const outcome=found?evidenceOutcome(found):
    {to:'reconcile-required',detail:{reason:'write-outcome-unknown:'+String(e.message).slice(0,100)}};
   const s=await settle(ledger,claim.record,outcome,{delayMs:sleepMs});
-  return{op:intent.operation,status:found?'recovered':'error',ledgerState:s.record?.state||'dispatched',
-   executionKey:record.key,reason:String(e.message).slice(0,160)};
+  return{op:intent.operation,status:found?(s.ok?'recovered':'ack-interrupted'):'error',
+   ledgerState:s.record?.state||'dispatched',executionKey:record.key,
+   reason:String(e.message).slice(0,160),...(s.ok?{}:{ackError:s.error})};
  }
  let outcome;
  if(result.status==='done'){
