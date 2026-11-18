@@ -124,10 +124,11 @@ export function createMcpHandler(config,{githubGet=publicGet}={}) {
 }
 
 /**
- * Stateless MCP 2026-07-28 Streamable HTTP handler.
- * Rejects legacy session headers (Mcp-Session-Id), validates Origin and
- * MCP-Protocol-Version, enforces Bearer capability tokens when configured,
- * and returns HTTP 202 for JSON-RPC notifications.
+ * Stateless Streamable HTTP endpoint: per-request MCP metadata and
+ * header/body validation; no protocol session IDs or standalone SSE.
+ *
+ * The optional bearer key restricts this bridge to its READ-ONLY tools.
+ * Mutations use a separately verified, operation-bound owner grant.
  */
 export function createStreamableHttpMcpHandler(config,{
   githubGet=publicGet,allowedOrigins=['https://ultron-mw-cloud.hatchable.site'],
@@ -137,29 +138,76 @@ export function createStreamableHttpMcpHandler(config,{
   const mcp=createMcpHandler(config,{githubGet});
   const origins=new Set(Array.isArray(allowedOrigins)?allowedOrigins:[]);
   if(!origins.size)throw Error('Streamable HTTP MCP requires an explicit origin allowlist');
+  const mismatch=(id=null)=>json({jsonrpc:'2.0',id,error:{
+    code:-32020,message:'Header mismatch: required MCP headers do not match the request body',
+  }},400);
+  const decodeName=value=>{
+    if(typeof value!=='string'||!value.length) return null;
+    if(value.startsWith('=?base64?')&&value.endsWith('?=')){
+      const b64=value.slice(9,-2);
+      if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(b64))
+        return null;
+      const bytes=Buffer.from(b64,'base64');
+      if(bytes.toString('base64')!==b64)return null;
+      const decoded=bytes.toString('utf8');
+      if(!Buffer.from(decoded,'utf8').equals(bytes))return null;
+      return decoded;
+    }
+    if(!/^[\x20-\x7e]+$/.test(value)||value.trim()!==value)return null;
+    return value;
+  };
   return async function handle(request) {
     if(request.method!=='POST')return json({error:'method-not-allowed'},405);
-    if(request.headers.get('mcp-session-id'))
-      return json({error:'stateless-transport-rejects-session-id'},400);
-    const origin=request.headers.get('origin')||'';
-    if(!origins.has(origin))return json({error:'forbidden-origin'},403);
-    const proto=request.headers.get('mcp-protocol-version');
-    if(proto!==null&&proto!==MCP_VERSION&&proto!==MCP_LEGACY)
-      return json({error:'unsupported-mcp-protocol-version',supported:[MCP_VERSION,MCP_LEGACY]},400);
-    if(key!==undefined) {
-      const auth=request.headers.get('authorization')||'';
-      if(!auth.startsWith('Bearer ')||!verifyCapabilityToken(auth.slice(7),{
-        key,audience:c.name,requiredScope:'status:read',now,
-      }))return json({error:'unauthorized'},401);
-    }
+    const origin=request.headers.get('origin');
+    // MCP requires checking Origin when supplied; clients without one may
+    // authenticate through a bearer token (e.g. server-to-server clients).
+    if(origin!==null&&!origins.has(origin))return json({error:'forbidden-origin'},403);
     const contentType=(request.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
     if(contentType!=='application/json')return json({error:'unsupported-media-type'},415);
     let body;
     try{body=await request.json();}catch{return json({error:'invalid-json'},400);}
-    if(!body||typeof body!=='object'||Array.isArray(body))
-      return json({error:'invalid-jsonrpc-envelope'},400);
+    if(!body||typeof body!=='object'||Array.isArray(body)||
+       body.jsonrpc!=='2.0'||typeof body.method!=='string')
+      return json({jsonrpc:'2.0',id:body?.id??null,error:{
+        code:-32600,message:'Invalid JSON-RPC request'}},400);
+
+    const version=request.headers.get('mcp-protocol-version');
+    const envelope=body.params?._meta;
+    const bodyVersion=envelope?.[MCP_PROTOCOL];
+    const modern=version===MCP_VERSION||bodyVersion===MCP_VERSION;
+    if(version!==null&&version!==MCP_VERSION&&version!==MCP_LEGACY)
+      return json({error:'unsupported-mcp-protocol-version',supported:[MCP_VERSION,MCP_LEGACY]},400);
+    if(modern) {
+      if(version!==MCP_VERSION||bodyVersion!==MCP_VERSION||
+         !envelope||typeof envelope!=='object'||Array.isArray(envelope)||
+         !envelope[MCP_CAPABILITIES]||typeof envelope[MCP_CAPABILITIES]!=='object'||
+         Array.isArray(envelope[MCP_CAPABILITIES]))
+        return mismatch(body.id??null);
+      if(request.headers.get('mcp-method')!==body.method)
+        return mismatch(body.id??null);
+      const named=['tools/call','resources/read','prompts/get'].includes(body.method);
+      const expected=body.method==='resources/read'?body.params?.uri:body.params?.name;
+      const rawName=request.headers.get('mcp-name');
+      if(named) {
+        if(typeof expected!=='string'||!expected.length||
+           decodeName(rawName)!==expected)return mismatch(body.id??null);
+      }else if(rawName!==null)return mismatch(body.id??null);
+    }else if(bodyVersion!==undefined||version===MCP_VERSION) {
+      return mismatch(body.id??null);
+    }
+    // Old Mcp-Session-Id and Last-Event-ID headers do not establish sessions
+    // in 2026-07-28. Ignore them; never issue or echo a session ID.
+    if(key!==undefined) {
+      const auth=request.headers.get('authorization')||'';
+      const scope=body.method==='tools/call'&&body.params?.name==='ultron_ci'?
+        'ci:read':'status:read';
+      if(!auth.startsWith('Bearer ')||!verifyCapabilityToken(auth.slice(7),{
+        key,audience:c.name,requiredScope:scope,now,
+      }))return json({error:'unauthorized'},401);
+    }
     const response=await mcp(body);
-    if(response===null)return new Response(null,{status:202,headers:{'Cache-Control':'no-store'}});
+    if(response===null)return new Response(null,{status:202,
+      headers:{'Cache-Control':'no-store'}});
     return json(response,200);
   };
 }
