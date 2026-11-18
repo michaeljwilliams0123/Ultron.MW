@@ -122,3 +122,44 @@ export function createMcpHandler(config,{githubGet=publicGet}={}) {
     return reply(null,{code:-32601,message:'Method not found'});
   };
 }
+
+/**
+ * Stateless MCP 2026-07-28 Streamable HTTP handler.
+ * Rejects legacy session headers (Mcp-Session-Id), validates Origin and
+ * MCP-Protocol-Version, enforces Bearer capability tokens when configured,
+ * and returns HTTP 202 for JSON-RPC notifications.
+ */
+export function createStreamableHttpMcpHandler(config,{
+  githubGet=publicGet,allowedOrigins=['https://ultron-mw-cloud.hatchable.site'],
+  key,now,
+}={}) {
+  const c=validateIntegrationConfig(config);
+  const mcp=createMcpHandler(config,{githubGet});
+  const origins=new Set(Array.isArray(allowedOrigins)?allowedOrigins:[]);
+  if(!origins.size)throw Error('Streamable HTTP MCP requires an explicit origin allowlist');
+  return async function handle(request) {
+    if(request.method!=='POST')return json({error:'method-not-allowed'},405);
+    if(request.headers.get('mcp-session-id'))
+      return json({error:'stateless-transport-rejects-session-id'},400);
+    const origin=request.headers.get('origin')||'';
+    if(!origins.has(origin))return json({error:'forbidden-origin'},403);
+    const proto=request.headers.get('mcp-protocol-version');
+    if(proto!==null&&proto!==MCP_VERSION&&proto!==MCP_LEGACY)
+      return json({error:'unsupported-mcp-protocol-version',supported:[MCP_VERSION,MCP_LEGACY]},400);
+    if(key!==undefined) {
+      const auth=request.headers.get('authorization')||'';
+      if(!auth.startsWith('Bearer ')||!verifyCapabilityToken(auth.slice(7),{
+        key,audience:c.name,requiredScope:'status:read',now,
+      }))return json({error:'unauthorized'},401);
+    }
+    const contentType=(request.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+    if(contentType!=='application/json')return json({error:'unsupported-media-type'},415);
+    let body;
+    try{body=await request.json();}catch{return json({error:'invalid-json'},400);}
+    if(!body||typeof body!=='object'||Array.isArray(body))
+      return json({error:'invalid-jsonrpc-envelope'},400);
+    const response=await mcp(body);
+    if(response===null)return new Response(null,{status:202,headers:{'Cache-Control':'no-store'}});
+    return json(response,200);
+  };
+}
