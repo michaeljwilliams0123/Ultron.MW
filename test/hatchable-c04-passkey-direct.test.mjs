@@ -116,3 +116,203 @@ test('C04 denies stale profile version, changed body digest, expired challenge, 
  assert.equal([first.ok,second.ok].filter(Boolean).length,1);
  assert.equal((await s2.db.query('SELECT count(*)::int AS n FROM github_pr_comment_executions')).rows[0].n,1);
 });
+
+// 33 advanced, unique, and purposely confusing WebAuthn & atomic reservation edge cases (#452)
+test('edge 01: beginC04PasskeyChallenge rejects null db and non-function db.query',async t=>{
+ const s=await setup(t);
+ assert.equal((await beginC04PasskeyChallenge({db:null,prepared:s.prepared,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5})).ok,false);
+ assert.equal((await beginC04PasskeyChallenge({db:{query:'not-fn'},prepared:s.prepared,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5})).ok,false);
+});
+test('edge 02: beginC04PasskeyChallenge rejects empty, short (<16), and oversized (>1024) credentialId',async t=>{
+ const s=await setup(t);
+ for(const credentialId of ['','short','a'.repeat(15),'a'.repeat(1025)]){
+  assert.equal((await beginC04PasskeyChallenge({db:s.db,prepared:s.prepared,credentialId,expectedProfileVersion:7,expectedStopVersion:5})).ok,false);
+ }
+});
+test('edge 03: beginC04PasskeyChallenge rejects standard base64 (+/=) credentialId',async t=>{
+ const s=await setup(t);
+ assert.equal((await beginC04PasskeyChallenge({db:s.db,prepared:s.prepared,credentialId:'a+b/cdefghijklmn==',expectedProfileVersion:7,expectedStopVersion:5})).ok,false);
+});
+test('edge 04: beginC04PasskeyChallenge rejects non-positive or fractional expectedProfileVersion',async t=>{
+ const s=await setup(t);
+ for(const expectedProfileVersion of [0,-1,1.5,NaN]){
+  assert.equal((await beginC04PasskeyChallenge({db:s.db,prepared:s.prepared,credentialId:s.credentialId,expectedProfileVersion,expectedStopVersion:5})).ok,false);
+ }
+});
+test('edge 05: beginC04PasskeyChallenge rejects non-positive or fractional expectedStopVersion',async t=>{
+ const s=await setup(t);
+ for(const expectedStopVersion of [0,-3,2.25,Infinity]){
+  assert.equal((await beginC04PasskeyChallenge({db:s.db,prepared:s.prepared,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion})).ok,false);
+ }
+});
+test('edge 06: beginC04PasskeyChallenge denies observe preset',async t=>{
+ const s=await setup(t);
+ await s.db.query("UPDATE brain_owner_autonomy_profile SET preset='observe' WHERE id=1");
+ assert.equal((await begin(s)).ok,false);
+});
+test('edge 07: beginC04PasskeyChallenge denies nonzero max_paid_cents',async t=>{
+ const s=await setup(t);
+ await s.db.query('UPDATE brain_owner_autonomy_profile SET max_paid_cents=1 WHERE id=1');
+ assert.equal((await begin(s)).ok,false);
+});
+test('edge 08: beginC04PasskeyChallenge denies when pr.comment is removed from allowed_operations',async t=>{
+ const s=await setup(t);
+ await s.db.query("UPDATE brain_owner_autonomy_profile SET allowed_operations='[]'::jsonb WHERE id=1");
+ assert.equal((await begin(s)).ok,false);
+});
+test('edge 09: beginC04PasskeyChallenge denies when runtime control is paused',async t=>{
+ const s=await setup(t);
+ await s.db.query('UPDATE brain_runtime_control SET paused=true WHERE id=1');
+ assert.equal((await begin(s)).ok,false);
+});
+test('edge 10: beginC04PasskeyChallenge denies revoked passkey before challenge issuance',async t=>{
+ const s=await setup(t);
+ await s.db.query('UPDATE brain_owner_passkeys SET revoked_at=now()');
+ assert.equal((await begin(s)).ok,false);
+});
+test('edge 11: verifyAndReserveC04Passkey rejects null, array, and missing-key proof objects',async t=>{
+ const s=await setup(t),ch=await begin(s),p=proof(s,ch);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:null})).ok,false);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:[]})).ok,false);
+ const {signature:_omit,...missingSig}=p;
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:missingSig})).ok,false);
+});
+test('edge 12: verifyAndReserveC04Passkey rejects proof with unexpected extra property',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{...proof(s,ch),extra:'1'}})).ok,false);
+});
+test('edge 13: verifyAndReserveC04Passkey rejects grantId without passkey- prefix',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{...proof(s,ch),grantId:ch.grantId.replace('passkey-','grant-')}})).ok,false);
+});
+test('edge 14: verifyAndReserveC04Passkey rejects short grantId or non-base64url signature',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{...proof(s,ch),grantId:'passkey-short'}})).ok,false);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{...proof(s,ch),signature:'not+valid/base64=='}})).ok,false);
+});
+test('edge 15: verifyAndReserveC04Passkey rejects webauthn.create ceremony type spoofed as assertion',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const auth=Buffer.concat([createHash('sha256').update('ultron-mw-cloud.hatchable.site').digest(),Buffer.from([0x05,0,0,0,1])]);
+ const client=Buffer.from(JSON.stringify({type:'webauthn.create',challenge:ch.challenge,origin:'https://ultron-mw-cloud.hatchable.site',crossOrigin:false}));
+ const sig=createSign('sha256').update(Buffer.concat([auth,createHash('sha256').update(client).digest()])).sign(s.key.privateKey);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{grantId:ch.grantId,credentialId:s.credentialId,authenticatorData:auth.toString('base64url'),clientDataJSON:client.toString('base64url'),signature:sig.toString('base64url')}})).ok,false);
+});
+test('edge 16: verifyAndReserveC04Passkey rejects crossOrigin=true in clientDataJSON',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const auth=Buffer.concat([createHash('sha256').update('ultron-mw-cloud.hatchable.site').digest(),Buffer.from([0x05,0,0,0,1])]);
+ const client=Buffer.from(JSON.stringify({type:'webauthn.get',challenge:ch.challenge,origin:'https://ultron-mw-cloud.hatchable.site',crossOrigin:true}));
+ const sig=createSign('sha256').update(Buffer.concat([auth,createHash('sha256').update(client).digest()])).sign(s.key.privateKey);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{grantId:ch.grantId,credentialId:s.credentialId,authenticatorData:auth.toString('base64url'),clientDataJSON:client.toString('base64url'),signature:sig.toString('base64url')}})).ok,false);
+});
+test('edge 17: verifyAndReserveC04Passkey rejects mismatched challenge from another session',async t=>{
+ const s=await setup(t),ch1=await begin(s),ch2=await begin(s);
+ const p=proof(s,ch2);
+ p.grantId=ch1.grantId;
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:p})).ok,false);
+});
+test('edge 18: verifyAndReserveC04Passkey rejects malformed JSON in clientDataJSON',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const auth=Buffer.concat([createHash('sha256').update('ultron-mw-cloud.hatchable.site').digest(),Buffer.from([0x05,0,0,0,1])]);
+ const client=Buffer.from('{not-json');
+ const sig=createSign('sha256').update(Buffer.concat([auth,createHash('sha256').update(client).digest()])).sign(s.key.privateKey);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{grantId:ch.grantId,credentialId:s.credentialId,authenticatorData:auth.toString('base64url'),clientDataJSON:client.toString('base64url'),signature:sig.toString('base64url')}})).ok,false);
+});
+test('edge 19: verifyAndReserveC04Passkey rejects HTTP downgrade origin',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{origin:'http://ultron-mw-cloud.hatchable.site'})})).ok,false);
+});
+test('edge 20: verifyAndReserveC04Passkey rejects origin with trailing slash',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{origin:'https://ultron-mw-cloud.hatchable.site/'})})).ok,false);
+});
+test('edge 21: verifyAndReserveC04Passkey rejects uppercase origin',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{origin:'HTTPS://ULTRON-MW-CLOUD.HATCHABLE.SITE'})})).ok,false);
+});
+test('edge 22: verifyAndReserveC04Passkey rejects authenticatorData with UP bit cleared (0x04)',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const auth=Buffer.concat([createHash('sha256').update('ultron-mw-cloud.hatchable.site').digest(),Buffer.from([0x04,0,0,0,1])]);
+ const client=Buffer.from(JSON.stringify({type:'webauthn.get',challenge:ch.challenge,origin:'https://ultron-mw-cloud.hatchable.site',crossOrigin:false}));
+ const sig=createSign('sha256').update(Buffer.concat([auth,createHash('sha256').update(client).digest()])).sign(s.key.privateKey);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{grantId:ch.grantId,credentialId:s.credentialId,authenticatorData:auth.toString('base64url'),clientDataJSON:client.toString('base64url'),signature:sig.toString('base64url')}})).ok,false);
+});
+test('edge 23: verifyAndReserveC04Passkey rejects authenticatorData with UV bit cleared (0x01)',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const auth=Buffer.concat([createHash('sha256').update('ultron-mw-cloud.hatchable.site').digest(),Buffer.from([0x01,0,0,0,1])]);
+ const client=Buffer.from(JSON.stringify({type:'webauthn.get',challenge:ch.challenge,origin:'https://ultron-mw-cloud.hatchable.site',crossOrigin:false}));
+ const sig=createSign('sha256').update(Buffer.concat([auth,createHash('sha256').update(client).digest()])).sign(s.key.privateKey);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{grantId:ch.grantId,credentialId:s.credentialId,authenticatorData:auth.toString('base64url'),clientDataJSON:client.toString('base64url'),signature:sig.toString('base64url')}})).ok,false);
+});
+test('edge 24: verifyAndReserveC04Passkey rejects truncated authenticatorData (<37 bytes)',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const auth=Buffer.alloc(36,1);
+ const client=Buffer.from(JSON.stringify({type:'webauthn.get',challenge:ch.challenge,origin:'https://ultron-mw-cloud.hatchable.site',crossOrigin:false}));
+ const sig=createSign('sha256').update(Buffer.concat([auth,createHash('sha256').update(client).digest()])).sign(s.key.privateKey);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:{grantId:ch.grantId,credentialId:s.credentialId,authenticatorData:auth.toString('base64url'),clientDataJSON:client.toString('base64url'),signature:sig.toString('base64url')}})).ok,false);
+});
+test('edge 25: signCount=0 is rejected once stored sign_count > 0',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ await s.db.query('UPDATE brain_owner_passkeys SET sign_count=2 WHERE credential_id=$1',[s.credentialId]);
+ const r=await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{signCount:0})});
+ assert.equal(r.ok,false);
+ assert.equal(r.reason,'passkey-counter-replayed');
+});
+test('edge 26: signCount=0 is allowed when stored sign_count=0 (counterless authenticator)',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const r=await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{signCount:0})});
+ assert.equal(r.ok,true);
+ assert.equal(r.status,'reserved');
+});
+test('edge 27: monotonic signCount advances across sequential challenges and rejects replay at same count',async t=>{
+ const s=await setup(t);
+ const ch1=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch1,{signCount:1})})).ok,true);
+ const p2=await preparePrCommentCanary({db:s.db,pullRequest:461});
+ const ch2=await beginC04PasskeyChallenge({db:s.db,prepared:p2,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5});
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:p2,proof:proof(s,ch2,{signCount:2})})).ok,true);
+ const p3=await preparePrCommentCanary({db:s.db,pullRequest:462});
+ const ch3=await beginC04PasskeyChallenge({db:s.db,prepared:p3,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5});
+ const replayed=await verifyAndReserveC04Passkey({db:s.db,prepared:p3,proof:proof(s,ch3,{signCount:2})});
+ assert.equal(replayed.ok,false);
+ assert.equal(replayed.reason,'passkey-counter-replayed');
+});
+test('edge 28: max_paid_cents flipped nonzero after begin denies verifyAndReserveC04Passkey',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ await s.db.query('UPDATE brain_owner_autonomy_profile SET max_paid_cents=50 WHERE id=1');
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch)})).ok,false);
+});
+test('edge 29: runtime control paused after begin denies verifyAndReserveC04Passkey',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ await s.db.query('UPDATE brain_runtime_control SET paused=true WHERE id=1');
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch)})).ok,false);
+});
+test('edge 30: preset downgraded to observe after begin denies verifyAndReserveC04Passkey',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ await s.db.query("UPDATE brain_owner_autonomy_profile SET preset='observe' WHERE id=1");
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch)})).ok,false);
+});
+test('edge 31: duplicate (repository, target_number, body_sha256) with different idempotencyKey denies reservation',async t=>{
+ const s=await setup(t),ch1=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch1)})).ok,true);
+ const dupBody={...s.prepared,idempotencyKey:s.prepared.idempotencyKey+'-dup'};
+ const ch2=await beginC04PasskeyChallenge({db:s.db,prepared:dupBody,credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5});
+ const r=await verifyAndReserveC04Passkey({db:s.db,prepared:dupBody,proof:proof(s,ch2,{signCount:2})});
+ assert.equal(r.ok,false);
+ assert.equal(r.reason,'execution-already-reserved');
+});
+test('edge 32: unknown grantId in proof returns HELD without throwing',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const p=proof(s,ch);
+ p.grantId='passkey-00000000-0000-4000-8000-000000000000';
+ const r=await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:p});
+ assert.equal(r.ok,false);
+ assert.equal(r.status,'held');
+});
+test('edge 33: valid reservation emits brain_events audit row with authority=owner-webauthn',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ const r=await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch)});
+ assert.equal(r.ok,true);
+ const ev=await s.db.query("SELECT event_type,details->>'authority' AS authority FROM brain_events WHERE event_type='github-pr-comment-reserved'");
+ assert.equal(ev.rows.length,1);
+ assert.equal(ev.rows[0].authority,'owner-webauthn');
+});
