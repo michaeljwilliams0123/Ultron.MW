@@ -34,10 +34,47 @@ test('BUG-184 never accepts duplicate, manual, recovered, or unobserved admissio
  }
 });
 
-test('BUG-184 blocked natural task records failed but never successful slot',()=>{
- assert.equal(classifyTerminalSlotEvidence({...canonical,council_status:'blocked'}),'failed');
- assert.equal(classifyTerminalSlotEvidence({...canonical,repo_admissions:0,council_status:'blocked'}),null);
+test('BUG-184 blocked status without terminal failure evidence remains pending',()=>{
+ assert.equal(classifyTerminalSlotEvidence({...canonical,council_status:'blocked',
+  terminal_council_failure_receipts:0}),null);
+ assert.equal(classifyTerminalSlotEvidence({...canonical,repo_status:'blocked',
+  terminal_repo_failure_receipts:0}),null);
 });
+
+test('BUG-184 genuine attempt limit or final blocked failure records failed once',()=>{
+ assert.equal(classifyTerminalSlotEvidence({...canonical,council_status:'blocked',
+  terminal_council_failure_receipts:1}),'failed');
+ assert.equal(classifyTerminalSlotEvidence({...canonical,repo_status:'blocked',
+  terminal_repo_failure_receipts:1}),'failed');
+ assert.equal(classifyTerminalSlotEvidence({...canonical,repo_admissions:0,
+  council_status:'blocked',terminal_council_failure_receipts:1}),null);
+});
+
+test('BUG-184 queued partial completion and duplicated terminal receipts cannot be misclassified',()=>{
+ assert.equal(classifyTerminalSlotEvidence({...canonical,repo_status:'done',
+  council_status:'queued',terminal_council_failure_receipts:0}),null);
+ assert.equal(classifyTerminalSlotEvidence({...canonical,council_status:'blocked',
+  terminal_council_failure_receipts:2}),null);
+ assert.equal(classifyTerminalSlotEvidence({...canonical,repo_status:'blocked',
+  terminal_repo_failure_receipts:2}),null);
+ assert.equal(classifyTerminalSlotEvidence({...canonical,council_status:'blocked',
+  council_admissions:2,terminal_council_failure_receipts:1}),null);
+});
+
+test('BUG-184 readback query uses event-backed terminal status rather than task state alone',async()=>{
+ let sqlText='';
+ const db={async query(sql){
+  if(sql.includes('SELECT s.slot_key')){sqlText=sql;return {rows:[]};}
+  throw Error('unexpected write');
+ }};
+ const result=await reconcileRecentNaturalSlots({db,
+  outcomes:[{status:'failed',task_id:4739,objective:'council.review'}]});
+ assert.equal(result.completed,0);
+ assert.equal(result.failed,0);
+ assert.match(sqlText,/event_type='attempt-limit'/);
+ assert.match(sqlText,/next_status.*blocked/);
+});
+
 
 test('BUG-184 unrelated work or unresolved completion never mutates slot ledger',async()=>{
  let queried=0;
