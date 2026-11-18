@@ -1,8 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { executeUniversalCloudTask } from '../src/universal-cloud-executor.mjs';
+import {generateKeyPairSync,sign} from 'node:crypto';
+import {executeUniversalCloudTask,cloudOperationDigest} from '../src/universal-cloud-executor.mjs';
 
 const NOW = '2026-11-17T23:00:00Z';
+const {privateKey,publicKey}=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+function signedProof(cloudTask=task) {
+  const payload={toolName:cloudTask.operation,
+    targetResource:'ultron:cloud:sha256:'+cloudOperationDigest(cloudTask,5),
+    timestamp:Date.parse(NOW),
+    nonce:'test-signed-owner-approval-00000001'};
+  const signature=sign('sha256',Buffer.from(JSON.stringify(payload)),
+    {key:privateKey,dsaEncoding:'ieee-p1363'}).toString('base64url');
+  return {ownerApproval:{payload,signature},trustedOwnerPublicKey:publicKey,
+    approvalNonceStore:{async consume(){return true;}}};
+}
 const task = {
   provider:'gitlab', operation:'gitlab.branch.create',
   target:'project:87884831:branch:ultron-task-1',
@@ -23,6 +35,7 @@ function fakes() {
     get writes(){return writes;},
     outboxStore:{
       async reserve(){return {ok:true,fencingEpoch:5};},
+      async markSent(){return {ok:true};},
       async markReconcile(){return {ok:true};},
       async markCompleted(){return {verified:true};},
     },
@@ -55,7 +68,8 @@ test('self-attested callback readback without provider-origin receipt cannot com
   const f=fakes();
   const result=await executeUniversalCloudTask({
     task,ownerGrant:grant,runtimeControl:{paused:false,stopVersion:5},
-    ...f,now:NOW,
+    ...signedProof(),...f,now:NOW,
   });
-  assert.notEqual(result.status,'completed');
+  assert.equal(f.writes,1);
+  assert.equal(result.status,'reconcile_required');
 });
