@@ -60,7 +60,10 @@ test('Streamable HTTP MCP rejects GET SSE, Mcp-Session-Id, bad Origin, bad proto
   assert.equal((await handle(req({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { headers: { 'mcp-session-id': 'sess-1' } }))).status, 400);
   assert.equal((await handle(req({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { headers: { origin: 'https://evil.example' } }))).status, 403);
   assert.equal((await handle(req({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { headers: { 'mcp-protocol-version': '1999-01-01' } }))).status, 400);
-  assert.equal((await handle(req({ jsonrpc: '2.0', id: 1, method: 'tools/list' }))).status, 401);
+  assert.equal((await handle(req({ jsonrpc: '2.0', id: 1, method: 'tools/list',
+    params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {} } } },
+    { headers: { 'mcp-method': 'tools/list' } }))).status, 401);
 });
 
 test('Streamable HTTP MCP rejects non-JSON content type and malformed JSON bodies', async () => {
