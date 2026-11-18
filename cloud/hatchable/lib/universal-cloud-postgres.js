@@ -33,7 +33,7 @@ export function createPostgresUniversalCloudOutbox({
       // Atomic admission + unique-key insert. A failed/unknown INSERT is
       // never followed by a blind retry or a provider write.
       const inserted=await db.query(
-        \`INSERT INTO brain_tasks(task_key,objective,status,attempts,max_attempts,
+        `INSERT INTO brain_tasks(task_key,objective,status,attempts,max_attempts,
           fencing_generation,last_result)
         SELECT $1,'universal.cloud','external',0,1,1,
           jsonb_build_object('state','reserved','requestDigest',$2::text,
@@ -44,12 +44,12 @@ export function createPostgresUniversalCloudOutbox({
           AND p.preset IN ('build','release') AND p.version=$5
           AND p.max_paid_cents=0 AND jsonb_exists(p.allowed_operations,$4::text)
           AND NOT c.paused AND c.version=$3
-        ON CONFLICT(task_key) DO NOTHING RETURNING id,last_result\`,
+        ON CONFLICT(task_key) DO NOTHING RETURNING id,last_result`,
         [key,requestDigest,stopVersion,operation,profileVersion]);
       if(count(inserted)!==1){
         const prior=await db.query(
-          \`SELECT last_result FROM brain_tasks WHERE task_key=$1 AND
-           objective='universal.cloud' AND status='external'\`,[key]);
+          `SELECT last_result FROM brain_tasks WHERE task_key=$1 AND
+           objective='universal.cloud' AND status='external'`,[key]);
         if(count(prior)===1){
           return {ok:false,existingStatus:prior.rows[0].last_result?.state,
             reason:'duplicate-idempotency-key'};
@@ -64,24 +64,24 @@ export function createPostgresUniversalCloudOutbox({
       if(!KEY.test(idempotencyKey||'')||!SHA.test(requestDigest||'')||
         !positiveInt(fencingEpoch))return {ok:false};
       const response=await db.query(
-        \`UPDATE brain_tasks SET last_result=jsonb_set(last_result,'{state}',
+        `UPDATE brain_tasks SET last_result=jsonb_set(last_result,'{state}',
           '"sent"'::jsonb),updated_at=now()
         WHERE id=$1 AND task_key=$2 AND objective='universal.cloud'
           AND status='external' AND last_result->>'state'='reserved'
           AND last_result->>'requestDigest'=$3
-        RETURNING id\`,[fencingEpoch,taskKey(idempotencyKey),requestDigest]);
+        RETURNING id`,[fencingEpoch,taskKey(idempotencyKey),requestDigest]);
       return {ok:count(response)===1};
     },
     async markReconcile({idempotencyKey,fencingEpoch,reason}={}){
       if(!KEY.test(idempotencyKey||'')||!positiveInt(fencingEpoch)||
         typeof reason!=='string'||reason.length>160)return {ok:false};
       const response=await db.query(
-        \`UPDATE brain_tasks SET last_result=last_result||
+        `UPDATE brain_tasks SET last_result=last_result||
           jsonb_build_object('state','reconcile_required','reason',$3::text),
           updated_at=now()
         WHERE id=$1 AND task_key=$2 AND objective='universal.cloud'
           AND status='external' AND last_result->>'state'='sent'
-        RETURNING id\`,[fencingEpoch,taskKey(idempotencyKey),reason]);
+        RETURNING id`,[fencingEpoch,taskKey(idempotencyKey),reason]);
       return {ok:count(response)===1};
     },
     async markCompleted(receipt={}){
@@ -91,18 +91,18 @@ export function createPostgresUniversalCloudOutbox({
       // Conditional terminal update; a stale generation or divergent digest
       // cannot overwrite another action's receipt.
       await db.query(
-        \`UPDATE brain_tasks SET last_result=jsonb_build_object(
+        `UPDATE brain_tasks SET last_result=jsonb_build_object(
           'state','completed','requestDigest',$3::text,'receipt',$4::jsonb),
           updated_at=now()
         WHERE id=$1 AND task_key=$2 AND objective='universal.cloud'
           AND status='external' AND last_result->>'state'='sent'
-          AND last_result->>'requestDigest'=$3\`,
+          AND last_result->>'requestDigest'=$3`,
         [fencingEpoch,taskKey(idempotencyKey),requestDigest,JSON.stringify(receipt)]);
       // Independently reread the committed PostgreSQL postcondition.
       const rows=await db.query(
-        \`SELECT id,last_result FROM brain_tasks
+        `SELECT id,last_result FROM brain_tasks
          WHERE id=$1 AND task_key=$2 AND objective='universal.cloud'
-           AND status='external'\`,[fencingEpoch,taskKey(idempotencyKey)]);
+           AND status='external'`,[fencingEpoch,taskKey(idempotencyKey)]);
       const row=rows?.rows?.[0];
       const persisted=row?.last_result;
       const verified=count(rows)===1 && positiveInt(row.id)===fencingEpoch &&
