@@ -105,3 +105,7 @@ body.ultron-ui .u-header-help{font-size:12px}
 @media(max-height:650px){body.ultron-ui.u-council .conversation{height:auto;min-height:calc(100dvh - var(--u-header));max-height:none;overflow:visible}body.ultron-ui.u-council .messages{min-height:180px;max-height:60dvh;flex:none}}
 
 @media(max-width:800px){body.ultron-ui.u-council .conversation{height:auto;max-height:none;min-height:calc(100dvh - var(--u-header));overflow:visible}body.ultron-ui.u-council .messages{flex:1 0 220px;min-height:220px;max-height:55dvh}}
+
+/* Short-panel (<=650px height, e.g. 580px) drawer/sidebar footer non-overlap fix. */
+.ultron-ui .u-brand,.ultron-ui .u-modules,.ultron-ui .u-sidebar-foot{flex-shrink:0}
+@media(max-height:650px){body.ultron-ui .u-sidebar{gap:10px;padding-top:14px;padding-bottom:14px}body.ultron-ui .u-conversations{flex:0 0 auto;min-height:0;overflow:visible}body.ultron-ui .u-chat-list{flex:0 0 auto;min-height:0;max-height:200px}}
