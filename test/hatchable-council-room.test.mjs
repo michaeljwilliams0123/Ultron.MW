@@ -30,7 +30,12 @@ function platform({query=async()=>({rows:[]})}={}){
  const calls={queries:[],scheduled:[],published:[]};
  return {
   calls,
-  db:{async query(sql,params){calls.queries.push({sql,params});return query(sql,params)}},
+  db:{async query(sql,params){
+   calls.queries.push({sql,params});
+   if(sql.includes('FROM council_room_threads'))return {rows:[{room_key:'owner-main',title:'Main conversation',archived:false,pinned:false}]};
+   if(sql.startsWith('UPDATE council_room_threads'))return {rows:[]};
+   return query(sql,params);
+  }},
   scheduler:{async now(...args){calls.scheduled.push(args)}},
   events:{async publish(...args){calls.published.push(args)}}
  };
@@ -103,11 +108,12 @@ test('Council Room POST is idempotent and only the first durable message wakes t
  assert.equal(first.body.created,true);
  assert.equal(replay.status,200);
  assert.equal(replay.body.created,false);
- assert.equal(p.calls.queries.length,2);
+ const inserts=p.calls.queries.filter(q=>q.sql.includes('WITH inserted AS'));
+ assert.equal(inserts.length,2);
  assert.equal(p.calls.scheduled.length,1);
  assert.equal(p.calls.published.length,1);
- assert.deepEqual(JSON.parse(p.calls.queries[0].params[3]),['builder','skeptic']);
- assert.equal(p.calls.queries[0].params[4].includes('ULTRON_VAULT_KEY'),false);
+ assert.deepEqual(JSON.parse(inserts[0].params[3]),['builder','skeptic']);
+ assert.equal(inserts[0].params[4].includes('ULTRON_VAULT_KEY'),false);
  delete globalThis.__councilRoomPlatform;
 });
 

@@ -11,8 +11,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/council-room.css">
+<link rel="stylesheet" href="/workspace-shell.css">
 </head>
-<body>
+<body class="u-council">
 <div class="app-shell">
 <header class="topbar">
  <a class="brand" href="/"><span class="brand-mark">U</span><span><b>Ultron.MW</b><small>owner cloud</small></span></a>
@@ -28,27 +29,18 @@
 </header>
 
 <main class="room-layout">
-<aside class="members-panel" aria-labelledby="members-title">
- <div class="panel-heading"><div><p class="overline">ROOM / OWNER-MAIN</p><h1 id="members-title">Council</h1></div><span class="count">7</span></div>
- <p class="panel-copy">Seven durable roles, one owner. Replies are evidence-linked and stay in this room.</p>
- <div id="member-list" class="member-list" aria-live="polite"></div>
- <div class="context-card">
-  <p class="overline">CONTEXT MESH</p>
-  <div><span class="dot live"></span> Ultron.MW</div>
-  <div><span class="dot live"></span> Mahoraga</div>
-  <div><span class="dot optional"></span> Cloudflare <em>on demand only</em></div>
- </div>
-</aside>
+
 
 <section class="conversation" aria-labelledby="room-title">
  <header class="conversation-head">
   <div>
-   <p class="overline">PERSISTENT OWNER THREAD</p>
-   <h2 id="room-title">Ultron Council Room</h2>
-   <p>Start here. Companion replies first in plain language; the Council weighs in below. Decisions only you can make arrive as approval cards, and nothing runs unless you click Approve.</p>
+   <p class="overline">COUNCIL / CONVERSATIONS</p>
+   <h2 id="room-title">Main conversation</h2>
+   <p>A focused place to think, plan, and review evidence with your Council. Companion replies first; decisions stay yours.</p>
   </div>
-  <button class="ghost-button" id="refresh" type="button">Refresh</button>
+  <div class="u-conversation-tools"><button class="ghost-button" id="refresh" type="button">Refresh</button><button id="thread-rename" type="button">Rename</button><button id="thread-pin" type="button">Pin</button><button id="thread-archive" type="button">Archive</button></div>
  </header>
+ <form id="thread-editor" class="u-thread-editor" hidden><label for="thread-title">Conversation name</label><input id="thread-title" maxlength="120" required autocomplete="off"><button type="submit">Save</button><button id="thread-cancel" type="button">Cancel</button></form>
  <div id="room-status" class="room-status" role="status" aria-live="polite">Opening the room…</div>
  <section id="sign-in-card" class="sign-in-card" aria-labelledby="sign-in-title" hidden>
   <p class="overline">START HERE</p>
@@ -58,7 +50,7 @@
  </section>
  <ol id="message-list" class="messages" aria-label="Council conversation"></ol>
  <button id="load-more" class="load-more" type="button" hidden>Load earlier messages</button>
- <section id="issue-card" class="issue-card" aria-labelledby="issue-title">
+ <details class="u-issue-details"><summary>Issue planning & repository work</summary> <section id="issue-card" class="issue-card" aria-labelledby="issue-title">
   <div class="routine-head"><p class="overline" id="issue-title">OPEN ISSUES</p><span>read-only</span></div>
   <p>Advisory portfolio from public GitHub data. No issue or PR is changed.</p>
   <button id="issue-refresh" class="ghost-button" type="button">Refresh open issue inventory</button>
@@ -77,6 +69,7 @@
    <p class="issue-warning">Plans are advisory. GitHub branches, commits and pull requests each require a separate owner approval. No automatic merge or deployment.</p>
   </section>
  </section>
+</details>
  <section class="composer" aria-label="Message the council">
   <div class="composer-topline">
    <span>Message the council</span>
@@ -97,7 +90,8 @@
 
 <aside class="activity-panel" aria-labelledby="activity-title">
  <div class="panel-heading"><div><p class="overline">EXECUTION</p><h2 id="activity-title">Activity</h2></div></div>
- <div id="job-list" class="job-list"></div>
+ <div id="job-list" class="job-list"></div><details class="u-member-details"><summary>Your seven Council roles</summary><div id="member-list" class="member-list" aria-live="polite"></div>
+ </details>
  <section class="adapter-card">
   <p class="overline">ADAPTERS</p>
   <dl>
@@ -117,6 +111,7 @@
 </aside>
 </main>
 </div>
+<script src="/workspace-shell.js"></script>
 <script src="/__hatchable/events.js"></script>
 <script src="/council-room.js"></script>
 <script src="/nav-guard.js" defer></script>
