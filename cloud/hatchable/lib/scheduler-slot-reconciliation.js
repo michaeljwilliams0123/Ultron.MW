@@ -14,7 +14,11 @@ export function classifyTerminalSlotEvidence(row){
   'authentic_repo_admissions','authentic_council_admissions']){
   if(!countOne(row[field]))return null;
  }
- if(row.repo_status==='blocked'||row.council_status==='blocked')return 'failed';
+ if(row.repo_status==='blocked'||row.council_status==='blocked'){
+  if(row.repo_status==='blocked'&&!countOne(row.terminal_repo_failure_receipts))return null;
+  if(row.council_status==='blocked'&&!countOne(row.terminal_council_failure_receipts))return null;
+  return 'failed';
+ }
  if(row.repo_status!=='done'||row.council_status!=='done'||
   row.repo_source!=='github-api'||row.repo_repository!==REPO)return null;
  for(const field of ['observed_repo_receipts','observed_council_receipts',
@@ -44,6 +48,14 @@ const CANDIDATE_SQL=`SELECT s.slot_key,s.classification,
    AND e.event_type='observed' AND e.details->>'source'='github-api') AS observed_repo_receipts,
  (SELECT count(*)::int FROM brain_events e WHERE e.task_id=c.id
    AND e.event_type='observed') AS observed_council_receipts,
+ (SELECT count(*)::int FROM brain_events e WHERE e.task_id=h.id
+  AND (e.event_type='attempt-limit'
+    OR (e.event_type='failed' AND e.details->>'next_status'='blocked')))
+    AS terminal_repo_failure_receipts,
+ (SELECT count(*)::int FROM brain_events e WHERE e.task_id=c.id
+  AND (e.event_type='attempt-limit'
+    OR (e.event_type='failed' AND e.details->>'next_status'='blocked')))
+    AS terminal_council_failure_receipts,
  (SELECT count(*)::int FROM brain_events e WHERE e.task_id=c.id
    AND e.event_type='council-assessment') AS council_assessments,
  (SELECT count(*)::int FROM brain_events e WHERE e.task_id=c.id
