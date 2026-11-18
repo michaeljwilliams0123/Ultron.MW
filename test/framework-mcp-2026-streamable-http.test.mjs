@@ -66,3 +66,41 @@ test('Streamable HTTP MCP rejects non-JSON content type and malformed JSON bodie
   assert.equal((await handle(req('{bad-json'))).status, 400);
   assert.equal((await handle(req([]))).status, 400);
 });
+
+
+test('2026-07-28 modern routing requires headers matching the JSON-RPC method and name', async () => {
+  const handle = createStreamableHttpMcpHandler(CONFIG, { githubGet });
+  const meta = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+    'io.modelcontextprotocol/clientCapabilities': {} };
+  const call = { jsonrpc: '2.0', id: 21, method: 'tools/call',
+    params: { name: 'ultron_status', arguments: {}, _meta: meta } };
+  const send = async (headers = {}) => handle(req(call, { headers }));
+  for (const headers of [
+    { 'mcp-method': 'tools/list', 'mcp-name': 'ultron_status' },
+    { 'mcp-method': 'tools/call', 'mcp-name': 'different_tool' },
+    { 'mcp-method': 'tools/call' },
+    { 'mcp-name': 'ultron_status' },
+  ]) {
+    const response = await send(headers);
+    assert.equal(response.status, 400, JSON.stringify(headers));
+    assert.equal((await response.json()).error.code, -32020);
+  }
+  const accepted = await send({ 'mcp-method': 'tools/call', 'mcp-name': 'ultron_status' });
+  assert.equal(accepted.status, 200);
+});
+
+test('2026-07-28 transport does not use session IDs and rejects mismatched per-request versions', async () => {
+  const handle = createStreamableHttpMcpHandler(CONFIG, { githubGet });
+  const modern = { jsonrpc: '2.0', id: 22, method: 'server/discover',
+    params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {} } } };
+  const good = await handle(req(modern, {
+    headers: { 'mcp-method': 'server/discover', 'mcp-session-id': 'ignored-legacy-state' },
+  }));
+  assert.equal(good.status, 200);
+  assert.equal(good.headers.get('mcp-session-id'), null);
+  const mismatch = await handle(req(modern, {
+    headers: { 'mcp-method': 'server/discover', 'mcp-protocol-version': '2025-06-18' },
+  }));
+  assert.equal(mismatch.status, 400);
+});
