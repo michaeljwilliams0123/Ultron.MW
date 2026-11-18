@@ -274,11 +274,24 @@ export function issueCouncilExecutionReceipt(actor,{
  if(typeof operation!=='string'||!operation||!SHA256.test(caseSha||''))
   throw Error('council-receipt-input-invalid');
  const r=githubResponse;
- if(!r||r.source!=='github-api-response'||typeof r.url!=='string'||
-   !r.url.startsWith('https://api.github.com/repos/'+REPO+'/')||
-   !Number.isSafeInteger(r.id)||r.id<1||
-   r.author_login!==actor.botLogin||r.author_type!=='Bot'||
-   r.app_id!==actor.appId||r.app_slug!==actor.appSlug)
+ const canonical='https://api.github.com/repos/'+REPO+'/';
+ const basic=r&&typeof r.url==='string'&&r.url.startsWith(canonical)&&
+   Number.isSafeInteger(r.id)&&r.id>0&&
+   r.author_login===actor.botLogin&&r.author_type==='Bot';
+ const providerAttributed=basic&&r.source==='github-api-response'&&
+   r.app_id===actor.appId&&r.app_slug===actor.appSlug;
+ // GitHub PR-review GET omits performed_via_github_app. Keep the two
+ // distinct proof sources explicit: installation-token-authenticated actor
+ // AND independently fetched, exact-head, marker-bound bot review.
+ const reviewReadback=basic&&r.source==='github-review-readback'&&
+   operation==='review.comment'&&
+   r.app_id===undefined&&r.app_slug===undefined&&
+   Number.isSafeInteger(r.author_id)&&r.author_id>0&&
+   Number.isSafeInteger(r.review_pr_number)&&r.review_pr_number>0&&
+   /^[a-f0-9]{64}$/.test(r.execution_key||'')&&r.markerProof===true&&
+   r.review_state==='COMMENTED'&&r.review_commit_sha===actor.sourceSha&&
+   r.url===canonical+'pulls/'+r.review_pr_number+'/reviews/'+r.id;
+ if(!providerAttributed&&!reviewReadback)
   throw Error('council-receipt-authorship-unproven');
  const ts=Date.parse(observedAt);
  if(!Number.isFinite(ts))throw Error('council-receipt-input-invalid');
@@ -286,9 +299,18 @@ export function issueCouncilExecutionReceipt(actor,{
   version:RECEIPT_VERSION,role:actor.role,installationId:actor.installationId,
    app:{id:actor.appId,slug:actor.appSlug,bindingKey:actor.bindingKey,kind:actor.identityKind},
   sourceSha:actor.sourceSha,operation,caseSha,
-  effect:{url:r.url,id:r.id,author:r.author_login},
+  effect:reviewReadback
+   ?{url:r.url,id:r.id,author:r.author_login,authorId:r.author_id,
+     prNumber:r.review_pr_number,reviewCommitSha:r.review_commit_sha,
+     executionKey:r.execution_key}
+   :{url:r.url,id:r.id,author:r.author_login},
   observedAt:new Date(ts).toISOString(),
-  claims:{authorshipFromGithubResponse:true,modelInvoked:false,independentReview:false}
+  claims:reviewReadback
+   ?{authorshipFromGithubResponse:false,
+     appIdentityFromAuthenticatedInstallation:true,
+     botReviewCommitReadbackVerified:true,
+     modelInvoked:false,independentReview:false}
+   :{authorshipFromGithubResponse:true,modelInvoked:false,independentReview:false}
  };
  return Object.freeze({...body,digest:receiptDigest(body)});
 }
@@ -304,6 +326,23 @@ export function verifyCouncilExecutionReceipt(receipt){
    if(receipt.effect?.author!==identity.botLogin||
      receipt.app?.bindingKey!==identity.bindingKey||receipt.app?.kind!==identity.kind)
     return false;
+   const claims=receipt.claims||{};
+   if(claims.authorshipFromGithubResponse===false){
+    const e=receipt.effect||{};
+    if(claims.appIdentityFromAuthenticatedInstallation!==true||
+       claims.botReviewCommitReadbackVerified!==true||
+       receipt.operation!=='review.comment'||
+       !Number.isSafeInteger(e.id)||e.id<1||
+       !Number.isSafeInteger(e.authorId)||e.authorId<1||
+       !Number.isSafeInteger(e.prNumber)||e.prNumber<1||
+       !/^[a-f0-9]{64}$/.test(e.executionKey||'')||
+       !/^[a-f0-9]{40}$/.test(receipt.sourceSha||'')||
+       e.reviewCommitSha!==receipt.sourceSha||
+       e.url!=='https://api.github.com/repos/'+REPO+
+        '/pulls/'+e.prNumber+'/reviews/'+e.id)return false;
+   }else if(claims.authorshipFromGithubResponse!==true||
+    claims.appIdentityFromAuthenticatedInstallation!==undefined||
+    claims.botReviewCommitReadbackVerified!==undefined)return false;
   const {digest,...body}=receipt;
   return receiptDigest(body)===digest;
  }catch{return false;}
