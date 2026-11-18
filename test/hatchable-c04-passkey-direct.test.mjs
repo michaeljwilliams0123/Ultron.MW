@@ -37,12 +37,20 @@ async function setup(t){
 }
 async function begin(s){return beginC04PasskeyChallenge({db:s.db,prepared:s.prepared,
  credentialId:s.credentialId,expectedProfileVersion:7,expectedStopVersion:5});}
-function proof(s,ch,{origin='https://ultron-mw-cloud.hatchable.site'}={}){
- const auth=Buffer.concat([createHash('sha256').update('ultron-mw-cloud.hatchable.site').digest(),
- Buffer.from([0x05,0,0,0,1])]);
+function proof(s,ch,{
+ origin='https://ultron-mw-cloud.hatchable.site',
+ rpId='ultron-mw-cloud.hatchable.site',
+ credentialId=s.credentialId,
+ signingKey=s.key.privateKey,
+ signCount=1,
+}={}){
+ const countBuf=Buffer.alloc(4);
+ countBuf.writeUInt32BE(signCount,0);
+ const auth=Buffer.concat([createHash('sha256').update(rpId).digest(),
+ Buffer.from([0x05]),countBuf]);
  const client=Buffer.from(JSON.stringify({type:'webauthn.get',challenge:ch.challenge,origin,crossOrigin:false}));
- const sig=createSign('sha256').update(Buffer.concat([auth,createHash('sha256').update(client).digest()])).sign(s.key.privateKey);
- return {grantId:ch.grantId,credentialId:s.credentialId,authenticatorData:auth.toString('base64url'),
+ const sig=createSign('sha256').update(Buffer.concat([auth,createHash('sha256').update(client).digest()])).sign(signingKey);
+ return {grantId:ch.grantId,credentialId,authenticatorData:auth.toString('base64url'),
  clientDataJSON:client.toString('base64url'),signature:sig.toString('base64url')};
 }
 test('C04 WebAuthn binds owner assertion to one durable comment reservation; replay denied',async t=>{
@@ -76,4 +84,35 @@ test('C04 denies mismatched target and revoked credential',async t=>{
  await s.db.query('UPDATE brain_owner_passkeys SET revoked_at=now()');
  assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch)})).ok,false);
  assert.equal((await s.db.query('SELECT count(*)::int AS n FROM github_pr_comment_executions')).rows[0].n,0);
+});
+test('C04 rejects wrong RP ID, unknown credential, invalid signature, and signCount rollback',async t=>{
+ const s=await setup(t),ch=await begin(s);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{rpId:'attacker.invalid'})})).ok,false);
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{credentialId:Buffer.from('unknown-cred').toString('base64url')})})).ok,false);
+ const otherKey=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+ assert.equal((await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{signingKey:otherKey.privateKey})})).ok,false);
+ await s.db.query('UPDATE brain_owner_passkeys SET sign_count=5 WHERE credential_id=$1',[s.credentialId]);
+ const rolledBack=await verifyAndReserveC04Passkey({db:s.db,prepared:s.prepared,proof:proof(s,ch,{signCount:5})});
+ assert.equal(rolledBack.ok,false);
+ assert.equal(rolledBack.reason,'passkey-counter-replayed');
+ assert.equal((await s.db.query('SELECT count(*)::int AS n FROM github_pr_comment_executions')).rows[0].n,0);
+});
+test('C04 denies stale profile version, changed body digest, expired challenge, and concurrent claims',async t=>{
+ const s1=await setup(t),ch1=await begin(s1);
+ await s1.db.query('UPDATE brain_owner_autonomy_profile SET version=8 WHERE id=1');
+ assert.equal((await verifyAndReserveC04Passkey({db:s1.db,prepared:s1.prepared,proof:proof(s1,ch1)})).ok,false);
+ await s1.db.query('UPDATE brain_owner_autonomy_profile SET version=7 WHERE id=1');
+ assert.equal((await verifyAndReserveC04Passkey({db:s1.db,prepared:{...s1.prepared,bodySha256:'f'.repeat(64)},proof:proof(s1,ch1)})).ok,false);
+ await s1.db.query("UPDATE brain_owner_passkey_challenges SET expires_at=now()-interval '1 minute'");
+ assert.equal((await verifyAndReserveC04Passkey({db:s1.db,prepared:s1.prepared,proof:proof(s1,ch1)})).ok,false);
+ assert.equal((await s1.db.query('SELECT count(*)::int AS n FROM github_pr_comment_executions')).rows[0].n,0);
+
+ const s2=await setup(t),ch2=await begin(s2);
+ const p2=proof(s2,ch2);
+ const [first,second]=await Promise.all([
+  verifyAndReserveC04Passkey({db:s2.db,prepared:s2.prepared,proof:p2}),
+  verifyAndReserveC04Passkey({db:s2.db,prepared:s2.prepared,proof:p2}),
+ ]);
+ assert.equal([first.ok,second.ok].filter(Boolean).length,1);
+ assert.equal((await s2.db.query('SELECT count(*)::int AS n FROM github_pr_comment_executions')).rows[0].n,1);
 });
