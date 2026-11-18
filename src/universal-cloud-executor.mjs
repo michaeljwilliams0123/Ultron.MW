@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { verifyCryptographicApproval } from './security/crypto_auth.mjs';
-import { analyzePayloadAST } from './security/ast_taint_analyzer.mjs';
+// Code-source AST inspection is loaded only when required. A missing parser
+// fails that operation closed, without breaking non-code provider adapters.
 
 const PROVIDERS = new Set(['gitlab', 'graph', 'huggingface', 'composio', 'hatchable-browser']);
 const OWNER_ACTOR = 'michaeljwilliams0123';
@@ -126,7 +127,13 @@ export async function executeUniversalCloudTask({
   // Code-bearing payloads require the existing AST analyzer. Its zero-flow
   // result is advisory, not authorization; any uncertainty fails this write.
   if (typeof task.payload?.sourceCode === 'string') {
-    const analysis = analyzePayloadAST(task.payload.sourceCode);
+    let analysis;
+    try {
+      const {analyzePayloadAST}=await import('./security/ast_taint_analyzer.mjs');
+      analysis=analyzePayloadAST(task.payload.sourceCode);
+    } catch {
+      return {ok:false,status:'rejected',reason:'ast-scanner-unavailable'};
+    }
     if (analysis.status !== 'no-known-flow' ||
         analysis.unknowns.length || analysis.violations.length)
       return { ok:false,status:'rejected',reason:'ast-taint-or-unknown-flow' };
