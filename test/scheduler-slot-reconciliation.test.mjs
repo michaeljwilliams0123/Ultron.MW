@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {classifyTerminalSlotEvidence,reconcileRecentNaturalSlots} from '../cloud/hatchable/lib/scheduler-slot-reconciliation.js';
 
-const canonical={slot_key:'2026-11-18T03:00Z',repo_status:'done',council_status:'done',
+const canonical={slot_key:'2026-11-18T03:00Z',classification:'scheduled',repo_status:'done',council_status:'done',
  repo_source:'github-api',repo_repository:'michaeljwilliams0123/Ultron.MW',
  repo_admissions:1,council_admissions:1,authentic_repo_admissions:1,authentic_council_admissions:1,
  observed_repo_receipts:1,observed_council_receipts:1,
@@ -24,6 +24,8 @@ test('BUG-184 completed genuine hourly work must transition slot pending to done
 
 test('BUG-184 never accepts duplicate, manual, recovered, or unobserved admissions',()=>{
  assert.equal(classifyTerminalSlotEvidence(canonical),'done');
+ assert.equal(classifyTerminalSlotEvidence({...canonical,classification:'recovery'}),null);
+ assert.equal(classifyTerminalSlotEvidence({...canonical,classification:undefined}),null);
  for (const [key,value] of Object.entries({repo_admissions:2,authentic_repo_admissions:0,
   council_admissions:2,authentic_council_admissions:0,observed_repo_receipts:0,
   observed_council_receipts:2,council_assessments:2,free_council_assessments:0,
