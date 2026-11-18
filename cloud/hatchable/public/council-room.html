@@ -75,12 +75,14 @@
    <span>Message the council</span>
    <span id="char-count">0 / 6000</span>
   </div>
-  <textarea id="composer-body" aria-label="Message the council" maxlength="6000" rows="4" placeholder="Ask the council to inspect, plan, compare, explain, or prepare the next action…"></textarea>
+  <textarea id="composer-body" aria-label="Message the council" maxlength="6000" rows="2" placeholder="Ask the council to inspect, plan, compare, explain, or prepare the next action…"></textarea>
+  <details class="u-composer-context"><summary>Members &amp; context</summary>
   <div class="mention-row" id="mention-row" aria-label="Choose council members"></div>
   <div class="composer-options">
    <label><input id="include-mahoraga" type="checkbox" checked> Include Mahoraga evidence</label>
    <label class="attachment-label">Result or source URL <input id="attachment-url" type="url" placeholder="https://…"></label>
   </div>
+  </details>
   <div class="composer-actions">
    <p>No passwords, OTPs, private keys, or tokens. Sensitive steps become <b>Needs owner</b>.</p>
    <button id="send" type="button">Send to council <span>↗</span></button>

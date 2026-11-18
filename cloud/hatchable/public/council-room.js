@@ -17,7 +17,7 @@ async function selectRoom(id,push=true){
  $('char-count').textContent=$('composer-body').value.length+' / 6000';
  state.messages=[];state.jobs=[];state.nextCursor=null;renderMessages();renderJobs();
  if(push){const url=new URL(location.href);url.searchParams.set('room',id);history.pushState({room:id},'',url);}
- document.body.classList.remove('u-nav-open');
+ document.dispatchEvent(new CustomEvent('ultron:close-navigation'));
  await load();
 }
 function renderThreads(){
@@ -47,7 +47,7 @@ function threadEditor(mode){threadMode=mode;$('thread-editor').hidden=false;$('t
 function mountThreads(){
  const slot=$('u-conversations');if(!slot||$('u-chat-list'))return;
  slot.append(node('div','u-chat-heading','Conversations'));
- const create=node('button','u-new-chat','＋ New conversation');create.type='button';create.addEventListener('click',()=>{threadEditor('create');document.body.classList.remove('u-nav-open');});
+ const create=node('button','u-new-chat','＋ New conversation');create.type='button';create.addEventListener('click',()=>{threadEditor('create');document.dispatchEvent(new CustomEvent('ultron:close-navigation'));});
  const search=node('input','u-chat-search');search.type='search';search.placeholder='Search conversations';search.setAttribute('aria-label','Search conversations');search.value=state.search;
  search.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.search=search.value;load();},250);});
  const filter=node('button','u-chat-filter','Show archived');filter.type='button';filter.addEventListener('click',()=>{state.archived=!state.archived;filter.textContent=state.archived?'Show active':'Show archived';load();});

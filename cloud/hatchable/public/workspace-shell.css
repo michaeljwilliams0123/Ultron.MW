@@ -51,3 +51,22 @@ body.ultron-ui .codex-author-card,body.ultron-ui .codex-authors,body.ultron-ui .
 body.ultron-ui .codex-author-card strong,body.ultron-ui .codex-authors summary{color:var(--u-ink)!important}
 body.ultron-ui pre,body.ultron-ui code{background:#eaf0eb;color:#35574c;overflow-wrap:anywhere}
 body.ultron-ui .codex-call-row button,body.ultron-ui .experience-buttons button,body.ultron-ui .owner-suggest{background:var(--u-accent);color:#fff;border-color:var(--u-accent)}
+
+body.ultron-ui .u-sidebar{gap:16px;padding-top:22px}
+body.ultron-ui .u-module{padding:7px 13px;font-size:12px}
+body.ultron-ui .u-modules{gap:2px}
+body.ultron-ui input.u-chat-search:not([type=checkbox]):not([type=radio]){background:#203833!important;color:#e7f0e9!important;border-color:#3c554b!important;padding:8px 10px}
+body.ultron-ui .u-conversations{padding-top:14px}
+body.ultron-ui .u-chat-heading{padding-bottom:10px}
+body.ultron-ui .u-chat-list{display:flex;flex-direction:column;align-items:stretch}
+body.ultron-ui .u-chat-link{flex-shrink:0}
+body.ultron-ui.u-council .room-status{margin:0}
+body.ultron-ui.u-council .composer textarea{height:64px;min-height:50px}
+body.ultron-ui .u-composer-context summary{cursor:pointer;color:var(--u-accent);font-size:11px;padding:5px 0}
+body.ultron-ui .u-composer-context[open] .mention-row{padding-top:8px}
+body.ultron-ui .u-composer-context{max-height:190px;overflow:auto}
+body.ultron-ui.u-council .conversation-head h2{font-size:24px}
+body.ultron-ui.u-council .conversation-head p{font-size:11px}
+body.ultron-ui.u-council .conversation-head{padding-bottom:12px}
+
+@media(max-width:800px){body.ultron-ui .u-sidebar{visibility:hidden}body.ultron-ui.u-nav-open .u-sidebar{visibility:visible}}

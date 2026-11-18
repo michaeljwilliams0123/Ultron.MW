@@ -28,7 +28,8 @@
  const shade=el('button','u-shade');shade.type='button';shade.setAttribute('aria-label','Close navigation');
  const close=()=>{document.body.classList.remove('u-nav-open');toggle.setAttribute('aria-expanded','false');};
  toggle.addEventListener('click',()=>{const open=document.body.classList.toggle('u-nav-open');toggle.setAttribute('aria-expanded',String(open));});shade.addEventListener('click',close);
- document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'){close();if(matchMedia('(max-width:800px)').matches)toggle.focus();}});
+ document.addEventListener('ultron:close-navigation',close);
  const skip=el('a','u-skip','Skip to content');skip.href='#u-main-content';
  const main=document.querySelector('main')||document.querySelector('.main');if(main){main.id=main.id||'u-main-content';skip.href='#'+main.id;}
  document.body.prepend(skip,nav,header,shade);
