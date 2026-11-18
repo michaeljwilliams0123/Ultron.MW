@@ -7,6 +7,7 @@ export const methods=['GET','POST'];
 const ROLE_IDS=new Set(COUNCIL_ROOM_ROLES.map(x=>x.id));
 const KEY=/^room:[A-Za-z0-9._:-]{8,160}$/;
 const ROOM=/^(?:owner-main|chat-[a-f0-9-]{36})$/;
+// Preserve legacy single-room clients; the owner check and message validation still apply.
 const roomKey=req=>req.method==='GET'?(req.query?.room||'owner-main'):(req.body?.room||'owner-main');
 const SECRET_LIKE=/(?:password|passcode|otp|api[_ -]?key|private[_ -]?key)\s*[:=]|\bgh[pousr]_[A-Za-z0-9_]{20,}\b/i;
 

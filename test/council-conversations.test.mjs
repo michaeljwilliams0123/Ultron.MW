@@ -88,3 +88,14 @@ test('migration preserves old room messages and can be applied repeatedly',async
  assert.equal(view.body.messages[0].body,'Existing history');
  assert.equal((await db.query('SELECT count(*)::int AS n FROM council_room_threads')).rows[0].n,2);
 });
+
+test('legacy POST defaults to main only for the owner and still requires a valid message',async t=>{
+ const {db,call,wakeups}=await fixture(t);
+ assert.equal((await call('POST',{})).status,400);
+ const payload={messageKey:'room:legacy-default-001',body:'Existing single-room client'};
+ assert.equal((await call('POST',payload,{}, {handle:'other'})).status,403);
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM council_room_messages')).rows[0].n,0);
+ assert.equal((await call('POST',payload)).status,201);
+ const view=await call('GET');assert.equal(view.body.room.id,'owner-main');
+ assert.equal(view.body.messages[0].body,payload.body);assert.equal(wakeups(),1);
+});
