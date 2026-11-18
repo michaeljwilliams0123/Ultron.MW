@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { executeUniversalCloudTask } from '../src/universal-cloud-executor.mjs';
+import { generateKeyPairSync, sign } from 'node:crypto';
+import { executeUniversalCloudTask, cloudOperationDigest } from '../src/universal-cloud-executor.mjs';
 
 const NOW = '2026-11-17T23:00:00Z';
 const baseTask = (overrides = {}) => ({
@@ -24,6 +25,23 @@ const baseGrant = (overrides = {}) => ({
   ...overrides,
 });
 const baseControl = (overrides = {}) => ({ paused: false, stopVersion: 5, ...overrides });
+const {publicKey,privateKey}=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+let nextNonce=1;
+function signedTask(task,control=baseControl()) {
+  const payload={
+    toolName:task.operation,
+    targetResource:'ultron:cloud:sha256:'+cloudOperationDigest(task,control.stopVersion),
+    timestamp:Date.parse(NOW),
+    nonce:'owner-approved-cloud-intent-'+String(nextNonce++).padStart(8,'0'),
+  };
+  const signature=sign('sha256',Buffer.from(JSON.stringify(payload)),{
+    key:privateKey,dsaEncoding:'ieee-p1363',
+  }).toString('base64url');
+  return {
+    ownerApproval:{payload,signature},trustedOwnerPublicKey:publicKey,
+    approvalNonceStore:{async consume(){return true;}},
+  };
+}
 
 function makeOutbox() {
   const rows = new Map();
@@ -36,29 +54,40 @@ function makeOutbox() {
       rows.set(idempotencyKey, { status: 'reserved', requestDigest, fencingEpoch });
       return { ok: true, fencingEpoch };
     },
+    async markSent({idempotencyKey,fencingEpoch}) {
+      const r=rows.get(idempotencyKey);
+      if(!r ||r.fencingEpoch!==fencingEpoch||r.status!=='reserved')return {ok:false};
+      r.status='sent';
+      return {ok:true};
+    },
     async markReconcile({ idempotencyKey, reason }) {
       const r = rows.get(idempotencyKey);
       if (r) r.status = 'reconcile_required', r.reason = reason;
     },
     async markCompleted(receipt) {
       rows.set(receipt.idempotencyKey, { status: 'completed', receipt });
+      return {verified:true,requestDigest:receipt.requestDigest,
+        fencingEpoch:receipt.fencingEpoch};
     },
   };
 }
 
 test('universal cloud executor completes non-GitHub task with zero spend, independent readback, and trajectory', async () => {
   const outboxStore = makeOutbox();
-  let observedDigest;
+  const task=baseTask(),control=baseControl();
+  const observedDigest=cloudOperationDigest(task,control.stopVersion);
   const res = await executeUniversalCloudTask({
-    task: baseTask(),
+    task,
     ownerGrant: baseGrant(),
-    runtimeControl: baseControl(),
+    runtimeControl: control,
+    ...signedTask(task,control),
     outboxStore,
     submitProvider: async () => ({ ok: true, externalId: 'gl-ref-99' }),
-    readbackProvider: async ({ expectedDigest }) => {
-      observedDigest = expectedDigest;
-      return { verified: true, digest: expectedDigest };
-    },
+    readbackProvider: async ({provider,operation,target,externalId}) => ({
+      verified:true,origin:'provider-get',provider,operation,target,externalId,
+      digest:observedDigest,httpStatus:200,paidCents:0,observedAt:NOW,
+      sourceUrl:'https://gitlab.com/api/v4/projects/87884831/repository/branches/ultron-task-1',
+    }),
     now: NOW,
   });
   assert.equal(res.ok, true);
@@ -70,9 +99,10 @@ test('universal cloud executor completes non-GitHub task with zero spend, indepe
 
   // Replay with same idempotencyKey is denied without calling provider
   const replay = await executeUniversalCloudTask({
-    task: baseTask(),
+    task,
     ownerGrant: baseGrant(),
-    runtimeControl: baseControl(),
+    runtimeControl: control,
+    ...signedTask(task,control),
     outboxStore,
     submitProvider: async () => { throw Error('must not execute replay'); },
     readbackProvider: async () => { throw Error('must not readback replay'); },
@@ -159,10 +189,12 @@ test('static taint pre-filter blocks secret leakage and prototype-key injection 
 
 test('lost ACK or mismatched independent readback enters reconcile_required and blocks replay', async () => {
   const outboxStore = makeOutbox();
+  const task=baseTask(),control=baseControl();
   const lostAck = await executeUniversalCloudTask({
-    task: baseTask(),
+    task,
     ownerGrant: baseGrant(),
-    runtimeControl: baseControl(),
+    runtimeControl: control,
+    ...signedTask(task,control),
     outboxStore,
     submitProvider: async () => { throw Error('network timeout'); },
     readbackProvider: async () => ({ verified: true }),
@@ -172,9 +204,10 @@ test('lost ACK or mismatched independent readback enters reconcile_required and 
   assert.equal(lostAck.status, 'reconcile_required');
 
   const retry = await executeUniversalCloudTask({
-    task: baseTask(),
+    task,
     ownerGrant: baseGrant(),
-    runtimeControl: baseControl(),
+    runtimeControl: control,
+    ...signedTask(task,control),
     outboxStore,
     submitProvider: async () => { throw Error('must not retry'); },
     readbackProvider: async () => ({ verified: true }),
