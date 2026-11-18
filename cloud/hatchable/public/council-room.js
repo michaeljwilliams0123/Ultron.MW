@@ -11,7 +11,7 @@ const drafts=new Map();
 function rememberDraft(){drafts.set(state.room,{body:$('composer-body').value,attachment:$('attachment-url').value,key:state.pendingKey});}
 async function selectRoom(id,push=true){
  if(!roomPattern.test(id)||id===state.room)return;
- rememberDraft();state.room=id;state.pendingKey=drafts.get(id)?.key;
+ rememberDraft();composerEnabled(false);state.room=id;state.pendingKey=drafts.get(id)?.key;
  $('composer-body').value=drafts.get(id)?.body||'';
  $('attachment-url').value=drafts.get(id)?.attachment||'';
  $('char-count').textContent=$('composer-body').value.length+' / 6000';
@@ -226,7 +226,7 @@ async function load(before=null){
    'Conversation saved · '+state.messages.length+' entries · $0 paid ceiling'+(data.threadsTruncated?' · first 200 conversations shown; search to narrow the list':'')+(state.draft?' · draft not sent':''));
  }catch(error){
   if(revision!==loadRevision||room!==state.room)return;
-  pill('offline');
+  composerEnabled(false);pill('offline');
   status('Council room unavailable: '+String(error.message||error),true);
  }
 }
@@ -398,6 +398,7 @@ $('thread-editor').addEventListener('submit',async e=>{
    state.createKey=state.createKey||'chat-'+crypto.randomUUID();
    await threadAction('conversation.create',{room:state.createKey,title});
    const key=state.createKey;state.createKey=null;state.archived=false;state.search='';
+   document.querySelector('.u-chat-search').value='';document.querySelector('.u-chat-filter').textContent='Show archived';
    await selectRoom(key);
   }else{await threadAction('conversation.rename',{title});await load();}
   $('thread-editor').hidden=true;

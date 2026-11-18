@@ -61,3 +61,29 @@ test('owner boundary, invalid names and unknown rooms fail before thread writes'
  assert.equal((await call('GET',{}, {room:'../bad'})).status,400);
  assert.equal((await db.query('SELECT count(*)::int AS n FROM council_room_threads')).rows[0].n,1);
 });
+
+test('conversation listing searches titles, orders pinned rooms first and separates archives',async t=>{
+ const {call}=await fixture(t);
+ await call('POST',{action:'conversation.create',room:a,title:'Scheduler evidence'});
+ await call('POST',{action:'conversation.create',room:b,title:'Release planning'});
+ await call('POST',{action:'conversation.pin',room:a,value:true});
+ let view=await call('GET');assert.equal(view.body.threads[0].id,a);
+ view=await call('GET',{}, {search:'SCHEDULER'});
+ assert.deepEqual(view.body.threads.map(x=>x.id),[a]);
+ assert.equal((await call('GET',{}, {search:'no matching title'})).body.threads.length,0);
+ await call('POST',{action:'conversation.archive',room:a,value:true});
+ assert.equal((await call('GET')).body.threads.some(x=>x.id===a),false);
+ assert.deepEqual((await call('GET',{}, {archived:'true'})).body.threads.map(x=>x.id),[a]);
+});
+
+test('migration preserves old room messages and can be applied repeatedly',async t=>{
+ const {db,call}=await fixture(t);
+ await db.query(`INSERT INTO council_room_messages(message_key,room_key,author_type,author_id,body)
+ VALUES ('legacy:history-001',$1,'owner','michaeljwilliams0123','Existing history')`,[a]);
+ const migration=await readFile(new URL('migrations/0051_council_conversations.sql',root),'utf8');
+ await db.exec(migration);await db.exec(migration);
+ const view=await call('GET',{}, {room:a});
+ assert.equal(view.body.room.title,'Earlier conversation');
+ assert.equal(view.body.messages[0].body,'Existing history');
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM council_room_threads')).rows[0].n,2);
+});

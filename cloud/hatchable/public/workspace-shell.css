@@ -46,3 +46,8 @@ body.ultron-ui .u-conversations{flex:1;min-height:150px;display:flex;flex-direct
 body.ultron-ui .u-chat-list{flex:1;max-height:none;min-height:70px}
 body.ultron-ui .u-chat-heading,body.ultron-ui .u-new-chat,body.ultron-ui .u-chat-search,body.ultron-ui .u-chat-filter{flex-shrink:0}
 @media(max-width:800px){body.ultron-ui.u-council .conversation{padding:18px 14px}.conversation-head h2{font-size:23px}body.ultron-ui.u-council .composer-actions p{display:none}body.ultron-ui.u-council .composer-actions{justify-content:flex-end}body.ultron-ui.u-council .composer-options{display:flex}body.ultron-ui.u-council .composer textarea{min-height:50px}body.ultron-ui.u-council .mention-row{max-height:60px;overflow:auto}}
+
+body.ultron-ui .codex-author-card,body.ultron-ui .codex-authors,body.ultron-ui .code-manifest,body.ultron-ui .browser-setup{background:#f0f5f1!important;color:var(--u-ink)!important;border-color:var(--u-line)!important}
+body.ultron-ui .codex-author-card strong,body.ultron-ui .codex-authors summary{color:var(--u-ink)!important}
+body.ultron-ui pre,body.ultron-ui code{background:#eaf0eb;color:#35574c;overflow-wrap:anywhere}
+body.ultron-ui .codex-call-row button,body.ultron-ui .experience-buttons button,body.ultron-ui .owner-suggest{background:var(--u-accent);color:#fff;border-color:var(--u-accent)}
