@@ -26,7 +26,10 @@ export default async function(req,res){
  const deployment=deploymentRow?{
   target:deploymentRow.target,sourceSha:deploymentRow.source_sha,
   artifactDigest:deploymentRow.artifact_digest,
-  receiptId:'deployment:'+String(deploymentRow.id),independentReadback:true
+  // An immutable receipt proves an owner-authorized historical claim only.
+  // Without independent current Hatchable deployment manifest readback,
+  // the artifact might have changed after the receipt was written.
+  receiptId:'deployment:'+String(deploymentRow.id),independentReadback:false
  }:{};
  const proof=await buildReleaseProof({commitSha:sha,
   ci:{verified:ci?.state==='observed'&&ci?.conclusion==='success',
@@ -38,6 +41,6 @@ export default async function(req,res){
   sourcePr:councilSource.sourcePr,deployment});
  return res.json({...proof,observation:{ciState:ci?.state??'unavailable',
   councilSourceState:councilSource.councilCheck?'observed':'unavailable',
-  deploymentState:deploymentRow?'observed':'unavailable',
+  deploymentState:deploymentRow?'receipt-only-unverified':'unavailable',
   runtimeState:observation.runtime?.state??'unavailable'}});
 }
