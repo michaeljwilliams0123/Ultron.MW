@@ -26,6 +26,18 @@ function classification(path){
  if(/\.md$/.test(path))return 'docs';
  return 'source';
 }
+function takeWholeLines(lines,maxChars,fromEnd=false){
+ const values=fromEnd?[...lines].reverse():lines;
+ const kept=[];
+ let length=0;
+ for(const line of values){
+  const extra=line.length+(kept.length?1:0);
+  if(length+extra>maxChars)break;
+  kept.push(line);
+  length+=extra;
+ }
+ return (fromEnd?kept.reverse():kept).join('\n');
+}
 export function buildCouncilPrContext({sourceSha,prNumber,files,complete=true,maxFiles=20,maxTextChars=4300}={}){
  if(!SHA.test(sourceSha||''))throw Error('source-sha-invalid');
  if(!Number.isSafeInteger(prNumber)||prNumber<1)throw Error('pr-number-invalid');
@@ -61,21 +73,33 @@ export function buildCouncilPrContext({sourceSha,prNumber,files,complete=true,ma
    const critical=tag==='source'||tag==='security-path'||tag==='database';
    const lineBudget=critical?60:tag==='test'?14:18;
    const charBudget=critical?2650:tag==='test'?520:650;
-   const annotated=lines.map(line=>'| '+line.slice(0,160));
-   const firstWindow=annotated.slice(0,lineBudget).join('\n');
-   if(critical&&(annotated.length>lineBudget||firstWindow.length>charBudget)){
-    // Source hunks can be longer than the prompt. Sample BOTH ends rather
-    // than concealing a late readback guard behind front-only truncation.
-    // The omitted middle is explicitly marked; this is never full proof.
+   const annotated=lines.map(line=>{
+    // A partial source line is not evidence of a syntax or runtime defect.
+    if(line.length>158){
+     coverage=false;
+     return '| [source line omitted: over 160 chars; not source EOF]';
+    }
+    return '| '+line;
+   });
+   const firstLines=annotated.slice(0,lineBudget);
+   const firstWindow=firstLines.join('\n');
+   const omitted=annotated.length>lineBudget||firstWindow.length>charBudget;
+   if(critical&&omitted){
+    // Preserve both ends of high-signal source without manufacturing cut tokens.
     const marker='| [noncontiguous source excerpt: middle changed lines omitted]';
-    const head=annotated.slice(0,25).join('\n').slice(0,Math.floor(charBudget*0.49));
-    const tailRoom=charBudget-head.length-marker.length-2;
-    const tail=annotated.slice(-20).join('\n').slice(-Math.max(0,tailRoom));
-    excerpt=head+'\n'+marker+'\n'+tail;
+    const headBudget=Math.floor((charBudget-marker.length-2)*0.5);
+    const head=takeWholeLines(annotated.slice(0,25),headBudget);
+    const tailBudget=charBudget-head.length-marker.length-2;
+    const tail=takeWholeLines(annotated.slice(-20),tailBudget,true);
+    excerpt=[head,marker,tail].filter(Boolean).join('\n');
+    coverage=false;
+   }else if(omitted){
+    const marker='| [excerpt cut by file budget; not source EOF]';
+    const head=takeWholeLines(firstLines,charBudget-marker.length-1);
+    excerpt=[head,marker].filter(Boolean).join('\n');
     coverage=false;
    }else{
-    excerpt=firstWindow.slice(0,charBudget);
-    if(lines.length>lineBudget||firstWindow.length>charBudget)coverage=false;
+    excerpt=firstWindow;
    }
   }
   const header=path+' ('+status+', +'+additions+'/-'+deletions+', '+tag+')';
