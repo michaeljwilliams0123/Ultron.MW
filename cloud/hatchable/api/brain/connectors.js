@@ -77,7 +77,7 @@ export default async function(req,res){
   gitlab:{read:gitlabRead,writeScopeReadProbe:gitlabWrite,
    writeMutationVerified:verified.gitlabBranchVerified},
   githubOauth,
-  providerManifests:providerManifestReadiness({githubOauth,gitlabRead,gitlabWrite}),
+  providerManifests:providerManifestReadiness({githubOauth,gitlabRead,gitlabWrite,adapterConfigRaw:await config.get('ULTRON_ADAPTER_REGISTRY_JSON').catch(()=>null)}),
   graph:{state:present.ULTRON_GRAPH_WORKBOOK_BINDING&&
    present.ULTRON_GRAPH_DELEGATED_TOKEN?'credentials-present-unverified':'not-configured'},
   hatchable:{ownerSession:'authenticated-collaborator',
