@@ -11,7 +11,7 @@ const owned={owner:'michaeljwilliams0123',preset:'release',version:7,
  max_paid_cents:0,allowed_operations:['repo.inspect','cloud.note.create']};
 const unpaused={paused:false,version:5};
 const goodTask={id:5267,task_key:'desk-12345678',objective:'repo.inspect',
- status:'done',receipt_id:3774,last_result:{objective:'repo.inspect',
+ status:'done',receipt_id:3774,receipt_count:1,last_result:{objective:'repo.inspect',
  repository:'michaeljwilliams0123/Ultron.MW',source:'github-api',sha},
  updated_at:'2026-11-19T14:29:13Z'};
 const goodNote={id:200,kind:'observation',fingerprint:'a'.repeat(64),
@@ -40,6 +40,7 @@ test('action keys are exact, bounded and do not accept arbitrary provider payloa
 test('missing or ambiguous receipts never become observed success',()=>{
  assert.equal(shapeTask({...goodTask,receipt_id:null}).verification,'reconcile-required');
  assert.equal(shapeTask({...goodTask,receipt_id:0}).verification,'reconcile-required');
+ assert.equal(shapeTask({...goodTask,receipt_count:2}).verification,'reconcile-required');
  assert.equal(shapeTask({...goodTask,last_result:{...goodTask.last_result,sha:'x'.repeat(40)}}).verification,'reconcile-required');
  assert.equal(shapeTask({...goodTask,last_result:{...goodTask.last_result,repository:'attacker/repo'}}).verification,'reconcile-required');
  assert.equal(shapeTask({...goodTask,status:'queued'}).verification,'awaiting-terminal-result');
