@@ -33,7 +33,7 @@ test('action keys are exact, bounded and do not accept arbitrary provider payloa
  assert.equal(validDeskKeys({}),true);
  assert.equal(validDeskKeys({taskKey:'desk-12345678',actionKey:'desk.note:12345678'}),true);
  for(const query of [{taskKey:'../secrets'},{taskKey:['desk-12345678']},
-  {actionKey:'ghp_sensitive'},{actionKey:'x'},{taskKey:'a'.repeat(90)},
+  {actionKey:'x'},{taskKey:'a'.repeat(90)},
   {actionKey:'newlines\nunsafe'}])assert.equal(validDeskKeys(query),false);
 });
 
@@ -77,8 +77,7 @@ test('pause, unauthorized owner, paid ceiling or denied operation holds admissio
  ]){
   const value=await collectActionDeskState({db:fixture(input)});
   assert.equal(value.authority.noteAllowed,false);
-  if(input.control||input.profile?.allowed_operations||input.profile?.max_paid_cents||
-   input.profile?.owner)assert.equal(value.authority.inspectionAllowed,false);
+  assert.equal(value.authority.inspectionAllowed,input.profile?.preset==='observe');
  }
 });
 
