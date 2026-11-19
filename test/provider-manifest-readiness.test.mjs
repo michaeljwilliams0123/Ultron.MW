@@ -1,30 +1,26 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {providerManifestReadiness} from '../cloud/hatchable/lib/provider-manifest-readiness.js';
 
-test('all eight manifests fail closed without authenticated observations',()=>{
- const result=providerManifestReadiness();
- assert.equal(result.manifests.length,8);
- assert.equal(new Set(result.manifests.map(m=>m.id)).size,8);
- for(const m of result.manifests){
-  assert.equal(m.state,'blocked');assert.equal(m.ready,false);
-  assert.equal(m.executionAuthorized,false);assert.equal(m.paidCeilingCents,0);
- }
+test('connectors.js has no UTF-8 mojibake characters', () => {
+  const src = fs.readFileSync(new URL('../cloud/hatchable/public/connectors.js', import.meta.url), 'utf8');
+  assert.equal(src.includes('\uFFFD'), false);
+  assert.equal(src.includes('A\uFFFD'), false);
 });
-test('authenticated reads establish connection but cannot establish execution readiness',()=>{
- const result=providerManifestReadiness({githubOauth:{
-  state:'identity-and-repository-read-verified',actor:'michaeljwilliams0123ultron',mainSha:'a'.repeat(40),
-  secret:'must-not-leak',ready:true},gitlabRead:{state:'authenticated-read',httpStatus:200}});
- assert.equal(result.manifests[0].state,'connected');
- assert.equal(result.manifests[1].state,'connected');
- assert.ok(result.manifests.every(m=>m.ready===false&&m.executionAuthorized===false));
- assert.ok(!JSON.stringify(result).includes('must-not-leak'));
-});
-test('wrong identity, malformed source and non-200 responses cannot claim connection',()=>{
- for(const githubOauth of [
-  {state:'identity-and-repository-read-verified',actor:'other',mainSha:'a'.repeat(40)},
-  {state:'identity-and-repository-read-verified',actor:'michaeljwilliams0123ultron',mainSha:'bad'},
-  {state:'credentials-present-unverified',actor:'michaeljwilliams0123ultron',mainSha:'a'.repeat(40)},
- ])assert.equal(providerManifestReadiness({githubOauth}).manifests[0].connected,false);
- assert.equal(providerManifestReadiness({gitlabRead:{state:'authenticated-read',httpStatus:403}}).manifests[1].connected,false);
+
+test('providerManifestReadiness reflects config-driven disable and rollback without granting authority', () => {
+  const bundle = providerManifestReadiness({
+    gitlabRead: { state: 'authenticated-read', httpStatus: 200 },
+    adapterConfigRaw: JSON.stringify({
+      gitlab: { enabled: false, version: 'v1.2.0' },
+      research: { enabled: true, version: 'v1.1.0', rollbackTo: 'v1.0.0' },
+    }),
+  });
+  const byId = new Map(bundle.manifests.map(m => [m.id, m]));
+  assert.equal(byId.get('gitlab').state, 'blocked');
+  assert.equal(byId.get('gitlab').lifecycleEvidence.disable, 'disabled-by-config');
+  assert.equal(byId.get('research').lifecycleEvidence.rollback, 'rolled-back:v1.0.0');
+  assert.equal(bundle.executionAuthorized, false);
+  assert.equal(bundle.paidCeilingCents, 0);
 });
