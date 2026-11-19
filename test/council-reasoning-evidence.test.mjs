@@ -84,3 +84,25 @@ test('AST taint evidence reaches model only for exact source SHA and is never a 
   body:'Verify',sourceSha:'b'.repeat(40),prNumber:454,taintEvidence});
  assert.doesNotMatch(foreign,/sink exec/);
 });
+
+
+test('model budget marks an omitted suffix rather than manufacturing source EOF',()=>{
+ const excerpt=Array.from({length:80},(_,i)=>'| + const k'+String(i).padStart(2,'0')+' = 123456;').join('\n');
+ const context={
+  schema:'ultron.council-pr-context.v1',sourceSha:SHA,prNumber:454,
+  filesObserved:2,filesRendered:2,redactedFiles:0,complete:false,
+  maxTextChars:5000,
+  files:[
+   {path:'src/first.mjs',tag:'source',additions:80,deletions:0,excerpt},
+   {path:'src/second.mjs',tag:'source',additions:80,deletions:0,excerpt}
+  ]
+ };
+ const input=buildCouncilReasoningInput({
+  title:'R'.repeat(240),body:'D'.repeat(650),sourceSha:SHA,prNumber:454,
+  prContext:context
+ });
+ assert.match(input,/model excerpt truncated by input budget; not source EOF/);
+ assert.match(input,/Release authorization: NOT ESTABLISHED/);
+ assert.ok(input.length<=5990);
+ assert.equal(checkExternalInput(input).ok,true);
+});
