@@ -164,6 +164,13 @@ test('owner GET route requires an immutable grant-bound deployment readback',()=
  assert.match(api,/sourcePr:.*sourcePr/);
  assert.match(api,/findDeploymentReleaseReceipt/);
  assert.match(api,/sourcePr:councilSource\.sourcePr,deployment/);
+
+ // Historical owner-granted receipts are not live Hatchable manifest readbacks.
+ // A changed artifact must never remain RELEASE-verified on a stale receipt alone.
+ assert.match(api,/independentReadback:false/);
+ assert.doesNotMatch(api,/independentReadback:true/);
+ assert.match(api,/receipt-only-unverified/);
+
  assert.match(api,/access='admin'/);
  assert.equal(readFileSync(new URL('../src/evidence/release-proof.mjs',import.meta.url),'utf8'),
   readFileSync(new URL('../cloud/hatchable/lib/release-proof.js',import.meta.url),'utf8'));
