@@ -4,7 +4,7 @@ const TASK_KEY=/^[a-z0-9-]{6,80}$/;
 const ACTION_KEY=/^[a-z][a-z0-9_.:-]{7,119}$/;
 const SHA=/^[0-9a-f]{40}$/;
 const REPO='michaeljwilliams0123/Ultron.MW';
-const number=value=>Number.isSafeInteger(Number(value))?Number(value):null;
+const number=value=>{if(value===null||value===undefined||value==='')return null;\n const n=Number(value);return Number.isSafeInteger(n)&&n>0?n:null;};
 
 export function validDeskKeys({taskKey=null,actionKey=null}={}){
  return (taskKey===null||(typeof taskKey==='string'&&TASK_KEY.test(taskKey)))&&
