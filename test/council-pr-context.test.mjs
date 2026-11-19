@@ -102,3 +102,26 @@ test('aggregate evidence cut never presents a partial source line as the file en
  assert.match(output,/(?:excerpt|remaining evidence) truncated by context budget; not source EOF/);
  assert.ok(output.length<=context.maxTextChars);
 });
+
+
+test('test-file excerpts do not invent partial assertions when a file budget ends',()=>{
+ const lines=['@@ -1,20 +1,20 @@',
+  ...Array.from({length:20},(_,i)=>'+ assert.equal(actual'+i+', expected'+i+');')];
+ const ctx=buildCouncilPrContext({sourceSha:sha,prNumber:509,
+  files:[file('test/council-budget-assertions.test.mjs',lines.join('\n'))]});
+ const out=formatCouncilPrContext(ctx);
+ assert.equal(ctx.complete,false);
+ assert.match(out,/excerpt cut by file budget; not source EOF/);
+ assert.doesNotMatch(out,/assert\.equ(?:\n|$)/);
+ assert.ok(out.length<=ctx.maxTextChars);
+});
+
+test('oversized source line is replaced by an explicit omission rather than sliced',()=>{
+ const longLine='+ const value = "'+'Q'.repeat(220)+'";';
+ const ctx=buildCouncilPrContext({sourceSha:sha,prNumber:509,
+  files:[file('src/safe-long-line.mjs','@@ -1,1 +1,1 @@\n'+longLine)]});
+ const out=formatCouncilPrContext(ctx);
+ assert.equal(ctx.complete,false);
+ assert.match(out,/source line omitted: over 160 chars/);
+ assert.doesNotMatch(out,/QQQQQQ/);
+});
