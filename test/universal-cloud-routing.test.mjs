@@ -61,3 +61,20 @@ test('config-driven adapter disable, rollback, and malformed config fail closed'
     assert.equal(denied.reason,'adapter-registry-config-invalid');
   }
 });
+test('operation-specific authorization and payload resource limits fail closed',()=>{
+  const opDenied=normalizeUniversalCloudCommand(input,{
+    adapterConfigRaw:JSON.stringify({gitlab:{enabled:true,allowedOperations:['gitlab.issue.read']}}),
+  });
+  assert.equal(opDenied.ok,false);
+  assert.equal(opDenied.reason,'operation-disabled-by-config');
+  const protoReq=JSON.parse('{"__proto__":{"admin":true},"key":"task-0001"}');
+  const protoDenied=normalizeUniversalCloudCommand({...input,request:protoReq});
+  assert.equal(protoDenied.ok,false);
+  assert.equal(protoDenied.reason,'unsafe-request-key');
+  const oversized=normalizeUniversalCloudCommand({
+    ...input,
+    request:{key:'task-0001',blob:'x'.repeat(17000)},
+  });
+  assert.equal(oversized.ok,false);
+  assert.equal(oversized.reason,'request-resource-limit-exceeded');
+});
