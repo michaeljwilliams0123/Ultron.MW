@@ -4,7 +4,7 @@
 const $=id=>document.getElementById(id);
 const ENDPOINT='/api/brain/action-desk';
 const state={authority:null,taskKey:null,noteKey:null,noteRequest:null,
- taskBusy:false,noteBusy:false,revision:0};
+ taskBusy:false,noteBusy:false,revision:0,lastNote:null};
 const saved=key=>{try{return sessionStorage.getItem(key)}catch{return null}};
 const remember=(key,value)=>{try{sessionStorage.setItem(key,value)}catch{}};
 const unique=prefix=>prefix+crypto.randomUUID();
@@ -49,6 +49,7 @@ function renderTask(t){
   (t.receiptId?' · receipt '+t.receiptId:'')+sha);
 }
 function renderNote(n){
+ state.lastNote=n;
  if(!state.noteKey){show('desk-note-status','No observation submitted in this session.');return;}
  if(!n){show('desk-note-status','Receipt readback pending for '+state.noteKey);return;}
  show('desk-note-status','Observation '+(n.noteId||'unknown')+' · '+n.status+
@@ -130,6 +131,8 @@ async function inspect(){
 }
 function prepare(){
  if(!state.authority?.noteAllowed||state.noteRequest)return;
+ if(state.noteKey&&state.lastNote?.verification!=='note-and-receipt-persisted')
+  return message('A prior observation remains unverified. Refresh its exact-key receipt before starting another.',true);
  const body=$('desk-note-body').value.trim();
  if(!body||body.length>1200||SECRET_LIKE.test(body))
   return message('Enter a 1–1200 character non-secret observation. Tokens and passwords are not accepted.',true);
