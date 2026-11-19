@@ -90,3 +90,15 @@ test('source-heavy C04 SQL excerpt reaches its terminal and readback guards',()=
  assert.match(excerpt,/terminalDenialRequiresStored403/);
  assert.ok(excerpt.length<=ctx.maxTextChars);
 });
+
+
+test('aggregate evidence cut never presents a partial source line as the file ending',()=>{
+ const patch=['@@ -1,1 +1,100 @@',
+  ...Array.from({length:100},(_,i)=>'+ const line'+i+' = '+i+';')].join('\n');
+ const context=buildCouncilPrContext({sourceSha:sha,prNumber:508,
+  files:[file('src/receipt-route.mjs',patch)],maxTextChars:1000});
+ const output=formatCouncilPrContext(context);
+ assert.equal(context.complete,false);
+ assert.match(output,/excerpt truncated by context budget; not source EOF/);
+ assert.ok(output.length<=context.maxTextChars);
+});
