@@ -1,7 +1,23 @@
+import {providerVisibilityModel} from '/provider-manifest-view.js';
 'use strict';
 const statusNode=document.getElementById('status');
 const container=document.getElementById('connections');
 const button=document.getElementById('refresh');
+const providerContainer=document.getElementById('provider-manifests');
+const providerStatus=document.getElementById('provider-status');
+function showProviders(bundle){
+ const view=providerVisibilityModel(bundle);
+ providerContainer.replaceChildren();
+ providerStatus.textContent=view.ok?
+  view.connected+' connected (read-only observation) · '+view.blocked+
+  ' blocked · 0 execution-authorized · $0 paid ceiling':
+  'Provider inventory unverified. No execution authority can be inferred.';
+ if(!view.ok)return;
+ for(const row of view.rows){
+  item(row.name,row.connection+' · '+row.authority,
+   row.details,row.connected,providerContainer);
+ }
+}
 function item(label,value,description,positive=false,target=container){
  const article=document.createElement('article');
  const heading=document.createElement('h3');
@@ -19,6 +35,7 @@ function status(value){statusNode.textContent=value;}
 async function refresh(){
  button.disabled=true;
  container.replaceChildren();
+ showProviders(null);
  status('Checking owner-only connection status…');
  try{
   const response=await fetch('/api/brain/connectors',{method:'GET',
@@ -28,6 +45,7 @@ async function refresh(){
    throw Error(response.status===401?'Sign in to Hatchable as the owner.':
     'Owner authorization or connector readback unavailable.');
   status('Owner session authenticated · '+data.repository.name+' · no write attempted');
+  showProviders(data.providerManifests);
   item('Hatchable owner','Authenticated','Session is platform-verified.',true);
   item('GitHub OAuth (dedicated Ultron account)',data.githubOauth?.state||'setup-required',
    data.githubOauth?.state==='identity-and-repository-read-verified'

@@ -36,6 +36,12 @@ footer{font-size:.82rem;color:#aabbd4;margin-top:25px}
 <button type="button" id="refresh">Refresh read-only checks</button>
 <div class="grid" id="connections"></div>
 </section>
+<section aria-labelledby="provider-heading">
+<h2 id="provider-heading">Eight-provider capability inventory</h2>
+<p class="muted">These are live owner-only <strong>connection observations</strong>, not authorization to execute, mutate, or spend. Identity, operation, scope, health and lifecycle evidence are marked unverified when not independently observed.</p>
+<p class="muted" id="provider-status" role="status" aria-live="polite">Provider inventory unverified.</p>
+<div class="grid" id="provider-manifests" aria-label="Provider capability evidence"></div>
+</section>
 <section aria-labelledby="tests-heading">
 <h2 id="tests-heading">Expanded read-only verification</h2>
 <p class="muted">Run deterministic deny-path regressions and independently inspect GitHub main, CI, pull requests, and the durable task queue. Simulated regression tests are not live GitHub writes.</p>
@@ -50,7 +56,7 @@ footer{font-size:.82rem;color:#aabbd4;margin-top:25px}
 </section>
 <footer>Read-only diagnostics · $0 incremental paid usage · No auth codes, installation tokens or private keys displayed</footer>
 </main>
-<script src="/connectors.js" defer></script>
+<script type="module" src="/connectors.js"></script>
 <script src="./sign-in.js" defer></script>
 <script src="/workspace-shell.js"></script>
 </body>

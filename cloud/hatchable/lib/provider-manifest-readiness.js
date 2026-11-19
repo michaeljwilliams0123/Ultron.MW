@@ -28,6 +28,15 @@ export function providerManifestReadiness({githubOauth,gitlabRead,gitlabWrite}={
     writeScopeReadObserved:id==='gitlab'?
      gitlabWrite?.state==='authenticated-read'&&gitlabWrite.httpStatus===200:null,
     executionAuthorized:false,paidCeilingCents:0,
+    visibilityEvidence:{
+     // Provenance is an authenticated GET only; no inferred write authority.
+     identity:id==='github'&&githubConnected?'michaeljwilliams0123ultron':null,
+     identityVerified:id==='github'&&githubConnected,
+     operationContract:operation?'declared-not-exercised':'none-declared',
+     scopeEnforcement:'unverified',schemaVerified:false,
+     lastProbeAt:null,health:'not-measured',latencyMs:null,
+     quota:'unknown',canary:'not-observed',rollback:'not-observed',
+    },
     blockers:[...(connected===true?[]:['provider-connection-unverified']),
      'operation-scoped-live-acceptance-unverified',
      'config-disable-revoke-rollback-unverified'],
