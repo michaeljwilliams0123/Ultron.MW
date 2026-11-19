@@ -158,11 +158,12 @@ test('independent PR read disagreement and moving canonical main never promote C
  assert.equal((await collectMergedCouncilReadback({commitSha:MAIN,fetchGithub:drift})).councilCheck,null);
 });
 
-test('owner GET route preserves independent deployment HOLD and source policy mirrors cloud',()=>{
+test('owner GET route requires an immutable grant-bound deployment readback',()=>{
  const api=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8');
  assert.match(api,/collectMergedCouncilReadback/);
  assert.match(api,/sourcePr:.*sourcePr/);
- assert.match(api,/deployment:\{\}/);
+ assert.match(api,/findDeploymentReleaseReceipt/);
+ assert.match(api,/sourcePr:councilSource\.sourcePr,deployment/);
  assert.match(api,/access='admin'/);
  assert.equal(readFileSync(new URL('../src/evidence/release-proof.mjs',import.meta.url),'utf8'),
   readFileSync(new URL('../cloud/hatchable/lib/release-proof.js',import.meta.url),'utf8'));

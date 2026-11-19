@@ -82,7 +82,8 @@ test('RELEASE-04 owner route exposes unknown release honestly',()=>{
  assert.match(source,/methods=\['GET'\]/);
  assert.match(source,/collectMergedCouncilReadback/);
  assert.match(source,/councilCheck:councilSource\.councilCheck/);
- assert.match(source,/sourcePr:councilSource\.sourcePr,deployment:\{\}/);
+ assert.match(source,/findDeploymentReleaseReceipt/);
+ assert.match(source,/sourcePr:councilSource\.sourcePr,deployment/);
 });
 test('RELEASE-05 source and Hatchable proof policies stay byte-identical',()=>{
  const node=readFileSync(new URL('../src/evidence/release-proof.mjs',import.meta.url),'utf8');

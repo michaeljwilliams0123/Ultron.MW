@@ -6,6 +6,7 @@ import {db} from 'hatchable';
 import {collectConnectivity} from 'lib/connectivity-view.js';
 import {buildReleaseProof} from 'lib/release-proof.js';
 import {collectMergedCouncilReadback} from 'lib/release-github-readback.js';
+import {findDeploymentReleaseReceipt} from 'lib/deployment-release-receipt.js';
 export const access='admin';
 export const methods=['GET'];
 export default async function(req,res){
@@ -20,6 +21,13 @@ export default async function(req,res){
  // current main, then reads the dedicated Council App check on that source.
  // An absent, ambiguous or failed read remains unverified, never invented.
  const councilSource=await collectMergedCouncilReadback({commitSha:sha});
+ let deploymentRow=null;
+ try{deploymentRow=await findDeploymentReleaseReceipt({db,sourceSha:sha});}catch{}
+ const deployment=deploymentRow?{
+  target:deploymentRow.target,sourceSha:deploymentRow.source_sha,
+  artifactDigest:deploymentRow.artifact_digest,
+  receiptId:'deployment:'+String(deploymentRow.id),independentReadback:true
+ }:{};
  const proof=await buildReleaseProof({commitSha:sha,
   ci:{verified:ci?.state==='observed'&&ci?.conclusion==='success',
    status:ci?.state==='observed'&&ci?.conclusion==='success'?'verified':'unavailable',
@@ -27,8 +35,9 @@ export default async function(req,res){
   // No deployment assertion is invented. A verified Council check and
   // independent exact-main CI alone cannot prove a deployed artifact.
   councilCheck:councilSource.councilCheck,
-  sourcePr:councilSource.sourcePr,deployment:{}});
+  sourcePr:councilSource.sourcePr,deployment});
  return res.json({...proof,observation:{ciState:ci?.state??'unavailable',
   councilSourceState:councilSource.councilCheck?'observed':'unavailable',
+  deploymentState:deploymentRow?'observed':'unavailable',
   runtimeState:observation.runtime?.state??'unavailable'}});
 }
