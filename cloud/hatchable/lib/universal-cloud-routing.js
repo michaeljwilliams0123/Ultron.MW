@@ -8,6 +8,9 @@ const GRANT=/^[A-Za-z0-9_.:-]{8,128}$/;
 const SIG=/^[A-Za-z0-9_-]{86}$/;
 const PASSKEY=/^passkey-[A-Za-z0-9-]{16,96}$/;
 const VERSION=/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
+const UNSAFE_KEYS=new Set(['__proto__','constructor','prototype']);
+const MAX_REQUEST_KEYS=24;
+const MAX_REQUEST_BYTES=16384;
 const held=reason=>({ok:false,status:'held',reason});
 function exact(value,fields){
   if(!value||typeof value!=='object'||Array.isArray(value))return false;
@@ -31,7 +34,27 @@ function validPasskey(value){
       key=>typeof value[key]==='string'&&value[key].length>=16&&
        value[key].length<=8192);
 }
-export function evaluateAdapterConfig(provider,adapterConfigRaw){
+function checkRequestSafety(value,depth=0){
+  if(depth>6)return 'request-resource-limit-exceeded';
+  if(!value||typeof value!=='object')return null;
+  if(Array.isArray(value)){
+    if(value.length>MAX_REQUEST_KEYS)return 'request-resource-limit-exceeded';
+    for(const item of value){
+      const err=checkRequestSafety(item,depth+1);
+      if(err)return err;
+    }
+    return null;
+  }
+  const keys=Object.getOwnPropertyNames(value);
+  if(keys.length>MAX_REQUEST_KEYS)return 'request-resource-limit-exceeded';
+  for(const key of keys){
+    if(UNSAFE_KEYS.has(key))return 'unsafe-request-key';
+    const err=checkRequestSafety(value[key],depth+1);
+    if(err)return err;
+  }
+  return null;
+}
+export function evaluateAdapterConfig(provider,adapterConfigRaw,operation=null){
   if(adapterConfigRaw===undefined||adapterConfigRaw===null||
      (typeof adapterConfigRaw==='string'&&adapterConfigRaw.trim()===''))
     return {ok:true,adapterVersion:null,rolledBack:false};
@@ -52,6 +75,13 @@ export function evaluateAdapterConfig(provider,adapterConfigRaw){
     return held('adapter-registry-config-invalid');
   if(entry.enabled===false)
     return held('adapter-disabled-by-config');
+  if(entry.allowedOperations!==undefined){
+    if(!Array.isArray(entry.allowedOperations)||
+       entry.allowedOperations.some(op=>typeof op!=='string'||!op))
+      return held('adapter-registry-config-invalid');
+    if(operation&&!entry.allowedOperations.includes(operation))
+      return held('operation-disabled-by-config');
+  }
   const target=entry.rollbackTo!==undefined?entry.rollbackTo:entry.version;
   if(target!==undefined&&(typeof target!=='string'||!VERSION.test(target)))
     return held('adapter-registry-config-invalid');
@@ -71,12 +101,20 @@ export function normalizeUniversalCloudCommand(body,{adapterConfigRaw=null}={}){
     c.operation===operation&&c.effect==='external-write'&&
     c.admission.includes('signed-grant')))
     return held('provider-not-certified-for-universal-write');
-  const adapter=evaluateAdapterConfig(body.provider,adapterConfigRaw);
+  const adapter=evaluateAdapterConfig(body.provider,adapterConfigRaw,operation);
   if(!adapter.ok)return adapter;
   if(!body||typeof body!=='object'||Array.isArray(body)||
      body.estimatedCostCents!==0||
      !body.request||typeof body.request!=='object'||
      Array.isArray(body.request))return held('zero-cost-or-request-invalid');
+  const safetyErr=checkRequestSafety(body.request);
+  if(safetyErr)return held(safetyErr);
+  let serialized='';
+  try{serialized=JSON.stringify(body.request);}catch{
+    return held('zero-cost-or-request-invalid');
+  }
+  if(!serialized||Buffer.byteLength(serialized,'utf8')>MAX_REQUEST_BYTES)
+    return held('request-resource-limit-exceeded');
   const mode=body.mode;
   const extra=mode==='submit'?
     (Object.hasOwn(body,'envelope')?'envelope':
