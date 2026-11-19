@@ -98,7 +98,7 @@ export async function recordApprovalDecision(db,{memberHandle,taskId,cardId,choi
    INSERT INTO council_room_approvals(card_id,task_id,operation,decision,decided_by)
    VALUES($1,$2,$3,$4,$5) ON CONFLICT(card_id) DO NOTHING
    RETURNING card_id,operation,decision,created_at,TRUE AS created)
-  SELECT * FROM ins UNION ALL
+  SELECT * FROM (TABLE ins) AS ins UNION ALL
   SELECT card_id,operation,decision,created_at,FALSE FROM council_room_approvals WHERE card_id=$1 LIMIT 1`,
   [cardId,id,card.op,decision,OWNER])).rows[0];
  if(!row)return {ok:false,status:503,error:'approval-not-persisted'};

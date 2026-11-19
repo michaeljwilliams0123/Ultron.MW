@@ -27,7 +27,7 @@ const WRITE=`WITH authority AS MATERIALIZED (
  INSERT INTO brain_authority_grants
  (grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
  SELECT $7,$1,'mcp:ultron','cloud.note.create',$8,$9,$10::timestamptz
- FROM authority WHERE owner='michaeljwilliams0123'
+ FROM (TABLE authority) AS authority WHERE owner='michaeljwilliams0123'
  AND preset IN ('build','release') AND version=$5 AND stop_version=$6
  AND NOT paused AND max_paid_cents=0
  AND jsonb_exists(allowed_operations,'cloud.note.create')
@@ -37,10 +37,10 @@ const WRITE=`WITH authority AS MATERIALIZED (
  INSERT INTO brain_events(event_type,details)
  SELECT 'authority-grant-consumed',jsonb_build_object(
  'grantId',grant_id,'operation','cloud.note.create','policySha',$9::text)
- FROM grant_row RETURNING id
+ FROM (TABLE grant_row) AS grant_row RETURNING id
 ), created AS (
  INSERT INTO brain_notes(kind,body,action_key,fingerprint)
- SELECT $3,$4,$1,$2 FROM grant_row
+ SELECT $3,$4,$1,$2 FROM (TABLE grant_row) AS grant_row
  ON CONFLICT(action_key) DO NOTHING
  RETURNING id,action_key
 ), receipt AS (
@@ -48,9 +48,9 @@ const WRITE=`WITH authority AS MATERIALIZED (
  SELECT 'mcp-cloud-note-observed',jsonb_build_object(
  'action_key',created.action_key,'note_id',created.id,
  'operation','cloud.note.create','grant_id',grant_row.grant_id)
- FROM created JOIN grant_row ON true RETURNING id
+ FROM (TABLE created) AS created JOIN grant_row ON true RETURNING id
 )
- SELECT created.id,receipt.id AS "receiptId" FROM created JOIN receipt ON true`;
+ SELECT created.id,receipt.id AS "receiptId" FROM (TABLE created) AS created JOIN receipt ON true`;
 
 async function read(db,input,fingerprint,grantId){
  const result=await db.query(READ,[input.key]);

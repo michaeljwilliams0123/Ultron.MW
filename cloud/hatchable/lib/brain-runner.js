@@ -14,15 +14,15 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
    WHERE status='leased' AND lease_until < now() AND attempts < max_attempts RETURNING id
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type)
-   SELECT id,'lease-recovered' FROM moved RETURNING task_id
- ) SELECT id FROM moved`);
+   SELECT id,'lease-recovered' FROM (TABLE moved) AS moved RETURNING task_id
+ ) SELECT id FROM (TABLE moved) AS moved`);
  const blocked=await db.query(`WITH moved AS (
    UPDATE brain_tasks SET status='blocked',owner_token=NULL,lease_until=NULL,updated_at=now()
    WHERE status='leased' AND lease_until < now() AND attempts >= max_attempts RETURNING id
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type)
-   SELECT id,'attempt-limit' FROM moved RETURNING task_id
- ) SELECT id FROM moved`);
+   SELECT id,'attempt-limit' FROM (TABLE moved) AS moved RETURNING task_id
+ ) SELECT id FROM (TABLE moved) AS moved`);
  const token=crypto.randomUUID();
  // Lock the singleton for this statement. A pause either commits first and
  // prevents the claim, or waits until this claim and receipt have committed.
@@ -34,7 +34,7 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
    FROM brain_owner_autonomy_profile WHERE id=1 FOR UPDATE
  ), selected AS (
    SELECT brain_tasks.id,autonomy.profile_version,control.stop_version
-   FROM brain_tasks CROSS JOIN control CROSS JOIN autonomy
+   FROM brain_tasks CROSS JOIN (TABLE control) AS control CROSS JOIN (TABLE autonomy) AS autonomy
    WHERE status='queued' AND attempts < max_attempts
      AND NOT control.paused
      AND autonomy.owner='michaeljwilliams0123' AND autonomy.max_paid_cents=0
@@ -57,15 +57,15 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
    UPDATE brain_tasks SET status='leased',attempts=attempts+1,owner_token=$1,
      fencing_generation=fencing_generation+1,
      lease_until=now()+interval '90 seconds',updated_at=now()
-   WHERE id IN (SELECT id FROM selected) RETURNING id,task_key,objective,attempts,fencing_generation
+   WHERE id IN (SELECT id FROM (TABLE selected) AS selected) RETURNING id,task_key,objective,attempts,fencing_generation
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type,details)
    SELECT moved.id,'claimed',jsonb_build_object('objective',objective,'attempt',attempts,'profileVersion',selected.profile_version,'stopVersion',selected.stop_version)
-   FROM moved JOIN selected ON selected.id=moved.id RETURNING task_id
+   FROM (TABLE moved) AS moved JOIN selected ON selected.id=moved.id RETURNING task_id
  ) SELECT moved.id,moved.task_key,moved.objective,moved.attempts,
      moved.fencing_generation,selected.profile_version AS "profileVersion",
      selected.stop_version AS "stopVersion"
-   FROM moved JOIN selected ON selected.id=moved.id`,[token]);
+   FROM (TABLE moved) AS moved JOIN selected ON selected.id=moved.id`,[token]);
  const task=claim.rows[0];
  if(!task)return {status:'idle',recovered:recovered.rows.length,blocked:blocked.rows.length};
 
@@ -83,8 +83,8 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
    ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'lease-heartbeat',jsonb_build_object('fencingGeneration',$3::bigint)
-    FROM moved RETURNING task_id
-   ) SELECT id FROM moved`,[task.id,token,task.fencing_generation])
+    FROM (TABLE moved) AS moved RETURNING task_id
+   ) SELECT id FROM (TABLE moved) AS moved`,[task.id,token,task.fencing_generation])
    .then(r=>{if(r?.rows?.length!==1)heartbeatLost=true;})
    .catch(()=>{heartbeatLost=true;})
    .finally(()=>{heartbeatPending=null;});
@@ -118,8 +118,8 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
   ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'failed',jsonb_build_object('objective',objective,'reason',$3::text,'next_status',status)
-    FROM moved RETURNING task_id
-  ) SELECT id,status FROM moved`,[task.id,token,reason,task.fencing_generation]);
+    FROM (TABLE moved) AS moved RETURNING task_id
+  ) SELECT id,status FROM (TABLE moved) AS moved`,[task.id,token,reason,task.fencing_generation]);
   if(failed.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};
   return {status:'failed',task_id:task.id,objective:task.objective,reason,next_status:failed.rows[0].status};
  }
@@ -133,11 +133,11 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
   ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'observed',jsonb_build_object('objective',objective,'source',$4::text,'fencingGeneration',$6::bigint)
-    FROM moved RETURNING task_id
+    FROM (TABLE moved) AS moved RETURNING task_id
   ), assessments AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT moved.id,'council-assessment',item.value
-    FROM moved CROSS JOIN LATERAL jsonb_array_elements($5::jsonb) AS item
+    FROM (TABLE moved) AS moved CROSS JOIN LATERAL jsonb_array_elements($5::jsonb) AS item
     WHERE moved.objective='council.review' RETURNING task_id
   ), council_cases AS (
     INSERT INTO brain_council_cases
@@ -145,14 +145,14 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
     SELECT encode(sha256(convert_to(
       'c04-advisory-v1:' || ($1::jsonb - 'at')::text,'UTF8')),'hex'),
       moved.id,moved.objective,'c04-advisory-v1',$1::jsonb - 'at'
-    FROM moved WHERE moved.objective='council.room'
+    FROM (TABLE moved) AS moved WHERE moved.objective='council.room'
     ON CONFLICT (case_digest) DO NOTHING RETURNING id,case_digest
   ), council_members AS (
     INSERT INTO brain_council_assessments
       (case_id,role_id,kind,status,body,identity_state,independence_verified)
     SELECT cases.id,member.value->>'id',member.value->>'kind',
       member.value->>'status',member.value->>'body','unverified',false
-    FROM council_cases cases
+    FROM (TABLE council_cases) AS cases
     CROSS JOIN LATERAL jsonb_array_elements($1::jsonb->'members') AS member
     WHERE member.value->>'id' IN (
       'builder','skeptic','steward','predictor','generator','sentinel','companion'
@@ -160,13 +160,13 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
     ON CONFLICT (case_id,role_id) DO NOTHING RETURNING case_id
   ), council_review_tasks AS (
     INSERT INTO brain_tasks(task_key,objective)
-    SELECT 'council-case:' || case_digest,'council.review' FROM council_cases
+    SELECT 'council-case:' || case_digest,'council.review' FROM (TABLE council_cases) AS council_cases
     ON CONFLICT(task_key) DO NOTHING RETURNING id
   ), council_review_events AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'council-case-admitted',
       jsonb_build_object('origin','council.room')
-    FROM council_review_tasks RETURNING task_id
+    FROM (TABLE council_review_tasks) AS council_review_tasks RETURNING task_id
   ), research_new AS (
     INSERT INTO brain_research_observations
       (repository,version,pinned_version,source_url,published_at,priority,first_task_id)
@@ -174,7 +174,7 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
       item.value->>'pinnedVersion',item.value->>'sourceUrl',
       (item.value->>'publishedAt')::timestamptz,
       (item.value->>'priority')::integer,moved.id
-    FROM moved CROSS JOIN LATERAL jsonb_array_elements(
+    FROM (TABLE moved) AS moved CROSS JOIN LATERAL jsonb_array_elements(
       COALESCE($1::jsonb->'observations','[]'::jsonb)) AS item
     WHERE moved.objective='research.intake'
       AND item.value->>'status'='candidate'
@@ -185,17 +185,17 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
     SELECT first_task_id,'research-opportunity-observed',
       jsonb_build_object('repository',repository,'version',version,
        'sourceUrl',source_url,'paidCents',0)
-    FROM research_new RETURNING task_id
+    FROM (TABLE research_new) AS research_new RETURNING task_id
   ), research_review_tasks AS (
     INSERT INTO brain_tasks(task_key,objective)
     SELECT DISTINCT 'research-review:' || first_task_id::text,'council.review'
-    FROM research_new
+    FROM (TABLE research_new) AS research_new
     ON CONFLICT(task_key) DO NOTHING RETURNING id
   ), research_review_events AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'research-review-admitted',jsonb_build_object('objective','research.intake')
-    FROM research_review_tasks RETURNING task_id
-  ) SELECT id FROM moved`,[JSON.stringify(result),task.id,token,result.source||'unknown',
+    FROM (TABLE research_review_tasks) AS research_review_tasks RETURNING task_id
+  ) SELECT id FROM (TABLE moved) AS moved`,[JSON.stringify(result),task.id,token,result.source||'unknown',
    JSON.stringify(Array.isArray(result.assessment_receipts)?result.assessment_receipts:[]),
    task.fencing_generation]);
   if(done.rows.length!==1)return {status:'lost-lease',task_id:task.id,objective:task.objective};

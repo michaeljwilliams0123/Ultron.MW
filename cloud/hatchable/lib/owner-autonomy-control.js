@@ -105,8 +105,8 @@ const UPDATE_SQL=[
  'receipt AS (INSERT INTO brain_events(event_type,details)',
  "SELECT 'owner-autonomy-profile-updated',",
  "jsonb_build_object('version',version,'preset',preset,'reason',$5::text)",
- 'FROM moved RETURNING id)',
- 'SELECT moved.version,receipt.id AS "receiptId" FROM moved JOIN receipt ON true'
+ 'FROM (TABLE moved) AS moved RETURNING id)',
+ 'SELECT moved.version,receipt.id AS "receiptId" FROM (TABLE moved) AS moved JOIN (TABLE receipt) AS receipt ON true'
 ].join(' ');
 /* Compare-and-swap preference only; this operation does not issue credentials. */
 export async function setOwnerProfile(args={}){

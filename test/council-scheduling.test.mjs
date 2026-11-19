@@ -24,11 +24,11 @@ test('C04 a new substantive Council case creates one review task in the same fen
  assert.match(completion,/INSERT INTO brain_council_cases/);
  assert.match(completion,/ON CONFLICT \(case_digest\) DO NOTHING RETURNING id,case_digest/);
  assert.match(completion,/INSERT INTO brain_tasks\(task_key,objective\)/);
- assert.match(completion,/SELECT 'council-case:'\s*\|\|\s*case_digest,'council\.review' FROM council_cases/);
+ assert.match(completion,/SELECT 'council-case:'\s*\|\|\s*case_digest,'council\.review' FROM \(TABLE council_cases\) AS council_cases/);
  assert.match(completion,/ON CONFLICT\(task_key\) DO NOTHING RETURNING id/);
  assert.match(completion,/INSERT INTO brain_events\(task_id,event_type,details\)/);
  assert.match(completion,/'council-case-admitted'/);
- assert.match(completion,/SELECT id FROM moved/);
+ assert.match(completion,/SELECT id FROM \(TABLE moved\) AS moved/);
 });
 
 test('C04 hourly admission is idempotent across repeated scheduler calls',async()=>{

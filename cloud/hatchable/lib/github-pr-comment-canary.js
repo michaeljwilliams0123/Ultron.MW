@@ -378,17 +378,17 @@ async function markDeniedNoEffect(db,prepared,digest){
   SET state='denied_no_effect',updated_at=now()
   WHERE idempotency_key=$1 AND operation_digest=$2
    AND state='reconcile_required'
-   AND EXISTS(SELECT 1 FROM denial)
-   AND (SELECT total FROM write_intent)=1
+   AND EXISTS(SELECT 1 FROM (TABLE denial) AS denial)
+   AND (SELECT total FROM (TABLE write_intent) AS write_intent)=1
   RETURNING idempotency_key
  ), evidence AS (
   INSERT INTO brain_events(event_type,details)
   SELECT 'github-pr-comment-stage',
    jsonb_build_object('idempotencyKey',idempotency_key,
     'stage','denied_no_effect','reason','readback-not-found')
-  FROM moved RETURNING id
- ) SELECT (SELECT count(*)::int FROM moved) AS claims,
-   (SELECT count(*)::int FROM evidence) AS events`,
+  FROM (TABLE moved) AS moved RETURNING id
+ ) SELECT (SELECT count(*)::int FROM (TABLE moved) AS moved) AS claims,
+   (SELECT count(*)::int FROM (TABLE evidence) AS evidence) AS events`,
  [prepared.idempotencyKey,digest]);
  const counts=r?.rows?.[0];
  if(counts?.claims===0&&counts?.events===0)return null;
@@ -426,9 +426,9 @@ export async function submitPrCommentCanary({
   SELECT 'github-pr-comment-stage',
    jsonb_build_object('idempotencyKey',idempotency_key,
     'stage','provider_write_intent','reason',NULL::text)
-  FROM moved RETURNING id
- ) SELECT (SELECT count(*)::int FROM moved) AS claims,
-  (SELECT count(*)::int FROM evidence) AS events`,[prepared.idempotencyKey,digest]);
+  FROM (TABLE moved) AS moved RETURNING id
+ ) SELECT (SELECT count(*)::int FROM (TABLE moved) AS moved) AS claims,
+  (SELECT count(*)::int FROM (TABLE evidence) AS evidence) AS events`,[prepared.idempotencyKey,digest]);
  if(claimed?.rows?.[0]?.claims!==1||claimed?.rows?.[0]?.events!==1)
   fail('dispatch-not-admitted');
  try{

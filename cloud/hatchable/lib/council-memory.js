@@ -268,6 +268,6 @@ export async function readCurrentScorecard(db){
  const rows=(await db.query(`WITH latest AS (
    SELECT snapshot_sha256 FROM brain_council_scorecard_rows ORDER BY id DESC LIMIT 1)
   SELECT member_id,lane,attempts,successes,rate::float8 AS rate,s.snapshot_sha256
-  FROM brain_council_scorecard_rows s JOIN latest USING(snapshot_sha256) ORDER BY member_id,lane`)).rows;
+  FROM brain_council_scorecard_rows s JOIN (TABLE latest) AS latest USING(snapshot_sha256) ORDER BY member_id,lane`)).rows;
  return rows.map(r=>({...r,rate:Number(r.rate)}));
 }
