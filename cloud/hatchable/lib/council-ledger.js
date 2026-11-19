@@ -113,8 +113,8 @@ export async function reserveExecution(db, input = {}) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb)
        ON CONFLICT (execution_key) DO NOTHING RETURNING *),
      e AS (INSERT INTO brain_council_execution_events(execution_key,seq,from_state,to_state)
-       SELECT execution_key,1,NULL,state FROM i)
-     SELECT ${COLUMNS} FROM i`,
+       SELECT execution_key,1,NULL,state FROM (TABLE i) AS i)
+     SELECT ${COLUMNS} FROM (TABLE i) AS i`,
     [key, input.caseDigest, input.role, input.operation, input.ordinal || 0, input.sourceSha, state,
       JSON.stringify(auth), String(input.expectedEffect || '').slice(0, 300), JSON.stringify(history)]);
   if (r.rows[0]) return { created: true, record: shape(r.rows[0]) };
@@ -155,8 +155,8 @@ export async function transitionExecution(db, { key, from, to, detail = {} } = {
         history=history||to_jsonb($3::text),updated_at=now()
        WHERE execution_key=$1 AND state=$2 RETURNING *),
      e AS (INSERT INTO brain_council_execution_events(execution_key,seq,from_state,to_state,detail)
-       SELECT execution_key,jsonb_array_length(history),$2,$3,$9::jsonb FROM u)
-     SELECT ${COLUMNS} FROM u`,
+       SELECT execution_key,jsonb_array_length(history),$2,$3,$9::jsonb FROM (TABLE u) AS u)
+     SELECT ${COLUMNS} FROM (TABLE u) AS u`,
     [key, from, to, executor, url, receipt ? JSON.stringify(receipt) : null, digest, reason,
       JSON.stringify({ reason, executor, url })]);
   if (r.rows[0]) return { ok: true, record: shape(r.rows[0]) };

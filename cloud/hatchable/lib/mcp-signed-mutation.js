@@ -50,7 +50,7 @@ const WRITE=`WITH authority AS MATERIALIZED (
  JOIN brain_runtime_control c ON c.id=1 WHERE a.id=1 FOR SHARE
 ), grant_row AS (
  INSERT INTO brain_authority_grants(grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
- SELECT $7,$1,'mcp:ultron',$3,$8,$9,$10::timestamptz FROM authority
+ SELECT $7,$1,'mcp:ultron',$3,$8,$9,$10::timestamptz FROM (TABLE authority) AS authority
  WHERE owner='michaeljwilliams0123' AND preset IN ('build','release')
  AND version=$5 AND stop_version=$6 AND NOT paused AND max_paid_cents=0
  AND jsonb_exists(allowed_operations,$3::text)
@@ -58,37 +58,37 @@ const WRITE=`WITH authority AS MATERIALIZED (
  ON CONFLICT(grant_id) DO NOTHING RETURNING grant_id
 ), admitted AS (
  INSERT INTO brain_mcp_mutations(action_key,fingerprint,operation,grant_id)
- SELECT $1,$2,$3,grant_id FROM grant_row
+ SELECT $1,$2,$3,grant_id FROM (TABLE grant_row) AS grant_row
  ON CONFLICT(action_key) DO NOTHING RETURNING action_key,operation,grant_id
 ), queued AS (
  INSERT INTO brain_tasks(task_key,objective)
- SELECT 'mcp:' || action_key,$4 FROM admitted WHERE operation='mcp.queue.submit'
+ SELECT 'mcp:' || action_key,$4 FROM (TABLE admitted) AS admitted WHERE operation='mcp.queue.submit'
  ON CONFLICT(task_key) DO NOTHING RETURNING id,objective
 ), moved AS (
  UPDATE brain_tasks t SET status=CASE WHEN $4='cancel' THEN 'canceled' ELSE 'queued' END,
  attempts=CASE WHEN $4='cancel' THEN attempts ELSE 0 END,
  owner_token=NULL,lease_until=NULL,updated_at=now()
- FROM admitted WHERE admitted.operation='mcp.task.control' AND t.id=$11
+ FROM (TABLE admitted) AS admitted WHERE admitted.operation='mcp.task.control' AND t.id=$11
  AND (($4='cancel' AND t.status IN ('queued','blocked')) OR
   ($4 IN ('retry','unblock') AND t.status='blocked'))
  RETURNING t.id
 ), queue_event AS (
  INSERT INTO brain_events(task_id,event_type,details)
- SELECT id,'owner-queued',jsonb_build_object('objective',objective) FROM queued RETURNING id
+ SELECT id,'owner-queued',jsonb_build_object('objective',objective) FROM (TABLE queued) AS queued RETURNING id
 ), grant_event AS (
  INSERT INTO brain_events(event_type,details)
  SELECT 'authority-grant-consumed',jsonb_build_object('grantId',grant_id,
- 'operation',$3::text,'policySha',$9::text) FROM grant_row RETURNING id
+ 'operation',$3::text,'policySha',$9::text) FROM (TABLE grant_row) AS grant_row RETURNING id
 ), receipt AS (
  INSERT INTO brain_events(task_id,event_type,details)
- SELECT COALESCE((SELECT id FROM queued),(SELECT id FROM moved)),
+ SELECT COALESCE((SELECT id FROM (TABLE queued) AS queued),(SELECT id FROM (TABLE moved) AS moved)),
  'mcp-mutation-observed',jsonb_build_object('action_key',action_key,
  'operation',operation,'grant_id',grant_id,
- 'outcome',CASE WHEN EXISTS(SELECT 1 FROM queued) OR EXISTS(SELECT 1 FROM moved)
+ 'outcome',CASE WHEN EXISTS(SELECT 1 FROM (TABLE queued) AS queued) OR EXISTS(SELECT 1 FROM (TABLE moved) AS moved)
  THEN 'applied' ELSE 'denied' END)
- FROM admitted RETURNING id
+ FROM (TABLE admitted) AS admitted RETURNING id
 )
- SELECT id AS "receiptId" FROM receipt`;
+ SELECT id AS "receiptId" FROM (TABLE receipt) AS receipt`;
 
 async function read(db,value,fingerprint,grantId){
  const result=await db.query(READ,[value.key]);

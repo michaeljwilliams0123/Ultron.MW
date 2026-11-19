@@ -366,13 +366,13 @@ export async function runMahoragaAction({db,config,transport=fetch,
    ON CONFLICT(task_key) DO NOTHING RETURNING id
  ), action AS (
    INSERT INTO mahoraga_actions(task_id,action_key,operation,request)
-   SELECT id,$1,$2,$3::jsonb FROM task
+   SELECT id,$1,$2,$3::jsonb FROM (TABLE task) AS task
    ON CONFLICT(action_key) DO NOTHING RETURNING id,task_id
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type,details)
    SELECT task_id,'mahoraga-admitted',jsonb_build_object('operation',$2::text)
-   FROM action RETURNING task_id
- ) SELECT id,task_id FROM action`,
+   FROM (TABLE action) AS action RETURNING task_id
+ ) SELECT id,task_id FROM (TABLE action) AS action`,
    [action.key,action.operation,JSON.stringify(action.input)]);
  let row=(await db.query(`SELECT id,task_id,action_key,operation,request,state,attempt_started_at,result
    FROM mahoraga_actions WHERE action_key=$1`,[action.key])).rows[0];
@@ -423,12 +423,12 @@ export async function runMahoragaAction({db,config,transport=fetch,
    FROM brain_owner_autonomy_profile WHERE id=1 FOR SHARE
  ), moved AS (UPDATE mahoraga_actions
    SET state='sent',attempt_started_at=now(),updated_at=now()
-   FROM control WHERE id=$1 AND state='prepared' AND NOT control.paused
+   FROM (TABLE control) AS control WHERE id=$1 AND state='prepared' AND NOT control.paused
    AND (NOT EXISTS (SELECT 1 FROM mahoraga_mcp_authority WHERE action_id=$1)
      OR EXISTS (
        SELECT 1 FROM mahoraga_mcp_authority a
        JOIN brain_authority_grants g ON g.grant_id=a.grant_id
-       JOIN profile p ON true
+       JOIN (TABLE profile) AS p ON true
        WHERE a.action_id=$1 AND a.stop_version=control.version
        AND p.version=a.profile_version AND p.owner='michaeljwilliams0123'
        AND p.preset IN ('build','release') AND p.max_paid_cents=0
@@ -436,7 +436,7 @@ export async function runMahoragaAction({db,config,transport=fetch,
        AND g.expires_at>clock_timestamp()
      ))
    RETURNING id,task_id,action_key,operation,request,state,attempt_started_at,result
- ) SELECT * FROM moved`,[row.id]);
+ ) SELECT * FROM (TABLE moved) AS moved`,[row.id]);
  if(!claim.rows.length) {
    row=(await db.query(`SELECT id,task_id,action_key,operation,request,state,attempt_started_at,result
      FROM mahoraga_actions WHERE id=$1`,[row.id])).rows[0];

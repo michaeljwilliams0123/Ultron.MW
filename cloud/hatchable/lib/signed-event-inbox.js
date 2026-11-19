@@ -75,16 +75,16 @@ export async function admitSignedEvent({db,scheduler,event}={}){
   ON CONFLICT(source,delivery_id) DO NOTHING RETURNING id,task_key
  ), admitted AS (
   INSERT INTO brain_tasks(task_key,objective)
-  SELECT accepted.task_key,$5::text FROM accepted
+  SELECT accepted.task_key,$5::text FROM (TABLE accepted) AS accepted
   RETURNING id,task_key
  ), receipt AS (
   INSERT INTO brain_events(task_id,event_type,details)
   SELECT id,'signed-webhook-admitted',
    jsonb_build_object('source',$1::text,'deliveryId',$2::text)
-  FROM admitted RETURNING id
+  FROM (TABLE admitted) AS admitted RETURNING id
  )
  SELECT admitted.id AS task_id,admitted.task_key,accepted.id AS inbox_id
- FROM admitted JOIN accepted ON accepted.task_key=admitted.task_key`;
+ FROM (TABLE admitted) AS admitted JOIN accepted ON accepted.task_key=admitted.task_key`;
  const params=[event.source,event.deliveryId,event.taskKey,event.payloadSha256,event.objective];
  const admitted=await db.query(statement,params);
  const row=admitted?.rows?.[0];

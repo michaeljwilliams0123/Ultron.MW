@@ -218,18 +218,18 @@ const SQL=`WITH tasks AS (
  SELECT last_result->>'caseId' AS case_id,
   max(id) FILTER (WHERE last_result->>'variant'='baseline') AS baseline_id,
   max(id) FILTER (WHERE last_result->>'variant'='candidate') AS candidate_id
- FROM tasks GROUP BY last_result->>'caseId'
+ FROM (TABLE tasks) AS tasks GROUP BY last_result->>'caseId'
 ), manifest_details AS (
  SELECT $3::jsonb || jsonb_build_object('cases',
   (SELECT jsonb_agg(jsonb_build_object('caseId',case_id,
-   'baselineTaskId',baseline_id,'candidateTaskId',candidate_id) ORDER BY case_id) FROM pairs)) AS value
+   'baselineTaskId',baseline_id,'candidateTaskId',candidate_id) ORDER BY case_id) FROM (TABLE pairs) AS pairs)) AS value
 ), manifest_insert AS (
  INSERT INTO brain_events(event_type,details,created_at)
  SELECT 'held-out-evaluation-frozen',value,($3::jsonb->>'frozenAt')::timestamptz
- FROM manifest_details WHERE (SELECT count(*) FROM tasks)=$4
+ FROM (TABLE manifest_details) AS manifest_details WHERE (SELECT count(*) FROM (TABLE tasks) AS tasks)=$4
  ON CONFLICT DO NOTHING RETURNING id
 ), manifest AS (
- SELECT id FROM manifest_insert UNION ALL
+ SELECT id FROM (TABLE manifest_insert) AS manifest_insert UNION ALL
  SELECT e.id FROM brain_events e,manifest_details d
  WHERE e.event_type='held-out-evaluation-frozen' AND e.details->>'adapterKey'=$5
   AND e.details=d.value AND e.created_at=($3::jsonb->>'frozenAt')::timestamptz LIMIT 1
@@ -238,41 +238,41 @@ const SQL=`WITH tasks AS (
  SELECT id,'observed',jsonb_build_object('source','github-actions-seeded-readback',
   'adapterKey',$1 || ':observed:' || (last_result->>'caseId') || ':' ||
    (last_result->>'variant'))
- FROM tasks ON CONFLICT DO NOTHING RETURNING id,task_id,details
+ FROM (TABLE tasks) AS tasks ON CONFLICT DO NOTHING RETURNING id,task_id,details
 ), observed AS (
- SELECT id,task_id FROM observed_insert UNION ALL
- SELECT e.id,e.task_id FROM brain_events e JOIN tasks t ON t.id=e.task_id
+ SELECT id,task_id FROM (TABLE observed_insert) AS observed_insert UNION ALL
+ SELECT e.id,e.task_id FROM brain_events e JOIN (TABLE tasks) AS t ON t.id=e.task_id
  WHERE e.event_type='observed' AND e.details=jsonb_build_object(
   'source','github-actions-seeded-readback','adapterKey',
   $1 || ':observed:' || (t.last_result->>'caseId') || ':' ||
    (t.last_result->>'variant'))
-  AND NOT EXISTS (SELECT 1 FROM observed_insert i WHERE i.task_id=e.task_id)
+  AND NOT EXISTS (SELECT 1 FROM (TABLE observed_insert) AS i WHERE i.task_id=e.task_id)
 ), evaluation_details AS (
  SELECT $6::jsonb || jsonb_build_object('manifestReceiptId',manifest.id,
-  'taskIds',(SELECT jsonb_agg(id ORDER BY id) FROM tasks),
-  'outcomeReceiptIds',(SELECT jsonb_agg(id ORDER BY task_id) FROM observed)) AS value
- FROM manifest
+  'taskIds',(SELECT jsonb_agg(id ORDER BY id) FROM (TABLE tasks) AS tasks),
+  'outcomeReceiptIds',(SELECT jsonb_agg(id ORDER BY task_id) FROM (TABLE observed) AS observed)) AS value
+ FROM (TABLE manifest) AS manifest
 ), evaluation_insert AS (
  INSERT INTO brain_events(event_type,details)
- SELECT 'held-out-evaluation-observed',value FROM evaluation_details
- WHERE (SELECT count(*) FROM observed)=$4 ON CONFLICT DO NOTHING RETURNING id
+ SELECT 'held-out-evaluation-observed',value FROM (TABLE evaluation_details) AS evaluation_details
+ WHERE (SELECT count(*) FROM (TABLE observed) AS observed)=$4 ON CONFLICT DO NOTHING RETURNING id
 ), evaluation AS (
- SELECT id FROM evaluation_insert UNION ALL
+ SELECT id FROM (TABLE evaluation_insert) AS evaluation_insert UNION ALL
  SELECT e.id FROM brain_events e,evaluation_details d
  WHERE e.event_type='held-out-evaluation-observed' AND e.details->>'adapterKey'=$7
   AND e.details=d.value LIMIT 1
 ), projection AS (
  SELECT manifest.id AS manifest_id,evaluation.id AS evaluation_id,
-  (SELECT jsonb_agg(id ORDER BY id) FROM tasks) AS task_ids,
-  (SELECT jsonb_agg(id ORDER BY task_id) FROM observed) AS outcome_receipt_ids
- FROM manifest,evaluation
+  (SELECT jsonb_agg(id ORDER BY id) FROM (TABLE tasks) AS tasks) AS task_ids,
+  (SELECT jsonb_agg(id ORDER BY task_id) FROM (TABLE observed) AS observed) AS outcome_receipt_ids
+ FROM (TABLE manifest) AS manifest,evaluation
 )
-SELECT (SELECT manifest_id FROM projection) AS manifest_id,
- (SELECT evaluation_id FROM projection) AS evaluation_id,
- (SELECT task_ids FROM projection) AS task_ids,
- (SELECT outcome_receipt_ids FROM projection) AS outcome_receipt_ids,
- 1 / CASE WHEN (SELECT count(*) FROM tasks)=$4 AND
-  (SELECT count(*) FROM observed)=$4 AND (SELECT count(*) FROM projection)=1
+SELECT (SELECT manifest_id FROM (TABLE projection) AS projection) AS manifest_id,
+ (SELECT evaluation_id FROM (TABLE projection) AS projection) AS evaluation_id,
+ (SELECT task_ids FROM (TABLE projection) AS projection) AS task_ids,
+ (SELECT outcome_receipt_ids FROM (TABLE projection) AS projection) AS outcome_receipt_ids,
+ 1 / CASE WHEN (SELECT count(*) FROM (TABLE tasks) AS tasks)=$4 AND
+  (SELECT count(*) FROM (TABLE observed) AS observed)=$4 AND (SELECT count(*) FROM (TABLE projection) AS projection)=1
  THEN 1 ELSE 0 END AS consistency_guard`;
 
 export async function persistHeldOutEvidence({db,objectiveId,candidatePullNumber,

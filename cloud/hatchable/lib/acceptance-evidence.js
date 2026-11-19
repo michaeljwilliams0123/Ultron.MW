@@ -242,9 +242,9 @@ const PERSIST_SQL=`WITH baseline_task AS (
   jsonb_build_array(jsonb_build_object('caseId','github-review-findings',
    'baselineTaskId',baseline_task.id,'candidateTaskId',candidate_task.id))),
   ($5::jsonb->>'frozenAt')::timestamptz
- FROM baseline_task,candidate_task ON CONFLICT DO NOTHING RETURNING id
+ FROM (TABLE baseline_task) AS baseline_task,candidate_task ON CONFLICT DO NOTHING RETURNING id
 ), manifest AS (
- SELECT id FROM manifest_insert
+ SELECT id FROM (TABLE manifest_insert) AS manifest_insert
  UNION ALL
  SELECT e.id FROM brain_events e,baseline_task,candidate_task
  WHERE e.event_type='held-out-evaluation-frozen' AND e.details->>'adapterKey'=$6
@@ -256,7 +256,7 @@ const PERSIST_SQL=`WITH baseline_task AS (
  INSERT INTO brain_events(event_type,details) VALUES('independent-reviewer-attested',$7::jsonb)
  ON CONFLICT DO NOTHING RETURNING id
 ), identity AS (
- SELECT id FROM identity_insert
+ SELECT id FROM (TABLE identity_insert) AS identity_insert
  UNION ALL
  SELECT e.id FROM brain_events e
  WHERE e.event_type='independent-reviewer-attested' AND e.details->>'adapterKey'=$8
@@ -264,9 +264,9 @@ const PERSIST_SQL=`WITH baseline_task AS (
 ), baseline_observed_insert AS (
  INSERT INTO brain_events(task_id,event_type,details)
  SELECT id,'observed',jsonb_build_object('source','github-review-readback','adapterKey',$9::text)
- FROM baseline_task ON CONFLICT DO NOTHING RETURNING id
+ FROM (TABLE baseline_task) AS baseline_task ON CONFLICT DO NOTHING RETURNING id
 ), baseline_observed AS (
- SELECT id FROM baseline_observed_insert
+ SELECT id FROM (TABLE baseline_observed_insert) AS baseline_observed_insert
  UNION ALL
  SELECT e.id FROM brain_events e,baseline_task
  WHERE e.event_type='observed' AND e.details->>'adapterKey'=$9
@@ -276,9 +276,9 @@ const PERSIST_SQL=`WITH baseline_task AS (
 ), candidate_observed_insert AS (
  INSERT INTO brain_events(task_id,event_type,details)
  SELECT id,'observed',jsonb_build_object('source','github-review-readback','adapterKey',$10::text)
- FROM candidate_task ON CONFLICT DO NOTHING RETURNING id
+ FROM (TABLE candidate_task) AS candidate_task ON CONFLICT DO NOTHING RETURNING id
 ), candidate_observed AS (
- SELECT id FROM candidate_observed_insert
+ SELECT id FROM (TABLE candidate_observed_insert) AS candidate_observed_insert
  UNION ALL
  SELECT e.id FROM brain_events e,candidate_task
  WHERE e.event_type='observed' AND e.details->>'adapterKey'=$10
@@ -290,9 +290,9 @@ const PERSIST_SQL=`WITH baseline_task AS (
  SELECT candidate_task.id,'independent-reviewer-assessment',$11::jsonb ||
   jsonb_build_object('reviewer',($11::jsonb->'reviewer') ||
    jsonb_build_object('identityReceiptId',identity.id))
- FROM candidate_task,identity ON CONFLICT DO NOTHING RETURNING id
+ FROM (TABLE candidate_task) AS candidate_task,identity ON CONFLICT DO NOTHING RETURNING id
 ), assessment AS (
- SELECT id FROM assessment_insert
+ SELECT id FROM (TABLE assessment_insert) AS assessment_insert
  UNION ALL
  SELECT e.id FROM brain_events e,candidate_task,identity
  WHERE e.event_type='independent-reviewer-assessment' AND e.details->>'adapterKey'=$12
@@ -307,10 +307,10 @@ const PERSIST_SQL=`WITH baseline_task AS (
   'manifestReceiptId',manifest.id,
   'taskIds',jsonb_build_array(baseline_task.id,candidate_task.id),
   'outcomeReceiptIds',jsonb_build_array(baseline_observed.id,candidate_observed.id))
- FROM manifest,baseline_task,candidate_task,baseline_observed,candidate_observed
+ FROM (TABLE manifest) AS manifest,baseline_task,candidate_task,baseline_observed,candidate_observed
  ON CONFLICT DO NOTHING RETURNING id
 ), evaluation AS (
- SELECT id FROM evaluation_insert
+ SELECT id FROM (TABLE evaluation_insert) AS evaluation_insert
  UNION ALL
  SELECT e.id FROM brain_events e,manifest,baseline_task,candidate_task,
   baseline_observed,candidate_observed
@@ -325,20 +325,20 @@ const PERSIST_SQL=`WITH baseline_task AS (
   manifest.id AS manifest_id,evaluation.id AS evaluation_id,
   baseline_task.id AS baseline_task_id,candidate_task.id AS candidate_task_id,
   baseline_observed.id AS baseline_receipt_id,candidate_observed.id AS candidate_receipt_id
- FROM identity,assessment,manifest,evaluation,baseline_task,candidate_task,
+ FROM (TABLE identity) AS identity,assessment,manifest,evaluation,baseline_task,candidate_task,
   baseline_observed,candidate_observed
 )
 SELECT
- (SELECT identity_id FROM projection) AS identity_id,
- (SELECT assessment_id FROM projection) AS assessment_id,
- (SELECT manifest_id FROM projection) AS manifest_id,
- (SELECT evaluation_id FROM projection) AS evaluation_id,
- (SELECT baseline_task_id FROM projection) AS baseline_task_id,
- (SELECT candidate_task_id FROM projection) AS candidate_task_id,
- (SELECT baseline_receipt_id FROM projection) AS baseline_receipt_id,
- (SELECT candidate_receipt_id FROM projection) AS candidate_receipt_id,
+ (SELECT identity_id FROM (TABLE projection) AS projection) AS identity_id,
+ (SELECT assessment_id FROM (TABLE projection) AS projection) AS assessment_id,
+ (SELECT manifest_id FROM (TABLE projection) AS projection) AS manifest_id,
+ (SELECT evaluation_id FROM (TABLE projection) AS projection) AS evaluation_id,
+ (SELECT baseline_task_id FROM (TABLE projection) AS projection) AS baseline_task_id,
+ (SELECT candidate_task_id FROM (TABLE projection) AS projection) AS candidate_task_id,
+ (SELECT baseline_receipt_id FROM (TABLE projection) AS projection) AS baseline_receipt_id,
+ (SELECT candidate_receipt_id FROM (TABLE projection) AS projection) AS candidate_receipt_id,
  -- A mismatched prior receipt must abort this entire statement, not commit partial CTE writes.
- 1 / CASE WHEN (SELECT COUNT(*) FROM projection)=1 THEN 1 ELSE 0 END AS consistency_guard`;
+ 1 / CASE WHEN (SELECT COUNT(*) FROM (TABLE projection) AS projection)=1 THEN 1 ELSE 0 END AS consistency_guard`;
 
 /** Persist the independently reread GitHub evidence in one idempotent SQL statement. */
 export async function persistAcceptanceEvidence({db,objectiveId,candidatePullNumber,

@@ -54,7 +54,7 @@ const CLAIM=`WITH policy AS MATERIALIZED (
  JOIN brain_runtime_control c ON c.id=1 WHERE p.id=1 FOR SHARE
 ), grant_row AS (
  INSERT INTO brain_authority_grants(grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
- SELECT $4,$1,'mcp:ultron',$2,$5,$6,$7::timestamptz FROM policy
+ SELECT $4,$1,'mcp:ultron',$2,$5,$6,$7::timestamptz FROM (TABLE policy) AS policy
  WHERE owner='michaeljwilliams0123' AND preset IN ('build','release')
  AND version=$8 AND stop_version=$9 AND NOT paused AND max_paid_cents=0
  AND jsonb_exists(allowed_operations,$2::text) AND $7::timestamptz>clock_timestamp()
@@ -62,17 +62,17 @@ const CLAIM=`WITH policy AS MATERIALIZED (
 ), claimed AS (
  INSERT INTO brain_mcp_provider_writes(action_key,operation,fingerprint,resource_key,grant_id,
  profile_version,stop_version,status)
- SELECT $1,$2,$3,$10,grant_id,$8,$9,'reconcile-required' FROM grant_row
+ SELECT $1,$2,$3,$10,grant_id,$8,$9,'reconcile-required' FROM (TABLE grant_row) AS grant_row
  ON CONFLICT DO NOTHING RETURNING action_key,grant_id
 ), grant_event AS (
  INSERT INTO brain_events(event_type,details)
  SELECT 'authority-grant-consumed',jsonb_build_object('grantId',grant_id,
- 'operation',$2::text,'policySha',$6::text) FROM grant_row RETURNING id
+ 'operation',$2::text,'policySha',$6::text) FROM (TABLE grant_row) AS grant_row RETURNING id
 ), receipt AS (
  INSERT INTO brain_events(event_type,details)
  SELECT 'mcp-provider-dispatch-claimed',jsonb_build_object('action_key',action_key,
- 'operation',$2::text,'grant_id',grant_id) FROM claimed RETURNING id
-) SELECT id FROM receipt`;
+ 'operation',$2::text,'grant_id',grant_id) FROM (TABLE claimed) AS claimed RETURNING id
+) SELECT id FROM (TABLE receipt) AS receipt`;
 const CHECK=`SELECT EXISTS (
  SELECT 1 FROM brain_mcp_provider_writes w
  JOIN brain_authority_grants g ON g.grant_id=w.grant_id
@@ -92,8 +92,8 @@ const OBSERVE=`WITH moved AS (
 ), receipt AS (
  INSERT INTO brain_events(event_type,details)
  SELECT 'mcp-provider-write-observed',jsonb_build_object('action_key',action_key,
- 'operation',operation,'grant_id',grant_id,'evidence',$4::jsonb) FROM moved RETURNING id
-) SELECT id FROM receipt`;
+ 'operation',operation,'grant_id',grant_id,'evidence',$4::jsonb) FROM (TABLE moved) AS moved RETURNING id
+) SELECT id FROM (TABLE receipt) AS receipt`;
 
 async function read(db,b,grantId){
  const response=await db.query(READ,[b.key]);

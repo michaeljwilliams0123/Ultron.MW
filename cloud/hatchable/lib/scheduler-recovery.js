@@ -29,10 +29,10 @@ export async function recoverMissedHours({db,now=new Date(),lookbackHours=6,keyP
    SELECT CASE WHEN obj.objective='repo.inspect'
      THEN $3::text || 'hourly-' ELSE $3::text || 'council-hourly-' END ||
       to_char(slot_utc,'YYYYMMDDHH24') AS task_key,obj.objective
-   FROM slots CROSS JOIN (VALUES ('repo.inspect'),('council.review')) AS obj(objective)
+   FROM (TABLE slots) AS slots CROSS JOIN (VALUES ('repo.inspect'),('council.review')) AS obj(objective)
  ), moved AS (
    INSERT INTO brain_tasks(task_key,objective)
-   SELECT task_key,objective FROM targets
+   SELECT task_key,objective FROM (TABLE targets) AS targets
    ON CONFLICT(task_key) DO NOTHING
    RETURNING id,task_key,objective
  ), receipts AS (
@@ -41,9 +41,9 @@ export async function recoverMissedHours({db,now=new Date(),lookbackHours=6,keyP
       jsonb_build_object('objective',objective,
        'scheduledHour',right(task_key,10),
        'recovery',$5::text,'evidenceClass',$6::text,'paidCents',0)
-   FROM moved RETURNING task_id
- ) SELECT (SELECT count(*)::integer FROM moved) AS recovered_count,
-   (SELECT count(*)::integer FROM receipts) AS receipt_count`,
+   FROM (TABLE moved) AS moved RETURNING task_id
+ ) SELECT (SELECT count(*)::integer FROM (TABLE moved) AS moved) AS recovered_count,
+   (SELECT count(*)::integer FROM (TABLE receipts) AS receipts) AS receipt_count`,
   [now.toISOString(),lookbackHours,keyPrefix,evidence.eventType,
    evidence.recovery,evidence.evidenceClass]);
  const row=result?.rows?.[0];

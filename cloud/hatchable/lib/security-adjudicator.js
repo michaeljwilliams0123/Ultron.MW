@@ -192,25 +192,25 @@ export async function consumeDelegatedGrant({db,verifiedGrant}={}){
   FOR SHARE
  ), gate AS MATERIALIZED (
   SELECT $7::timestamptz > clock_timestamp() AS live,
-    EXISTS(SELECT 1 FROM authority) AS permitted
+    EXISTS(SELECT 1 FROM (TABLE authority) AS authority) AS permitted
  ), admitted AS (
   INSERT INTO brain_authority_grants(
    grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
   SELECT $1,$2,$3,$4,$5,$6,$7::timestamptz
-  FROM gate WHERE live AND permitted
+  FROM (TABLE gate) AS gate WHERE live AND permitted
   ON CONFLICT(grant_id) DO NOTHING RETURNING grant_id
  ), receipt AS (
   INSERT INTO brain_events(event_type,details)
   SELECT 'authority-grant-consumed',
    jsonb_build_object('grantId',grant_id,'operation',$4::text,'policySha',$6::text)
-  FROM admitted RETURNING id
+  FROM (TABLE admitted) AS admitted RETURNING id
  )
  SELECT admitted.grant_id,receipt.id AS receipt_id,
    false AS expired,false AS denied
- FROM admitted JOIN receipt ON true
+ FROM (TABLE admitted) AS admitted JOIN receipt ON true
  UNION ALL
  SELECT NULL,NULL,NOT gate.live,NOT gate.permitted
- FROM gate WHERE NOT EXISTS(SELECT 1 FROM admitted)`;
+ FROM (TABLE gate) AS gate WHERE NOT EXISTS(SELECT 1 FROM (TABLE admitted) AS admitted)`;
  const result=await db.query(sql,[verifiedGrant.grantId,verifiedGrant.objectiveId,
   verifiedGrant.actor,verifiedGrant.operation,verifiedGrant.resource,
   verifiedGrant.policySha,verifiedGrant.expiresAt,verifiedGrant.profileVersion,
@@ -249,7 +249,7 @@ export async function reservePrCommentExecution({
     AND a.preset IN ('build','release') AND a.version=$10 AND c.version=$11
     AND NOT c.paused AND a.max_paid_cents=0
     AND jsonb_exists(a.allowed_operations,'pr.comment')
-    AND EXISTS(SELECT 1 FROM passkey)
+    AND EXISTS(SELECT 1 FROM (TABLE passkey) AS passkey)
   FOR SHARE
  ), existing AS MATERIALIZED (
   SELECT idempotency_key,state,operation_digest,body_sha256,target_number
@@ -265,38 +265,38 @@ export async function reservePrCommentExecution({
    nonce,operation,target_resource,approval_timestamp,expires_at)
   SELECT $2,'pr.comment',$3,$4::timestamptz,$5::timestamptz
   WHERE $5::timestamptz>clock_timestamp()
-    AND EXISTS(SELECT 1 FROM authority)
-    AND NOT EXISTS(SELECT 1 FROM existing)
+    AND EXISTS(SELECT 1 FROM (TABLE authority) AS authority)
+    AND NOT EXISTS(SELECT 1 FROM (TABLE existing) AS existing)
   ON CONFLICT(nonce) DO NOTHING RETURNING nonce
  ), admitted AS (
   INSERT INTO brain_authority_grants(
    grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
-  SELECT $2,$6,$7,'pr.comment',$3,$8,$5::timestamptz FROM nonce
+  SELECT $2,$6,$7,'pr.comment',$3,$8,$5::timestamptz FROM (TABLE nonce) AS nonce
   RETURNING grant_id
  ), execution AS (
   INSERT INTO github_pr_comment_executions(
    idempotency_key,operation_digest,repository,
    target_number,body_sha256,grant_id,persona_role,state)
   SELECT $1,$9,'michaeljwilliams0123/Ultron.MW',
-   $12,$13,grant_id,'builder','reserved' FROM admitted
+   $12,$13,grant_id,'builder','reserved' FROM (TABLE admitted) AS admitted
   RETURNING idempotency_key,state
  ), receipt AS (
   INSERT INTO brain_events(event_type,details)
   SELECT 'github-pr-comment-reserved',jsonb_build_object(
    'grantId',$2::text,'idempotencyKey',$1::text,'operationDigest',$9::text,
    'pullRequest',$12::bigint,'bodySha256',$13::text)
-  FROM execution RETURNING id
+  FROM (TABLE execution) AS execution RETURNING id
  )
  SELECT 'reserved' AS outcome,e.idempotency_key,e.state,r.id AS receipt_id,
   true AS passkey_enrolled
- FROM execution e JOIN receipt r ON true
+ FROM (TABLE execution) AS e JOIN (TABLE receipt) AS r ON true
  UNION ALL
  SELECT 'existing',x.idempotency_key,x.state,NULL,
-  EXISTS(SELECT 1 FROM passkey) FROM existing x
- WHERE NOT EXISTS(SELECT 1 FROM execution)
+  EXISTS(SELECT 1 FROM (TABLE passkey) AS passkey) FROM (TABLE existing) AS x
+ WHERE NOT EXISTS(SELECT 1 FROM (TABLE execution) AS execution)
  UNION ALL
- SELECT 'denied',NULL,NULL,NULL,EXISTS(SELECT 1 FROM passkey)
- WHERE NOT EXISTS(SELECT 1 FROM execution) AND NOT EXISTS(SELECT 1 FROM existing)`;
+ SELECT 'denied',NULL,NULL,NULL,EXISTS(SELECT 1 FROM (TABLE passkey) AS passkey)
+ WHERE NOT EXISTS(SELECT 1 FROM (TABLE execution) AS execution) AND NOT EXISTS(SELECT 1 FROM (TABLE existing) AS existing)`;
  const result=await db.query(sql,[idempotencyKey,verifiedGrant.grantId,
   verifiedGrant.resource,verifiedGrant.notBefore,verifiedGrant.expiresAt,
   verifiedGrant.objectiveId,verifiedGrant.actor,verifiedGrant.policySha,
@@ -341,7 +341,7 @@ export async function reserveBranchExecution({
     AND a.preset IN ('build','release') AND a.version=$10 AND c.version=$11
     AND NOT c.paused AND a.max_paid_cents=0
     AND jsonb_exists(a.allowed_operations,'repair.branch.create')
-    AND EXISTS(SELECT 1 FROM passkey)
+    AND EXISTS(SELECT 1 FROM (TABLE passkey) AS passkey)
   FOR SHARE
  ), existing AS MATERIALIZED (
   SELECT idempotency_key,state FROM github_idempotent_executions
@@ -352,13 +352,13 @@ export async function reserveBranchExecution({
    nonce,operation,target_resource,approval_timestamp,expires_at)
   SELECT $2,'repair.branch.create',$3,$4::timestamptz,$5::timestamptz
   WHERE $5::timestamptz>clock_timestamp()
-    AND EXISTS(SELECT 1 FROM authority)
-    AND NOT EXISTS(SELECT 1 FROM existing)
+    AND EXISTS(SELECT 1 FROM (TABLE authority) AS authority)
+    AND NOT EXISTS(SELECT 1 FROM (TABLE existing) AS existing)
   ON CONFLICT(nonce) DO NOTHING RETURNING nonce
  ), admitted AS (
   INSERT INTO brain_authority_grants(
    grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
-  SELECT $2,$6,$7,'repair.branch.create',$3,$8,$5::timestamptz FROM nonce
+  SELECT $2,$6,$7,'repair.branch.create',$3,$8,$5::timestamptz FROM (TABLE nonce) AS nonce
   ON CONFLICT(grant_id) DO NOTHING
   RETURNING grant_id
  ), execution AS (
@@ -366,25 +366,25 @@ export async function reserveBranchExecution({
    idempotency_key,operation_digest,repository,target_branch,
    grant_id,persona_role,state)
   SELECT $1,$9,'michaeljwilliams0123/Ultron.MW',$12,
-   grant_id,'builder','reserved' FROM admitted
+   grant_id,'builder','reserved' FROM (TABLE admitted) AS admitted
   RETURNING idempotency_key,state
  ), receipt AS (
   INSERT INTO brain_events(event_type,details)
   SELECT 'github-branch-canary-reserved',jsonb_build_object(
    'grantId',$2::text,'idempotencyKey',$1::text,'operationDigest',$9::text,
    'branch',$12::text)
-  FROM execution RETURNING id
+  FROM (TABLE execution) AS execution RETURNING id
  )
  SELECT 'reserved' AS outcome,e.idempotency_key,e.state,r.id AS receipt_id,
   true AS passkey_enrolled
- FROM execution e JOIN receipt r ON true
+ FROM (TABLE execution) AS e JOIN (TABLE receipt) AS r ON true
  UNION ALL
  SELECT 'existing',x.idempotency_key,x.state,NULL,
-  EXISTS(SELECT 1 FROM passkey) FROM existing x
- WHERE NOT EXISTS(SELECT 1 FROM execution)
+  EXISTS(SELECT 1 FROM (TABLE passkey) AS passkey) FROM (TABLE existing) AS x
+ WHERE NOT EXISTS(SELECT 1 FROM (TABLE execution) AS execution)
  UNION ALL
- SELECT 'denied',NULL,NULL,NULL,EXISTS(SELECT 1 FROM passkey)
- WHERE NOT EXISTS(SELECT 1 FROM execution) AND NOT EXISTS(SELECT 1 FROM existing)`;
+ SELECT 'denied',NULL,NULL,NULL,EXISTS(SELECT 1 FROM (TABLE passkey) AS passkey)
+ WHERE NOT EXISTS(SELECT 1 FROM (TABLE execution) AS execution) AND NOT EXISTS(SELECT 1 FROM (TABLE existing) AS existing)`;
  const result=await db.query(sql,[idempotencyKey,verifiedGrant.grantId,
   verifiedGrant.resource,verifiedGrant.notBefore,verifiedGrant.expiresAt,
   verifiedGrant.objectiveId,verifiedGrant.actor,verifiedGrant.policySha,
