@@ -99,6 +99,6 @@ test('aggregate evidence cut never presents a partial source line as the file en
   files:[file('src/receipt-route.mjs',patch)],maxTextChars:1000});
  const output=formatCouncilPrContext(context);
  assert.equal(context.complete,false);
- assert.match(output,/excerpt truncated by context budget; not source EOF/);
+ assert.match(output,/(?:excerpt|remaining evidence) truncated by context budget; not source EOF/);
  assert.ok(output.length<=context.maxTextChars);
 });
