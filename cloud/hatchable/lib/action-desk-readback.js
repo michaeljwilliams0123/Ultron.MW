@@ -14,17 +14,17 @@ export function validDeskKeys({taskKey=null,actionKey=null}={}){
 
 export function shapeTask(row){
  if(!row)return {status:'not-found',verification:'not-observed'};
- const receiptId=number(row.receipt_id);
+ const receiptId=number(row.receipt_id),receiptCount=number(row.receipt_count);
  const status=String(row.status||'unknown');
  const result=row.last_result||{};
- const observed=status==='done'&&receiptId!==null&&
+ const observed=status==='done'&&receiptId!==null&&receiptCount===1&&
   row.objective==='repo.inspect'&&result.objective==='repo.inspect'&&
   result.repository===REPO&&result.source==='github-api'&&
   typeof result.sha==='string'&&SHA.test(result.sha);
  return {id:number(row.id),taskKey:String(row.task_key||''),
   objective:String(row.objective||''),status,
   receiptId,verification:observed?'task-result-persisted':
-   status==='done'?'reconcile-required':receiptId?'awaiting-terminal-result':'receipt-unavailable',
+   status==='done'?'reconcile-required':receiptId&&receiptCount===1?'awaiting-terminal-result':'receipt-unavailable',
   sourceSha:observed?result.sha:null,
   updatedAt:row.updated_at||null};
 }
@@ -65,7 +65,9 @@ export async function collectActionDeskState({db,taskKey=null,actionKey=null}={}
   const sql=[
    'SELECT t.id,t.task_key,t.objective,t.status,t.last_result,t.updated_at,',
    '(SELECT MIN(e.id) FROM brain_events e WHERE e.task_id=t.id',
-   "AND e.event_type='owner-queued' AND e.details->>'objective'=t.objective) AS receipt_id",
+   "AND e.event_type='owner-queued' AND e.details->>'objective'=t.objective) AS receipt_id,",
+   '(SELECT COUNT(*)::int FROM brain_events e WHERE e.task_id=t.id',
+   "AND e.event_type='owner-queued' AND e.details->>'objective'=t.objective) AS receipt_count",
    'FROM brain_tasks t WHERE t.task_key=$1 LIMIT 2'
   ].join(' ');
   const rows=(await db.query(sql,[taskKey])).rows||[];
