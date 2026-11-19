@@ -1,0 +1,19 @@
+/* C12 governed action controls: functionality-first, inherits existing workspace theme. */
+.u-action-desk{padding:20px!important;margin:8px 0 20px;border:1px solid var(--u-line,#dbe3df);border-radius:12px;background:#fff;color:var(--u-ink,#182a2b)}
+.u-action-desk .desk-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.u-action-desk h2{margin:0;font-size:18px}
+.u-action-desk h3{margin:0 0 8px;font-size:14px}
+.u-action-desk .desk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.u-action-desk .desk-card{border:1px solid var(--u-line,#dbe3df);border-radius:10px;padding:15px;background:#f6f8f5}
+.u-action-desk .desk-card p{font-size:12px;line-height:1.5;margin:6px 0 12px}
+.u-action-desk .desk-card button{margin:7px 7px 7px 0}
+.u-action-desk .desk-evidence{display:grid;gap:7px;margin:14px 0;color:var(--u-muted,#657675);font-size:12px;overflow-wrap:anywhere}
+.u-action-desk .desk-result{display:block;min-height:38px;padding:10px 12px;border:1px solid var(--u-line,#dbe3df);border-radius:8px;background:#fff;color:var(--u-ink,#182a2b);font:11px/1.6 'IBM Plex Mono',monospace;overflow-wrap:anywhere}
+.u-action-desk .desk-card textarea{width:100%;min-height:85px;resize:vertical;font-size:14px}
+.u-action-desk #desk-note-preview{overflow-wrap:anywhere;white-space:pre-wrap;border-left:3px solid #11695e;padding:9px;background:#edf4ef;font-size:12px}
+.u-action-desk #desk-message{font-size:12px;min-height:26px;margin:12px 0 0}
+.u-action-desk #desk-message[data-state=error]{color:#9e332e}
+.u-action-desk button[hidden],.u-action-desk [hidden]{display:none!important}
+.u-action-desk .desk-disclaimer{font-size:11px;color:var(--u-muted,#657675);margin:12px 0 0}
+@media(max-width:900px){.u-action-desk .desk-grid{grid-template-columns:1fr}}
+@media(max-width:800px){.u-action-desk{padding:14px!important}.u-action-desk button{min-height:44px}.u-action-desk .desk-card textarea{font-size:16px}}
