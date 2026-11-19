@@ -49,6 +49,8 @@ test('C12 owner UI summarizes eight distinct provider statuses without granting 
  assert.equal(result.rows[0].identity,'michaeljwilliams0123ultron');
  assert.equal(result.rows[1].identity,'Unverified');
  assert.match(result.rows[0].details,/Health: not-measured/);
+ assert.match(result.rows[0].details,/Schema: unverified/);
+ assert.match(result.rows[0].details,/Canary: not-observed/);
  assert.match(result.rows[0].details,/Lifecycle: disable\/revoke\/rollback not observed/);
  assert.match(result.rows[7].details,/Operation: none declared/);
 });
@@ -78,7 +80,8 @@ test('C12 existing owner page embeds the inventory in the current UI and uses te
  assert.match(html,/id="provider-manifests"/);
  assert.match(html,/id="provider-status"/);
  assert.match(html,/<script type="module" src="\/connectors\.js"/);
- assert.match(js,/providerVisibilityModel\(data\.providerManifests\)/);
+ assert.match(js,/showProviders\(data\.providerManifests\)/);
+ assert.match(js,/providerVisibilityModel\(bundle\)/);
  assert.match(js,/providerContainer\.replaceChildren\(\)/);
  assert.doesNotMatch(js,/\.innerHTML\s*=/);
  assert.match(js,/detail\.textContent=description/);

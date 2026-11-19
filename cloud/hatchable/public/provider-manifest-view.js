@@ -54,6 +54,7 @@ export function providerVisibilityModel(bundle){
    'Scope: '+text(m.scope)+' (enforcement unverified)',
    'Operation: '+op+' ('+text(evidence.operationContract)+')',
    'Health: '+text(evidence.health)+' · Latency: unmeasured · Quota: unknown',
+   'Schema: unverified · Canary: '+text(evidence.canary)+' · Last probe: unrecorded',
    'Lifecycle: disable/revoke/rollback not observed',
    'Blockers: '+(m.blockers.length?m.blockers.map(text).join(', '):'none declared')
   ].join(' | ');
