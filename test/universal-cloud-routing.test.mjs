@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeUniversalCloudCommand} from
   '../cloud/hatchable/lib/universal-cloud-routing.js';
@@ -42,4 +42,22 @@ test('passkey proof is available only for the existing GitLab owner-verifier pat
   assert.equal(normalizeUniversalCloudCommand({
     ...input,provider:'graph',mode:'submit',passkey:proof,
   }).ok,false);
+});
+test('config-driven adapter disable, rollback, and malformed config fail closed',()=>{
+  const disabled=normalizeUniversalCloudCommand(input,{
+    adapterConfigRaw:JSON.stringify({gitlab:{enabled:false,version:'v1.2.0'}}),
+  });
+  assert.equal(disabled.ok,false);
+  assert.equal(disabled.reason,'adapter-disabled-by-config');
+  const rolledBack=normalizeUniversalCloudCommand(input,{
+    adapterConfigRaw:JSON.stringify({gitlab:{enabled:true,version:'v1.2.0',rollbackTo:'v1.1.0'}}),
+  });
+  assert.equal(rolledBack.ok,true);
+  assert.equal(rolledBack.adapterVersion,'v1.1.0');
+  assert.equal(rolledBack.rolledBack,true);
+  for(const bad of ['{bad-json',JSON.stringify({gitlab:{maxCostCents:1}}),JSON.stringify([])]){
+    const denied=normalizeUniversalCloudCommand(input,{adapterConfigRaw:bad});
+    assert.equal(denied.ok,false);
+    assert.equal(denied.reason,'adapter-registry-config-invalid');
+  }
 });

@@ -7,6 +7,7 @@ const PROVIDERS=Object.freeze({
 const GRANT=/^[A-Za-z0-9_.:-]{8,128}$/;
 const SIG=/^[A-Za-z0-9_-]{86}$/;
 const PASSKEY=/^passkey-[A-Za-z0-9-]{16,96}$/;
+const VERSION=/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
 const held=reason=>({ok:false,status:'held',reason});
 function exact(value,fields){
   if(!value||typeof value!=='object'||Array.isArray(value))return false;
@@ -30,16 +31,48 @@ function validPasskey(value){
       key=>typeof value[key]==='string'&&value[key].length>=16&&
        value[key].length<=8192);
 }
+export function evaluateAdapterConfig(provider,adapterConfigRaw){
+  if(adapterConfigRaw===undefined||adapterConfigRaw===null||
+     (typeof adapterConfigRaw==='string'&&adapterConfigRaw.trim()===''))
+    return {ok:true,adapterVersion:null,rolledBack:false};
+  let parsed=adapterConfigRaw;
+  if(typeof adapterConfigRaw==='string'){
+    try{parsed=JSON.parse(adapterConfigRaw);}catch{
+      return held('adapter-registry-config-invalid');
+    }
+  }
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
+    return held('adapter-registry-config-invalid');
+  if(!Object.hasOwn(parsed,provider))
+    return {ok:true,adapterVersion:null,rolledBack:false};
+  const entry=parsed[provider];
+  if(!entry||typeof entry!=='object'||Array.isArray(entry))
+    return held('adapter-registry-config-invalid');
+  if(entry.maxCostCents!==undefined&&entry.maxCostCents!==0)
+    return held('adapter-registry-config-invalid');
+  if(entry.enabled===false)
+    return held('adapter-disabled-by-config');
+  const target=entry.rollbackTo!==undefined?entry.rollbackTo:entry.version;
+  if(target!==undefined&&(typeof target!=='string'||!VERSION.test(target)))
+    return held('adapter-registry-config-invalid');
+  return {
+    ok:true,
+    adapterVersion:typeof target==='string'?target:null,
+    rolledBack:entry.rollbackTo!==undefined,
+  };
+}
 /** A routing contract only. Provider-specific engines enforce real crypto,
  * allowed scope, PostgreSQL claim, pause fencing, and fresh provider readback.
  * No caller-supplied verified/authorized/permission flag is accepted.
  */
-export function normalizeUniversalCloudCommand(body){
+export function normalizeUniversalCloudCommand(body,{adapterConfigRaw=null}={}){
   const operation=PROVIDERS[body?.provider];
   if(!operation || !MCP_CAPABILITIES.some(c=>
     c.operation===operation&&c.effect==='external-write'&&
     c.admission.includes('signed-grant')))
     return held('provider-not-certified-for-universal-write');
+  const adapter=evaluateAdapterConfig(body.provider,adapterConfigRaw);
+  if(!adapter.ok)return adapter;
   if(!body||typeof body!=='object'||Array.isArray(body)||
      body.estimatedCostCents!==0||
      !body.request||typeof body.request!=='object'||
@@ -63,6 +96,7 @@ export function normalizeUniversalCloudCommand(body){
   if(mode==='reconcile'&&!GRANT.test(body.grantId||''))
     return held('invalid-reconciliation-id');
   return Object.freeze({ok:true,provider:body.provider,operation,mode,
+    adapterVersion:adapter.adapterVersion,rolledBack:adapter.rolledBack,
     request:body.request,
     ...(extra==='envelope'?{envelope:body.envelope}:{}),
     ...(extra==='passkey'?{passkey:body.passkey}:{}),

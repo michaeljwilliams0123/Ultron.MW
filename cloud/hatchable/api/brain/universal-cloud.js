@@ -54,7 +54,9 @@ export default async function(req,res) {
   return res.status(403).json(held('origin-denied'));
  if(req.method!=='POST')
   return res.status(405).json(held('method-not-allowed'));
- const command=normalizeUniversalCloudCommand(req.body);
+ let adapterConfigRaw=null;
+ try{adapterConfigRaw=await config.get('ULTRON_ADAPTER_REGISTRY_JSON');}catch{}
+ const command=normalizeUniversalCloudCommand(req.body,{adapterConfigRaw});
  if(!command.ok)
   return res.status(422).json(command);
  let result;
