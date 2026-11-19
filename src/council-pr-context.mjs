@@ -82,7 +82,15 @@ export function buildCouncilPrContext({sourceSha,prNumber,files,complete=true,ma
   let segment=header+'\n'+excerpt;
   const room=textLimit-used-120;
   if(room<70){coverage=false;break;}
-  if(segment.length>room){segment=segment.slice(0,room);coverage=false;}
+  if(segment.length>room){
+   const marker='| [excerpt truncated by context budget; not source EOF]';
+   const cutoff=room-marker.length-1;
+   if(cutoff<header.length){coverage=false;break;}
+   const boundary=segment.lastIndexOf('\n',cutoff);
+   segment=segment.slice(0,boundary>=header.length?boundary:header.length)+
+    '\n'+marker;
+   coverage=false;
+  }
   used+=segment.length+1;
   entries.push(Object.freeze({path,status,tag,additions,deletions,excerpt:segment.slice(header.length+1)}));
  }
@@ -106,10 +114,15 @@ export function formatCouncilPrContext(context){
   const block='\nFILE '+f.path+' ['+f.tag+'] +'+f.additions+'/-'+f.deletions+
     '\n'+f.excerpt+'\n';
   if(out.length+block.length>context.maxTextChars){
-   out+='\n[remaining evidence truncated]';
+   const marker='\n[remaining evidence truncated by context budget; not source EOF]';
+   if(out.length+marker.length>context.maxTextChars){
+    const boundary=out.lastIndexOf('\n',context.maxTextChars-marker.length);
+    out=out.slice(0,boundary<0?0:boundary);
+   }
+   out+=marker;
    break;
   }
   out+=block;
  }
- return out.slice(0,context.maxTextChars);
+ return out;
 }
