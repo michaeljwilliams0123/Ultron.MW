@@ -54,32 +54,32 @@ const ADMIT=`WITH policy AS MATERIALIZED (
  JOIN brain_runtime_control c ON c.id=1 WHERE p.id=1 FOR SHARE
 ), grant_row AS (
  INSERT INTO brain_authority_grants(grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
- SELECT $4,$1,'mcp:ultron',$5,$6,$7,$8::timestamptz FROM policy
+ SELECT $4,$1,'mcp:ultron',$5,$6,$7,$8::timestamptz FROM (TABLE policy) AS policy
  WHERE owner='michaeljwilliams0123' AND preset IN ('build','release')
  AND version=$9 AND stop_version=$10 AND NOT paused AND max_paid_cents=0
  AND jsonb_exists(allowed_operations,$5::text) AND $8::timestamptz>clock_timestamp()
  ON CONFLICT(grant_id) DO NOTHING RETURNING grant_id
 ), task AS (
  INSERT INTO brain_tasks(task_key,objective,status,max_attempts)
- SELECT 'mahoraga:' || $1,'mahoraga.' || $2,'external',1 FROM grant_row
+ SELECT 'mahoraga:' || $1,'mahoraga.' || $2,'external',1 FROM (TABLE grant_row) AS grant_row
  ON CONFLICT(task_key) DO NOTHING RETURNING id
 ), action AS (
  INSERT INTO mahoraga_actions(task_id,action_key,operation,request)
- SELECT id,$1,$2,$3::jsonb FROM task
+ SELECT id,$1,$2,$3::jsonb FROM (TABLE task) AS task
  ON CONFLICT(action_key) DO NOTHING RETURNING id,task_id
 ), authority AS (
  INSERT INTO mahoraga_mcp_authority(action_id,grant_id,fingerprint,profile_version,stop_version)
- SELECT action.id,grant_row.grant_id,$11,$9,$10 FROM action CROSS JOIN grant_row
+ SELECT action.id,grant_row.grant_id,$11,$9,$10 FROM (TABLE action) AS action CROSS JOIN (TABLE grant_row) AS grant_row
  RETURNING action_id
 ), grant_event AS (
  INSERT INTO brain_events(event_type,details)
  SELECT 'authority-grant-consumed',jsonb_build_object('grantId',grant_id,
- 'operation',$5::text,'policySha',$7::text) FROM grant_row RETURNING id
+ 'operation',$5::text,'policySha',$7::text) FROM (TABLE grant_row) AS grant_row RETURNING id
 ), receipt AS (
  INSERT INTO brain_events(task_id,event_type,details)
  SELECT action.task_id,'mahoraga-admitted',jsonb_build_object('operation',$2::text,
- 'grantId',$4::text) FROM action JOIN authority ON authority.action_id=action.id RETURNING id
-) SELECT id FROM receipt`;
+ 'grantId',$4::text) FROM (TABLE action) AS action JOIN authority ON authority.action_id=action.id RETURNING id
+) SELECT id FROM (TABLE receipt) AS receipt`;
 
 async function lookup(db,b,grantId){
  const result=await db.query(READ,[b.action.key]);

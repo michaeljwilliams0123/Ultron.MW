@@ -40,12 +40,12 @@ const PREPARE=`WITH policy AS MATERIALIZED (
 ), prepared AS (
  INSERT INTO brain_owner_passkey_enrollments(enrollment_key,label,challenge,
  fingerprint,policy_sha,profile_version,stop_version,expires_at)
- SELECT $1,$2,$3,$4,$5,$6,$7,now()+interval '10 minutes' FROM policy
+ SELECT $1,$2,$3,$4,$5,$6,$7,now()+interval '10 minutes' FROM (TABLE policy) AS policy
  WHERE owner='michaeljwilliams0123' AND preset IN ('build','release')
  AND NOT paused AND max_paid_cents=0 AND version=$6 AND stop_version=$7
  AND jsonb_exists(allowed_operations,'owner.passkey.enroll')
  ON CONFLICT(enrollment_key) DO NOTHING RETURNING enrollment_key
-) SELECT enrollment_key FROM prepared`;
+) SELECT enrollment_key FROM (TABLE prepared) AS prepared`;
 const COMMIT=`WITH policy AS MATERIALIZED (
  SELECT p.owner,p.preset,p.version,p.max_paid_cents,p.allowed_operations,c.paused,c.version AS stop_version
  FROM brain_owner_autonomy_profile p JOIN brain_runtime_control c ON c.id=1
@@ -53,7 +53,7 @@ const COMMIT=`WITH policy AS MATERIALIZED (
 ), claimed AS (
  UPDATE brain_owner_passkey_enrollments e
  SET used_at=now(),credential_id=$10
- FROM policy
+ FROM (TABLE policy) AS policy
  WHERE e.enrollment_key=$1 AND e.fingerprint=$2 AND e.challenge=$3
  AND e.policy_sha=$5 AND e.profile_version=$8 AND e.stop_version=$9
  AND e.used_at IS NULL AND e.expires_at>clock_timestamp()
@@ -65,20 +65,20 @@ const COMMIT=`WITH policy AS MATERIALIZED (
 ), accepted AS (
  INSERT INTO brain_authority_grants(grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)
  SELECT $4,$1,'mcp:ultron','owner.passkey.enroll',$6,$5,$7::timestamptz
- FROM claimed WHERE $7::timestamptz>clock_timestamp()
+ FROM (TABLE claimed) AS claimed WHERE $7::timestamptz>clock_timestamp()
  ON CONFLICT(grant_id) DO NOTHING RETURNING grant_id
 ), enrolled AS (
  INSERT INTO brain_owner_passkeys(credential_id,public_key_spki,label,sign_count,
  enrollment_key,enrollment_fingerprint,enrolled_grant_id)
  SELECT $10,$11,claimed.label,$12,claimed.enrollment_key,claimed.fingerprint,accepted.grant_id
- FROM claimed JOIN accepted ON true
+ FROM (TABLE claimed) AS claimed JOIN accepted ON true
  ON CONFLICT DO NOTHING RETURNING credential_id
 ), receipt AS (
  INSERT INTO brain_events(event_type,details)
  SELECT 'owner-passkey-enrolled',jsonb_build_object('credentialId',credential_id,'operation','owner.passkey.enroll')
- FROM enrolled RETURNING id
+ FROM (TABLE enrolled) AS enrolled RETURNING id
 ) SELECT enrolled.credential_id AS "credentialId",receipt.id AS "receiptId"
- FROM enrolled JOIN receipt ON true`;
+ FROM (TABLE enrolled) AS enrolled JOIN receipt ON true`;
 
 async function enrollment(db,key){
  const r=await db.query(GET_ENROLL,[key]);

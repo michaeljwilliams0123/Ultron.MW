@@ -34,9 +34,9 @@ export async function queueObjective({db,scheduler,events},objective,key){
   ), receipt AS (
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'owner-queued',jsonb_build_object('objective',objective)
-    FROM admitted RETURNING id,task_id
+    FROM (TABLE admitted) AS admitted RETURNING id,task_id
   ) SELECT admitted.id,admitted.task_key,admitted.objective,admitted.status,
-    receipt.id AS receipt_id FROM admitted JOIN receipt ON receipt.task_id=admitted.id`,
+    receipt.id AS receipt_id FROM (TABLE admitted) AS admitted JOIN receipt ON receipt.task_id=admitted.id`,
   [taskKey,objective]);}catch{writeFailed=true;}
  const observed=await readQueuedObjective({db},objective,taskKey);
  if(!observed.ok)return observed;
@@ -61,9 +61,9 @@ export async function saveNote({db,events},kind,body){
    RETURNING id,kind,body,created_at
  ), receipt AS (
    INSERT INTO brain_events(event_type,details)
-   SELECT 'owner-note',jsonb_build_object('note_id',id,'kind',kind) FROM created
+   SELECT 'owner-note',jsonb_build_object('note_id',id,'kind',kind) FROM (TABLE created) AS created
    RETURNING id
- ) SELECT id,kind,body,created_at FROM created`,[kind,body.trim()]);
+ ) SELECT id,kind,body,created_at FROM (TABLE created) AS created`,[kind,body.trim()]);
  await notifyOwner(events,'note',Number(r.rows[0]?.id));
  return {ok:true,note:r.rows[0]};
 }
@@ -80,8 +80,8 @@ export async function controlTask({db,events},action,id){
    WHERE id=$1 AND ${eligibility} RETURNING id,status
  ), receipt AS (
    INSERT INTO brain_events(task_id,event_type)
-   SELECT id,$2 FROM moved RETURNING task_id
- ) SELECT id,status FROM moved`,[id,event]);
+   SELECT id,$2 FROM (TABLE moved) AS moved RETURNING task_id
+ ) SELECT id,status FROM (TABLE moved) AS moved`,[id,event]);
  if(!r.rows.length)return {ok:false,error:'task-not-eligible'};
  await notifyOwner(events,'task',Number(r.rows[0]?.id));
  return {ok:true,task:r.rows[0]};

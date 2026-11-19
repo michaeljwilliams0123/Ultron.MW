@@ -395,7 +395,7 @@ test('acceptance keyed ledger readbacks require complete effective payload and t
  assert.match(part('evaluation',null),/e\.details\s*=\s*\(\$13::jsonb\s*\|\|/);
  assert.match(part('evaluation',null),/outcomeReceiptIds/);
  // A mismatch must roll back the entire single statement, not commit partial CTE writes.
- assert.match(sql,/COUNT\(\*\)\s+FROM\s+projection/);
+ assert.match(sql,/COUNT\(\*\)\s+FROM\s+\(TABLE projection\) AS projection/);
  assert.match(sql,/consistency_guard/);
 });
 

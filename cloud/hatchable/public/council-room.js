@@ -1,6 +1,67 @@
 (()=>{'use strict';
 const api='/api/brain/council-room';
 const state={members:[],messages:[],jobs:[],nextCursor:null,sending:false,draft:false};
+const roomPattern=/^(?:owner-main|chat-[a-f0-9-]{36})$/;
+const requestedRoom=new URL(location.href).searchParams.get('room');
+state.room=roomPattern.test(requestedRoom||'')?requestedRoom:'owner-main';
+state.threads=[];state.roomInfo={id:state.room,title:'Conversation'};
+state.archived=false;state.search='';
+let loadRevision=0,threadMode='rename',searchTimer;
+const drafts=new Map();
+function checkedMentions(){return [...document.querySelectorAll('#mention-row input:checked')].map(x=>x.value);}
+function rememberDraft(){drafts.set(state.room,{body:$('composer-body').value,attachment:$('attachment-url').value,
+ mentions:checkedMentions(),includeMahoraga:$('include-mahoraga').checked,key:state.pendingKey,payload:state.pendingPayload});}
+
+async function selectRoom(id,push=true){
+ if(!roomPattern.test(id)||id===state.room)return;
+ rememberDraft();composerEnabled(false);state.room=id;state.pendingKey=drafts.get(id)?.key;state.pendingPayload=drafts.get(id)?.payload;
+ state.roomInfo={id,title:'Loading conversation',archived:false};$('room-title').textContent='Loading conversation';
+ document.querySelectorAll('#mention-row input').forEach(x=>x.checked=!!drafts.get(id)?.mentions?.includes(x.value));
+ $('include-mahoraga').checked=drafts.get(id)?.includeMahoraga??true;
+ $('composer-body').value=drafts.get(id)?.body||'';
+ $('attachment-url').value=drafts.get(id)?.attachment||'';
+ $('char-count').textContent=$('composer-body').value.length+' / 6000';
+ state.messages=[];state.jobs=[];state.nextCursor=null;renderMessages();renderJobs();
+ if(push){const url=new URL(location.href);url.searchParams.set('room',id);history.pushState({room:id},'',url);}
+ document.dispatchEvent(new CustomEvent('ultron:close-navigation'));
+ await load();
+}
+function renderThreads(){
+ const list=$('u-chat-list');if(!list)return;list.replaceChildren();
+ for(const t of state.threads){
+  const a=node('a','u-chat-link',(t.pinned?'★ ':'')+t.title);
+  a.href='?room='+encodeURIComponent(t.id);a.title=t.title;
+  if(t.id===state.room)a.setAttribute('aria-current','page');
+  a.append(node('small','',timeLabel(t.updatedAt)));
+  a.addEventListener('click',e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();selectRoom(t.id);});list.append(a);
+ }
+ if(!state.threads.length)list.append(node('p','u-chat-count',state.search?'No matching conversations.':'No conversations here yet.'));
+ $('room-title').textContent=state.roomInfo.title;
+ $('thread-pin').textContent=state.roomInfo.pinned?'Unpin':'Pin';
+ $('thread-archive').textContent=state.roomInfo.archived?'Restore':'Archive';
+ $('thread-archive').disabled=state.room==='owner-main';
+}
+async function threadAction(action,extra={}){
+ const room=state.room;
+ const response=await fetch(api,{method:'POST',credentials:'same-origin',cache:'no-store',
+  headers:{'Content-Type':'application/json'},body:JSON.stringify({action,room,...extra})});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok||!data.ok)throw Error(data.error||('HTTP '+response.status));
+ return data;
+}
+function threadEditor(mode){threadMode=mode;$('thread-editor').hidden=false;$('thread-title').value=mode==='create'?'':state.roomInfo.title;$('thread-title').focus();}
+function mountThreads(){
+ const slot=$('u-conversations');if(!slot||$('u-chat-list'))return;
+ slot.append(node('div','u-chat-heading','Conversations'));
+ const create=node('button','u-new-chat','＋ New conversation');create.type='button';create.addEventListener('click',()=>{threadEditor('create');document.dispatchEvent(new CustomEvent('ultron:close-navigation'));});
+ const search=node('input','u-chat-search');search.type='search';search.placeholder='Search conversations';search.setAttribute('aria-label','Search conversations');search.value=state.search;
+ search.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.search=search.value;load();},250);});
+ const filter=node('button','u-chat-filter','Show archived');filter.type='button';filter.addEventListener('click',()=>{state.archived=!state.archived;filter.textContent=state.archived?'Show active':'Show archived';load();});
+ const list=node('div','u-chat-list');list.id='u-chat-list';list.setAttribute('aria-label','Saved Council conversations');
+ slot.append(create,search,filter,list);renderThreads();
+}
+document.addEventListener('ultron:shell-ready',mountThreads);
+window.addEventListener('popstate',()=>{const r=new URL(location.href).searchParams.get('room')||'owner-main';selectRoom(r,false);});
 const $=id=>document.getElementById(id);
 const roleInitials={builder:'BU',skeptic:'SK',steward:'ST',predictor:'PR',generator:'GE',sentinel:'SE',companion:'CO',council:'UC','michaeljwilliams0123':'MW'};
 const names={owner:'Michael',system:'Ultron Council'};
@@ -13,10 +74,16 @@ function pill(state){
 }
 // Signed out: the composer is disabled so nothing looks sendable.
 function composerEnabled(on){
- for(const id of ['composer-body','send','include-mahoraga','attachment-url'])if($(id))$(id).disabled=!on;
- document.querySelectorAll('#mention-row input').forEach(x=>x.disabled=!on);
- $('composer-body').placeholder=on?'Ask the council to inspect, plan, compare, explain, or prepare the next action…':'Sign in to message the Council.';
+ state.ready=on;
+ const locked=!!state.pendingPayload;
+ for(const id of ['composer-body','include-mahoraga','attachment-url'])if($(id))$(id).disabled=!on||locked;
+ document.querySelectorAll('#mention-row input').forEach(x=>x.disabled=!on||locked);
+ $('send').disabled=!on||state.sending;
+ $('send').textContent=state.sending?'Sending…':locked?'Retry original message':'Send to council ↗';
+ $('composer-body').placeholder=on?'Ask the council to inspect, plan, compare, explain, or prepare the next action…':
+  state.roomInfo.archived?'Restore this conversation to send a message.':'Refresh or sign in to reconnect to this conversation.';
 }
+
 function timeLabel(value){try{return new Intl.DateTimeFormat(undefined,{hour:'numeric',minute:'2-digit',month:'short',day:'numeric'}).format(new Date(value))}catch{return ''}}
 function node(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;if(text!==undefined)x.textContent=text;return x}
 function renderMembers(){
@@ -83,7 +150,8 @@ async function decide(card,taskId,choice,row){
   status('Decision not recorded: '+String(error.message||error)+'. Nothing was executed.',true);
  }
 }
-function renderMessages(){
+function renderMessages(keepPosition=false){
+ const oldTop=$('message-list').scrollTop,oldHeight=$('message-list').scrollHeight;
  const list=$('message-list');list.replaceChildren();
  if(!state.messages.length){
   const empty=node('li','empty','No room messages yet. Start with a question or objective for the council.');
@@ -109,7 +177,7 @@ function renderMessages(){
   }
   li.append(avatar,bubble);list.append(li);
  }
- requestAnimationFrame(()=>{list.scrollTop=list.scrollHeight});
+ requestAnimationFrame(()=>{list.scrollTop=keepPosition?oldTop+list.scrollHeight-oldHeight:list.scrollHeight;});
 }
 function renderJobs(){
  const box=$('job-list');box.replaceChildren();
@@ -148,44 +216,65 @@ function showSignIn(data,code){
  status(href?'Sign in to open the Council Room.':'Sign-in required. Open Hatchable and sign in, then refresh this page.',true);
 }
 async function load(before=null){
+ const revision=++loadRevision;const room=state.room;
  try{
   const url=new URL(api,location.origin);url.searchParams.set('limit','60');if(before)url.searchParams.set('before',before);
+  url.searchParams.set('room',room);url.searchParams.set('archived',String(state.archived));
+  if(state.search)url.searchParams.set('search',state.search);
   const response=await fetch(url,{credentials:'same-origin',cache:'no-store'});
   const data=await response.json().catch(()=>({}));
+  if(revision!==loadRevision||room!==state.room)return;
   if(response.status===401||(response.status===403&&data.error==='owner-required')||data.error==='login_required')
    return showSignIn(data,response.status);
-  $('sign-in-card').hidden=true;composerEnabled(true);
   if(!response.ok||!data.ok)throw Error(data.error||('HTTP '+response.status));
+  $('sign-in-card').hidden=true;state.roomInfo=data.room;composerEnabled(!data.room?.archived);
+ state.threads=data.threads||[];renderThreads();
   state.members=data.members||[];state.jobs=data.jobs||[];state.nextCursor=data.nextCursor;
-  state.messages=before?[...(data.messages||[]),...state.messages]:(data.messages||[]);
-  renderMembers();renderMessages();renderJobs();
+  state.messages=[...new Map((before?[...(data.messages||[]),...state.messages]:(data.messages||[])).map(m=>[m.id,m])).values()];
+  renderMembers();renderMessages(!!before);renderJobs();
   $('load-more').hidden=!state.nextCursor;
   pill('live');
-  status('Live room connected · '+state.messages.length+' entries · paid spend ceiling $0'+(state.draft?' · your draft is in the composer, not sent yet':''));
+  status(data.room?.archived?'Archived conversation · restore it to send a message':
+   'Conversation saved · '+state.messages.length+' entries · $0 paid ceiling'+(data.threadsTruncated?' · first 200 conversations shown; search to narrow the list':'')+(state.draft?' · draft not sent':''));
  }catch(error){
-  pill('offline');
+  if(revision!==loadRevision||room!==state.room)return;
+  composerEnabled(false);pill('offline');
   status('Council room unavailable: '+String(error.message||error),true);
  }
 }
 async function send(){
- if(state.sending)return;
+ if(state.sending||!state.ready)return;
  const body=$('composer-body').value.trim();if(!body)return status('Write a message before sending.',true);
- state.sending=true;$('send').disabled=true;status('Persisting your message and waking the council…');
- const mentions=[...document.querySelectorAll('#mention-row input:checked')].map(x=>x.value);
- const payload={messageKey:'room:'+crypto.randomUUID(),body,mentions,
+ state.sending=true;status('Persisting your message and waking the council…');
+ const mentions=checkedMentions();
+ const room=state.room;
+ state.pendingKey=state.pendingKey||'room:'+crypto.randomUUID();
+ const payload=state.pendingPayload||{room,messageKey:state.pendingKey,body,mentions,
   kind:body.trim().endsWith('?')?'question':'message',
   includeMahoraga:$('include-mahoraga').checked,
   attachmentUrl:$('attachment-url').value.trim()||null};
+ state.pendingPayload=payload;composerEnabled(state.ready);
  try{
   const response=await fetch(api,{method:'POST',credentials:'same-origin',cache:'no-store',
    headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const data=await response.json().catch(()=>({}));
-  if(!response.ok||!data.ok)throw Error(data.error||('HTTP '+response.status));
+  if(!response.ok||!data.ok){
+   // A definite validation/auth rejection has no effect; uncertain failures keep the same intent for retry.
+   if([400,401,403,404,422].includes(response.status)){
+    const saved=drafts.get(room);if(saved){saved.payload=null;saved.key=null;}
+    if(state.room===room){state.pendingPayload=null;state.pendingKey=null;}
+   }
+   if(state.room===room&&(response.status===401||response.status===403)){showSignIn(data,response.status);return;}
+   throw Error(data.error||('HTTP '+response.status));
+  }
+  drafts.delete(room);
+  if(state.room!==room)return;
+  state.pendingKey=null;state.pendingPayload=null;
   $('composer-body').value='';$('attachment-url').value='';$('char-count').textContent='0 / 6000';
   document.querySelectorAll('#mention-row input').forEach(x=>x.checked=false);
   await load();status(data.scheduled?'Message recorded; council runner is awake.':'Message recorded; runner wake will retry from the durable queue.');
- }catch(error){status('Message not confirmed: '+String(error.message||error)+'. Your text remains in the composer.',true)}
- finally{state.sending=false;$('send').disabled=false}
+ }catch(error){if(state.room===room)status('Message not confirmed: '+String(error.message||error)+(state.pendingPayload?'. Your original message is preserved. Retry sends that same message once; refresh checks recorded history.':'. Your text is preserved. Correct it and try again.'),true)}
+ finally{state.sending=false;composerEnabled(state.ready);}
 }
 // Draft hand-off from Workspace or the GitHub Pages console: prefill only,
 // never auto-send. The draft travels in the URL fragment (not sent to servers).
@@ -318,6 +407,28 @@ async function refreshIssues(){
 $('issue-refresh').addEventListener('click',refreshIssues);
 $('refresh').addEventListener('click',()=>load());
 $('load-more').addEventListener('click',()=>load(state.nextCursor));
+mountThreads();
+composerEnabled(false);
+$('thread-rename').addEventListener('click',()=>threadEditor('rename'));
+$('thread-cancel').addEventListener('click',()=>$('thread-editor').hidden=true);
+$('thread-editor').addEventListener('submit',async e=>{
+ e.preventDefault();const title=$('thread-title').value.trim();if(!title)return;
+ const buttons=$('thread-editor').querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
+ try{
+  if(threadMode==='create'){
+   state.createKey=state.createKey||'chat-'+crypto.randomUUID();
+   await threadAction('conversation.create',{room:state.createKey,title});
+   const key=state.createKey;state.createKey=null;state.archived=false;state.search='';
+   document.querySelector('.u-chat-search').value='';document.querySelector('.u-chat-filter').textContent='Show archived';
+   await selectRoom(key);
+  }else{await threadAction('conversation.rename',{title});await load();}
+  $('thread-editor').hidden=true;
+ }catch(error){status('Conversation not confirmed: '+String(error.message||error),true);}
+ finally{buttons.forEach(b=>b.disabled=false);}
+});
+for(const [id,action,field] of [['thread-pin','conversation.pin','pinned'],['thread-archive','conversation.archive','archived']]){
+ $(id).addEventListener('click',async()=>{const b=$(id);b.disabled=true;try{await threadAction(action,{value:!state.roomInfo[field]});await load();}catch(error){status('Could not update conversation: '+String(error.message||error),true);}finally{b.disabled=field==='archived'&&state.room==='owner-main';}});
+}
 load();
 try{
  const live=hatchable.events.connect({authUrl:'/api/brain/events-token'});

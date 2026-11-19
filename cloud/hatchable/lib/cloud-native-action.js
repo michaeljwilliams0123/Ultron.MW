@@ -49,7 +49,7 @@ const WRITE_SQL=`WITH authority AS MATERIALIZED (
  WHERE a.id=1 FOR SHARE
 ), created AS (
  INSERT INTO brain_notes(kind,body,action_key,fingerprint)
- SELECT $3,$4,$1,$2 FROM authority
+ SELECT $3,$4,$1,$2 FROM (TABLE authority) AS authority
  WHERE owner='michaeljwilliams0123' AND preset IN ('build','release')
   AND version=$5 AND stop_version=$6 AND NOT paused AND max_paid_cents=0
   AND jsonb_exists(allowed_operations,'cloud.note.create')
@@ -59,9 +59,9 @@ const WRITE_SQL=`WITH authority AS MATERIALIZED (
  INSERT INTO brain_events(event_type,details)
  SELECT 'cloud-action-observed',jsonb_build_object(
   'action_key',action_key,'note_id',id,'operation','cloud.note.create')
- FROM created RETURNING id
+ FROM (TABLE created) AS created RETURNING id
 )
-SELECT created.id,receipt.id AS "receiptId" FROM created JOIN receipt ON true`;
+SELECT created.id,receipt.id AS "receiptId" FROM (TABLE created) AS created JOIN receipt ON true`;
 const held=reason=>Object.freeze({status:'held',reason,productionAccepted:false});
 const pending=reason=>Object.freeze({status:'reconcile-required',reason,
  productionAccepted:false});

@@ -55,7 +55,7 @@ const CLAIM_SQL=`WITH control AS MATERIALIZED (
 )
 UPDATE brain_deep_objectives d
  SET state='dispatching',updated_at=now()
- FROM control,profile
+ FROM (TABLE control) AS control,profile
  WHERE d.task_key=$1 AND d.fingerprint=$2 AND d.state='prepared'
    AND NOT control.paused AND profile.owner='michaeljwilliams0123'
    AND profile.preset='release' AND profile.max_paid_cents=0

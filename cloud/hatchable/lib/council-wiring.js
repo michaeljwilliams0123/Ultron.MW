@@ -10,6 +10,39 @@ const required=Object.freeze([
  'brain_council_executions','brain_council_execution_events'
 ]);
 export const COUNCIL_ROLES=roles;
+const MANIFEST_SPECS=Object.freeze([
+ Object.freeze({id:'github',surface:'connector'}),
+ Object.freeze({id:'mahoraga',surface:'connector'}),
+ Object.freeze({id:'desktop-commander',surface:'connector'}),
+ Object.freeze({id:'descope',surface:'connector'}),
+ Object.freeze({id:'hugging-face',surface:'connector'}),
+ Object.freeze({id:'browser-use',surface:'connector'}),
+ Object.freeze({id:'compound-engineering',surface:'skill'}),
+ Object.freeze({id:'caveman',surface:'skill'})
+]);
+const MANIFEST_STATES=new Set(['connected','ready','blocked']);
+export const COUNCIL_MANIFESTS=MANIFEST_SPECS;
+export function assessManifestStates(manifestObservations=[]){
+ if(!Array.isArray(manifestObservations))throw Error('council-wiring-manifest-invalid');
+ const byId=new Map();
+ for(const item of manifestObservations){
+  if(!item||typeof item.id!=='string'||!MANIFEST_STATES.has(item.state)||byId.has(item.id))
+   throw Error('council-wiring-manifest-invalid');
+  byId.set(item.id,item);
+ }
+ return Object.freeze(MANIFEST_SPECS.map(spec=>{
+  const obs=byId.get(spec.id);
+  if(spec.surface==='skill'){
+   if(obs&&obs.state!=='blocked')throw Error('council-wiring-manifest-invalid');
+   return Object.freeze({id:spec.id,surface:spec.surface,state:'blocked',
+    reason:obs?.reason||'skill-only-no-execution-adapter'});
+  }
+  if(!obs)return Object.freeze({id:spec.id,surface:spec.surface,state:'blocked',
+   reason:'no-authenticated-runtime-observation'});
+  return Object.freeze({id:spec.id,surface:spec.surface,state:obs.state,
+   reason:typeof obs.reason==='string'&&obs.reason?obs.reason:'observed'});
+ }));
+}
 export const COUNCIL_TABLES=required;
 const RUNTIME_IDS=Object.freeze([
  'repo.inspect','repo.prs','repo.ci','site.render','council.review','council.room',
@@ -19,7 +52,7 @@ const CANDIDATE_IDS=Object.freeze([
  'web.open','mahoraga.repo.inspect','mahoraga.task.prepare'
 ]);
 export function assessCouncilWiring({
- tables,installationObservations=[],runtimeCapabilities=[],sourceSha=null
+ tables,installationObservations=[],runtimeCapabilities=[],manifestObservations=[],sourceSha=null
 }={}){
  if(!Array.isArray(tables)||tables.some(t=>typeof t!=='string')||
    !Array.isArray(installationObservations)||
@@ -42,6 +75,7 @@ export function assessCouncilWiring({
   status:'source-candidate-not-deployed',liveAcceptanceVerified:false
  }));
  const capabilities=Object.freeze([...runtime,...candidate]);
+ const manifests=assessManifestStates(manifestObservations);
  const found=new Set(tables);
  const missing=required.filter(t=>!found.has(t));
  const appRoles=new Set(),appIds=new Set(),installationIds=new Set();
@@ -78,6 +112,8 @@ export function assessCouncilWiring({
   sourceSha,readOnly:true,roleCount:roles.length,
   identicalCapabilityProfile:'collaborative-sme',
   capabilities,
+  manifestCount:manifests.length,
+  manifests,
   provenance:Object.freeze({
    runtimeEvidence:'hatchable-deployed-brain-core-capabilities',
    candidateEvidence:'source-candidate-not-deployed',

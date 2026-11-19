@@ -153,7 +153,7 @@ async function update(res,request){
     execution_state=CASE WHEN c.paused THEN 'needs-owner' ELSE 'dispatching' END,
     execution_result=CASE WHEN c.paused THEN '{"reason":"owner-paused"}'::jsonb ELSE '{}'::jsonb END,
     updated_at=now()
-   FROM control c
+   FROM (TABLE control) AS c
    WHERE j.idempotency_key=$1 AND j.request_digest=$2
     AND (j.execution_state='planned' OR
      (j.execution_state='needs-owner' AND

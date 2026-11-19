@@ -25,10 +25,10 @@ export async function setExecutionControl({db,action,expectedVersion,reason}={})
  ), receipt AS (
   INSERT INTO brain_events(event_type,details)
   SELECT $4::text,jsonb_build_object('paused',paused,'version',version)
-  FROM moved RETURNING id
+  FROM (TABLE moved) AS moved RETURNING id
  )
  SELECT moved.paused,moved.version,receipt.id AS receipt_id
- FROM moved JOIN receipt ON true`;
+ FROM (TABLE moved) AS moved JOIN receipt ON true`;
  const result=await db.query(sql,[paused,reason.trim(),expectedVersion,event]);
  const row=result?.rows?.[0];
  return row?{ok:true,paused:row.paused,version:row.version,receiptId:row.receipt_id}:

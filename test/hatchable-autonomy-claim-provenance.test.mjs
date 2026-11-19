@@ -12,7 +12,7 @@ test('C18 RED: durable claim records the exact profile and stop revisions observ
  assert.match(claim,/control\.stop_version/);
  assert.match(claim,/jsonb_build_object\('objective',objective,'attempt',attempts,'profileVersion'/);
  assert.match(claim,/'stopVersion'/);
- assert.match(claim,/FROM moved JOIN selected ON selected\.id=moved\.id/);
+ assert.match(claim,/FROM \(TABLE moved\) AS moved JOIN selected ON selected\.id=moved\.id/);
 });
 
 test('C18 RED: claim event retains objective and attempt plus versioned immutable admission',()=>{
