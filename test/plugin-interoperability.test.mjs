@@ -1,11 +1,11 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPluginInteroperability, PLUGIN_PROVIDERS }
+import { createAdapterRegistry, createPluginInteroperability, PLUGIN_PROVIDERS }
   from '../src/plugin-interoperability.mjs';
 import { createCapabilityBroker } from '../src/capability-bindings.mjs';
 
 const now = Date.parse('2026-10-24T01:00:00.000Z');
-function fixture({ scopes = ['repo.read', 'pr.write'], authorize = async () => false } = {}) {
+function fixture({ scopes = ['repo.read', 'pr.write'], authorize = async () => false, registry = null } = {}) {
   let calls = 0;
   const broker = createCapabilityBroker({
     clock: () => new Date(now).toISOString(), authorize,
@@ -31,7 +31,7 @@ function fixture({ scopes = ['repo.read', 'pr.write'], authorize = async () => f
   return {
     broker, calls: () => calls,
     router: (offset = 0) => createPluginInteroperability({
-      broker, bindingIds: ['github-owner'], clock: () => now + offset,
+      broker, bindingIds: ['github-owner'], registry, clock: () => now + offset,
     }),
   };
 }
@@ -116,4 +116,48 @@ test('partial scopes, stale health, and unbudgeted costs fail closed', async () 
   assert.throws(() => createPluginInteroperability({
     broker: g.broker, bindingIds: ['github-owner', 'github-owner'],
   }), /Invalid/);
+});
+test('adapter registry supports config-driven registration, versioning, disable, and rollback without planner edits', async () => {
+  const registry = createAdapterRegistry();
+  registry.register({
+    id: 'github', version: 'v1.0.0',
+    operations: [{ name: 'repo.read', effect: 'read' }],
+  });
+  registry.register({
+    id: 'github', version: 'v1.1.0',
+    operations: [{ name: 'repo.read', effect: 'read' }, { name: 'pr.write', effect: 'write' }],
+  });
+  const f = fixture({ registry });
+  await f.broker.health('github-owner');
+  const api = f.router();
+  assert.equal(api.select({ provider: 'github', operation: 'pr.write', effect: 'write' }).version, 'v1.1.0');
+  registry.disable('github');
+  assert.equal(api.select({ provider: 'github', operation: 'repo.read', effect: 'read' }).status, 'adapter-disabled');
+  assert.equal(api.inventory().find(x => x.provider === 'github').readiness, 'disabled');
+  registry.enable('github');
+  registry.rollback('github');
+  assert.equal(registry.get('github').version, 'v1.0.0');
+  assert.equal(api.select({ provider: 'github', operation: 'pr.write', effect: 'write' }).status, 'unsupported-operation');
+  assert.equal((await api.execute({
+    provider: 'github', operation: 'repo.read', effect: 'read',
+    idempotencyKey: 'read:rollback123', estimatedCostCents: 0,
+    input: { name: 'Ultron.MW' }, expected: { created: true },
+  })).status, 'completed');
+  assert.equal(f.calls(), 1);
+});
+test('adapter registry rejects paid ceilings, skill impersonation, duplicate versions, and invalid rollbacks', () => {
+  const registry = createAdapterRegistry();
+  assert.throws(() => registry.register({
+    id: 'github', version: 'v1.0.0', maxCostCents: 1,
+    operations: [{ name: 'repo.read', effect: 'read' }],
+  }), /zero-spend/);
+  assert.throws(() => registry.register({
+    id: 'caveman', version: 'v1.0.0',
+    operations: [{ name: 'code.review', effect: 'read' }],
+  }), /Skill surfaces/);
+  registry.register({ id: 'github', version: 'v1.0.0', operations: [{ name: 'repo.read', effect: 'read' }] });
+  assert.throws(() => registry.register({
+    id: 'github', version: 'v1.0.0', operations: [{ name: 'repo.read', effect: 'read' }],
+  }), /Duplicate/);
+  assert.throws(() => registry.rollback('github'), /No prior/);
 });
