@@ -25,7 +25,7 @@ test('C04 Council room persists its complete result atomically behind a fenced t
  assert.match(completion,/fencing_generation=\$6/);
  assert.match(completion,/INSERT INTO brain_council_cases/);
  assert.match(completion,/INSERT INTO brain_council_assessments/);
- assert.match(completion,/FROM moved[\s\S]*?WHERE moved\.objective='council\.room'/);
+ assert.match(completion,/FROM \(TABLE moved\) AS moved[\s\S]*?WHERE moved\.objective='council\.room'/);
  assert.match(completion,/ON CONFLICT \(case_digest\) DO NOTHING/);
  assert.match(completion,/ON CONFLICT \(case_id,role_id\) DO NOTHING/);
  assert.match(completion,/jsonb_array_elements\(\$1::jsonb->'members'\)/);
