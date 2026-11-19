@@ -12,6 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/council-room.css">
 <link rel="stylesheet" href="/workspace-shell.css">
+<link rel="stylesheet" href="/action-desk.css">
 </head>
 <body class="u-council">
 <div class="app-shell">
@@ -70,6 +71,39 @@
   </section>
  </section>
 </details>
+ <section class="u-action-desk" id="owner-action-desk" aria-labelledby="desk-heading">
+ <div class="desk-head"><div><p class="overline">OWNER / CONTROLLED EXECUTION</p><h2 id="desk-heading">Governed action desk</h2></div>
+ <button id="desk-refresh" type="button">Refresh verified state</button></div>
+ <p>Run existing bounded cloud capabilities and inspect exact PostgreSQL receipts without leaving this Council conversation.</p>
+ <div class="desk-evidence" aria-label="Current authority and release evidence">
+  <div id="desk-authority">Checking owner authority…</div>
+  <div id="desk-release">Checking release proof…</div>
+  <div id="desk-integrations">Checking provider authorization…</div>
+  <div id="desk-observed">No current owner readback</div>
+ </div>
+ <p id="desk-policy" class="desk-disclaimer">A connected provider does not establish execution authority.</p>
+ <div class="desk-grid">
+  <section class="desk-card" aria-labelledby="desk-inspect-title">
+   <h3 id="desk-inspect-title">Read-only repository inspection</h3>
+   <p>Queue an idempotent GitHub main inspection; observe the scheduler and persisted owner-queue receipt.</p>
+   <button id="desk-inspect" type="button" disabled>Run repository inspection</button>
+   <output id="desk-task" class="desk-result" role="status" aria-live="polite">No desk task submitted in this session.</output>
+  </section>
+  <section class="desk-card" aria-labelledby="desk-note-title">
+   <h3 id="desk-note-title">Owner-confirmed cloud observation</h3>
+   <p>Record a bounded observation in PostgreSQL only. Preview the exact note and confirm before writing. No GitHub mutation.</p>
+   <label for="desk-note-body">Observation (non-secret, maximum 1,200 characters)</label>
+   <textarea id="desk-note-body" maxlength="1200" rows="3" placeholder="Record one observed outcome or engineering decision."></textarea>
+   <button id="desk-note-prepare" type="button" disabled>Prepare observation</button>
+   <p id="desk-note-preview" hidden></p>
+   <button id="desk-note-confirm" type="button" hidden>Confirm and record</button>
+   <button id="desk-note-cancel" type="button" hidden>Cancel</button>
+   <output id="desk-note-status" class="desk-result" role="status" aria-live="polite">No observation submitted in this session.</output>
+  </section>
+ </div>
+ <p id="desk-message" role="status" aria-live="polite">Loading current authorization and persisted results…</p>
+ <p class="desk-disclaimer">Approving a Council card records intent only; this panel cannot authorize external provider writes, merges, production deployment, credential changes or release. Those remain behind the existing owner-signed governed paths.</p>
+</section>
  <section class="composer" aria-label="Message the council">
   <div class="composer-topline">
    <span>Message the council</span>
@@ -116,6 +150,7 @@
 <script src="/workspace-shell.js"></script>
 <script src="/__hatchable/events.js"></script>
 <script src="/council-room.js"></script>
+<script src="/action-desk.js" defer></script>
 <script src="/nav-guard.js" defer></script>
 </body>
 </html>
