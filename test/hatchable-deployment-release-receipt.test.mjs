@@ -155,6 +155,33 @@ test('real PostgreSQL-compatible reservation consumes once and replays by readba
  const args={db,config:{get:async()=>JSON.stringify(
   await subtle.exportKey('jwk',pair.publicKey))},request:input,
   envelope:{payload,signature}};
+ for(const request of [
+  {...input,artifactDigest:'sha256:'+'c'.repeat(64)},
+  {...input,target:'hatchable-v138'},
+  {...input,sourceSha:'c'.repeat(40)},
+ ]){
+  const denied=await submitDeploymentReleaseReceipt({...args,request});
+  assert.equal(denied.ok,false);
+  assert.equal(denied.reason,'owner-grant-invalid');
+ }
+ const missingReadback={...input};
+ delete missingReadback.independentReadback;
+ assert.equal((await submitDeploymentReleaseReceipt({
+  ...args,request:missingReadback})).reason,'request-invalid');
+ const tamperedPayload=JSON.stringify({...grant,profileVersion:9});
+ assert.equal((await submitDeploymentReleaseReceipt({...args,
+  envelope:{payload:tamperedPayload,signature}})).reason,'owner-grant-invalid');
+ await db.exec('UPDATE brain_owner_autonomy_profile SET version=9 WHERE id=1');
+ assert.equal((await submitDeploymentReleaseReceipt(args)).reason,'authority-denied');
+ await db.exec('UPDATE brain_owner_autonomy_profile SET version=8 WHERE id=1');
+ await db.exec('UPDATE brain_runtime_control SET version=6 WHERE id=1');
+ assert.equal((await submitDeploymentReleaseReceipt(args)).reason,'authority-denied');
+ await db.exec('UPDATE brain_runtime_control SET version=5,paused=true WHERE id=1');
+ assert.equal((await submitDeploymentReleaseReceipt(args)).reason,'authority-denied');
+ await db.exec('UPDATE brain_runtime_control SET paused=false WHERE id=1');
+ for(const table of ['brain_authority_grants','brain_deployment_release_receipts','brain_events']){
+  assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`)).rows[0].n,0);
+ }
  const first=await submitDeploymentReleaseReceipt(args);
  assert.equal(first.ok,true);assert.equal(first.status,'observed');
  const replay=await submitDeploymentReleaseReceipt(args);

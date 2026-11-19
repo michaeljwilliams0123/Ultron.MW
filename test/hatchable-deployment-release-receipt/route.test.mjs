@@ -36,7 +36,10 @@ test('receipt route enforces owner, origin and exact mode bodies',async()=>{
   'export const db={};export const config={};').toString('base64');
  const libUrl='data:text/javascript;base64,'+Buffer.from(`
   export async function prepareDeploymentReleaseReceipt(){return {ok:true,status:'prepared',marker:'prepare'}}
-  export async function submitDeploymentReleaseReceipt(){return {ok:true,status:'observed',marker:'submit'}}
+  export async function submitDeploymentReleaseReceipt({envelope}){
+   if(envelope.throw)throw Error('database unavailable');
+   return envelope.result||{ok:true,status:'observed',marker:'submit'};
+  }
   export async function readDeploymentReleaseReceipt(){return {ok:true,status:'observed',marker:'reconcile'}}
  `).toString('base64');
  const route=await import('data:text/javascript;base64,'+Buffer.from(source
@@ -62,6 +65,22 @@ test('receipt route enforces owner, origin and exact mode bodies',async()=>{
  const reconciled=await invoke({body:{mode:'reconcile',request:input,
   grantId:'owner-deploy-v137-main'}});
  assert.equal(reconciled.code,200);assert.equal(reconciled.payload.marker,'reconcile');
+ for(const [result,expectedCode] of [
+  [{ok:false,status:'reconcile-required',reason:'receipt-ledger-unavailable'},503],
+  [{ok:false,status:'held',reason:'receipt-conflict'},409],
+  [{ok:false,status:'held',reason:'owner-grant-invalid'},403],
+  [{ok:false,status:'held',reason:'authority-denied'},403],
+  [{ok:false,status:'held',reason:'request-invalid'},422],
+ ]){
+  const response=await invoke({body:{mode:'submit',request:input,envelope:{result}}});
+  assert.equal(response.code,expectedCode);
+  assert.equal(response.payload.reason,result.reason);
+  assert.equal(response.payload.ok,false);
+ }
+ const unavailable=await invoke({body:{mode:'submit',request:input,envelope:{throw:true}}});
+ assert.equal(unavailable.code,503);
+ assert.equal(unavailable.payload.status,'reconcile-required');
+ assert.equal(unavailable.payload.reason,'receipt-outcome-unresolved');
 });
 
 test('release-proof route reads an exact-main deployment receipt instead of inventing one',()=>{
