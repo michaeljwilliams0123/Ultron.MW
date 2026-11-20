@@ -1,6 +1,8 @@
 # Hatchable SQL CTE false-positive investigation (2026-11-18)
 
-**Status:** Verified deploy-time false positives; vendor correction pending. **Tracking:** [Ultron.MW issue #499](https://github.com/michaeljwilliams0123/Ultron.MW/issues/499) and Hatchable platform feedback **#2637**. **Environment:** existing production project `proj_A6GCXRSKizko`, Hatchable v132. Source/runtime SQL was not changed.
+**Current disposition (2026-11-20 ET):** The application workaround from [PR #501](https://github.com/michaeljwilliams0123/Ultron.MW/pull/501) is deployed and independently reverified on v136: all 24 changed runtime files match the merged source, and the clean dry run has zero errors and warnings. The native validator defect remains reproducible for materialized and recursive CTEs; warning totals/truncation metadata are still absent. See the [production acceptance evidence](../verification/ISSUE499-HATCHABLE-CTE-ACCEPTANCE-2026-11-20.md). Keep [issue #499](https://github.com/michaeljwilliams0123/Ultron.MW/issues/499) open for the upstream correction, tracked by Hatchable feedback **#2637** and follow-up **#2676**.
+
+**Historical investigation below (2026-11-18):** Existing project `proj_A6GCXRSKizko`, Hatchable v132, before PR #501. Source/runtime SQL was unchanged during this initial investigation. The original caution against scanner-only rewrites records that stage; the subsequently reviewed explicit `TABLE` workaround and its limits are documented in the acceptance report.
 
 ## Primary-source findings
 
