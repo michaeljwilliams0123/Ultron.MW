@@ -323,7 +323,7 @@ submit.addEventListener('click',()=>execute('submit'));
 reconcile.addEventListener('click',()=>execute('reconcile'));
 const initialPr=new URLSearchParams(globalThis.location?.search||'').get('pr');
 if(initialPr&&/^[1-9][0-9]{0,8}$/.test(initialPr))pr.value=initialPr;
-pr.addEventListener('change',()=>{
+pr.addEventListener('input',()=>{
  if(submitted||prepared){
   pr.value=selectedPr===null?'':String(selectedPr);
   return setStatus('A prepared or pending operation is pinned to its original PR. Complete readback before changing targets.');
