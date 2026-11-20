@@ -1,0 +1,432 @@
+{
+  "schema": "ultron.issue499.acceptance-evidence.v1",
+  "observedDate": "2026-11-20",
+  "timezone": "America/New_York",
+  "repository": "michaeljwilliams0123/Ultron.MW",
+  "sourceSha": "25fc48c944ad4bcefd603acdedbe95ac677777f1",
+  "workaroundMerge": "868724fbc416dd9486f80503c9dfe1324d49698b",
+  "projectId": "proj_A6GCXRSKizko",
+  "deployment": {
+    "version": 136,
+    "status": "live",
+    "deployedAt": "2026-11-19T15:14:47+00:00"
+  },
+  "baselineDryRun": {
+    "ok": true,
+    "errors": [],
+    "warnings": [],
+    "would_deploy": {
+      "public_files": 50,
+      "api_functions": 55,
+      "pages": 0,
+      "migrations": 53,
+      "auth_enabled": false,
+      "next_version": 137
+    }
+  },
+  "nativeProbe": {
+    "source": "// Temporary draft-only validator fixture for #499. NEVER invoke or deploy.\nimport {db} from 'hatchable';\nexport async function issue499ValidatorProbe() {\n  await db.query('SELECT id FROM issue499_missing_physical');\n  await db.query('WITH issue499_simple AS (SELECT 17 AS marker) SELECT marker FROM issue499_simple');\n  await db.query('WITH issue499_materialized AS MATERIALIZED (SELECT 17 AS marker), issue499_dependent AS NOT MATERIALIZED (SELECT marker+1 AS marker FROM issue499_materialized) SELECT p.marker,q.marker AS next FROM issue499_materialized p CROSS JOIN issue499_dependent q');\n  await db.query('WITH issue499_outer AS (SELECT 17 AS marker) SELECT n.marker FROM (WITH issue499_inner AS (SELECT marker FROM issue499_outer) SELECT marker FROM issue499_inner) n JOIN issue499_outer o ON n.marker=o.marker');\n  await db.query(\"WITH issue499_moved AS (UPDATE brain_tasks SET status=status WHERE false RETURNING id), issue499_receipt AS (SELECT id FROM issue499_moved) SELECT m.id FROM (issue499_moved m JOIN issue499_receipt r ON m.id=r.id)\");\n  await db.query('WITH \"Issue499Quoted\" AS (SELECT 17 AS marker) SELECT marker FROM \"Issue499Quoted\"');\n  await db.query('WITH RECURSIVE issue499_recursive(n) AS (VALUES (1) UNION ALL SELECT n+1 FROM issue499_recursive WHERE n<3) SELECT n FROM issue499_recursive');\n}\n",
+    "result": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 4,
+          "message": "lib/issue499-validator-probe-20261120.js:4 queries table `issue499_missing_physical`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_missing_physical\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 6,
+          "message": "lib/issue499-validator-probe-20261120.js:6 queries table `issue499_materialized`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_materialized\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 6,
+          "message": "lib/issue499-validator-probe-20261120.js:6 queries table `issue499_dependent`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_dependent\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 10,
+          "message": "lib/issue499-validator-probe-20261120.js:10 queries table `issue499_recursive`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_recursive\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        }
+      ],
+      "would_deploy": {
+        "public_files": 50,
+        "api_functions": 55,
+        "pages": 0,
+        "migrations": 53,
+        "auth_enabled": false,
+        "next_version": 137
+      }
+    },
+    "execution": "SQL validated only in disposable local PGlite; never invoked on Hatchable."
+  },
+  "warningCapProbe": {
+    "source": "// Temporary draft-only warning-cap probe for #499. NEVER invoke or deploy.\nimport {db} from 'hatchable';\nexport async function issue499WarningCapProbe() {\n  await db.query('SELECT id FROM issue499_absent_01');\n  await db.query('SELECT id FROM issue499_absent_02');\n  await db.query('SELECT id FROM issue499_absent_03');\n  await db.query('SELECT id FROM issue499_absent_04');\n  await db.query('SELECT id FROM issue499_absent_05');\n  await db.query('SELECT id FROM issue499_absent_06');\n  await db.query('SELECT id FROM issue499_absent_07');\n  await db.query('SELECT id FROM issue499_absent_08');\n  await db.query('SELECT id FROM issue499_absent_09');\n  await db.query('SELECT id FROM issue499_absent_10');\n  await db.query('SELECT id FROM issue499_absent_11');\n  await db.query('SELECT id FROM issue499_absent_12');\n}\n",
+    "result": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 4,
+          "message": "lib/issue499-validator-probe-20261120.js:4 queries table `issue499_absent_01`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_01\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 5,
+          "message": "lib/issue499-validator-probe-20261120.js:5 queries table `issue499_absent_02`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_02\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 6,
+          "message": "lib/issue499-validator-probe-20261120.js:6 queries table `issue499_absent_03`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_03\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 7,
+          "message": "lib/issue499-validator-probe-20261120.js:7 queries table `issue499_absent_04`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_04\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 8,
+          "message": "lib/issue499-validator-probe-20261120.js:8 queries table `issue499_absent_05`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_05\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 9,
+          "message": "lib/issue499-validator-probe-20261120.js:9 queries table `issue499_absent_06`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_06\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 10,
+          "message": "lib/issue499-validator-probe-20261120.js:10 queries table `issue499_absent_07`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_07\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 11,
+          "message": "lib/issue499-validator-probe-20261120.js:11 queries table `issue499_absent_08`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_08\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 12,
+          "message": "lib/issue499-validator-probe-20261120.js:12 queries table `issue499_absent_09`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_09\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        },
+        {
+          "validator": "lintMissingTables",
+          "rule": "query_references_missing_table",
+          "file": "lib/issue499-validator-probe-20261120.js",
+          "line": 13,
+          "message": "lib/issue499-validator-probe-20261120.js:13 queries table `issue499_absent_10`, but no such table exists in the project schema after this deploy's migrations \u2014 the query will fail at runtime with `relation \"issue499_absent_10\" does not exist`. Add a migration creating it, or fix the table name. (If the name is assembled dynamically and this is a false alarm, ignore it \u2014 this warning never blocks a deploy.)"
+        }
+      ],
+      "would_deploy": {
+        "public_files": 50,
+        "api_functions": 55,
+        "pages": 0,
+        "migrations": 53,
+        "auth_enabled": false,
+        "next_version": 137
+      }
+    }
+  },
+  "restoredDryRun": {
+    "ok": true,
+    "errors": [],
+    "warnings": [],
+    "would_deploy": {
+      "public_files": 50,
+      "api_functions": 55,
+      "pages": 0,
+      "migrations": 53,
+      "auth_enabled": false,
+      "next_version": 137
+    }
+  },
+  "restoration": {
+    "originalFiles": 253,
+    "restoredFiles": 253,
+    "allPathsAndHashesMatch": true
+  },
+  "readiness": {
+    "adminStatus": 200,
+    "publicStatus": 401,
+    "memberStatus": 403,
+    "observedAt": "2026-11-20T23:12:51.163Z",
+    "readyForProduction": false,
+    "missingProduction": [
+      "independent-executor-unverified",
+      "web-egress-adapter-unverified",
+      "mahoraga-receipt-unverified",
+      "live-release-review-unverified"
+    ],
+    "paidExternalSpendCeilingUSD": 0
+  },
+  "logSearches": {
+    "relationMissing": {
+      "since": "7d",
+      "query": "does not exist",
+      "logs": [],
+      "count": 0,
+      "truncated": false
+    },
+    "serverErrors": {
+      "since": "24h",
+      "statusCode": "5xx",
+      "logs": [
+        {
+          "id": 145107037,
+          "request_id": "6dd47bae-3242-4ac0-bf86-b674c4a1e64a",
+          "method": "GET",
+          "path": "/api/brain/owner-passkeys",
+          "status_code": 503,
+          "duration_ms": 19,
+          "level": "error",
+          "log_output": null,
+          "error": null,
+          "created_at": "2026-11-20T22:52:10+00:00"
+        }
+      ],
+      "count": 1,
+      "truncated": false
+    }
+  },
+  "feedback": {
+    "original": 2637,
+    "followup": 2676
+  },
+  "nativePostgresFixtureChecks": {
+    "engine": "@electric-sql/pglite@0.5.15",
+    "positiveCases": 6,
+    "positiveCasesPassed": 6,
+    "negativeCases": 1,
+    "negativeSqlstate": "42P01"
+  },
+  "limitations": [
+    "Hatchable validator source is outside Ultron.MW; no vendor fix applied.",
+    "No live mutating function was invoked; read-only route checks do not exercise every SQL path.",
+    "Log search windows are relative to the tool calls; absence of matching text does not prove all runtime paths are healthy.",
+    "Concurrent PostgreSQL CI evidence is from PR501, not a new local PostgreSQL service run."
+  ],
+  "runtimeParity": [
+    {
+      "path": "api/brain/council-room-execution.js",
+      "live": "5649724255ad4c1497c4f31d155b7d148e2467e81e1c530e6bd5e614ca87c61b",
+      "current": "5649724255ad4c1497c4f31d155b7d148e2467e81e1c530e6bd5e614ca87c61b",
+      "merged": "5649724255ad4c1497c4f31d155b7d148e2467e81e1c530e6bd5e614ca87c61b",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/acceptance-evidence.js",
+      "live": "2af296a505e6274c88f6307736f0235417aadab600f6c9ff9e4d51cda65adfd8",
+      "current": "2af296a505e6274c88f6307736f0235417aadab600f6c9ff9e4d51cda65adfd8",
+      "merged": "2af296a505e6274c88f6307736f0235417aadab600f6c9ff9e4d51cda65adfd8",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/brain-owner.js",
+      "live": "6c5b5f79f37412f33d14a890a7b5bde5c5da92050c898a2d36113ac6d7a41ff2",
+      "current": "6c5b5f79f37412f33d14a890a7b5bde5c5da92050c898a2d36113ac6d7a41ff2",
+      "merged": "6c5b5f79f37412f33d14a890a7b5bde5c5da92050c898a2d36113ac6d7a41ff2",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/brain-runner.js",
+      "live": "d033046fecd243e9492700531bef3fe268c7dcd4661fa4812746f01291316e0c",
+      "current": "d033046fecd243e9492700531bef3fe268c7dcd4661fa4812746f01291316e0c",
+      "merged": "d033046fecd243e9492700531bef3fe268c7dcd4661fa4812746f01291316e0c",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/c04-passkey-comment.js",
+      "live": "a9a209b6eaec7c005f1fc6abfa86da9714c9425e164b71f71c57de2d2112d88b",
+      "current": "a9a209b6eaec7c005f1fc6abfa86da9714c9425e164b71f71c57de2d2112d88b",
+      "merged": "a9a209b6eaec7c005f1fc6abfa86da9714c9425e164b71f71c57de2d2112d88b",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/cloud-native-action.js",
+      "live": "f4819c0941c597ca1aaa3abc032038e87062c5e286175904f2cd65994e07214d",
+      "current": "f4819c0941c597ca1aaa3abc032038e87062c5e286175904f2cd65994e07214d",
+      "merged": "f4819c0941c597ca1aaa3abc032038e87062c5e286175904f2cd65994e07214d",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/council-front-door.js",
+      "live": "2ec71dd569fe078a0ccc4ffef3dbad08150b0cd3b52b3be2edd89639b24c9df6",
+      "current": "2ec71dd569fe078a0ccc4ffef3dbad08150b0cd3b52b3be2edd89639b24c9df6",
+      "merged": "2ec71dd569fe078a0ccc4ffef3dbad08150b0cd3b52b3be2edd89639b24c9df6",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/council-ledger.js",
+      "live": "7c8854d08b007f8f832e5a353b2d8ad9c9f316f153512f9730f6334631d1258e",
+      "current": "7c8854d08b007f8f832e5a353b2d8ad9c9f316f153512f9730f6334631d1258e",
+      "merged": "7c8854d08b007f8f832e5a353b2d8ad9c9f316f153512f9730f6334631d1258e",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/council-memory.js",
+      "live": "d0b58da5f024b51fe0a4330c071a546414641c30341a31b447ac7ae183b8d432",
+      "current": "d0b58da5f024b51fe0a4330c071a546414641c30341a31b447ac7ae183b8d432",
+      "merged": "d0b58da5f024b51fe0a4330c071a546414641c30341a31b447ac7ae183b8d432",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/deep-issue-workflow.js",
+      "live": "fa208f1581ad65a973ae73d126a096881f234a4ac9f22c1c50809b528b09e4e0",
+      "current": "fa208f1581ad65a973ae73d126a096881f234a4ac9f22c1c50809b528b09e4e0",
+      "merged": "fa208f1581ad65a973ae73d126a096881f234a4ac9f22c1c50809b528b09e4e0",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/github-pr-comment-canary.js",
+      "live": "13da850221e2e3da20dd13fed5f50eb634a768648e5141603de9dc61ffa4bd51",
+      "current": "13da850221e2e3da20dd13fed5f50eb634a768648e5141603de9dc61ffa4bd51",
+      "merged": "13da850221e2e3da20dd13fed5f50eb634a768648e5141603de9dc61ffa4bd51",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/heldout-evidence.js",
+      "live": "50733c3647b06dc0f6ee7eb2f92d68713c5cffc971f60e450aee0d5c22147c23",
+      "current": "50733c3647b06dc0f6ee7eb2f92d68713c5cffc971f60e450aee0d5c22147c23",
+      "merged": "50733c3647b06dc0f6ee7eb2f92d68713c5cffc971f60e450aee0d5c22147c23",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/mahoraga-actions.js",
+      "live": "dc8b6097b26ce14dbb3dc8fa6f205d8becff9ff8e100f5234c3a02ab8afb3b67",
+      "current": "dc8b6097b26ce14dbb3dc8fa6f205d8becff9ff8e100f5234c3a02ab8afb3b67",
+      "merged": "dc8b6097b26ce14dbb3dc8fa6f205d8becff9ff8e100f5234c3a02ab8afb3b67",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/mcp-mahoraga-grant.js",
+      "live": "5766ebab3fca3713243b152e5bd346d652c2a0198e4578ceddc0d4a28d88693f",
+      "current": "5766ebab3fca3713243b152e5bd346d652c2a0198e4578ceddc0d4a28d88693f",
+      "merged": "5766ebab3fca3713243b152e5bd346d652c2a0198e4578ceddc0d4a28d88693f",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/mcp-provider-write.js",
+      "live": "87490d4ff3bc89b3005db658ff4ae5cf0cb65787ed9989dd8821162197f42b11",
+      "current": "87490d4ff3bc89b3005db658ff4ae5cf0cb65787ed9989dd8821162197f42b11",
+      "merged": "87490d4ff3bc89b3005db658ff4ae5cf0cb65787ed9989dd8821162197f42b11",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/mcp-signed-mutation.js",
+      "live": "e16ad6c2ba98bb4d70db1b6f9f67de9b09360cfccd51b642905166a5ca858f3c",
+      "current": "e16ad6c2ba98bb4d70db1b6f9f67de9b09360cfccd51b642905166a5ca858f3c",
+      "merged": "e16ad6c2ba98bb4d70db1b6f9f67de9b09360cfccd51b642905166a5ca858f3c",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/mcp-signed-note.js",
+      "live": "daef5cd795cac57ae378f416e7ccecbeb288f989718c3ec15c89f74c8d704cc9",
+      "current": "daef5cd795cac57ae378f416e7ccecbeb288f989718c3ec15c89f74c8d704cc9",
+      "merged": "daef5cd795cac57ae378f416e7ccecbeb288f989718c3ec15c89f74c8d704cc9",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/owner-autonomy-control.js",
+      "live": "6ee73b3c36619d095967243e1f39e97acf3e898eebef5b37540eedccdfea297c",
+      "current": "6ee73b3c36619d095967243e1f39e97acf3e898eebef5b37540eedccdfea297c",
+      "merged": "6ee73b3c36619d095967243e1f39e97acf3e898eebef5b37540eedccdfea297c",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/owner-passkey-authorization.js",
+      "live": "2c9bbec6ea60068387e582ad28e499e168b73f03ee61b8ee49985800221db261",
+      "current": "2c9bbec6ea60068387e582ad28e499e168b73f03ee61b8ee49985800221db261",
+      "merged": "2c9bbec6ea60068387e582ad28e499e168b73f03ee61b8ee49985800221db261",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/owner-passkey-enrollment.js",
+      "live": "2337a00a8705179df77f38b47494544f6e2652c431f951fcdb5903a293c9131c",
+      "current": "2337a00a8705179df77f38b47494544f6e2652c431f951fcdb5903a293c9131c",
+      "merged": "2337a00a8705179df77f38b47494544f6e2652c431f951fcdb5903a293c9131c",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/runtime-control.js",
+      "live": "494087fa07f8db7e519203804ce3fcf978b18c6a64e8336913fc1ceb2c07e32f",
+      "current": "494087fa07f8db7e519203804ce3fcf978b18c6a64e8336913fc1ceb2c07e32f",
+      "merged": "494087fa07f8db7e519203804ce3fcf978b18c6a64e8336913fc1ceb2c07e32f",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/scheduler-recovery.js",
+      "live": "3ec38ee4dec148adab7ba8dacb190c1bfed24bed2a71cb08b2abfa04473455d0",
+      "current": "3ec38ee4dec148adab7ba8dacb190c1bfed24bed2a71cb08b2abfa04473455d0",
+      "merged": "3ec38ee4dec148adab7ba8dacb190c1bfed24bed2a71cb08b2abfa04473455d0",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/security-adjudicator.js",
+      "live": "ab456f9ba21366cb8786f8ea017db415e234fc5da18d8d4fe8b22032dd325e51",
+      "current": "ab456f9ba21366cb8786f8ea017db415e234fc5da18d8d4fe8b22032dd325e51",
+      "merged": "ab456f9ba21366cb8786f8ea017db415e234fc5da18d8d4fe8b22032dd325e51",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    },
+    {
+      "path": "lib/signed-event-inbox.js",
+      "live": "85a8bf225b40aa94f71ccc393004a156efc12d91e27675b6b54984b6c75a63e8",
+      "current": "85a8bf225b40aa94f71ccc393004a156efc12d91e27675b6b54984b6c75a63e8",
+      "merged": "85a8bf225b40aa94f71ccc393004a156efc12d91e27675b6b54984b6c75a63e8",
+      "currentMatchesLive": true,
+      "mergedMatchesLive": true
+    }
+  ]
+}
