@@ -54,7 +54,14 @@ export function buildCouncilReasoningInput({
   '\nRelease authorization: NOT ESTABLISHED\n'+
   'Do not infer Council approval, a signed owner exception, or permission to merge.';
  const budget=Math.max(0,Math.min(4000,5990-prefix.length-suffix.length));
- return prefix+diff.slice(0,budget)+suffix;
+ const marker='\n[model excerpt truncated by input budget; not source EOF]';
+ let boundedDiff=diff;
+ if(diff.length>budget){
+  const prefixPart=diff.slice(0,Math.max(0,budget-marker.length));
+  const boundary=prefixPart.lastIndexOf('\n');
+  boundedDiff=(boundary<0?'':prefixPart.slice(0,boundary))+marker;
+ }
+ return prefix+boundedDiff+suffix;
 }
 
 export const REASONING_ROLES=Object.freeze({
