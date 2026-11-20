@@ -13,6 +13,8 @@ test('BUG-184 audit separates missing, pending, historical repairs and clean fir
   assert.deepEqual(params,[24]);
   assert.match(sql,/generate_series/);
   assert.match(sql,/historicalReconciliation/);
+  assert.match(sql,/jsonb_exists/);
+  assert.doesNotMatch(sql,/\s\?\s/);
   assert.match(sql,/repo_attempts=1 AND council_attempts=1/);
   assert.doesNotMatch(sql,/UPDATE brain_scheduler_slots/);
   return {rows:[fixture]};
