@@ -34,7 +34,7 @@ SELECT count(*)::int AS expected_slots,
  count(*) FILTER(WHERE evidence->>'sloBreach'='true')::int AS pickup_slo_breaches,
  count(*) FILTER(WHERE completion_status='done'
    AND evidence->>'primaryOnTime'='true'
-   AND NOT (COALESCE(evidence,'{}'::jsonb) ? 'historicalReconciliation')
+   AND NOT (jsonb_exists(COALESCE(evidence,'{}'::jsonb),'historicalReconciliation'))
    AND repo_status='done' AND council_status='done'
    AND repo_attempts=1 AND council_attempts=1
    AND repo_source='github-api')::int AS on_time_first_attempt_candidates
