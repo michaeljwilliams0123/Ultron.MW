@@ -1,0 +1,36 @@
+name: Ultron Composio v3 isolated SDK verification
+# Optional manual SDK contract proof. Core Verify is the required PR/main gate.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-sdk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Verify pinned SDK Node engine
+        run: node -e "const [a,b,c]=process.versions.node.split('.').map(Number);if(a<22||(a===22&&(b<22||(b===22&&c<3))))process.exit(1)"
+      - name: Install root dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install isolated locked Composio SDK
+        run: npm ci --prefix integrations/composio --ignore-scripts --no-audit --no-fund
+      - name: Audit production dependency advisories
+        run: npm audit --prefix integrations/composio --omit=dev --audit-level=high
+      - name: Verify isolated SDK contracts
+        run: npm test --prefix integrations/composio
+      - name: Verify policy, migration and mirrored library contracts
+        run: node --test test/composio-v3-policy.test.mjs test/composio-migration-0046.test.mjs test/composio-v3-hatchable-parity.test.mjs
+      - name: Check route references without storing audit content
+        run: node scripts/audit-route-references.mjs > /tmp/ultron-route-audit.json
+      - name: Verify primary Composio canary without provider credentials
+        run: node integrations/composio/verify-live-primary.mjs --dry-run
