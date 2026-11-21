@@ -1,6 +1,6 @@
-// Hatchable serves index.html for unknown paths (e.g. /login, /signin) with
-// HTTP 200. Send those to the Council Room, the single front door, instead of
-// showing Cloud controls under a wrong URL. "/" and "/index.html" stay as-is.
+// One conversational home. Full cloud controls remain at /index.html?controls=1.
 (()=>{const p=location.pathname;
+ const controls=p==='/index.html'&&new URLSearchParams(location.search).get('controls')==='1';
+ if((p==='/'||p==='/index.html')&&!controls){location.replace('/council-room.html');return;}
  if(p!=='/'&&p!=='/index.html'&&!/^\/(?:api|mcp|__hatchable)\//.test(p))location.replace('/council-room.html');
 })();
