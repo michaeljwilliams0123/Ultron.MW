@@ -147,4 +147,21 @@ test('chat-execute route enforces owner, origin and ultron-chat wires passkey me
  assert.match(ui,/driftDetails/);
  const proof=read('cloud/hatchable/api/brain/release-proof.js');
  assert.match(proof,/driftDetails/);
+ assert.match(proof,/verifyLiveHatchableManifest/);
+});
+
+test('verifyLiveHatchableManifest verifies exact live artifact digest and rejects drift or missing token',async()=>{
+ const {verifyLiveHatchableManifest}=await import('../cloud/hatchable/lib/hatchable-manifest-readback.js');
+ const {deploymentArtifactDigest}=await import('../cloud/hatchable/lib/deployment-release-receipt/read.js');
+ const files=[{path:'api/brain/run.js',hash:'1'.repeat(64)},{path:'public/ultron-chat.js',hash:'2'.repeat(64)}];
+ const digest=deploymentArtifactDigest(files);
+ const row={target:'hatchable-v138',source_sha:HEAD,artifact_digest:digest,manifest_file_count:2};
+ const unconfigured=await verifyLiveHatchableManifest({deploymentRow:row,config:{get:async()=>''}});
+ assert.equal(unconfigured.verified,false);assert.equal(unconfigured.reason,'hatchable-manifest-reader-unconfigured');
+ const ok=await verifyLiveHatchableManifest({deploymentRow:row,config:{get:async k=>k==='HATCHABLE_API_TOKEN'?'tok':''},
+  fetchImpl:async()=>new Response(JSON.stringify({version:138,status:'live',file_manifest:files}),{status:200})});
+ assert.equal(ok.verified,true);assert.equal(ok.state,'live-manifest-verified');
+ const drifted=await verifyLiveHatchableManifest({deploymentRow:row,config:{get:async k=>k==='HATCHABLE_API_TOKEN'?'tok':''},
+  fetchImpl:async()=>new Response(JSON.stringify({version:138,status:'live',file_manifest:[{path:'api/brain/run.js',hash:'9'.repeat(64)}]}),{status:200})});
+ assert.equal(drifted.verified,false);assert.equal(drifted.state,'manifest-drift-detected');
 });

@@ -2,11 +2,12 @@
  * The release is explicitly unverified until independent Council and
  * deployment readbacks exist; source CI alone is never promoted to release.
  */
-import {db} from 'hatchable';
+import {db,config} from 'hatchable';
 import {collectConnectivity} from 'lib/connectivity-view.js';
 import {buildReleaseProof} from 'lib/release-proof.js';
 import {collectMergedCouncilReadback} from 'lib/release-github-readback.js';
 import {findDeploymentReleaseReceipt} from 'lib/deployment-release-receipt.js';
+import {verifyLiveHatchableManifest} from 'lib/hatchable-manifest-readback.js';
 export const access='admin';
 export const methods=['GET'];
 export default async function(req,res){
@@ -23,32 +24,33 @@ export default async function(req,res){
  const councilSource=await collectMergedCouncilReadback({commitSha:sha});
  let deploymentRow=null;
  try{deploymentRow=await findDeploymentReleaseReceipt({db,sourceSha:sha});}catch{}
+ const liveManifest=deploymentRow
+  ?await verifyLiveHatchableManifest({deploymentRow,config})
+  :null;
  const deployment=deploymentRow?{
   target:deploymentRow.target,sourceSha:deploymentRow.source_sha,
   artifactDigest:deploymentRow.artifact_digest,
-  // An immutable receipt proves an owner-authorized historical claim only.
-  // Without independent current Hatchable deployment manifest readback,
-  // the artifact might have changed after the receipt was written.
-  receiptId:'deployment:'+String(deploymentRow.id),independentReadback:false
+  receiptId:'deployment:'+String(deploymentRow.id),
+  independentReadback:Boolean(liveManifest?.verified)
  }:{};
  const proof=await buildReleaseProof({commitSha:sha,
   ci:{verified:ci?.state==='observed'&&ci?.conclusion==='success',
    status:ci?.state==='observed'&&ci?.conclusion==='success'?'verified':'unavailable',
    headSha:ci?.sourceSha,workflowId:388875616,runId:ci?.runId},
-  // No deployment assertion is invented. A verified Council check and
-  // independent exact-main CI alone cannot prove a deployed artifact.
   councilCheck:councilSource.councilCheck,
   sourcePr:councilSource.sourcePr,deployment});
  const missingGates=[];
  if(!proof.ci.verified)missingGates.push('ci');
  if(!proof.council.verified)missingGates.push('council-7of7');
  if(!deploymentRow)missingGates.push('signed-deployment-receipt');
- missingGates.push('independent-manifest-readback');
+ if(!liveManifest?.verified)missingGates.push('independent-manifest-readback');
  return res.json({...proof,
   driftDetails:{ciVerified:proof.ci.verified,councilVerified:proof.council.verified,
-   deploymentReceiptRecorded:!!deploymentRow,independentManifestReadback:false,missingGates},
+   deploymentReceiptRecorded:!!deploymentRow,
+   independentManifestReadback:Boolean(liveManifest?.verified),
+   manifestReason:liveManifest?.reason||null,missingGates},
   observation:{ciState:ci?.state??'unavailable',
   councilSourceState:councilSource.councilCheck?'observed':'unavailable',
-  deploymentState:deploymentRow?'receipt-only-unverified':'unavailable',
+  deploymentState:liveManifest?.state||(deploymentRow?'receipt-only-unverified':'unavailable'),
   runtimeState:observation.runtime?.state??'unavailable'}});
 }

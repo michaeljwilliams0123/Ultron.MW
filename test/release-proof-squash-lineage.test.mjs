@@ -167,7 +167,8 @@ test('owner GET route requires an immutable grant-bound deployment readback',()=
 
  // Historical owner-granted receipts are not live Hatchable manifest readbacks.
  // A changed artifact must never remain RELEASE-verified on a stale receipt alone.
- assert.match(api,/independentReadback:false/);
+ assert.match(api,/verifyLiveHatchableManifest/);
+ assert.match(api,/independentReadback:Boolean\(liveManifest\?\.verified\)/);
  assert.doesNotMatch(api,/independentReadback:true/);
  assert.match(api,/receipt-only-unverified/);
 
