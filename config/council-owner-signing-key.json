@@ -6,7 +6,7 @@
   "publicJwk": {
     "kty": "EC",
     "crv": "P-256",
-    "x": "RTUPDqTd-oXJXlHeOsHPLQv93JA94wZ_nn8JpyRwgmQ",
-    "y": "xJdJ_djMxPodV3dz5lV9xvzPjVb4oe6hXaVx4BJScfs"
+    "x": "xiFZSEiKCjfEIkI_xTPJl--sVo3PUYUJp2x_gXLeh-o",
+    "y": "DzKorDn2LczA8EzRZrmpfJ7AhN7FS0vEC8qADGJ479Y"
   }
 }
