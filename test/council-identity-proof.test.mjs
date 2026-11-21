@@ -49,7 +49,7 @@ test('workflow is owner-gated and SHA-pinned, shares only the Coordinator App id
  assert.match(y,/create-github-app-token@[0-9a-f]{40}/);
  assert.match(y,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(y,/vars\.ULTRON_BUILDER_CLIENT_ID/);
- assert.match(y,/secrets\.ULTRON_BUILDER_PRIVATE_KEY/);
+ assert.match(y,/secrets\.ULTRON_COORDINATOR_PRIVATE_KEY/);
  assert.doesNotMatch(y,/ULTRON_\{0\}_PRIVATE_KEY|permission-pull-requests: write/);
  assert.match(y,/github\.repository_id == 1424939667/);
  assert.match(y,/github\.repository_owner_id == 308995719/);

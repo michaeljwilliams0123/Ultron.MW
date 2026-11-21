@@ -173,7 +173,7 @@ test('one-app role proof does not confuse attribution with independent approval 
  assert.match(workflow,/github\.repository_owner_id == 308995719/);
  assert.match(workflow,/github\.actor == 'michaeljwilliams0123'/);
  assert.match(workflow,/github\.triggering_actor == 'michaeljwilliams0123'/);
- assert.match(workflow,/secrets\.ULTRON_BUILDER_PRIVATE_KEY/);
+ assert.match(workflow,/secrets\.ULTRON_COORDINATOR_PRIVATE_KEY/);
  assert.doesNotMatch(workflow,/secrets\[format\('ULTRON_/);
  assert.doesNotMatch(workflow,/skip-token-revoke: true|pull_request_target:|permission-pull-requests: write/);
 });

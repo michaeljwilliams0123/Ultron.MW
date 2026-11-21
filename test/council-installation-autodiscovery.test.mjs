@@ -33,7 +33,7 @@ test('read-only workflow discovers installed Coordinator from existing protected
  assert.match(yaml,/contents: read/);
  assert.match(yaml,/actions\/create-github-app-token@[a-f0-9]{40}/);
  assert.match(yaml,/client-id: \$\{\{ vars\.ULTRON_BUILDER_CLIENT_ID \}\}/);
- assert.match(yaml,/private-key: \$\{\{ secrets\.ULTRON_BUILDER_PRIVATE_KEY \}\}/);
+ assert.match(yaml,/private-key: \$\{\{ secrets\.ULTRON_COORDINATOR_PRIVATE_KEY \}\}/);
  assert.match(yaml,/permission-metadata: read/);
  assert.match(yaml,/steps\.coordinator\.outputs\.installation-id/);
  assert.match(yaml,/steps\.coordinator\.outputs\.app-slug/);

@@ -5,7 +5,7 @@ import {diagnoseCouncilAppInstallation}
 
 const verdict=await diagnoseCouncilAppInstallation({
  appId:process.env.ULTRON_GITHUB_APP_ID,
- privateKey:process.env.ULTRON_BUILDER_PRIVATE_KEY
+ privateKey:process.env.ULTRON_COORDINATOR_PRIVATE_KEY
 });
 await mkdir('artifacts',{recursive:true});
 await writeFile('artifacts/council-app-installation-diagnostic.json',
