@@ -148,13 +148,13 @@ if(voice&&body){
 }
 const send=$('send');
 if(send&&body){
- const route=async()=>{
+ const route=async message=>{
   let parse=null;try{({parseUltronIntent:parse}=await import('/ultron-intent.mjs'));}catch{return;}
-  const intent=parse(body.value);
+  const intent=parse(message);
   if(intent)void showAction(intent); // UI guidance only. Existing Council Room handles durable send.
  };
- send.addEventListener('click',()=>{void route();},{capture:true});
- body.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')void route();},{capture:true});
+ send.addEventListener('click',()=>{void route(body.value);},{capture:true});
+ body.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')void route(body.value);},{capture:true});
 }
 document.body.classList.add('ultron-chat-ready');
 })();
