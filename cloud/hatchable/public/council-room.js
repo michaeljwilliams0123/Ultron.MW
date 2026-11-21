@@ -79,8 +79,8 @@ function composerEnabled(on){
  for(const id of ['composer-body','include-mahoraga','attachment-url'])if($(id))$(id).disabled=!on||locked;
  document.querySelectorAll('#mention-row input').forEach(x=>x.disabled=!on||locked);
  $('send').disabled=!on||state.sending;
- $('send').textContent=state.sending?'Sending…':locked?'Retry original message':'Send to council ↗';
- $('composer-body').placeholder=on?'Ask the council to inspect, plan, compare, explain, or prepare the next action…':
+ $('send').textContent=state.sending?'Sending…':locked?'Retry original message':'Send to Ultron ↗';
+ $('composer-body').placeholder=on?'Ask Ultron to inspect, plan, connect, sign, build, or prepare the next action…':
   state.roomInfo.archived?'Restore this conversation to send a message.':'Refresh or sign in to reconnect to this conversation.';
 }
 

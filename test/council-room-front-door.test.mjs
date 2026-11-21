@@ -234,11 +234,12 @@ test('Mission Control sign-in uses login_url and separates signed-out from not-o
 
 test('unknown paths served by the index fallback go to the Council Room',async()=>{
  const src=await pub('front-door-route.js');
- const run=pathname=>{const calls=[];vm.runInNewContext(src,{location:{pathname,replace:u=>calls.push(u)}});return calls};
+ const run=(pathname,search='')=>{const calls=[];vm.runInNewContext(src,{location:{pathname,search,replace:u=>calls.push(u)},URLSearchParams});return calls};
  assert.deepEqual(run('/login'),['/council-room.html']);
  assert.deepEqual(run('/signin'),['/council-room.html']);
- assert.deepEqual(run('/'),[]);
- assert.deepEqual(run('/index.html'),[]);
+ assert.deepEqual(run('/'),['/council-room.html']);
+ assert.deepEqual(run('/index.html'),['/council-room.html']);
+ assert.deepEqual(run('/index.html','?controls=1'),[]);
  assert.deepEqual(run('/__hatchable/auth/callback'),[]);
  assert.match(await pub('index.html'),/<head>\n<script src="\/front-door-route\.js"><\/script>/);
 });
