@@ -68,3 +68,47 @@ test('release handler wires authenticated operator into both CI and Council read
  assert.match(source,/collectConnectivity\(\{db,fetchGithub/);
  assert.match(source,/collectMergedCouncilReadback\(\{commitSha:sha,fetchGithub/);
 });
+test('reject encoded paths and any GitHub endpoints outside release evidence',async()=>{
+ let calls=0;
+ const f=createAuthenticatedGithubReleaseFetch({call:async()=>{
+  calls++;return {status:200,body:{}};}});
+ for(const url of [
+  API+'/%2e%2e/%2e%2e/user',
+  API+'/commits/'+SHA+'/%2fpulls',
+  API+'/commits/'+SHA+'/%5cpulls',
+  API+'/contents/.github/workflows/verify.yml',
+  API+'/hooks',
+  API+'/collaborators',
+  API+'/actions/runs/123/logs',
+  API+'//pulls',
+  API+'/actions/workflows/other.yml/runs',
+ ])await assert.rejects(()=>f(url),/out-of-scope/);
+ assert.equal(calls,0);
+});
+test('validate scoped query values before invoking the OAuth proxy',async()=>{
+ let calls=0;
+ const f=createAuthenticatedGithubReleaseFetch({call:async()=>{
+  calls++;return {status:200,body:{}};}});
+ for(const url of [
+  API+'/pulls?per_page=101',
+  API+'/pulls?per_page=0',
+  API+'/pulls?page=0',
+  API+'/pulls?state=closed',
+  API+'/pulls?state=%2e%2e',
+  API+'/pulls?branch=other',
+  API+'/pulls?event=workflow_dispatch',
+  API+'/pulls?sort=../x',
+  API+'/commits/'+SHA+'/check-runs?check_name=another/check',
+ ])await assert.rejects(()=>f(url),/out-of-scope/);
+ assert.equal(calls,0);
+});
+test('OAuth proxy failures are redacted and malformed upstream status is rejected',async()=>{
+ const failed=createAuthenticatedGithubReleaseFetch({call:async()=>{
+  throw Error('sensitive-provider-message-should-not-escape');
+ }});
+ await assert.rejects(()=>failed(API+'/pulls/519'),error=>
+  error.message==='authenticated-github-readback-unavailable');
+ const broken=createAuthenticatedGithubReleaseFetch({call:async()=>({body:{}})});
+ await assert.rejects(()=>broken(API+'/pulls/519'),
+  /authenticated-github-readback-unavailable/);
+});
