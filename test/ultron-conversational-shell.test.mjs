@@ -23,7 +23,8 @@ test('chat front door preserves existing Council Room and advanced controls',()=
  assert.match(html,/ultron-chat\.js/);
  assert.match(rootRedirect,/council-room\.html/);
  assert.match(rootRedirect,/index\.html/);
- assert.match(chat,/\/api\/brain\/council-room/);
+ assert.match(read('public/council-room.js'),/\/api\/brain\/council-room/);
+ assert.match(chat,/\/api\/brain\/release-proof/);
  assert.match(chat,/\/api\/brain\/chat-pr/);
  assert.match(chat,/\/github-pr-comment-canary\.html/);
  assert.match(chat,/\/connectors\.html/);
