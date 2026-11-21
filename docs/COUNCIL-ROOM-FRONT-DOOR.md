@@ -17,7 +17,7 @@ pages, routes and the Council's seven-member replies keep working.
 | Nav links to pages the deployment doesn't serve | 404 | `nav-guard.js` marks them "(not deployed)" instead of linking to a dead end |
 | Mission Control "Owner sign-in" | Hard-coded console URL; 401 and 403 both shown as guest | Built from the API `login_url` (https://*.hatchable.com only, `next` = current page). A 403 shows "Signed in, but not as the owner" |
 | Signed out in the Council Room | Composer looked usable | Composer disabled; the header pill shows the real room state (live / sign in needed / offline) |
-| Unknown paths (`/login`, `/signin`, …) | Cloud controls HTML with 200 | `front-door-route.js` sends them to the Council Room. `/` stays Cloud controls (see decision below) |
+| Unknown paths (`/login`, `/signin`, …) | Cloud controls HTML with 200 | `front-door-route.js` sends unknown paths **and `/`** to Ultron Chat; advanced cloud controls remain at `/index.html?controls=1` |
 | Passkeys, Connectors, Workspace, browser-write-acceptance, execution-canary | No shared nav | One shared static nav (works under strict CSP). Passkeys and Connectors reuse the sign-in card (`sign-in.js`) |
 | Workspace on Hatchable | "Send to Ultron" relies on `/api/*` calls that 404 on this host | "Ask the Council" is the primary call to action above the composer |
 | Accessibility | — | `aria-label` on the composer, `:focus-visible` outlines, Activity panel stacks below 1050px instead of hiding |
@@ -83,11 +83,13 @@ No new secrets or environment variables are required.
 
 ## Decisions for Michael
 
-- **Should `/` itself redirect to the Council Room?** Today `/` stays Cloud
-  controls, because the existing UI contract (`UI-CUTOVER-01`) pins the "Cloud
-  controls" link to `/`. Only unknown paths redirect. To make `/` the Council
-  Room, Cloud controls would move to `/index.html` and that contract would be
-  updated.
+- **Nov 20 owner superseding decision:** `/` now opens the Council Room as
+  Ultron Chat. The previous `/` cloud-controls routing was intentionally replaced
+  with `/index.html?controls=1` for advanced operations. The eight backend
+  capabilities and persistent conversations remain intact. The Chat home
+  introduces read-only PR preflight, inline owner-signing canary, provider
+  configuration and release proof; general PR merges still require a separately
+  verified owner-authorized executor.
 - **Scheduler routes:** `/api/brain/run`, `/tick` and `/hf-github-reconcile`
   are `access='scheduler'`, POST-only routes. A public GET returning 404 is
   consistent with Hatchable's scheduler-only edge denial. They are still worth
