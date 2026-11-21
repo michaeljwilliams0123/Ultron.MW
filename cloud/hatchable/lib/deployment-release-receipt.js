@@ -6,6 +6,10 @@ import {
  deploymentReceiptPublicResult,
  deploymentReceiptResource,
  normalizeDeploymentReceiptRequest,
+ deploymentArtifactDigest,
+ findDeploymentReleaseReceipt,
+ prepareDeploymentReleaseReceipt,
+ readDeploymentReleaseReceipt,
 } from './deployment-release-receipt/read.js';
 
 export {
@@ -16,7 +20,7 @@ export {
  normalizeDeploymentReceiptRequest,
  prepareDeploymentReleaseReceipt,
  readDeploymentReleaseReceipt,
-} from './deployment-release-receipt/read.js';
+};
 
 const held=reason=>({ok:false,status:'held',reason});
 const uncertain=reason=>({ok:false,status:'reconcile-required',reason});
