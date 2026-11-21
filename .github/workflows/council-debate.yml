@@ -477,7 +477,7 @@ jobs:
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.ULTRON_BUILDER_CLIENT_ID }}
-          private-key: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+          private-key: ${{ secrets.ULTRON_COORDINATOR_PRIVATE_KEY }}
           repositories: Ultron.MW
           permission-issues: write
           permission-contents: read
@@ -529,14 +529,14 @@ jobs:
       - name: Diagnose Coordinator App and repository installation
         env:
           ULTRON_GITHUB_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
-          ULTRON_BUILDER_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+          ULTRON_COORDINATOR_PRIVATE_KEY: ${{ secrets.ULTRON_COORDINATOR_PRIVATE_KEY }}
         run: node scripts/diagnose-council-installation.mjs
       - name: Discover Ultron Coordinator installation
         id: coordinator
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.ULTRON_BUILDER_CLIENT_ID }}
-          private-key: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+          private-key: ${{ secrets.ULTRON_COORDINATOR_PRIVATE_KEY }}
           permission-metadata: read
       - name: Assert authenticated Coordinator app identity
         env:
@@ -555,7 +555,7 @@ jobs:
         env:
           ULTRON_GITHUB_APP_ID: ${{ vars.ULTRON_GITHUB_APP_ID }}
           ULTRON_GITHUB_INSTALLATION_ID: ${{ steps.coordinator.outputs.installation-id }}
-          ULTRON_GITHUB_APP_PRIVATE_KEY: ${{ secrets.ULTRON_BUILDER_PRIVATE_KEY }}
+          ULTRON_GITHUB_APP_PRIVATE_KEY: ${{ secrets.ULTRON_COORDINATOR_PRIVATE_KEY }}
         run: node scripts/verify-council-fleet.mjs
       - name: Retain sanitized proof or held reason
         if: always()
