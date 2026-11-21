@@ -1,6 +1,8 @@
 /** Workflow consolidation manifest: 26 legacy workflows -> 8 Council lanes.
  * Phase 2 (live, owner decision Nov 10, 2026: "Get to the 8, redeploy
- * cleanly"). Exactly eight workflow files remain. Four load-bearing files ARE
+ * cleanly"). Exactly eight canonical lanes remain; two manually dispatched
+ * diagnostics (Composio SDK and source secret audit) are optional and never
+ * substitute for the required core verification job. Four load-bearing files ARE
  * their lane (verify.yml, owner-comment-router.yml, council-debate.yml,
  * cloud-pr.yml); four lanes are new files. Every legacy job moved byte-for-byte
  * into its lane file behind a job-level `if` that keeps its original trigger,
@@ -125,8 +127,12 @@ export const OIDC_JOBS=Object.freeze({
   'owner-comment-router.yml':['issue-implementation','council-command'],
 });
 
-/** Workflow files allowed besides the eight lanes (separately reviewed PRs). */
-export const NON_LEGACY_WORKFLOWS=Object.freeze(['council-required-status.yml']);
+/** Council gate and optional manual-only diagnostics besides the eight canonical lanes.
+ * Diagnostics may not trigger automatically on PRs/push/schedules: required
+ * security and SDK checks stay inside verify.yml. */
+export const NON_LEGACY_WORKFLOWS=Object.freeze([
+  'council-required-status.yml','composio-v3.yml','secret-isolation.yml'
+]);
 
 export function laneFiles(){return Object.values(LANES).map(l=>l.file);}
 /** Lane files live in .github/workflows/. A staged copy under
