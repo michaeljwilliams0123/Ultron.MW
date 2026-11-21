@@ -76,10 +76,15 @@ test('scans untracked source files locally before they are staged',()=>{
  });
 });
 
-test('CI enforces source credential scan in the existing core lane without adding a ninth workflow',async()=>{
+test('CI enforces source credential scan in core and optional manual audit has no automatic trigger',async()=>{
  const {readFileSync,existsSync}=await import('node:fs');
  const standalone=new URL('../.github/workflows/secret-isolation.yml',import.meta.url);
- assert.equal(existsSync(standalone),false,'standalone secret audit would violate the eight-workflow lane contract');
+ assert.equal(existsSync(standalone),true,'manual source audit must be available on GitHub Actions');
+ const audit=readFileSync(standalone,'utf8');
+ assert.match(audit,/on:\n  workflow_dispatch:\n/);
+ assert.doesNotMatch(audit,/^  (push|pull_request|schedule):/m);
+ assert.match(audit,/node --test test\/secret-isolation-audit\.test\.mjs/);
+ assert.match(audit,/node scripts\/audit-secret-isolation\.mjs/);
  const core=readFileSync(new URL('../.github/workflows/verify.yml',import.meta.url),'utf8');
  assert.match(core,/name: Audit source for accidental credentials[\s\S]*?run: node scripts\/audit-secret-isolation\.mjs/);
  const scanner=core.indexOf('run: node scripts/audit-secret-isolation.mjs');

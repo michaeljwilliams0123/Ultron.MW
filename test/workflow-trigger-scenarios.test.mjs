@@ -8,6 +8,8 @@ const dir=new URL('../.github/workflows/',import.meta.url);
 const actual=readdirSync(dir).filter(x=>x.endsWith('.yml')).sort();
 const source=name=>readFileSync(new URL(name,dir),'utf8');
 const spec={
+  'composio-v3.yml':{triggers:['workflow_dispatch'],jobs:['isolated-sdk']},
+  'secret-isolation.yml':{triggers:['workflow_dispatch'],jobs:['source-secret-audit']},
   'cloud-pr.yml':{triggers:['workflow_call','issues'],jobs:['create-pr']},
   'council-debate.yml':{triggers:['issues','pull_request','workflow_call','workflow_dispatch'],jobs:['council-debate','prove','verify-principal']},
   'council-required-status.yml':{triggers:['pull_request_target','issue_comment','workflow_run','workflow_dispatch'],jobs:['trusted-council-status']},
@@ -18,7 +20,7 @@ const spec={
   'owner-comment-router.yml':{triggers:['issue_comment','pull_request_review_comment','issues','workflow_dispatch'],jobs:['cloud','pr-conversation','issue-implementation','council-command','codex-trigger-audit','public-chat']},
   'verify.yml':{triggers:['push','pull_request','workflow_dispatch'],jobs:['test','attested-receipt','fixed-comparison']},
 };
-test('exactly eight consolidated lanes plus the trusted Council gate',()=>{
+test('eight canonical lanes, Council gate and two manual verification utilities',()=>{
   assert.deepEqual(actual,Object.keys(spec).sort());
 });
 for(const [name,entry] of Object.entries(spec)){
@@ -120,7 +122,7 @@ test('historical incident matrix never turns unknown failures into success',()=>
     assert.equal(result.projected,incident.expected,file+': '+incident.log);
     count++;
   }
-  assert.equal(count,54);
+  assert.equal(count,66);
 });
 test('outcome reducer keeps every real failure red across all three-job permutations',()=>{
   const values=['red','admitted','success','neutral','skipped'];

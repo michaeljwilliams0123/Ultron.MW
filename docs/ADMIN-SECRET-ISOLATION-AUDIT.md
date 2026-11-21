@@ -13,8 +13,11 @@ secrets, an external vault, or previous releases. Use GitHub secret scanning and
 
 The existing `.github/workflows/verify.yml` runs the scanner before dependency installation
 for pull requests and main-branch verification, binding failures to the required `test` job.
-The repository intentionally retains its eight-workflow consolidation contract; a redundant
-ninth standalone secret-audit workflow is not added. This is a source audit, not a secret-custody proof.
+The repository retains its eight canonical workflow lanes. The historical `secret-isolation.yml`
+entry is restored for **manual verification only**, without additional pull-request, push,
+or scheduled triggers. The source scanner remains required in the core `test` job; the
+manual diagnostic cannot replace or weaken that gate. This is a source audit, not a
+secret-custody proof.
 
 ## Actual Council Gate configuration (unverified until App registration)
 
