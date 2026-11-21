@@ -17,7 +17,7 @@ export async function verifyLiveHatchableManifest({
  const version=Number(TARGET.exec(deploymentRow.target)[1]);
  let token='',baseUrl='';
  try{
-  token=String(await config?.get?.('HATCHABLE_API_TOKEN')||'').trim();
+  token=String(await config?.get?.('ULTRON_HATCHABLE_API_TOKEN')||'').trim();
   baseUrl=String(await config?.get?.('HATCHABLE_DEPLOYMENT_API_URL')||'').trim();
  }catch{}
  if(!token){
@@ -26,20 +26,54 @@ export async function verifyLiveHatchableManifest({
  }
  const url=baseUrl
   ?baseUrl.replace(/\{version\}/g,String(version))
-  :`https://hatchable.com/api/projects/${PROJECT_ID}/deployments/${version}`;
- if(!url.startsWith('https://')){
+  :'https://hatchable.com/mcp';
+ let parsed=null;
+ try{parsed=new URL(url);}catch{}
+ // Never forward deployment-read credentials to arbitrary URLs or hosts.
+ if(!parsed||parsed.protocol!=='https:'||
+  parsed.hostname!=='hatchable.com'||parsed.port||
+  parsed.username||parsed.password||parsed.search||parsed.hash){
   return {verified:false,state:'receipt-only-unverified',
    reason:'hatchable-manifest-url-invalid'};
  }
  try{
-  const res=await fetchImpl(url,{
+  const isMcp=url.endsWith('/mcp');
+  const res=await fetchImpl(url,isMcp?{
+   method:'POST',redirect:'error',cache:'no-store',
+   signal:AbortSignal.timeout(8000),
+   headers:{
+    Authorization:'Bearer '+token,
+    'Content-Type':'application/json',
+    Accept:'application/json, text/event-stream'
+   },
+   body:JSON.stringify({
+    jsonrpc:'2.0',id:1,method:'tools/call',
+    params:{name:'get_deployment',arguments:{project_id:PROJECT_ID,version}}
+   })
+  }:{
    method:'GET',redirect:'error',cache:'no-store',
    signal:AbortSignal.timeout(8000),
    headers:{Authorization:'Bearer '+token,Accept:'application/json'}
   });
   if(!res?.ok)return {verified:false,state:'receipt-only-unverified',
    reason:'hatchable-manifest-http-'+Number(res?.status||0)};
-  const snap=await res.json();
+  let snap;
+  if(isMcp){
+   const raw=await res.text();
+   let rpc=null;
+   try{rpc=JSON.parse(raw);}catch{
+    const line=raw.split('\n').map(l=>l.trim()).find(l=>l.startsWith('data:'));
+    if(line)try{rpc=JSON.parse(line.slice(5).trim());}catch{}
+   }
+   if(rpc?.error||rpc?.result?.isError){
+    return {verified:false,state:'receipt-only-unverified',
+     reason:'hatchable-mcp-tool-error'};
+   }
+   const text=rpc?.result?.content?.find?.(c=>c?.type==='text')?.text;
+   snap=rpc?.result?.structuredContent||(text?JSON.parse(text):null);
+  }else{
+   snap=await res.json();
+  }
   if(!snap||snap.status!=='live'||Number(snap.version)!==version||
    !Array.isArray(snap.file_manifest)||!snap.file_manifest.length){
    return {verified:false,state:'manifest-drift-detected',

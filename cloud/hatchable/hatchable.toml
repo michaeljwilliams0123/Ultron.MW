@@ -149,6 +149,11 @@ name = "ULTRON_UUAM_DELIVERY_HMAC_KEY"
 required = false
 description = "Distinct 32+ character HMAC key for Cloudflare staged delivery; owner-supplied in protected Hatchable Setup. No default or environment exposure."
 
+[[secret]]
+name = "ULTRON_HATCHABLE_API_TOKEN"
+required = false
+description = "Owner-supplied Hatchable API token used only by /api/brain/release-proof to read back the live deployment file_manifest. Stored in protected Setup; never committed or exposed."
+
 [[config]]
 name = "uuam_inbox_enabled"
 type = "boolean"

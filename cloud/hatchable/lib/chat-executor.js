@@ -178,7 +178,7 @@ const CLAIM=[
  "), nonce AS (",
  " INSERT INTO brain_github_approval_nonces(nonce,operation,target_resource,approval_timestamp,expires_at)",
  " SELECT $2,'pr.merge',$5,claimed.created_at,claimed.expires_at",
- " FROM (TABLE claimed) AS claimed WHERE EXISTS(SELECT 1 FROM (TABLE counter) AS counter)",
+ " FROM (TABLE claimed) AS claimed WHERE eXISTS(SELECT 1 FROM (TABLE counter) AS counter)",
  " ON CONFLICT(nonce) DO NOTHING RETURNING nonce",
  "), admitted AS (",
  " INSERT INTO brain_authority_grants(grant_id,objective_id,actor,operation,resource,policy_sha,expires_at)",
