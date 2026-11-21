@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {LANES,LEGACY_WORKFLOWS,laneFiles,checkParity,scanWorkflow,cutoverFileCount,OIDC_JOBS}
+import {LANES,LEGACY_WORKFLOWS,laneFiles,checkParity,scanWorkflow,cutoverFileCount,OIDC_JOBS,NON_LEGACY_WORKFLOWS}
   from '../src/workflow-consolidation.mjs';
 import {prConversationAdmission,classifyLegacyFailure,laneConclusion}
   from '../src/workflow-lane-rules.mjs';
@@ -23,7 +23,7 @@ const LEGACY_FILES=['verify.yml','reef-runtime-probe.yml','owner-comment-router.
   'self-scan-pr.yml','gitlab-mirror.yml','cloud-objective.yml','cloud-pr.yml','council-worker.yml',
   'governed-execution.yml','council-self-repair.yml','verify-secondary-admin.yml'];
 
-test('phase 2: exactly eight workflow files; every legacy job lives once in its lane; every pin is real',()=>{
+test('phase 2: exactly eight canonical lanes with separately reviewed on-demand utilities; every pin is real',()=>{
   const parity=checkParity({readFile:read,listWorkflows:list,listStaged:staged});
   assert.deepEqual(parity.problems,[]);
   assert.equal(parity.legacyCount,28,'26 legacy files plus council-self-repair (#411) and isolated verifier');
@@ -31,7 +31,7 @@ test('phase 2: exactly eight workflow files; every legacy job lives once in its 
   assert.equal(parity.laneCount,8);
   const keys=parity.mapped.map(m=>m.lane+'#'+m.job);
   assert.equal(new Set(keys).size,keys.length,'a job is mapped twice');
-  assert.deepEqual(list().filter(f=>f!=='council-required-status.yml').sort(),[...new Set(laneFiles())].sort());
+  assert.deepEqual(list().filter(f=>!NON_LEGACY_WORKFLOWS.includes(f)).sort(),[...new Set(laneFiles())].sort());
   assert.equal(cutoverFileCount(),8);
   assert.deepEqual(staged(),[],'shadow lane copies are removed');
   assert.deepEqual(LEGACY_WORKFLOWS.filter(w=>w.disposition==='retired').map(w=>w.file).sort(),
