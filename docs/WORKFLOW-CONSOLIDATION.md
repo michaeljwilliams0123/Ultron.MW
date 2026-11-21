@@ -1,7 +1,7 @@
 # Workflow consolidation: 26 legacy workflows into 8 Council lanes
 
 **Status:** phase 2 (live). Owner decision (Nov 10, 2026: "Get to the 8, redeploy
-cleanly"). Exactly eight workflow files remain in `.github/workflows/`. The
+cleanly"). Eight canonical lane workflows remain in `.github/workflows/`, alongside the Council Gate. Two optional on-demand diagnostic workflow entries (`composio-v3.yml` and `secret-isolation.yml`) are restored to support manual verification; neither triggers on pull requests, pushes, or schedules. The corresponding checks remain required inside `verify.yml`. The
 required check `test` is still produced by job `test` in an unchanged
 `verify.yml`. Rulesets, branch protection, secrets and variable names are
 unchanged.
