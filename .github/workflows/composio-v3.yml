@@ -29,7 +29,7 @@ jobs:
       - name: Verify isolated SDK contracts
         run: npm test --prefix integrations/composio
       - name: Verify policy, migration and mirrored library contracts
-        run: node --test test/composio-v3-policy.test.mjs test/composio-migration-0046.test.mjs test/composio-v3-hatchable-parity.test.mjs
+        run: node --test test/composio-v3-policy.test.mjs test/composio-migration-0048.test.mjs test/composio-v3-hatchable-parity.test.mjs
       - name: Check route references without storing audit content
         run: node scripts/audit-route-references.mjs > /tmp/ultron-route-audit.json
       - name: Verify primary Composio canary without provider credentials
