@@ -158,10 +158,14 @@ test('verifyLiveHatchableManifest verifies exact live artifact digest and reject
  const row={target:'hatchable-v138',source_sha:HEAD,artifact_digest:digest,manifest_file_count:2};
  const unconfigured=await verifyLiveHatchableManifest({deploymentRow:row,config:{get:async()=>''}});
  assert.equal(unconfigured.verified,false);assert.equal(unconfigured.reason,'hatchable-manifest-reader-unconfigured');
- const ok=await verifyLiveHatchableManifest({deploymentRow:row,config:{get:async k=>k==='HATCHABLE_API_TOKEN'?'tok':''},
-  fetchImpl:async()=>new Response(JSON.stringify({version:138,status:'live',file_manifest:files}),{status:200})});
+ const mcpSuccess=payload=>new Response(JSON.stringify({jsonrpc:'2.0',id:1,
+  result:{content:[{type:'text',text:JSON.stringify(payload)}]}}),{status:200});
+ const configured={get:async k=>k==='ULTRON_HATCHABLE_API_TOKEN'?'test-token':''};
+ const ok=await verifyLiveHatchableManifest({deploymentRow:row,config:configured,
+  fetchImpl:async()=>mcpSuccess({version:138,status:'live',file_manifest:files})});
  assert.equal(ok.verified,true);assert.equal(ok.state,'live-manifest-verified');
- const drifted=await verifyLiveHatchableManifest({deploymentRow:row,config:{get:async k=>k==='HATCHABLE_API_TOKEN'?'tok':''},
-  fetchImpl:async()=>new Response(JSON.stringify({version:138,status:'live',file_manifest:[{path:'api/brain/run.js',hash:'9'.repeat(64)}]}),{status:200})});
+ const drifted=await verifyLiveHatchableManifest({deploymentRow:row,config:configured,
+  fetchImpl:async()=>mcpSuccess({version:138,status:'live',
+   file_manifest:[{path:'api/brain/run.js',hash:'9'.repeat(64)}]})});
  assert.equal(drifted.verified,false);assert.equal(drifted.state,'manifest-drift-detected');
 });
