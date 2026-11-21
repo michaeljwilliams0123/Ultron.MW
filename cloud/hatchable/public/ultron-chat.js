@@ -106,7 +106,15 @@ async function showAction(intent){
    const data=await r.json();loading.remove();
    info('Release verified',data.verified===true?'Yes':'Not yet');
    info('Status',data.status||'Unknown');
-   if(data.sourceSha)info('Source',String(data.sourceSha).slice(0,12));
+   if(data.commitSha||data.sourceSha)info('Source',String(data.commitSha||data.sourceSha).slice(0,12));
+   if(data.driftDetails){
+    info('CI verified',data.driftDetails.ciVerified?'Yes':'No');
+    info('Council 7/7',data.driftDetails.councilVerified?'Yes':'No');
+    info('Signed receipt',data.driftDetails.deploymentReceiptRecorded?'Recorded':'Missing');
+    info('Live manifest readback',data.driftDetails.independentManifestReadback?'Verified':'Not yet');
+    if(Array.isArray(data.driftDetails.missingGates)&&data.driftDetails.missingGates.length)
+     info('Missing gates',data.driftDetails.missingGates.join(', '));
+   }
    if(data.verified!==true)statusMessage('This is not release acceptance. Ultron will preserve the hold until independent evidence passes.');
   }catch{loading.textContent='Release proof currently unavailable. No deployment action was attempted.'}
   return;
@@ -121,10 +129,53 @@ async function showAction(intent){
    loading.remove();
    info('PR',data.number+' · '+data.title);
    info('State',data.merged?'Already merged':data.state+(data.draft?' (draft)':''));
-   info('Mergeability',data.mergeable===true?'Mergeable (CI not verified)':data.mergeable===false?'Conflict or blocked':'Not yet determined');
+   info('Mergeability',data.mergeable===true?'Mergeable':data.mergeable===false?'Conflict or blocked':'Not yet determined');
    if(data.headSha)info('Head',data.headSha.slice(0,12));
-   statusMessage('No GitHub merge has been submitted. Full CI and an operation-scoped authorization must be independently verified before execution.');
    link('Review exact PR on GitHub',data.url,true);
+   if(!data.merged&&data.state==='open'&&!data.draft&&navigator.credentials?.get){
+    const pkRes=await fetch('/api/brain/owner-passkeys',{credentials:'same-origin',cache:'no-store'});
+    const pkData=await pkRes.json().catch(()=>({}));
+    const creds=Array.isArray(pkData?.credentials)?pkData.credentials:[];
+    if(creds.length){
+     const select=el('select','ultron-pr-input');
+     for(const c of creds){const o=el('option','',String(c.label||'Owner passkey').slice(0,64));o.value=c.credentialId;select.append(o);}
+     const label=el('label','ultron-pr-label','Owner passkey');label.append(select);action.content.append(label);
+     const execBtn=el('button','ultron-action-run','Authorize & Squash Merge (Passkey)');execBtn.type='button';
+     const execStatus=statusMessage('Requires one device passkey confirmation. Posts verified receipt directly to chat.');
+     execBtn.addEventListener('click',async()=>{
+      execBtn.disabled=true;execStatus.textContent='Preparing passkey challenge…';
+      try{
+       const room=new URLSearchParams(location.search).get('room')||'owner-main';
+       const prepRes=await fetch('/api/brain/chat-execute',{method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({operation:'pr.merge',mode:'prepare',pullRequest:data.number,room,credentialId:select.value})});
+       const prep=await prepRes.json();
+       if(!prepRes.ok||!prep.ok)throw Error(prep.reason||'Prepare failed');
+       const dec=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),x=>x.charCodeAt(0));
+       const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+       const assertion=await navigator.credentials.get({publicKey:{
+        challenge:dec(prep.challenge),rpId:prep.rpId,
+        allowCredentials:[{type:'public-key',id:dec(prep.credentialId)}],
+        userVerification:'required',timeout:120000
+       }});
+       if(!assertion)throw Error('Passkey cancelled');
+       execStatus.textContent='Executing squash merge and verifying receipt…';
+       const proof={grantId:prep.grantId,credentialId:enc(assertion.rawId),
+        authenticatorData:enc(assertion.response.authenticatorData),
+        clientDataJSON:enc(assertion.response.clientDataJSON),
+        signature:enc(assertion.response.signature)};
+       const runRes=await fetch('/api/brain/chat-execute',{method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({operation:'pr.merge',mode:'execute',prepared:prep.prepared,proof})});
+       const out=await runRes.json();
+       if(!runRes.ok||!out.ok)throw Error(out.reason||'Merge held ('+(out.status||'unknown')+')');
+       execStatus.textContent='Verified squash merge completed: '+String(out.receipt?.details?.mergeCommitSha||'').slice(0,12)+'. Receipt posted to chat.';
+       $('refresh')?.click();
+      }catch(e){execStatus.textContent='Execution stopped: '+String(e.message||e);execBtn.disabled=false;}
+     });
+     action.content.append(execBtn);
+    }
+   }
    const compose=el('button','ultron-secondary-link','Discuss this merge with Ultron');
    compose.type='button';compose.addEventListener('click',()=>{
     action.dialog.close();if(body){body.value='Verify every required check and prepare an authorized squash merge for PR #'+intent.pr+'. Return exact evidence and any owner signing step.';body.dispatchEvent(new Event('input',{bubbles:true}));body.focus();}

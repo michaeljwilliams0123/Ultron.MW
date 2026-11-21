@@ -39,7 +39,15 @@ export default async function(req,res){
   // independent exact-main CI alone cannot prove a deployed artifact.
   councilCheck:councilSource.councilCheck,
   sourcePr:councilSource.sourcePr,deployment});
- return res.json({...proof,observation:{ciState:ci?.state??'unavailable',
+ const missingGates=[];
+ if(!proof.ci.verified)missingGates.push('ci');
+ if(!proof.council.verified)missingGates.push('council-7of7');
+ if(!deploymentRow)missingGates.push('signed-deployment-receipt');
+ missingGates.push('independent-manifest-readback');
+ return res.json({...proof,
+  driftDetails:{ciVerified:proof.ci.verified,councilVerified:proof.council.verified,
+   deploymentReceiptRecorded:!!deploymentRow,independentManifestReadback:false,missingGates},
+  observation:{ciState:ci?.state??'unavailable',
   councilSourceState:councilSource.councilCheck?'observed':'unavailable',
   deploymentState:deploymentRow?'receipt-only-unverified':'unavailable',
   runtimeState:observation.runtime?.state??'unavailable'}});
