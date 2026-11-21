@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,writeFileSync,mkdirSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,mkdirSync,rmSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -47,4 +47,17 @@ test('duplicate manifest entries fail closed',()=>{
  const out=run([{path:'duplicate.js',hash:sha('one')},
  {path:'duplicate.js',hash:sha('two')}]);
  assert.equal(out.code,1);assert.equal(out.body?.error,'manifest-duplicate-path');
+});
+
+test('symlinked source file cannot escape verified root, even with matching bytes',t=>{
+ let supported=true;
+ const out=run([{path:'leak.js',hash:sha('outside-file')}],root=>{
+  const target=join(root,'..','private-test-fixture.txt');
+  writeFileSync(target,'outside-file');
+  try{symlinkSync(target,join(root,'leak.js'),'file');}
+  catch(e){if(['EPERM','EACCES','ENOTSUP'].includes(e?.code)){supported=false;return;}throw e;}
+ });
+ if(!supported){t.skip('local OS disallows symlink fixture');return;}
+ assert.equal(out.code,1);
+ assert.equal(out.body?.error,'manifest-invalid-path');
 });

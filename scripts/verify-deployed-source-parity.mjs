@@ -4,7 +4,7 @@
  * Usage: node scripts/verify-deployed-source-parity.mjs manifest.json cloud/hatchable
  * Does not fetch, sign, submit, read configuration or certify runtime authority.
  */
-import {readFileSync} from 'node:fs';
+import {readFileSync,realpathSync} from 'node:fs';
 import {resolve,relative,isAbsolute,sep} from 'node:path';
 import {createHash} from 'node:crypto';
 import {deploymentArtifactDigest} from '../cloud/hatchable/lib/deployment-release-receipt/read.js';
@@ -21,7 +21,7 @@ if(!manifestArg||!sourceArg){
   const manifest=JSON.parse(readFileSync(manifestArg,'utf8'));
   if(!Array.isArray(manifest)||manifest.length===0)
    throw Error('manifest-invalid');
-  const root=resolve(sourceArg),seen=new Set();
+  const root=resolve(sourceArg),realRoot=realpathSync(root),seen=new Set();
   for(const file of manifest){
    const path=file?.path;
    if(typeof path!=='string'||!path||isAbsolute(path)||
@@ -42,7 +42,13 @@ if(!manifestArg||!sourceArg){
    if(rel.startsWith('..')||isAbsolute(rel))
     throw Error('manifest-invalid-path');
    let bytes;
-   try{bytes=readFileSync(full);}catch(e){
+   try{
+    const actual=realpathSync(full);
+    const actualRel=relative(realRoot,actual);
+    if(actualRel==='..'||actualRel.startsWith('..'+sep)||isAbsolute(actualRel))
+     throw Error('manifest-invalid-path');
+    bytes=readFileSync(actual);
+   }catch(e){
     if(e?.code==='ENOENT'){missing++;failures.push({path:file.path,state:'MISSING'});continue;}
     throw e;
    }
