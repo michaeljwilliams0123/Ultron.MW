@@ -5,7 +5,6 @@ import { verifyPersistedAcceptanceEvidence } from 'lib/acceptance-evidence.js';
 import { verifyPersistedHeldOutEvidence } from 'lib/heldout-evidence.js';
 import { buildCouncilRoomResult } from 'lib/council-room-core.js';
 import { collectResearchIntake } from 'lib/research-intake.js';
-import { readGithubPublic as github } from 'lib/github-public-read.js';
 
 const SITE = 'https://michaeljwilliams0123.github.io/Ultron.MW/';
 const SHA = /^[0-9a-f]{40}$/;
@@ -22,19 +21,27 @@ export const CAPABILITIES = [
 ];
 export const ALLOWED = new Set(CAPABILITIES.map(x=>x.id));
 function safeString(v,max=150){return String(v??'').slice(0,max);}
-async function currentMainSha(githubRead=github){
+async function currentMainSha(githubRead){
+ if(typeof githubRead!=='function')throw Error('authenticated-github-readback-unavailable');
  const ref=await githubRead('/git/ref/heads/main');
  if(!SHA.test(ref?.object?.sha||''))throw Error('invalid-main-ref');
  return ref.object.sha;
 }
-async function sourceBound(read,githubRead=github){
+async function sourceBound(read,githubRead){
  const before=await currentMainSha(githubRead);
  const result=await read(before);
  const after=await currentMainSha(githubRead);
  if(after!==before)throw Error('main-moved-during-observation');
  return {...result,source_sha:before};
 }
-export async function executeObjective(objective, {db,browser,task={},githubRead=github,githubFetch=fetch}){
+export async function executeObjective(objective, {db,browser,task={},githubRead,githubFetch}){
+ // Only council.room is strictly local. Every other objective requires the
+ // explicitly injected authenticated GitHub provider; never use native fetch
+ // or a shared anonymous GitHub quota as an implicit fallback.
+ if(objective!=='council.room'&&(
+  typeof githubRead!=='function'||
+  (objective==='research.intake'&&typeof githubFetch!=='function')))
+  throw Error('authenticated-github-readback-unavailable');
  const sourceBoundWithGithub=read=>sourceBound(read,githubRead);
  const at=new Date().toISOString();
  if(objective==='repo.inspect'){
