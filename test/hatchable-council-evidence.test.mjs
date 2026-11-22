@@ -37,7 +37,15 @@ async function coreUnderTest(){
  ).replace("from 'lib/research-intake.js'","from '"+researchUrl+"'"
  ).replace("from 'lib/github-public-read.js'","from '"+githubReadUrl+"'"
  )).toString('base64');
- return import(coreUrl);
+ const module=await import(coreUrl);
+ // Existing source-bound Council fixtures control the upstream response via
+ // globalThis.fetch. Inject this fake reader explicitly (never implicitly in
+ // production) to keep evidence and race assertions unchanged.
+ const {readGithubPublic}=await import(githubReadUrl);
+ return {...module,executeObjective:(objective,args)=>module.executeObjective(
+  objective,{...args,githubRead:readGithubPublic,
+   githubFetch:async()=>{throw Error('unexpected-research-fetch');}}
+ )};
 }
 
 const SHA='a'.repeat(40),OTHER_SHA='b'.repeat(40);

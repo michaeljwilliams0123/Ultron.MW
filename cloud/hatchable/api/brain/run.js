@@ -1,6 +1,7 @@
-import { db,browser,scheduler,config,events } from 'hatchable';
+import { db,browser,scheduler,config,events,api } from 'hatchable';
 import {notifyOwner} from 'lib/owner-live-events.js';
 import { runOne } from 'lib/brain-runner.js';
+import { createAuthenticatedBrainGithubRead } from 'lib/github-operator-brain-read.js';
 import {reconcileRecentNaturalSlots} from 'lib/scheduler-slot-reconciliation.js';
 import { readOwnerProfile } from 'lib/owner-autonomy-control.js';
 import { resumePendingMahoragaActions } from 'lib/mahoraga-actions.js';
@@ -12,9 +13,14 @@ export default async function(req,res){
  // This upper bound prevents untrusted configuration from creating unlimited
  // scheduler work in one invocation, while expanding the old fixed four.
  const batchLimit=Math.min(8,profile.limits.maxSteps);
+ // OAuth is a scoped, read-only provider proxy. Do not fall back to the
+ // anonymous GitHub API when the provider is unavailable or exhausted.
+ const {readRepo:githubRead,fetcher:githubFetch}=createAuthenticatedBrainGithubRead({
+  call:(name,request)=>api.call(name,request)
+ });
  const results=[];
  for(let i=0;i<batchLimit;i++){
-  const result=await runOne({db,browser});
+  const result=await runOne({db,browser,githubRead,githubFetch});
   results.push(result);
   if(result.status==='idle'||result.status==='lost-lease'||result.status==='paused')break;
  }
