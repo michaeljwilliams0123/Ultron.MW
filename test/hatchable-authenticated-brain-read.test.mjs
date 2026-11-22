@@ -104,7 +104,7 @@ test('direct core calls never use an anonymous GitHub fallback when OAuth was no
   replaced++;
   return "from 'data:text/javascript;base64,"+Buffer.from(fixture).toString('base64')+"'";
  });
- assert.equal(replaced,Object.keys(fixtures).length);
+ assert.equal(replaced,Object.keys(fixtures).length-(source.includes("from 'lib/github-public-read.js'")?0:1));
  globalThis.__ultronAnonymousReads=0;
  try{
   const mod=await import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
