@@ -65,6 +65,7 @@ function createDom(){
  let later=null;
  const refresh={click(){events.push('refresh')}};
  const doc={
+  body:{classList:{contains:name=>name==='u-council'}},
   hidden:false,
   addEventListener(name,handler){(listeners[name]??=[]).push(handler)},
   getElementById(id){return id==='refresh'?refresh:null}
