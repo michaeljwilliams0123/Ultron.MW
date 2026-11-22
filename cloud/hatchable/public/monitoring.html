@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Ultron · Monitoring</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/workspace-shell.css">
+<style>
+.monitor{max-width:1150px;margin:0 auto;padding:32px clamp(16px,4vw,44px)}
+.monitor-head{display:flex;align-items:start;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.monitor h1{margin:4px 0 8px}.monitor p{max-width:80ch}
+.monitor-kicker{color:#11695e;text-transform:uppercase;font:600 11px/1.6 'IBM Plex Mono',monospace;letter-spacing:.1em}
+.monitor-muted{color:#657675}
+.monitor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:24px}
+.monitor-card{background:#fff;border:1px solid #dbe3df;border-radius:13px;padding:22px;min-height:165px}
+.monitor-card h2{font-size:14px;margin:0 0 14px}
+.monitor-card strong{display:block;font-size:21px;font-weight:750;line-height:1.35;overflow-wrap:anywhere}
+.monitor-card p{font-size:12px;color:#657675;overflow-wrap:anywhere;line-height:1.65}
+.monitor-card small{display:block;color:#74877f;font:11px/1.6 'IBM Plex Mono',monospace}
+.monitor-card[data-state="healthy"]{border-left:4px solid #2b8366}
+.monitor-card[data-state="hold"]{border-left:4px solid #aa7533}
+.monitor-card[data-state="unavailable"]{border-left:4px solid #a34848}
+.monitor-card[data-state="unknown"]{border-left:4px solid #a0aba4}
+.monitor-foot{padding:22px;background:#edf3ef;border:1px solid #dbe3df;border-radius:12px;margin-top:18px}
+.monitor-foot h2{margin-top:0;font-size:17px}
+.monitor-links{display:flex;gap:16px;flex-wrap:wrap}
+.monitor button{min-width:120px}
+.monitor time,.monitor code{font-family:'IBM Plex Mono',monospace}
+@media(max-width:740px){.monitor-grid{grid-template-columns:1fr}.monitor{padding:20px 16px}}
+</style>
+<script src="/workspace-shell.js" defer></script>
+</head>
+<body>
+<main class="monitor" id="u-main-content">
+ <div class="monitor-head">
+  <div>
+   <div class="monitor-kicker">Ultron MW / Owner observability</div>
+   <h1>System monitoring</h1>
+   <p class="monitor-muted">One read-only view of live Hatchable and Cloudflare edge readbacks. Each card names the source and distinguishes observed state from release acceptance.</p>
+  </div>
+  <button type="button" id="monitor-refresh">Refresh evidence</button>
+ </div>
+ <p id="monitor-observed" class="monitor-muted" role="status" aria-live="polite">Evidence has not been checked.</p>
+ <section class="monitor-grid" aria-label="Live evidence">
+  <article class="monitor-card" id="monitor-runtime" data-state="unknown">
+   <h2>Hatchable / Cloud Brain</h2><strong id="monitor-runtime-state">Not checked</strong>
+   <p id="monitor-runtime-detail">Runtime availability only; not the result of a full task execution.</p>
+   <small>Source: /api/brain/status-public</small>
+  </article>
+  <article class="monitor-card" id="monitor-edge" data-state="unknown">
+   <h2>Cloudflare / Staging ingress</h2><strong id="monitor-edge-state">Not checked</strong>
+   <p id="monitor-edge-detail">Bounded staging health readback. Disabled ingress is not a failed production deployment.</p>
+   <small>Source: /api/brain/cloudflare-edge-health</small>
+  </article>
+  <article class="monitor-card" id="monitor-autonomy" data-state="unknown">
+   <h2>Hatchable / Autonomy profile</h2><strong id="monitor-autonomy-state">Not checked</strong>
+   <p id="monitor-autonomy-detail">Read-only profile validation. This is not proof of scheduler execution or permission to execute.</p>
+   <small>Source: /api/brain/autonomy (owner)</small>
+  </article>
+  <article class="monitor-card" id="monitor-release" data-state="unknown">
+   <h2>GitHub + Hatchable / Release proof</h2><strong id="monitor-release-state">Not checked</strong>
+   <p id="monitor-release-detail">CI, Council, and deployment evidence must all be independently accepted.</p>
+   <small>Source: /api/brain/release-proof (owner)</small>
+  </article>
+  <article class="monitor-card" data-state="unknown">
+   <h2>Cloudflare / Edge Shield telemetry</h2><strong>External observability</strong>
+   <p>Worker issue records, persistent logs, and traces are not ingested by this page. Inspect them using your authorized Cloudflare connection; an empty issue list is not proof of health.</p>
+   <small>Source: Cloudflare Workers Observability (separate authorization)</small>
+  </article>
+  <article class="monitor-card" data-state="unknown">
+   <h2>Hatchable / HTTP request errors</h2><strong>Host logs only</strong>
+   <p>HTTP 5xx history is not returned by these application endpoints. Read the Hatchable function logs to validate that scheduled runs recover.</p>
+   <small>Source: Hatchable function execution logs (separate authorization)</small>
+  </article>
+ </section>
+ <section class="monitor-foot" aria-labelledby="monitor-boundary-title">
+  <h2 id="monitor-boundary-title">Coverage and release boundary</h2>
+  <p>This page never executes work, changes credentials, or approves a release. A connected provider is not an owner signature. Cloudflare credentials connected to ChatGPT cannot be reused automatically by the Hatchable application.</p>
+  <div class="monitor-links">
+   <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer">Cloudflare observability</a>
+   <a href="https://hatchable.com/console/projects/ultron-mw-cloud" target="_blank" rel="noopener noreferrer">Hatchable console</a>
+   <a href="https://github.com/michaeljwilliams0123/Ultron.MW/actions" target="_blank" rel="noopener noreferrer">GitHub Actions</a>
+  </div>
+ </section>
+</main>
+<script>
+(function () {
+ 'use strict';
+ const byId = id => document.getElementById('monitor-' + id);
+ const refresh = byId('refresh');
+ const stamp = byId('observed');
+ let running = false;
+ const sources = [
+  {id:'runtime',path:'/api/brain/status-public',read:d=>{
+   if(d && d.ok===true && d.status==='active')return ['Responding','Last event: '+(d.lastEventAt||'not observed')+'; scheduled: '+(d.scheduler||'unverified')+'.','healthy'];
+   if(d && d.status==='paused')return ['Paused','Runtime reports a pause; no task execution should be inferred.','hold'];
+   return ['Unavailable','Runtime did not confirm an active state.','unavailable'];
+  }},
+  {id:'edge',path:'/api/brain/cloudflare-edge-health',read:d=>{
+   if(d && d.state==='observed' && d.executionAuthorized===false && d.ingressAccepting===true)
+    return ['Ingress accepting','Staging admission observed. This does not grant execution or GitHub access.','healthy'];
+   if(d && d.state==='observed' && d.executionAuthorized===false && d.ingressAccepting===false)
+    return ['Staging ingress closed','Staging is reachable but not accepting ingress; execution remains unauthorized.','hold'];
+   return ['Unverified','No accepted edge health readback was returned.','unknown'];
+  }},
+  {id:'autonomy',path:'/api/brain/autonomy',read:d=>{
+   const p=d&&d.profile;
+   if(d&&d.ok===true&&p&&p.maxPaidCents===0&&p.paused===false&&Number.isInteger(p.version))
+    return ['Profile valid · v'+p.version,'Preset: '+String(p.preset||'unknown')+'; $0 paid ceiling; execution authority is separate.','healthy'];
+   if(p&&p.paused===true)return ['Paused','Owner profile is currently paused.','hold'];
+   return ['Unverified','Owner profile could not be validated.','unavailable'];
+  }},
+  {id:'release',path:'/api/brain/release-proof',read:d=>{
+   if(d&&d.verified===true&&d.council?.verified===true&&d.deployment?.verified===true&&d.ci?.verified===true)
+    return ['Accepted','All independent release evidence returned verified=true.','healthy'];
+   if(d&&d.verified===false){
+    const missing=Array.isArray(d.driftDetails?.missingGates)?d.driftDetails.missingGates.filter(x=>typeof x==='string').slice(0,5).join(', '):'not supplied';
+    return ['Not accepted','CI: '+(d.ci?.verified===true?'verified':'unverified')+'; missing: '+missing+'.','hold'];
+   }
+   return ['Unverified','Release evidence has not been independently confirmed.','unknown'];
+  }}
+ ];
+ function set(id,state,detail,level){
+  byId(id).dataset.state=level;
+  byId(id+'-state').textContent=state;
+  byId(id+'-detail').textContent=detail;
+ }
+ async function check(s){
+  try{
+   const response=await fetch(s.path,{method:'GET',credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+   if(!response.ok){
+    const auth=response.status===401||response.status===403;
+    set(s.id,auth?'Owner sign-in required':'Readback unavailable',auth?'Protected route returned HTTP '+response.status+'.':'Endpoint returned HTTP '+response.status+'.','unknown');
+    return;
+   }
+   const data=await response.json();
+   const [state,detail,level]=s.read(data);
+   set(s.id,state,detail,level);
+  }catch{
+   set(s.id,'Readback unavailable','Network or response error. No healthy state inferred.','unknown');
+  }
+ }
+ async function run(){
+  if(running)return;
+  running=true;refresh.disabled=true;stamp.textContent='Checking live read-only sources...';
+  try{await Promise.all(sources.map(check));stamp.textContent='Readback completed: '+new Date().toLocaleString()+'. Host logs and Cloudflare telemetry remain separate.';}
+  finally{running=false;refresh.disabled=false;}
+ }
+ refresh.addEventListener('click',run);
+ void run();
+})();
+</script>
+</body>
+</html>
