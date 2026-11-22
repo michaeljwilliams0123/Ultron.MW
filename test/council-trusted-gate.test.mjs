@@ -46,6 +46,30 @@ test('7/7 on a non-sensitive change passes and is bound to the exact head',()=>{
  assert.equal(gatePasses(r,'c'.repeat(40),PR),false);
  assert.equal(gatePasses(r,HEAD,PR+1),false);
 });
+test('owner-routine non-security PR with 7/7 passes without P-256 prompt on transient model outage',()=>{
+ const data=evidence();
+ data.receipt.modelReview.results.Skeptic={role:'Skeptic',source:'unavailable',modelInvoked:false,verdict:'hold',disagreements:[]};
+ const ownerOk=run({...data,files:docs});
+ assert.equal(ownerOk.status,'accepted-owner-routine');
+ assert.equal(ownerOk.ownerRoutineVia,'owner-authored');
+ assert.deepEqual(ownerOk.modelHoldRoles,['Skeptic']);
+ assert.equal(gatePasses(ownerOk,HEAD,PR),true);
+ assert.equal(buildGateCheckRun(ownerOk,{sha:HEAD,prNumber:PR}).conclusion,'success');
+ // Non-owner / bot PR with model outage must still HOLD.
+ const botHeld=run({...data,files:docs,pr:pr(BOT)});
+ assert.equal(botHeld.status,'held');
+ assert.equal(gatePasses(botHeld,HEAD,PR),false);
+ // Security-sensitive PR with model outage still requires P-256 override.
+ const secHeld=run({...data,files:[{filename:'src/council-reasoning.mjs'}]});
+ assert.equal(secHeld.status,'held');
+ assert.equal(gatePasses(secHeld,HEAD,PR),false);
+ // Deterministic role hold (6/7) still holds even for owner.
+ data.report.memberAssessments[0].verdict='hold';
+ data.receipt.publication.members[0].conclusion='hold';
+ const detHeld=run({...data,files:docs});
+ assert.equal(detHeld.status,'held');
+ assert.equal(gatePasses(detHeld,HEAD,PR),false);
+});
 test('security sensitivity comes from changed paths, not PR text (H2)',()=>{
  for(const filename of ['.github/workflows/verify.yml','src/council-release-gate.mjs',
    'src/council-trusted-gate.mjs','scripts/enforce-council-acceptance.mjs',

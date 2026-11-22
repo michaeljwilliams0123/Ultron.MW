@@ -98,7 +98,7 @@ export function exactHeadReadState(expected,observed){
 }
 
 export function evaluateTrustedCouncilGate({report,receipt,pr,files,filesComplete,
- overrideComment=null,ownerPublicJwk=null,now=new Date().toISOString()}={}){
+ overrideComment=null,ownerPublicJwk=null,reviews=[],now=new Date().toISOString()}={}){
  if(!pr||pr.state!=='open'||!Number.isSafeInteger(pr.number)||pr.number<1||
    !SHA.test(pr.head?.sha||'')||!SHA.test(pr.base?.sha||'')||
    pr.base?.ref!=='main'||!canonical(pr.head?.repo)||!canonical(pr.base?.repo))
@@ -120,6 +120,26 @@ export function evaluateTrustedCouncilGate({report,receipt,pr,files,filesComplet
    overrideUsed:true,overrideCommentId:override.commentId,
    overrideReason:override.reason,overrideSignatureVerified:true});
  }
+ // Constant prompt-free owner-routine path: non-security-sensitive PRs authored
+ // or exact-head-approved by the owner with 7/7 deterministic Council approvals
+ // do not require a per-PR P-256 signature solely for transient model outages
+ // (when no model explicitly returned hold/revise).
+ if(!risk.security&&base.status==='held'&&base.reason==='council-not-unanimous'&&
+   base.approvedCount===7&&Array.isArray(base.holdRoles)&&base.holdRoles.length===0&&
+   Array.isArray(base.modelHoldRoles)&&base.modelHoldRoles.length>0&&
+   report?.hold===false&&receipt?.decision==='proceed'){
+  const results=receipt?.modelReview?.results||{};
+  const explicitModelHold=base.modelHoldRoles.some(role=>{
+   const m=results[role];
+   return m?.source==='model'&&m?.modelInvoked===true&&m?.verdict!=='proceed';
+  });
+  const intent=ownerIntent(pr,reviews);
+  if(intent.owner&&!explicitModelHold){
+   return Object.freeze({...base,...common,schema:'ultron.council-trusted-gate.v2',
+    status:'accepted-owner-routine',reason:'owner-routine-non-security-7of7',
+    ownerRoutineVia:intent.via});
+  }
+ }
  return Object.freeze({...base,...common,schema:'ultron.council-trusted-gate.v2'});
 }
 
@@ -129,6 +149,9 @@ export function gatePasses(result,sha,prNumber){
   result.schema==='ultron.council-trusted-gate.v2'&&
   ((result.status==='accepted'&&result.approvedCount===7&&
     result.securitySensitive===false)||
+   (result.status==='accepted-owner-routine'&&result.approvedCount===7&&
+    result.securitySensitive===false&&Array.isArray(result.holdRoles)&&
+    result.holdRoles.length===0)||
    (result.status==='owner-overridden'&&result.securitySensitive===true&&
     result.overrideUsed===true&&
     result.overrideSignatureVerified===true));
@@ -140,6 +163,8 @@ export function buildGateCheckRun(result,{sha,prNumber,detailsUrl}={}){
  const pass=gatePasses(result,sha,prNumber);
  const title=pass?(result.status==='accepted'?
    '7/7 Council roles and model reviews on exact head':
+   result.status==='accepted-owner-routine'?
+   '7/7 Council roles on exact head (owner-routine non-security)':
    'Signed owner exception #'+result.overrideCommentId):
   'Council HOLD: '+String(result?.reason||'no-trusted-result');
  const lines=[
