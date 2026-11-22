@@ -18,7 +18,7 @@ if(activePanel)activity.content.append(activePanel);
 const links=el('div','ultron-settings-links');
 for(const [title,href] of [
  ['Connections','/connectors.html'],['Owner passkeys','/passkey-owner.html'],
- ['Cloud controls','/index.html?controls=1'],['Repair operations','/repair-operations.html'],
+ ['Cloud controls','/index.html?controls=1'],['Monitoring','/monitoring.html'],['Repair operations','/repair-operations.html'],
  ['Workspaces & learning','/workspace.html'],['Local workbooks','/local-workbooks.html'],
  ['GitHub Actions','https://github.com/michaeljwilliams0123/Ultron.MW/actions']
 ]){const a=el('a','',title);a.href=href;if(href.startsWith('https:')){a.target='_blank';a.rel='noopener noreferrer';}links.append(a);}
