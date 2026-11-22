@@ -59,7 +59,22 @@ test('Council progress emits terminal and nonterminal states without claiming a 
  delete globalThis.__councilFastDb;
 });
 
-function createDom(){
+test('failed and error task states terminate owner polling, without disclosing the failure payload',async()=>{
+ let state='failed';
+ const m=await route(async()=>({rows:[{id:123,status:state,updated_at:'2026-11-22T14:00:00Z'}]}));
+ for(const value of ['failed','error','blocked','canceled']){
+  state=value;
+  const result=await m.default(request(),response());
+  assert.equal(result.status,200);
+  assert.equal(result.body.state,value);
+  assert.equal(result.body.terminal,true,value+' must terminate waiting');
+  assert.equal('result' in result.body,false);
+  assert.equal('message' in result.body,false);
+ }
+ delete globalThis.__councilFastDb;
+});
+
+function createDom(states=['queued','done']){
  const listeners={};
  const events=[];
  let later=null;
@@ -80,7 +95,8 @@ function createDom(){
   fetch:async(url,opts)=>{
    attempts++;
    responseStates.push({url:String(url),opts});
-   return {ok:true,json:async()=>({ok:true,taskId:42,state:attempts<2?'queued':'done',terminal:attempts>=2})};
+   const state=states[Math.min(attempts-1,states.length-1)];
+   return {ok:true,json:async()=>({ok:true,taskId:42,state,terminal:['done','blocked','canceled','failed','error'].includes(state)})};
   }
  };
  vm.runInNewContext(read('public/council-room-progress.js'),sandbox);
@@ -97,6 +113,16 @@ test('Council browser uses light GET fallback and refreshes only after a termina
  await x.timer.fn();await new Promise(r=>setImmediate(r));
  assert.deepEqual(x.events,['refresh']);
  assert.equal(x.timer,null,'stop when actual receipt is terminal');
+});
+test('browser refreshes once on a failed receipt and does not spin indefinitely',async()=>{
+ const x=createDom(['failed']);
+ x.listeners['ultron:council-submitted'][0]({detail:{taskId:42,room:'owner-main'}});
+ assert.ok(x.timer);
+ await x.timer.fn();
+ await new Promise(r=>setImmediate(r));
+ assert.deepEqual(x.events,['refresh']);
+ assert.equal(x.timer,null);
+ assert.equal(x.attempts,1);
 });
 test('normal Council send and initial room snapshot emit task events',()=>{
  const room=read('public/council-room.js');
