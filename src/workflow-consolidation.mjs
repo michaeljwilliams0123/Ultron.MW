@@ -131,7 +131,8 @@ export const OIDC_JOBS=Object.freeze({
  * Diagnostics may not trigger automatically on PRs/push/schedules: required
  * security and SDK checks stay inside verify.yml. */
 export const NON_LEGACY_WORKFLOWS=Object.freeze([
-  'council-required-status.yml','composio-v3.yml','secret-isolation.yml'
+  'council-required-status.yml','composio-v3.yml','secret-isolation.yml',
+  'council-deep-reasoning.yml'
 ]);
 
 export function laneFiles(){return Object.values(LANES).map(l=>l.file);}
