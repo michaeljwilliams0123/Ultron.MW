@@ -448,7 +448,12 @@ async function realGithubRunner(){
   .replace("from 'lib/council-room-core.js'","from '"+room+"'")
   .replace("from 'lib/github-public-read.js'","from '"+githubRead+"'");
  const core='data:text/javascript;base64,'+Buffer.from(source).toString('base64');
- return moduleUnderTest('brain-runner.js',core);
+ const runner=await moduleUnderTest('brain-runner.js',core);
+ // A fake anonymous reader is intentionally injected ONLY by these legacy
+ // quota/backoff tests. Production no longer has an implicit fallback.
+ const {readGithubPublic}=await import(githubRead);
+ return {runOne:args=>runner.runOne({...args,githubRead:readGithubPublic,
+  githubFetch:async()=>{throw Error('unexpected-research-fetch');}})};
 }
 
 test('cloud: GitHub 403 is a lease-fenced failure with bounded retry and later success',async()=>{
