@@ -1,0 +1,79 @@
+name: Ultron Council Deep Reasoning
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: Hatchable brain_tasks.id for the council.room job
+        required: true
+        type: string
+      request_digest:
+        description: SHA-256 hex digest of the council room request
+        required: true
+        type: string
+      room_key:
+        description: Council room thread key
+        required: true
+        type: string
+      callback_url:
+        description: Signed webhook callback URL on Hatchable
+        required: true
+        type: string
+        default: https://ultron-mw-cloud.hatchable.site/api/brain/council-deep-callback
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ultron-council-deep-${{ inputs.task_id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  council-deep-reasoning:
+    if: github.repository == 'michaeljwilliams0123/Ultron.MW'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - name: Install pinned dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run 7-role Council deep reasoning and post signed callback
+        env:
+          TASK_ID: ${{ inputs.task_id }}
+          REQUEST_DIGEST: ${{ inputs.request_digest }}
+          ROOM_KEY: ${{ inputs.room_key }}
+          CALLBACK_URL: ${{ inputs.callback_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ULTRON_EVENT_BRIDGE_HMAC_KEY: ${{ secrets.ULTRON_EVENT_BRIDGE_HMAC_KEY }}
+        run: |
+          set -euo pipefail
+          node --check scripts/council-deep-reasoning.mjs
+          node scripts/council-deep-reasoning.mjs
+
+      - name: Upload deep reasoning receipt artifact
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: council-deep-reasoning-${{ github.run_id }}
+          path: council-deep-result.json
+          if-no-files-found: ignore
+          retention-days: 14

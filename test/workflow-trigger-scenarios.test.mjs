@@ -12,6 +12,7 @@ const spec={
   'secret-isolation.yml':{triggers:['workflow_dispatch'],jobs:['source-secret-audit']},
   'cloud-pr.yml':{triggers:['workflow_call','issues'],jobs:['create-pr']},
   'council-debate.yml':{triggers:['issues','pull_request','workflow_call','workflow_dispatch'],jobs:['council-debate','prove','verify-principal']},
+  'council-deep-reasoning.yml':{triggers:['workflow_dispatch'],jobs:['council-deep-reasoning']},
   'council-required-status.yml':{triggers:['pull_request_target','issue_comment','workflow_run','workflow_dispatch'],jobs:['trusted-council-status']},
   'lane-governed-task.yml':{triggers:['issues','workflow_dispatch'],jobs:['work']},
   'lane-lab-evidence.yml':{triggers:['workflow_dispatch'],jobs:['heldout-evaluation','cpu-evaluation','generate','publish','held-out']},
@@ -122,7 +123,7 @@ test('historical incident matrix never turns unknown failures into success',()=>
     assert.equal(result.projected,incident.expected,file+': '+incident.log);
     count++;
   }
-  assert.equal(count,66);
+  assert.equal(count,72);
 });
 test('outcome reducer keeps every real failure red across all three-job permutations',()=>{
   const values=['red','admitted','success','neutral','skipped'];
