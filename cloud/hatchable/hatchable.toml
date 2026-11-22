@@ -154,6 +154,11 @@ name = "ULTRON_HATCHABLE_API_TOKEN"
 required = false
 description = "Owner-supplied Hatchable API token used only by /api/brain/release-proof to read back the live deployment file_manifest. Stored in protected Setup; never committed or exposed."
 
+[[secret]]
+name = "ORIGIN_LOCK_SECRET"
+required = false
+description = "Shared header credential sent by Cloudflare edge-shield (x-ultron-origin-lock) to verify edge origin."
+
 [[config]]
 name = "uuam_inbox_enabled"
 type = "boolean"

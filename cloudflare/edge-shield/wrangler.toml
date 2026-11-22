@@ -1,0 +1,50 @@
+name = "ultron-edge-shield"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+# No zones exist on this account yet. Uncomment when one does:
+# routes = [{ pattern = "ultron.example.com/*", zone_name = "example.com" }]
+
+[observability]
+enabled = true
+
+[vars]
+HATCHABLE_CORE_ORIGIN   = "https://ultron-mw-cloud.hatchable.site"
+HATCHABLE_RECEIPT_PATH  = "/api/brain/deployment-release-receipt"
+ORIGIN_LOCK_PROBE_PATH  = "/api/brain/origin-lock-probe"
+GITHUB_REPO             = "michaeljwilliams0123/Ultron.MW"
+OWNER_LOGIN             = "michaeljwilliams0123"
+ENVIRONMENT             = "production"
+ENFORCE_CSP             = "false"
+
+[[queues.producers]]
+binding = "EVENTS"
+queue   = "ultron-edge-events"
+
+[[queues.consumers]]
+queue             = "ultron-edge-events"
+max_batch_size    = 25
+max_batch_timeout = 5
+max_retries       = 3
+dead_letter_queue = "ultron-edge-events-dlq"
+
+[[durable_objects.bindings]]
+name       = "STREAM_HUB"
+class_name = "StreamHub"
+
+[[durable_objects.bindings]]
+name       = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[[migrations]]
+tag                = "v1"
+new_sqlite_classes = ["StreamHub", "RateLimiter"]
+
+[[workflows]]
+name       = "release-proof-watchdog"
+binding    = "RELEASE_PROOF"
+class_name = "ReleaseProofWorkflow"
+
+[triggers]
+crons = ["0 */6 * * *"]
