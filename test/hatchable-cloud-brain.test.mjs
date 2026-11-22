@@ -327,8 +327,9 @@ async function endpointUnderTest(name){
  const source=await readFile(new URL('../cloud/hatchable/api/brain/'+name+'.js',import.meta.url),'utf8');
  // Keep test fixture modules independent: Node caches identical data URLs.
  const dependency=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64')+'#'+(++endpointImportSequence);
- const platform=dependency('export const db=globalThis.__cloudEndpoint.db; export const browser={}; export const scheduler=globalThis.__cloudEndpoint.scheduler; export const config={}; export const events={publish:async()=>({id:1})};');
+ const platform=dependency('export const db=globalThis.__cloudEndpoint.db; export const browser={}; export const scheduler=globalThis.__cloudEndpoint.scheduler; export const config={}; export const events={publish:async()=>({id:1})}; export const api={call:async()=>({status:200,body:{}})};');
  const runner=dependency('export const runOne=(...args)=>globalThis.__cloudEndpoint.runOne(...args);');
+ const authenticated=dependency('export function createAuthenticatedBrainGithubRead(){return {readRepo:async()=>({}),fetcher:async()=>({status:200,ok:true,json:async()=>({})})};}');
  const mahoraga=dependency('export const resumePendingMahoragaActions=(...args)=>globalThis.__cloudEndpoint.resumePendingMahoragaActions(...args);');
  const profile=dependency('export const readOwnerProfile=async()=>globalThis.__cloudEndpoint.readOwnerProfile?.()??{limits:{maxSteps:4}};');
  const recovery=dependency('export const recoverMissedHours=async()=>({recoveredCount:0,windowHours:6});');
@@ -336,6 +337,7 @@ async function endpointUnderTest(name){
  const slotReconciliation=dependency('export const reconcileRecentNaturalSlots=async()=>({checked:0,completed:0,failed:0});');
  const transformed=source.replace("from 'hatchable'","from '"+platform+"'")
   .replace("from 'lib/brain-runner.js'","from '"+runner+"'")
+  .replace("from 'lib/github-operator-brain-read.js'","from '"+authenticated+"'")
   .replace("from 'lib/mahoraga-actions.js'","from '"+mahoraga+"'")
   .replace("from 'lib/owner-autonomy-control.js'","from '"+profile+"'")
   .replace("from 'lib/scheduler-recovery.js'","from '"+recovery+"'")
@@ -446,7 +448,12 @@ async function realGithubRunner(){
   .replace("from 'lib/council-room-core.js'","from '"+room+"'")
   .replace("from 'lib/github-public-read.js'","from '"+githubRead+"'");
  const core='data:text/javascript;base64,'+Buffer.from(source).toString('base64');
- return moduleUnderTest('brain-runner.js',core);
+ const runner=await moduleUnderTest('brain-runner.js',core);
+ // A fake anonymous reader is intentionally injected ONLY by these legacy
+ // quota/backoff tests. Production no longer has an implicit fallback.
+ const {readGithubPublic}=await import(githubRead);
+ return {runOne:args=>runner.runOne({...args,githubRead:readGithubPublic,
+  githubFetch:async()=>{throw Error('unexpected-research-fetch');}})};
 }
 
 test('cloud: GitHub 403 is a lease-fenced failure with bounded retry and later success',async()=>{

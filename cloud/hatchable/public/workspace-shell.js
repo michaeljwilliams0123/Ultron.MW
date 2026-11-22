@@ -3,6 +3,7 @@
   ['/council-room.html','Council','Conversations & decisions','conversation'],
   ['/workspace.html','Workspace','Objectives, learning & systems','workspace'],
   ['/','Cloud controls','Runtime & activity','cloud'],
+  ['/monitoring.html','Monitoring','Read-only system evidence','cloud'],
   ['/connectors.html','Connections','Providers & capabilities','connections'],
   ['/repair-operations.html','Operations','Repairs & governed execution','operations'],
   ['/passkey-owner.html','Owner access','Passkeys & identity','access'],

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ultron — Edge Status</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+           background: #0b0d10; color: #e6e9ef; display: grid; place-items: center; min-height: 100vh; }
+    main { width: min(680px, 92vw); padding: 2rem; border: 1px solid #232830; border-radius: 12px; }
+    h1 { font-size: 1rem; letter-spacing: .18em; text-transform: uppercase; color: #8b95a5; margin: 0 0 1.25rem; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+    .ok { color: #4ade80; } .bad { color: #f87171; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Ultron · Edge Status</h1>
+    <pre id="out">loading…</pre>
+  </main>
+  <script>
+    const out = document.getElementById("out");
+    const paint = (t, cls) => { out.textContent = t; out.className = cls || ""; };
+    (async () => {
+      try {
+        const [health, status] = await Promise.all([
+          fetch("/__ultron/health").then(r => r.json()),
+          fetch("/api/brain/status-public").then(r => r.json()).catch(() => null),
+        ]);
+        paint(JSON.stringify({ edge: health, hatchable: status }, null, 2), "ok");
+      } catch (e) {
+        paint("edge unreachable: " + e.message, "bad");
+      }
+    })();
+  </script>
+</body>
+</html>

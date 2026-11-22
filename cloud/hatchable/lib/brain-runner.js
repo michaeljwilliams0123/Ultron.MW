@@ -3,7 +3,7 @@ import { readExecutionControl } from 'lib/runtime-control.js';
 
 // Each transition and its authoritative receipt must commit in ONE SQL statement.
 // This prevents receipt/state divergence on interrupted database calls.
-export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
+export async function runOne({db,browser,githubRead,githubFetch,heartbeatIntervalMs=20_000}){
  if(!Number.isSafeInteger(heartbeatIntervalMs)||heartbeatIntervalMs<1||heartbeatIntervalMs>20_000)
   throw Error('invalid-heartbeat-interval');
  // Fail closed if the independently persisted owner stop is unavailable.
@@ -94,7 +94,7 @@ export async function runOne({db,browser,heartbeatIntervalMs=20_000}){
  try{
   // Future external-write objectives must still use a durable checkpoint and
   // provider-side preconditions; cooperative leases alone are not exactly-once.
-  result=await executeObjective(task.objective,{db,browser,task:{
+  result=await executeObjective(task.objective,{db,browser,githubRead,githubFetch,task:{
    id:task.id,taskKey:task.task_key,attempt:task.attempts,
    fencingGeneration:task.fencing_generation
   }});
