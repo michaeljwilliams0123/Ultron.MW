@@ -75,7 +75,7 @@ function createDom(){
  const sandbox={
   document:doc,location:{origin:'https://ultron-mw-cloud.hatchable.site'},
   URL,Date,Number,Math,Map,
-  setTimeout(fn,ms){later={fn,ms};return 1},
+  setTimeout(fn,ms){later={fn:()=>{later=null;return fn()},ms};return 1},
   clearTimeout(){later=null},
   fetch:async(url,opts)=>{
    attempts++;
