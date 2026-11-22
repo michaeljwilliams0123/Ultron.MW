@@ -33,7 +33,7 @@ export default async function(req,res){
   if(!row)return reply(res,404,{ok:false,error:'task-not-found'});
   const state=row.status==='leased'?'running':String(row.status||'unknown');
   return reply(res,200,{ok:true,taskId,state,
-   terminal:['done','blocked','canceled'].includes(state),
+   terminal:['done','blocked','canceled','failed','error'].includes(state),
    updatedAt:row.updated_at});
  }catch{
   return reply(res,503,{ok:false,error:'progress-unavailable'});
