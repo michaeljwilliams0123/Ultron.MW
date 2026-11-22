@@ -22,27 +22,28 @@ export const CAPABILITIES = [
 ];
 export const ALLOWED = new Set(CAPABILITIES.map(x=>x.id));
 function safeString(v,max=150){return String(v??'').slice(0,max);}
-async function currentMainSha(){
- const ref=await github('/git/ref/heads/main');
+async function currentMainSha(githubRead=github){
+ const ref=await githubRead('/git/ref/heads/main');
  if(!SHA.test(ref?.object?.sha||''))throw Error('invalid-main-ref');
  return ref.object.sha;
 }
-async function sourceBound(read){
- const before=await currentMainSha();
+async function sourceBound(read,githubRead=github){
+ const before=await currentMainSha(githubRead);
  const result=await read(before);
- const after=await currentMainSha();
+ const after=await currentMainSha(githubRead);
  if(after!==before)throw Error('main-moved-during-observation');
  return {...result,source_sha:before};
 }
-export async function executeObjective(objective, {db,browser,task={}}){
+export async function executeObjective(objective, {db,browser,task={},githubRead=github,githubFetch=fetch}){
+ const sourceBoundWithGithub=read=>sourceBound(read,githubRead);
  const at=new Date().toISOString();
  if(objective==='repo.inspect'){
-  const sha=await currentMainSha();
+  const sha=await currentMainSha(githubRead);
   return {objective,at,source:'github-api',repository:'michaeljwilliams0123/Ultron.MW',sha};
  }
  if(objective==='repo.prs'){
-  return sourceBound(async()=>{
-   const rows=await github('/pulls?state=open&per_page=12&sort=updated&direction=desc');
+  return sourceBoundWithGithub(async()=>{
+   const rows=await githubRead('/pulls?state=open&per_page=12&sort=updated&direction=desc');
    if(!Array.isArray(rows))throw Error('invalid-pr-response');
    return {objective,at,source:'github-api',count:rows.length,
     partial:rows.length===12,prs:rows.map(p=>({number:p.number,
@@ -51,8 +52,8 @@ export async function executeObjective(objective, {db,browser,task={}}){
   });
  }
  if(objective==='repo.ci'){
-  return sourceBound(async sourceSha=>{
-   const data=await github('/actions/runs?head_sha='+encodeURIComponent(sourceSha)+'&per_page=12');
+  return sourceBoundWithGithub(async sourceSha=>{
+   const data=await githubRead('/actions/runs?head_sha='+encodeURIComponent(sourceSha)+'&per_page=12');
    if(!Array.isArray(data.workflow_runs)||!Number.isSafeInteger(data.total_count)||
       data.total_count<0)throw Error('invalid-runs-response');
    const runs=data.workflow_runs.map(r=>({id:r.id,name:safeString(r.name,90),
@@ -62,7 +63,7 @@ export async function executeObjective(objective, {db,browser,task={}}){
     r.event==='push').sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at)||
      b.id-a.id)[0];
    if(selected){
-    const jobs=await github('/actions/runs/'+selected.id+'/jobs?per_page=100');
+    const jobs=await githubRead('/actions/runs/'+selected.id+'/jobs?per_page=100');
     if(!Array.isArray(jobs.jobs)||!Number.isSafeInteger(jobs.total_count)||
        jobs.total_count<0)throw Error('invalid-jobs-response');
     selected.jobs_complete=jobs.total_count===jobs.jobs.length&&jobs.total_count<100;
@@ -77,7 +78,7 @@ export async function executeObjective(objective, {db,browser,task={}}){
   });
  }
  if(objective==='site.render'){
-  return sourceBound(async()=>{
+  return sourceBoundWithGithub(async()=>{
    const html=await browser.html(SITE);
    if(typeof html!=='string' || !html.length)throw Error('empty-rendered-page');
    const title=(html.match(/<title[^>]*>([^<]*)<\/title>/i)||[])[1]||'';
@@ -90,7 +91,7 @@ export async function executeObjective(objective, {db,browser,task={}}){
   });
  }
  if(objective==='research.intake'){
-  return sourceBound(async()=>collectResearchIntake());
+  return sourceBoundWithGithub(async()=>collectResearchIntake({fetcher:githubFetch}));
  }
  if(objective==='council.room'){
   const row=(await db.query(`SELECT m.id,m.body,m.mentions,m.context,m.created_at
@@ -102,7 +103,7 @@ export async function executeObjective(objective, {db,browser,task={}}){
  if(objective==='council.review'){
   const objectiveId=typeof task.taskKey==='string'&&task.taskKey?
    task.taskKey:'council-review-unbound';
-  const sourceSha=await currentMainSha();
+  const sourceSha=await currentMainSha(githubRead);
   const recent=(await db.query(`SELECT t.id,t.task_key,t.objective,t.status,t.last_result,t.updated_at,
    (SELECT e.id FROM brain_events e WHERE e.task_id=t.id AND e.event_type='observed'
     ORDER BY e.id DESC LIMIT 1) AS receipt_id
@@ -196,7 +197,7 @@ export async function executeObjective(objective, {db,browser,task={}}){
    lease:{state:'active',tokenMatches:true},provider:{required:false},
    identityAttestations,evaluation,trustedAdapterEvidence
   });
-  if(await currentMainSha()!==sourceSha)throw Error('main-moved-during-council-evaluation');
+  if(await currentMainSha(githubRead)!==sourceSha)throw Error('main-moved-during-council-evaluation');
   return {objective,at,source:'local-evidence-only',source_sha:sourceSha,
    evidence_count:recent.length,advisory,assessment_receipts:assessmentReceipts,
    promotion_gate:promotionGate,
