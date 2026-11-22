@@ -6,7 +6,7 @@
  const endpoint='/api/brain/council-room-progress';
  const watched=new Map();
  let room='owner-main',timer=null,checking=false,checks=0;
- const terminal=new Set(['done','blocked','canceled']);
+ const terminal=new Set(['done','blocked','canceled','failed','error']);
  const finiteId=value=>{
   const n=Number(value);return Number.isSafeInteger(n)&&n>0?n:null;
  };
