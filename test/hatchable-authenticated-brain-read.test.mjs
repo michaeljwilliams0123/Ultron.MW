@@ -85,3 +85,34 @@ test('production scheduler injects OAuth read functions into fenced task runner'
  assert.match(core,/collectResearchIntake\(\{fetcher:githubFetch\}\)/);
  assert.match(core,/currentMainSha\(githubRead\)/);
 });
+
+
+test('direct core calls never use an anonymous GitHub fallback when OAuth was not injected',async()=>{
+ const source=readFileSync(new URL('../cloud/hatchable/lib/brain-core.js',import.meta.url),'utf8');
+ const fixtures={
+  'council-evidence.js': 'export const buildCouncilAssessmentReceipts=()=>[];export const evaluateCouncilEvidence=()=>({});',
+  'acceptance-evidence.js': 'export const verifyPersistedAcceptanceEvidence=async()=>({reviewer:false});',
+  'heldout-evidence.js': 'export const verifyPersistedHeldOutEvidence=async()=>({evaluation:false});',
+  'council-room-core.js': 'export const buildCouncilRoomResult=async()=>({});',
+  'research-intake.js': 'export const collectResearchIntake=async()=>({objective:"research.intake"});',
+  'github-public-read.js': 'export const readGithubPublic=async()=>{globalThis.__ultronAnonymousReads=(globalThis.__ultronAnonymousReads||0)+1;throw Error("anonymous-fallback-reached");};'
+ };
+ let replaced=0;
+ const transformed=source.replace(/from 'lib\/([^']+)'/g,(whole,name)=>{
+  const fixture=fixtures[name];
+  assert.ok(fixture,'Unexpected dependency '+name);
+  replaced++;
+  return "from 'data:text/javascript;base64,"+Buffer.from(fixture).toString('base64')+"'";
+ });
+ assert.equal(replaced,Object.keys(fixtures).length);
+ globalThis.__ultronAnonymousReads=0;
+ try{
+  const mod=await import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
+  for(const objective of ['repo.inspect','repo.prs','repo.ci','site.render','research.intake','council.review']){
+   await assert.rejects(mod.executeObjective(objective,{db:{},browser:{}}),
+    /authenticated-github-readback-unavailable/,
+    objective+' must fail closed without an authenticated provider');
+  }
+  assert.equal(globalThis.__ultronAnonymousReads,0,'must never contact anonymous GitHub API');
+ }finally{delete globalThis.__ultronAnonymousReads;}
+});
