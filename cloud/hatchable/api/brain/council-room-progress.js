@@ -28,7 +28,9 @@ export default async function(req,res){
    'WHERE t.id=$1 AND m.room_key=$2 '+
    "AND m.author_type='owner' AND m.author_id='michaeljwilliams0123' "+
    "AND t.objective='council.room' LIMIT 1";
-  const rows=(await db.query(sql,[taskId,room])).rows;
+  // Pass the validated decimal string `raw` (already checked as <= MAX_SAFE_INTEGER)
+  // so PostgreSQL bigint receives an exact integer string without float64 coercion.
+  const rows=(await db.query(sql,[raw,room])).rows;
   const row=rows[0];
   if(!row)return reply(res,404,{ok:false,error:'task-not-found'});
   const state=row.status==='leased'?'running':String(row.status||'unknown');

@@ -28,7 +28,7 @@ test('Council progress is authenticated, read-only and scoped to the conversatio
  assert.equal(result.status,200);
  assert.deepEqual({id:result.body.taskId,state:result.body.state,finished:result.body.terminal},
   {id:123,state:'done',finished:true});
- assert.deepEqual(calls[0].values,[123,'owner-main']);
+ assert.deepEqual(calls[0].values,['123','owner-main']);
  assert.match(calls[0].sql,/JOIN council_room_jobs/);
  assert.match(calls[0].sql,/JOIN council_room_messages/);
  assert.match(calls[0].sql,/m\.room_key=\$2/);
@@ -124,6 +124,48 @@ test('browser refreshes once on a failed receipt and does not spin indefinitely'
  assert.equal(x.timer,null);
  assert.equal(x.attempts,1);
 });
+test('browser recovers from transient network errors and stops after 120s timeout',async()=>{
+ const listeners={};
+ const events=[];
+ let later=null,now=1000,attempts=0;
+ const doc={
+  body:{classList:{contains:name=>name==='u-council'}},
+  hidden:false,
+  addEventListener(name,handler){(listeners[name]??=[]).push(handler)},
+  getElementById(id){return id==='refresh'?{click(){events.push('refresh')}}:null}
+ };
+ class FakeDate{static now(){return now}}
+ const sandbox={
+  document:doc,location:{origin:'https://ultron-mw-cloud.hatchable.site'},
+  URL,Date:FakeDate,Number,Math,Map,
+  setTimeout(fn,ms){later={fn:()=>{later=null;return fn()},ms};return 1},
+  clearTimeout(){later=null},
+  fetch:async()=>{
+   attempts++;
+   if(attempts===1)return {ok:false,status:503,json:async()=>({ok:false})};
+   if(attempts===2)return {ok:true,json:async()=>({ok:true,taskId:42,state:'done',terminal:true})};
+   return {ok:true,json:async()=>({ok:true,taskId:42,state:'queued',terminal:false})};
+  }
+ };
+ vm.runInNewContext(read('public/council-room-progress.js'),sandbox);
+ listeners['ultron:council-submitted'][0]({detail:{taskId:42,room:'owner-main'}});
+ assert.ok(later);
+ await later.fn();await new Promise(r=>setImmediate(r));
+ assert.deepEqual(events,[]);
+ assert.ok(later,'retries after transient 503');
+ await later.fn();await new Promise(r=>setImmediate(r));
+ assert.deepEqual(events,['refresh']);
+ assert.equal(later,null);
+ // Timeout after 120s stops polling without spurious refresh
+ attempts=10;
+ listeners['ultron:council-submitted'][0]({detail:{taskId:43,room:'owner-main'}});
+ assert.ok(later);
+ now+=120001;
+ await later.fn();await new Promise(r=>setImmediate(r));
+ assert.equal(later,null,'stops polling after 120s timeout');
+ assert.deepEqual(events,['refresh']);
+});
+
 test('normal Council send and initial room snapshot emit task events',()=>{
  const room=read('public/council-room.js');
  const html=read('public/council-room.html');
