@@ -12,6 +12,9 @@ const MODES=new Set(Object.keys(DEFAULT_OPERATIONS));
 const OPS=new Set([...RELEASE,'mcp.queue.submit','mcp.task.control',
  'repo.issue.create','repo.verify.dispatch','graph.workbook.cell.write','github.issue.write',
  'gitlab.branch.create','owner.passkey.enroll',
+ // Deployment receipt intent is owner-selectable only; actual release still
+ // requires the independent, resource-bound signed P-256 owner grant.
+ 'cloud.deploy',
  // #412: owner-selectable only; never part of any DEFAULT_OPERATIONS preset.
  'repair.branch.create']);
 const LIMIT_BOUNDS={maxFiles:[1,64],maxFileBytes:[1000,100000],
