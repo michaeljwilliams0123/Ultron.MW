@@ -39,13 +39,16 @@ export default {
       return handleGithubWebhook(request, env);
     }
     if (path.startsWith("/__ultron/admin")) return handleAdmin(request, env, ctx);
-    const verdict = await enforceRateLimit(request, env, policyFor(path));
-    if (!verdict.allowed) {
-      return applyOwnHeaders(
-        json({ error: "rate_limited", retryAfter: verdict.retryAfter }, 429, {
-          "Retry-After": String(verdict.retryAfter),
-        }),
-      );
+    const policy = policyFor(path);
+    if (policy) {
+      const verdict = await enforceRateLimit(request, env, policy);
+      if (!verdict.allowed) {
+        return applyOwnHeaders(
+          json({ error: "rate_limited", retryAfter: verdict.retryAfter }, 429, {
+            "Retry-After": String(verdict.retryAfter),
+          }),
+        );
+      }
     }
     if (path.startsWith("/__ultron/stream")) return handleStream(request, env);
     return applyProxyHeaders(await proxyToOrigin(request, env, ctx), env);

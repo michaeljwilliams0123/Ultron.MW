@@ -47,4 +47,4 @@ binding    = "RELEASE_PROOF"
 class_name = "ReleaseProofWorkflow"
 
 [triggers]
-crons = ["0 * * * *"]
+crons = ["0 */6 * * *"]

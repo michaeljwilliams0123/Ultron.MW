@@ -78,23 +78,24 @@ export class StreamHub implements DurableObject {
             const head = (await state.storage.get<number>("seq")) ?? 0;
             if (head > cursor) {
               const from = Math.max(cursor + 1, head - 100);
-              for (let s = from; s <= head; s++) {
-                const rec = await state.storage.get<{
-                  seq: number;
-                  at: number;
-                  event: unknown;
-                }>(`e:${s}`);
-                if (rec) {
-                  controller.enqueue(
-                    encoder.encode(`id: ${rec.seq}\ndata: ${JSON.stringify(rec)}\n\n`),
-                  );
-                }
+              const entries = await state.storage.list<{
+                seq: number;
+                at: number;
+                event: unknown;
+              }>({ prefix: "e:" });
+              const batch = [...entries.values()]
+                .filter((rec) => rec && rec.seq >= from && rec.seq <= head)
+                .sort((a, b) => a.seq - b.seq);
+              for (const rec of batch) {
+                controller.enqueue(
+                  encoder.encode(`id: ${rec.seq}\ndata: ${JSON.stringify(rec)}\n\n`),
+                );
               }
               cursor = head;
             } else {
               controller.enqueue(encoder.encode(": keepalive\n\n"));
             }
-            await scheduler.wait(1000);
+            await scheduler.wait(2000);
           }
           controller.close();
         } catch {

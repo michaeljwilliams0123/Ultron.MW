@@ -28,4 +28,4 @@ max_retries       = 3
 dead_letter_queue = "ultron-edge-events-dlq"
 
 [triggers]
-crons = ["0 * * * *"]
+crons = ["0 */6 * * *"]

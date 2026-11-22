@@ -150,7 +150,7 @@ export interface Policy {
   windowMs: number;
 }
 
-export function policyFor(pathname: string): Policy {
+export function policyFor(pathname: string): Policy | null {
   if (pathname === "/api/brain/chat-execute") return { limit: 10, windowMs: 60_000 };
   if (pathname === "/api/brain/deployment-release-receipt")
     return { limit: 10, windowMs: 60_000 };
@@ -158,7 +158,7 @@ export function policyFor(pathname: string): Policy {
     return { limit: 20, windowMs: 60_000 };
   if (pathname.startsWith("/__ultron/stream")) return { limit: 30, windowMs: 60_000 };
   if (pathname.startsWith("/api/")) return { limit: 120, windowMs: 60_000 };
-  return { limit: 600, windowMs: 60_000 };
+  return null;
 }
 
 export interface Verdict {
