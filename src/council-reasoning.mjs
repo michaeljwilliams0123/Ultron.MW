@@ -212,7 +212,22 @@ export async function runReasoningRound({input,deterministic,...opts}){
  const critical=['Builder','Skeptic','Sentinel'];
  const order=[...critical,...Object.keys(REASONING_ROLES).filter(role=>!critical.includes(role))];
  const invoked={};
- for(const role of order)invoked[role]=await reasonAsRole({role,input,deterministic:deterministic?.[role],...opts});
+ // Protect limited free quotas: release-critical roles finish before any
+ // optional roles begin. Within each stage, at most two model calls may run
+ // simultaneously. No retries, additional roles, or paid providers are added.
+ async function runStage(roles){
+  let cursor=0;
+  const workers=Math.min(2,roles.length);
+  await Promise.all(Array.from({length:workers},async()=>{
+   while(cursor<roles.length){
+    const role=roles[cursor++];
+    invoked[role]=await reasonAsRole({role,input,
+     deterministic:deterministic?.[role],...opts});
+   }
+  }));
+ }
+ await runStage(critical);
+ await runStage(order.slice(critical.length));
  const results=Object.fromEntries(Object.keys(REASONING_ROLES).map(role=>[role,invoked[role]]));
  const vs=Object.values(results).map(r=>r.verdict);
  const disagreement=new Set(vs).size>1;

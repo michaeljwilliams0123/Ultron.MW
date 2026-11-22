@@ -136,3 +136,40 @@ test('release-critical real model roles run before advisory roles under free-tie
   'role publication order and identity labels must remain stable');
  assert.equal(round.aiReasoned,true);
 });
+
+
+test('free-tier roles are executed with bounded parallelism and critical-first completion',async()=>{
+ const {REASONING_ROLES}=await import('../src/council-reasoning.mjs');
+ let active=0,maxActive=0,numberOfCalls=0;
+ const started=[],finished=[],advisoryStartEvidence=[];
+ const critical=['Builder','Skeptic','Sentinel'];
+ const output=JSON.stringify({
+  verdict:'proceed',confidence:0.78,rationale:'Bounded evidence reviewed',
+  findings:[],tests:[],disagreements:[]
+ });
+ const fetchImpl=async(_url,opts)=>{
+  const request=JSON.parse(opts.body);
+  const prompt=request.systemInstruction?.parts?.[0]?.text||'';
+  const role=Object.entries(REASONING_ROLES).find(([,message])=>prompt.startsWith(message))?.[0];
+  assert.ok(role,'model request includes a known role');
+  if(!critical.includes(role))advisoryStartEvidence.push([...finished]);
+  started.push(role);numberOfCalls++;
+  active++;maxActive=Math.max(maxActive,active);
+  try{await new Promise(resolve=>setImmediate(resolve));}
+  finally{active--;finished.push(role);}
+  return{ok:true,status:200,headers:new Map(),
+   json:async()=>({candidates:[{content:{parts:[{text:output}]}}]})};
+ };
+ const round=await runReasoningRound({input:'public exact-head code',env:{GEMINI_API_KEY:'free-test-key'},
+  fetchImpl,order:['google']});
+ assert.equal(maxActive,2,'two concurrent requests reduce delay without quota bursts');
+ assert.equal(numberOfCalls,7,'parallelism does not increase free-model request count');
+ assert.deepEqual(started.slice(0,3),critical,'critical roles receive quota first');
+ assert.ok(advisoryStartEvidence.length>0);
+ assert.ok(advisoryStartEvidence.every(done=>critical.every(role=>done.includes(role))),
+  'no advisory model call until all release-critical roles finish');
+ assert.equal(round.modelInvocations,7);
+ assert.equal(round.aiReasoned,true);
+ assert.deepEqual(Object.keys(round.results),Object.keys(REASONING_ROLES));
+ assert.ok(Object.values(round.results).every(value=>value.paidInference===false));
+});
