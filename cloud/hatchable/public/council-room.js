@@ -232,6 +232,8 @@ async function load(before=null){
   state.members=data.members||[];state.jobs=data.jobs||[];state.nextCursor=data.nextCursor;
   state.messages=[...new Map((before?[...(data.messages||[]),...state.messages]:(data.messages||[])).map(m=>[m.id,m])).values()];
   renderMembers();renderMessages(!!before);renderJobs();
+  // A lightweight status reader recovers terminal results if live events fail.
+  document.dispatchEvent(new CustomEvent('ultron:council-jobs',{detail:{room,jobs:state.jobs.map(j=>({taskId:j.taskId,state:j.state}))}}));
   $('load-more').hidden=!state.nextCursor;
   pill('live');
   status(data.room?.archived?'Archived conversation · restore it to send a message':
@@ -272,6 +274,7 @@ async function send(){
   state.pendingKey=null;state.pendingPayload=null;
   $('composer-body').value='';$('attachment-url').value='';$('char-count').textContent='0 / 6000';
   document.querySelectorAll('#mention-row input').forEach(x=>x.checked=false);
+  document.dispatchEvent(new CustomEvent('ultron:council-submitted',{detail:{room,taskId:Number(data.taskId)}}));
   await load();status(data.scheduled?'Message recorded; council runner is awake.':'Message recorded; runner wake will retry from the durable queue.');
  }catch(error){if(state.room===room)status('Message not confirmed: '+String(error.message||error)+(state.pendingPayload?'. Your original message is preserved. Retry sends that same message once; refresh checks recorded history.':'. Your text is preserved. Correct it and try again.'),true)}
  finally{state.sending=false;composerEnabled(state.ready);}
