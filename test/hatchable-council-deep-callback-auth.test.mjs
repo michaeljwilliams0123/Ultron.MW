@@ -8,7 +8,7 @@ assert.ok(source.startsWith(marker));
 const testable=source.replace(marker,'const {db,webhooks,config,events}=globalThis.__callbackTestSdk;');
 let importCounter=0;
 
-async function probe({storedDigest=null,lastDigest=null,taskStatus='external',payloadDigest='a'.repeat(64)}={}){
+async function probe({storedDigest=null,lastDigest=null,taskStatus='external',payloadDigest='a'.repeat(64),updateAccepted=true}={}){
  const updates=[],published=[];
  globalThis.__callbackTestSdk={
   config:{get:async()=>'x'.repeat(64)},
@@ -21,7 +21,7 @@ async function probe({storedDigest=null,lastDigest=null,taskStatus='external',pa
     request_digest:storedDigest,room_key:'owner-main'
    }]};
    updates.push(sql);
-   return {rows:[{task_id:5,job_id:2,inserted_message_id:4}]};
+   return {rows:[{task_id:updateAccepted?5:null,job_id:updateAccepted?2:null,inserted_message_id:updateAccepted?4:null}]};
   }}
  };
  const handler=(await import('data:text/javascript;base64,'+Buffer.from(testable).toString('base64')+'#'+(++importCounter))).default;
@@ -63,5 +63,12 @@ test('canceled task cannot be revived by a late signed callback',async()=>{
  assert.equal(r.status,409);
  assert.equal(r.body.error,'callback-task-terminal');
  assert.equal(r.updates,0);
+ assert.equal(r.published,0);
+});
+
+test('database fence denial never publishes a Council result',async()=>{
+ const r=await probe({storedDigest:'a'.repeat(64),updateAccepted:false});
+ assert.equal(r.status,409);
+ assert.equal(r.body.error,'callback-not-admitted');
  assert.equal(r.published,0);
 });
