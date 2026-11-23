@@ -31,6 +31,21 @@ scopes        = ["api"]
 required      = false
 description   = "Privileged GitLab branch canary only; fixed project, signed grant and independent readback required."
 
+
+# One owner-authorized Hugging Face Hub connection for both repository reads
+# and writes. Credentials are kept by Hatchable's OAuth vault; no token is
+# committed, rendered to clients, or duplicated. This deliberately excludes
+# inference/jobs/endpoints, so model compute cannot create paid usage.
+[[api]]
+name          = "huggingface"
+auth          = "oauth2"
+base_url      = "https://huggingface.co"
+authorize_url = "https://huggingface.co/oauth/authorize"
+token_url     = "https://huggingface.co/oauth/token"
+scopes        = ["openid", "profile", "read-repos", "write-repos", "read-collections", "write-collections", "write-discussions"]
+required      = false
+description   = "Single owner OAuth connection for Hugging Face Hub read/write operations. Repository and discussion writes are available; paid inference, endpoints, Jobs and Sandboxes are intentionally not requested."
+
 [[cron]]
 path = "/api/brain/tick"
 schedule = "17 * * * *"
