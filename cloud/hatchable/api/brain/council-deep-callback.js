@@ -181,11 +181,21 @@ export default async function(req,res){
   completedAt:payload.at
  };
 
- await db.query(
+ const completion=await db.query(
   `WITH task_upd AS (
     UPDATE brain_tasks
     SET status='done',last_result=$2::jsonb,updated_at=now()
-    WHERE id=$1
+    WHERE id=$1 AND objective='council.room'
+     AND status NOT IN ('done','canceled','failed')
+     AND EXISTS (
+       SELECT 1 FROM council_room_jobs cj
+       JOIN council_room_messages cm ON cm.id=cj.message_id
+       WHERE cj.task_id=brain_tasks.id AND cm.room_key=$8
+     )
+     AND (last_result->'reasoningBridge'->>'requestDigest'=$5 OR EXISTS (
+       SELECT 1 FROM council_room_jobs cj
+       WHERE cj.task_id=brain_tasks.id AND cj.request_digest=$5
+     ))
     RETURNING id
    ), job_upd AS (
     UPDATE council_room_jobs
@@ -198,15 +208,17 @@ export default async function(req,res){
         request_digest=COALESCE(request_digest,$5),
         execution_result=$6::jsonb,
         updated_at=now()
-    WHERE task_id=$1
+    WHERE task_id IN (SELECT id FROM task_upd)
     RETURNING id
    ), msg_ins AS (
     INSERT INTO council_room_messages(message_key,room_key,author_type,author_id,kind,body,mentions,context)
-    VALUES($7,$8,'system','council-deep','result',$9,'[]'::jsonb,$10::jsonb)
+    SELECT $7,$8,'system','council-deep','result',$9,'[]'::jsonb,$10::jsonb
+    FROM task_upd WHERE true
     ON CONFLICT(message_key) DO NOTHING
     RETURNING id
    ), thread_upd AS (
-    UPDATE council_room_threads SET updated_at=now() WHERE room_key=$8
+    UPDATE council_room_threads SET updated_at=now()
+    WHERE room_key=$8 AND EXISTS(SELECT 1 FROM task_upd)
     RETURNING room_key
    )
    SELECT (SELECT id FROM task_upd) AS task_id,
@@ -226,6 +238,8 @@ export default async function(req,res){
    jobIdempotencyKey
   ]
  );
+ if(!completion?.rows?.[0]?.task_id)
+  return reply(res,409,{ok:false,error:'callback-not-admitted'});
 
  try{
   await events.publish('ultron.owner','council-room',{
