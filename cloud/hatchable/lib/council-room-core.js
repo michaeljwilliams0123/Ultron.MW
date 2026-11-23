@@ -4,7 +4,7 @@ import {observeMahoragaMain} from 'lib/mahoraga-actions.js';
 import {inspectOpenIssue} from 'lib/council-issues.js';
 import {makeIssueCouncilPlan} from 'lib/issue-council-plan.js';
 import {detectOwnerDecisions,approvalCards,companionLead} from 'lib/council-front-door.js';
-import {dispatchCouncilDeepReasoning} from 'lib/council-deep-dispatch.js';
+import {dispatchCouncilDeepReasoning,bindCouncilDeepRequestDigest} from 'lib/council-deep-dispatch.js';
 import {getWorkersAiReadiness,runWorkersAi} from 'lib/cloudflare-workers-ai.js';
 
 const ROLES = Object.freeze([
@@ -55,7 +55,7 @@ function issuePlanRequest(body){
  return {number:data.number,url};
 }
 
-export async function buildCouncilRoomResult({message,task={}}){
+export async function buildCouncilRoomResult({message,task={},db}){
  const prompt=clean(message.body,1600);
  const deepMode=message.context?.reasoningMode==='deep'||/^@deep\b/i.test(prompt);
  const mentions=Array.isArray(message.mentions)?message.mentions:[];
@@ -123,9 +123,13 @@ export async function buildCouncilRoomResult({message,task={}}){
   const requestDigest=createHash('sha256')
    .update(JSON.stringify({taskId:String(taskId),roomKey,prompt}))
    .digest('hex');
-  const dispatch=await dispatchCouncilDeepReasoning({
-   taskId:String(taskId),requestDigest,roomKey,config
+  const bound=await bindCouncilDeepRequestDigest({
+   db,taskId:String(taskId),requestDigest,roomKey
   });
+  // Never send an external dispatch with an unbound correlation digest.
+  const dispatch=bound?await dispatchCouncilDeepReasoning({
+   taskId:String(taskId),requestDigest,roomKey,config
+  }):{ok:false,status:'dispatch-failed',error:'request-digest-prebind-denied'};
   reasoningBridge={
    mode:'deep',
    engine:'github-council-gemini-groq',
