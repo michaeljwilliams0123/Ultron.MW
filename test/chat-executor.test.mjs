@@ -162,10 +162,10 @@ test('verifyLiveHatchableManifest verifies exact live artifact digest and reject
   result:{content:[{type:'text',text:JSON.stringify(payload)}]}}),{status:200});
  const configured={get:async k=>k==='ULTRON_HATCHABLE_API_TOKEN'?'test-token':''};
  const ok=await verifyLiveHatchableManifest({deploymentRow:row,config:configured,
-  fetchImpl:async()=>mcpSuccess({version:138,status:'live',file_manifest:files})});
+  fetchImpl:async()=>mcpSuccess({version:138,status:'live',source_sha:HEAD,file_manifest:files})});
  assert.equal(ok.verified,true);assert.equal(ok.state,'live-manifest-verified');
  const drifted=await verifyLiveHatchableManifest({deploymentRow:row,config:configured,
-  fetchImpl:async()=>mcpSuccess({version:138,status:'live',
+  fetchImpl:async()=>mcpSuccess({version:138,status:'live',source_sha:HEAD,
    file_manifest:[{path:'api/brain/run.js',hash:'9'.repeat(64)}]})});
  assert.equal(drifted.verified,false);assert.equal(drifted.state,'manifest-drift-detected');
 });
