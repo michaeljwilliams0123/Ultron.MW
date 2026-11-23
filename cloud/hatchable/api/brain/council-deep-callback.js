@@ -122,6 +122,11 @@ export default async function(req,res){
   return reply(res,409,{ok:false,error:'request-digest-unbound'});
  if(expectedDigest!==payload.requestDigest)
   return reply(res,409,{ok:false,error:'request-digest-mismatch'});
+ // A valid signature must not replay terminal side effects or revive canceled work.
+ if(existing.status==='done')return reply(res,200,{ok:true,reused:true,
+  taskId:Number(payload.taskId),roomKey:payload.roomKey});
+ if(existing.status==='canceled'||existing.status==='failed')
+  return reply(res,409,{ok:false,error:'callback-task-terminal'});
 
  const prior=existing.last_result&&typeof existing.last_result==='object'
   ?existing.last_result:{};
