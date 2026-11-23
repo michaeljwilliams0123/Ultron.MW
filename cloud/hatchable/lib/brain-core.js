@@ -105,7 +105,7 @@ export async function executeObjective(objective, {db,browser,task={},githubRead
     FROM council_room_jobs j JOIN council_room_messages m ON m.id=j.message_id
     WHERE j.task_id=$1`,[task.id])).rows[0];
   if(!row)throw Error('council-room-message-missing');
-  return buildCouncilRoomResult({message:row,task});
+  return buildCouncilRoomResult({message:row,task,db});
  }
  if(objective==='council.review'){
   const objectiveId=typeof task.taskKey==='string'&&task.taskKey?
