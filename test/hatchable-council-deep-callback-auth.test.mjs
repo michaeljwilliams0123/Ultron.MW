@@ -8,7 +8,7 @@ assert.ok(source.startsWith(marker));
 const testable=source.replace(marker,'const {db,webhooks,config,events}=globalThis.__callbackTestSdk;');
 let importCounter=0;
 
-async function probe({storedDigest=null,lastDigest=null,payloadDigest='a'.repeat(64)}={}){
+async function probe({storedDigest=null,lastDigest=null,taskStatus='external',payloadDigest='a'.repeat(64)}={}){
  const updates=[],published=[];
  globalThis.__callbackTestSdk={
   config:{get:async()=>'x'.repeat(64)},
@@ -16,7 +16,7 @@ async function probe({storedDigest=null,lastDigest=null,payloadDigest='a'.repeat
   events:{publish:async(...args)=>published.push(args)},
   db:{query:async sql=>{
    if(sql.includes('SELECT t.id,t.task_key,t.status,t.last_result'))return {rows:[{
-    id:5,task_key:'test-callback',status:'external',last_result:lastDigest?{
+    id:5,task_key:'test-callback',status:taskStatus,last_result:lastDigest?{
      reasoningBridge:{requestDigest:lastDigest}}:{},job_id:2,message_id:3,
     request_digest:storedDigest,room_key:'owner-main'
    }]};
@@ -49,4 +49,19 @@ test('signed callback rejects foreign digest even if stored digest exists',async
 test('legacy persisted result digest remains a valid bound fallback',async()=>{
  const r=await probe({lastDigest:'a'.repeat(64)});
  assert.equal(r.status,200);
+});
+
+test('already-completed signed callback replays do not mutate or republish',async()=>{
+ const r=await probe({storedDigest:'a'.repeat(64),lastDigest:'a'.repeat(64),taskStatus:'done'});
+ assert.equal(r.status,200);
+ assert.equal(r.body.reused,true);
+ assert.equal(r.updates,0);
+ assert.equal(r.published,0);
+});
+test('canceled task cannot be revived by a late signed callback',async()=>{
+ const r=await probe({storedDigest:'a'.repeat(64),taskStatus:'canceled'});
+ assert.equal(r.status,409);
+ assert.equal(r.body.error,'callback-task-terminal');
+ assert.equal(r.updates,0);
+ assert.equal(r.published,0);
 });
