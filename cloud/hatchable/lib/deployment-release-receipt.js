@@ -1,4 +1,5 @@
 import {verifyDelegatedGrant} from './security-adjudicator.js';
+import {verifyLiveHatchableManifest} from './hatchable-manifest-readback.js';
 import {
  DEPLOYMENT_RECEIPT_POLICY_SHA,
  DEPLOYMENT_RECEIPT_ACTOR,
@@ -109,7 +110,9 @@ async function recordDeploymentReleaseReceipt({db,verifiedGrant,input}){
   reused:row.outcome==='existing'};
 }
 
-export async function submitDeploymentReleaseReceipt({db,config,request,envelope}={}){
+export async function submitDeploymentReleaseReceipt({
+ db,config,request,envelope,verifyManifest=verifyLiveHatchableManifest
+}={}){
  const input=normalizeDeploymentReceiptRequest(request);
  if(!input||typeof db?.query!=='function'||typeof config?.get!=='function')
   return held('request-invalid');
@@ -124,6 +127,20 @@ export async function submitDeploymentReleaseReceipt({db,config,request,envelope
  catch{return held('owner-grant-invalid');}
  if(verified.policySha!==DEPLOYMENT_RECEIPT_POLICY_SHA)
   return held('owner-grant-policy-invalid');
+ // A signed caller's assertion is not evidence of a deployed artifact.
+ // Require authenticated live bytes before committing an immutable receipt.
+ let manifest;
+ try{
+  manifest=await verifyManifest({config,deploymentRow:{
+   target:input.target,source_sha:input.sourceSha,
+   artifact_digest:input.artifactDigest,
+   manifest_file_count:input.manifestFileCount
+  }});
+ }catch{}
+ if(!manifest?.verified||manifest.target!==input.target||
+    manifest.artifactDigest!==input.artifactDigest||
+    manifest.manifestFileCount!==input.manifestFileCount)
+  return uncertain('independent-manifest-readback-not-verified');
  let result;
  try{result=await recordDeploymentReleaseReceipt({db,verifiedGrant:verified,input});}
  catch{return uncertain('receipt-ledger-unavailable');}
