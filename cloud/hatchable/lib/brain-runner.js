@@ -84,17 +84,7 @@ export async function runOne({db,browser,githubRead,githubFetch,heartbeatInterva
     INSERT INTO brain_events(task_id,event_type,details)
     SELECT id,'lease-heartbeat',jsonb_build_object('fencingGeneration',$3::bigint)
     FROM (TABLE moved) AS moved RETURNING task_id
-   ), council_job_sync AS (
-    UPDATE council_room_jobs
-    SET request_digest=COALESCE($1::jsonb->'reasoningBridge'->>'requestDigest',request_digest),
-        execution_state=CASE
-          WHEN ($1::jsonb->'reasoningBridge'->>'status')='dispatched' THEN 'dispatched'
-          ELSE execution_state
-        END,
-        updated_at=now()
-    WHERE task_id=(SELECT id FROM (TABLE moved) AS moved WHERE objective='council.room' LIMIT 1)
-    RETURNING id
-  ) SELECT id FROM (TABLE moved) AS moved`,[task.id,token,task.fencing_generation])
+   ) SELECT id FROM (TABLE moved) AS moved`,[task.id,token,task.fencing_generation])
    .then(r=>{if(r?.rows?.length!==1)heartbeatLost=true;})
    .catch(()=>{heartbeatLost=true;})
    .finally(()=>{heartbeatPending=null;});
