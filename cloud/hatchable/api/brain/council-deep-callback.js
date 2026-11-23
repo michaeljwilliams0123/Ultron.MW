@@ -118,7 +118,9 @@ export default async function(req,res){
 
  const expectedDigest=existing.request_digest||
   existing.last_result?.reasoningBridge?.requestDigest||null;
- if(expectedDigest&&expectedDigest!==payload.requestDigest)
+ if(!HEX64.test(expectedDigest||''))
+  return reply(res,409,{ok:false,error:'request-digest-unbound'});
+ if(expectedDigest!==payload.requestDigest)
   return reply(res,409,{ok:false,error:'request-digest-mismatch'});
 
  const prior=existing.last_result&&typeof existing.last_result==='object'
