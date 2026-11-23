@@ -123,9 +123,14 @@ export default async function(req,res){
  if(expectedDigest!==payload.requestDigest)
   return reply(res,409,{ok:false,error:'request-digest-mismatch'});
  // A valid signature must not replay terminal side effects or revive canceled work.
- if(existing.status==='done')return reply(res,200,{ok:true,reused:true,
-  taskId:Number(payload.taskId),roomKey:payload.roomKey});
- if(existing.status==='canceled'||existing.status==='failed')
+ // A runner may finish the dispatch before the GitHub callback arrives.
+ // done/dispatched means waiting for an external result, NOT already processed.
+ const bridgeState=existing.last_result?.reasoningBridge?.status;
+ if(existing.status==='done'&&bridgeState==='complete')
+  return reply(res,200,{ok:true,reused:true,
+   taskId:Number(payload.taskId),roomKey:payload.roomKey});
+ if(existing.status!=='leased'&&
+    !(existing.status==='done'&&bridgeState==='dispatched'))
   return reply(res,409,{ok:false,error:'callback-task-terminal'});
 
  const prior=existing.last_result&&typeof existing.last_result==='object'
@@ -186,7 +191,8 @@ export default async function(req,res){
     UPDATE brain_tasks
     SET status='done',last_result=$2::jsonb,updated_at=now()
     WHERE id=$1 AND objective='council.room'
-     AND status NOT IN ('done','canceled','failed')
+     AND (status='leased' OR
+       (status='done' AND last_result->'reasoningBridge'->>'status'='dispatched'))
      AND EXISTS (
        SELECT 1 FROM council_room_jobs cj
        JOIN council_room_messages cm ON cm.id=cj.message_id
