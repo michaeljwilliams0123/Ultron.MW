@@ -138,6 +138,7 @@ export async function submitDeploymentReleaseReceipt({
   }});
  }catch{}
  if(!manifest?.verified||manifest.target!==input.target||
+    manifest.sourceSha!==input.sourceSha||
     manifest.artifactDigest!==input.artifactDigest||
     manifest.manifestFileCount!==input.manifestFileCount)
   return uncertain('independent-manifest-readback-not-verified');
