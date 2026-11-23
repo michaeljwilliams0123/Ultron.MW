@@ -137,6 +137,9 @@ test('Council Room runner returns seven role replies with private Mahoraga evide
  const planSource=await readFile(new URL('lib/issue-council-plan.js',root),'utf8');
  const planUrl=b64(planSource.replace("from 'lib/council-issues.js'",
   "from '"+new URL('lib/council-issues.js',root).href+"'"));
+ const dispatchSource=await readFile(new URL('lib/council-deep-dispatch.js',root),'utf8');
+ const dispatchUrl=b64(dispatchSource.replace("from 'lib/rsa-pkcs1-sign.js'",
+  "from '"+new URL('lib/rsa-pkcs1-sign.js',root).href+"'"));
  const transformed=coreSource
   .replace("import {config} from 'hatchable';",
    'const config=globalThis.__councilRoomConfig;')
@@ -145,7 +148,9 @@ test('Council Room runner returns seven role replies with private Mahoraga evide
  .replace("import {inspectOpenIssue} from 'lib/council-issues.js';",
   'const inspectOpenIssue=globalThis.__councilIssueHelpers?.inspectOpenIssue|| (async()=>null);')
  .replace("from 'lib/issue-council-plan.js'","from '"+planUrl+"'")
- .replace("from 'lib/council-front-door.js'","from '"+new URL('lib/council-front-door.js',root).href+"'");
+ .replace("from 'lib/council-front-door.js'","from '"+new URL('lib/council-front-door.js',root).href+"'")
+ .replace("from 'lib/council-deep-dispatch.js'","from '"+dispatchUrl+"'")
+ .replace("from 'lib/cloudflare-workers-ai.js'","from '"+new URL('lib/cloudflare-workers-ai.js',root).href+"'");
  assert.notEqual(transformed,coreSource);
  const originalFetch=globalThis.fetch;
  const privateToken='github_pat_this_is_a_test_credential_value';
@@ -198,6 +203,9 @@ test('issue remediation plan rereads live issue data and gives role-specific bou
  const planSource=await readFile(new URL('lib/issue-council-plan.js',root),'utf8');
  const planUrl=b64(planSource.replace("from 'lib/council-issues.js'",
   "from '"+new URL('lib/council-issues.js',root).href+"'"));
+ const dispatchSource=await readFile(new URL('lib/council-deep-dispatch.js',root),'utf8');
+ const dispatchUrl=b64(dispatchSource.replace("from 'lib/rsa-pkcs1-sign.js'",
+  "from '"+new URL('lib/rsa-pkcs1-sign.js',root).href+"'"));
  const transformed=coreSource
   .replace("import {config} from 'hatchable';",'const config=globalThis.__councilRoomConfig;')
   .replace("import {observeMahoragaMain} from 'lib/mahoraga-actions.js';",
@@ -205,7 +213,9 @@ test('issue remediation plan rereads live issue data and gives role-specific bou
   .replace("import {inspectOpenIssue} from 'lib/council-issues.js';",
    'const inspectOpenIssue=globalThis.__councilIssueHelpers.inspectOpenIssue;')
   .replace("from 'lib/issue-council-plan.js'","from '"+planUrl+"'")
- .replace("from 'lib/council-front-door.js'","from '"+new URL('lib/council-front-door.js',root).href+"'");
+ .replace("from 'lib/council-front-door.js'","from '"+new URL('lib/council-front-door.js',root).href+"'")
+ .replace("from 'lib/council-deep-dispatch.js'","from '"+dispatchUrl+"'")
+ .replace("from 'lib/cloudflare-workers-ai.js'","from '"+new URL('lib/cloudflare-workers-ai.js',root).href+"'");
  const originalFetch=globalThis.fetch;
  globalThis.__councilRoomConfig={async get(){throw Error('private evidence not requested')}};
  globalThis.__councilIssueHelpers={async inspectOpenIssue(number){
