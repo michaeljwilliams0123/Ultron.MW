@@ -193,8 +193,10 @@ test('real PostgreSQL-compatible reservation consumes once and replays by readba
  assert.equal(unavailable.reason,'independent-manifest-readback-not-verified');
  const falseMatch=await submitDeploymentReleaseReceipt({...args,
   verifyManifest:async()=>({verified:true,target:input.target,
+   sourceSha:input.sourceSha,
    artifactDigest:'sha256:'+'f'.repeat(64),manifestFileCount:input.manifestFileCount})});
  assert.equal(falseMatch.ok,false);
+ assert.equal(falseMatch.reason,'independent-manifest-readback-not-verified');
  assert.equal((await db.query('SELECT count(*)::int n FROM brain_deployment_release_receipts')).rows[0].n,0);
  const foreignSource=await submitDeploymentReleaseReceipt({...args,
   verifyManifest:async()=>({verified:true,target:input.target,
