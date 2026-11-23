@@ -8,7 +8,7 @@ assert.ok(source.startsWith(marker));
 const testable=source.replace(marker,'const {db,webhooks,config,events}=globalThis.__callbackTestSdk;');
 let importCounter=0;
 
-async function probe({storedDigest=null,lastDigest=null,taskStatus='external',payloadDigest='a'.repeat(64),updateAccepted=true}={}){
+async function probe({storedDigest=null,lastDigest=null,taskStatus='leased',bridgeStatus='complete',payloadDigest='a'.repeat(64),updateAccepted=true}={}){
  const updates=[],published=[];
  globalThis.__callbackTestSdk={
   config:{get:async()=>'x'.repeat(64)},
@@ -17,7 +17,7 @@ async function probe({storedDigest=null,lastDigest=null,taskStatus='external',pa
   db:{query:async sql=>{
    if(sql.includes('SELECT t.id,t.task_key,t.status,t.last_result'))return {rows:[{
     id:5,task_key:'test-callback',status:taskStatus,last_result:lastDigest?{
-     reasoningBridge:{requestDigest:lastDigest}}:{},job_id:2,message_id:3,
+     reasoningBridge:{requestDigest:lastDigest,status:bridgeStatus}}:{},job_id:2,message_id:3,
     request_digest:storedDigest,room_key:'owner-main'
    }]};
    updates.push(sql);
@@ -71,4 +71,13 @@ test('database fence denial never publishes a Council result',async()=>{
  assert.equal(r.status,409);
  assert.equal(r.body.error,'callback-not-admitted');
  assert.equal(r.published,0);
+});
+
+test('dispatched deep result is accepted even when runner already marked the task done',async()=>{
+ const r=await probe({storedDigest:'a'.repeat(64),lastDigest:'a'.repeat(64),
+  taskStatus:'done',bridgeStatus:'dispatched'});
+ assert.equal(r.status,200);
+ assert.equal(r.body.reused,undefined);
+ assert.equal(r.updates,1);
+ assert.equal(r.published,1);
 });
