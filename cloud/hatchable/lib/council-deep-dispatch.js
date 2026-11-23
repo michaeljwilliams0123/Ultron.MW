@@ -9,6 +9,32 @@ const HEX64=/^[a-f0-9]{64}$/;
 const TASK_ID=/^[1-9][0-9]{0,15}$/;
 const ROOM=/^(?:owner-main|chat-[a-f0-9-]{36})$/;
 
+// Persist the correlation digest before dispatching an external workflow.
+// It must belong to the leased council task and originating room.
+export async function bindCouncilDeepRequestDigest({
+ db,taskId,requestDigest,roomKey='owner-main'
+}={}){
+ const id=String(taskId??'').trim();
+ const digest=String(requestDigest??'').trim().toLowerCase();
+ const room=String(roomKey??'').trim();
+ if(!db||typeof db.query!=='function'||!TASK_ID.test(id)||
+    !HEX64.test(digest)||!ROOM.test(room))return false;
+ try{
+  const updated=await db.query(`UPDATE council_room_jobs j
+    SET request_digest=$2,updated_at=now()
+    WHERE j.task_id=$1
+      AND (j.request_digest IS NULL OR j.request_digest=$2)
+      AND EXISTS (
+       SELECT 1 FROM brain_tasks t
+       JOIN council_room_messages m ON m.id=j.message_id
+       WHERE t.id=j.task_id AND t.objective='council.room'
+         AND t.status='leased' AND m.room_key=$3
+      )
+    RETURNING j.id`,[id,digest,room]);
+  return updated?.rows?.length===1;
+ }catch{return false;}
+}
+
 function clean(value,max=120){
  return String(value??'').replace(/\s+/g,' ').trim().slice(0,max);
 }
