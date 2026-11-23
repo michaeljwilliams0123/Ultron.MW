@@ -83,7 +83,7 @@ test('signed submission atomically records one immutable grant-bound receipt',as
   config:{get:async()=>JSON.stringify(publicJwk)},request:input,
   envelope:{payload,signature},
   verifyManifest:async()=>({verified:true,target:input.target,
-   artifactDigest:input.artifactDigest,manifestFileCount:input.manifestFileCount})});
+   sourceSha:input.sourceSha,artifactDigest:input.artifactDigest,manifestFileCount:input.manifestFileCount})});
  assert.equal(result.ok,true);assert.equal(result.status,'observed');
  assert.equal(result.receiptId,'41');assert.equal(result.grantId,grant.grantId);
  assert.match(sql,/INSERT INTO brain_authority_grants/);
@@ -158,7 +158,7 @@ test('real PostgreSQL-compatible reservation consumes once and replays by readba
   await subtle.exportKey('jwk',pair.publicKey))},request:input,
   envelope:{payload,signature},
   verifyManifest:async()=>({verified:true,target:input.target,
-   artifactDigest:input.artifactDigest,manifestFileCount:input.manifestFileCount})};
+   sourceSha:input.sourceSha,artifactDigest:input.artifactDigest,manifestFileCount:input.manifestFileCount})};
  for(const request of [
   {...input,artifactDigest:'sha256:'+'c'.repeat(64)},
   {...input,target:'hatchable-v138'},
@@ -195,6 +195,13 @@ test('real PostgreSQL-compatible reservation consumes once and replays by readba
   verifyManifest:async()=>({verified:true,target:input.target,
    artifactDigest:'sha256:'+'f'.repeat(64),manifestFileCount:input.manifestFileCount})});
  assert.equal(falseMatch.ok,false);
+ assert.equal((await db.query('SELECT count(*)::int n FROM brain_deployment_release_receipts')).rows[0].n,0);
+ const foreignSource=await submitDeploymentReleaseReceipt({...args,
+  verifyManifest:async()=>({verified:true,target:input.target,
+   sourceSha:'d'.repeat(40),artifactDigest:input.artifactDigest,
+   manifestFileCount:input.manifestFileCount})});
+ assert.equal(foreignSource.ok,false);
+ assert.equal(foreignSource.reason,'independent-manifest-readback-not-verified');
  assert.equal((await db.query('SELECT count(*)::int n FROM brain_deployment_release_receipts')).rows[0].n,0);
  const first=await submitDeploymentReleaseReceipt(args);
  assert.equal(first.ok,true);assert.equal(first.status,'observed');
