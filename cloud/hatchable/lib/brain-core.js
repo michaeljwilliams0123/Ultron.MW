@@ -101,11 +101,11 @@ export async function executeObjective(objective, {db,browser,task={},githubRead
   return sourceBoundWithGithub(async()=>collectResearchIntake({fetcher:githubFetch}));
  }
  if(objective==='council.room'){
-  const row=(await db.query(`SELECT m.id,m.body,m.mentions,m.context,m.created_at
+  const row=(await db.query(`SELECT m.id,m.room_key,m.body,m.mentions,m.context,m.created_at
     FROM council_room_jobs j JOIN council_room_messages m ON m.id=j.message_id
     WHERE j.task_id=$1`,[task.id])).rows[0];
   if(!row)throw Error('council-room-message-missing');
-  return buildCouncilRoomResult({message:row});
+  return buildCouncilRoomResult({message:row,task});
  }
  if(objective==='council.review'){
   const objectiveId=typeof task.taskKey==='string'&&task.taskKey?

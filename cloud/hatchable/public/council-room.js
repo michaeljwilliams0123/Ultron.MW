@@ -254,6 +254,7 @@ async function send(){
  const payload=state.pendingPayload||{room,messageKey:state.pendingKey,body,mentions,
   kind:body.trim().endsWith('?')?'question':'message',
   includeMahoraga:$('include-mahoraga').checked,
+  reasoningMode:$('deep-reasoning')?.checked?'deep':'fast',
   attachmentUrl:$('attachment-url').value.trim()||null};
  state.pendingPayload=payload;composerEnabled(state.ready);
  try{

@@ -191,6 +191,7 @@ async function post(res,req){
  const context={
   repositories:['michaeljwilliams0123/Ultron.MW','michaeljwilliams0123/mahoraga'],
   includeMahoraga:req.body?.includeMahoraga!==false,
+  reasoningMode:req.body?.reasoningMode==='deep'?'deep':'fast',
   attachmentUrl:typeof req.body?.attachmentUrl==='string'?
    req.body.attachmentUrl.slice(0,1000):null
  };
