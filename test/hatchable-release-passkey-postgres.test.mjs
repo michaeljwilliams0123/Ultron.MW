@@ -16,9 +16,9 @@ async function setup(t){
  CREATE TABLE brain_owner_autonomy_profile(id INTEGER PRIMARY KEY,owner TEXT,preset TEXT,allowed_operations JSONB,version INTEGER,updated_at TIMESTAMPTZ DEFAULT now(),max_paid_cents INTEGER);
  CREATE TABLE brain_runtime_control(id INTEGER PRIMARY KEY,paused BOOLEAN,version INTEGER);
  CREATE TABLE brain_events(id BIGSERIAL PRIMARY KEY,event_type TEXT,details JSONB);
- INSERT INTO brain_owner_autonomy_profile VALUES(1,'michaeljwilliams0123','release','["repo.inspect"]',12,now(),0);
+ INSERT INTO brain_owner_autonomy_profile VALUES(1,'michaeljwilliams0123','release','["repo.inspect"]',11,now(),0);
  INSERT INTO brain_runtime_control VALUES(1,false,7);`);
- for(const m of ['0033_owner_passkey_authority.sql','0050_c04_passkey_comment_authority.sql','0051_deployment_release_receipts.sql','0053_release_passkey_receipt.sql'])await db.exec(await readFile(file(m),'utf8'));
+ for(const m of ['0033_owner_passkey_authority.sql','0034_owner_passkey_enrollment.sql','0050_c04_passkey_comment_authority.sql','0051_deployment_release_receipts.sql','0053_release_passkey_receipt.sql'])await db.exec(await readFile(file(m),'utf8'));
  await db.exec(await readFile(file('0053_release_passkey_receipt.sql'),'utf8'));
  await db.query("INSERT INTO brain_authority_grants VALUES('bootstrap-test-grant','owner-passkey-test','mcp:ultron','owner.passkey.enroll',$1,$2,now()+interval '1 hour')",['sha256:'+'c'.repeat(64),'d'.repeat(64)]);
  await db.query("INSERT INTO brain_owner_passkeys(credential_id,public_key_spki,label,enrollment_key,enrollment_fingerprint,enrolled_grant_id) VALUES($1,$2,'Test owner','owner-passkey-test',$3,'bootstrap-test-grant')",[credentialId,pair.publicKey.export({format:'der',type:'spki'}).toString('base64url'),'e'.repeat(64)]);
