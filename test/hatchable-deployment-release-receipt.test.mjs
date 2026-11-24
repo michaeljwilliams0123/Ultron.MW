@@ -81,7 +81,9 @@ test('signed submission atomically records one immutable grant-bound receipt',as
  const publicJwk=await subtle.exportKey('jwk',pair.publicKey);
  const result=await submitDeploymentReleaseReceipt({db,
   config:{get:async()=>JSON.stringify(publicJwk)},request:input,
-  envelope:{payload,signature}});
+  envelope:{payload,signature},
+  verifyManifest:async()=>({verified:true,target:input.target,
+   sourceSha:input.sourceSha,artifactDigest:input.artifactDigest,manifestFileCount:input.manifestFileCount})});
  assert.equal(result.ok,true);assert.equal(result.status,'observed');
  assert.equal(result.receiptId,'41');assert.equal(result.grantId,grant.grantId);
  assert.match(sql,/INSERT INTO brain_authority_grants/);
@@ -154,7 +156,9 @@ test('real PostgreSQL-compatible reservation consumes once and replays by readba
   pair.privateKey,new TextEncoder().encode(payload))).toString('base64url');
  const args={db,config:{get:async()=>JSON.stringify(
   await subtle.exportKey('jwk',pair.publicKey))},request:input,
-  envelope:{payload,signature}};
+  envelope:{payload,signature},
+  verifyManifest:async()=>({verified:true,target:input.target,
+   sourceSha:input.sourceSha,artifactDigest:input.artifactDigest,manifestFileCount:input.manifestFileCount})};
  for(const request of [
   {...input,artifactDigest:'sha256:'+'c'.repeat(64)},
   {...input,target:'hatchable-v138'},
@@ -182,6 +186,25 @@ test('real PostgreSQL-compatible reservation consumes once and replays by readba
  for(const table of ['brain_authority_grants','brain_deployment_release_receipts','brain_events']){
   assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`)).rows[0].n,0);
  }
+ const unavailable=await submitDeploymentReleaseReceipt({...args,
+  verifyManifest:async()=>({verified:false,reason:'hatchable-manifest-http-401'})});
+ assert.equal(unavailable.ok,false);
+ assert.equal(unavailable.status,'reconcile-required');
+ assert.equal(unavailable.reason,'independent-manifest-readback-not-verified');
+ const falseMatch=await submitDeploymentReleaseReceipt({...args,
+  verifyManifest:async()=>({verified:true,target:input.target,
+   sourceSha:input.sourceSha,
+   artifactDigest:'sha256:'+'f'.repeat(64),manifestFileCount:input.manifestFileCount})});
+ assert.equal(falseMatch.ok,false);
+ assert.equal(falseMatch.reason,'independent-manifest-readback-not-verified');
+ assert.equal((await db.query('SELECT count(*)::int n FROM brain_deployment_release_receipts')).rows[0].n,0);
+ const foreignSource=await submitDeploymentReleaseReceipt({...args,
+  verifyManifest:async()=>({verified:true,target:input.target,
+   sourceSha:'d'.repeat(40),artifactDigest:input.artifactDigest,
+   manifestFileCount:input.manifestFileCount})});
+ assert.equal(foreignSource.ok,false);
+ assert.equal(foreignSource.reason,'independent-manifest-readback-not-verified');
+ assert.equal((await db.query('SELECT count(*)::int n FROM brain_deployment_release_receipts')).rows[0].n,0);
  const first=await submitDeploymentReleaseReceipt(args);
  assert.equal(first.ok,true);assert.equal(first.status,'observed');
  const replay=await submitDeploymentReleaseReceipt(args);
