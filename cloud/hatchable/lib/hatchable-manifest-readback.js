@@ -79,6 +79,13 @@ export async function verifyLiveHatchableManifest({
    return {verified:false,state:'manifest-drift-detected',
     reason:'live-deployment-version-or-status-mismatch'};
   }
+  // The platform must independently attest the deployment's source commit.
+  // A signed request is not proof that its source SHA shipped with these bytes.
+  const liveSourceSha=snap.source_sha??snap.sourceSha;
+  if(!SHA.test(liveSourceSha||'')||liveSourceSha!==deploymentRow.source_sha){
+   return {verified:false,state:'receipt-only-unverified',
+    reason:'live-deployment-source-unverified'};
+  }
   const files=snap.file_manifest.map(item=>({
    path:String(item?.path||''),
    hash:String(item?.hash||'').toLowerCase()
@@ -95,7 +102,7 @@ export async function verifyLiveHatchableManifest({
     liveFileCount:files.length};
   }
   return {verified:true,state:'live-manifest-verified',
-   target:deploymentRow.target,artifactDigest:liveDigest,
+   target:deploymentRow.target,sourceSha:liveSourceSha,artifactDigest:liveDigest,
    manifestFileCount:files.length};
  }catch{
   return {verified:false,state:'receipt-only-unverified',

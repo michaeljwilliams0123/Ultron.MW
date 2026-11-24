@@ -5,7 +5,7 @@ import {verifyLiveHatchableManifest} from '../cloud/hatchable/lib/hatchable-mani
 
 const files=[{path:'api/brain/release-proof.js',hash:'a'.repeat(64)},
  {path:'lib/hatchable-manifest-readback.js',hash:'b'.repeat(64)}];
-const snap={version:141,status:'live',file_manifest:files};
+const snap={version:141,status:'live',source_sha:'c'.repeat(40),file_manifest:files};
 const receipt={target:'hatchable-v141',source_sha:'c'.repeat(40),
  artifact_digest:deploymentArtifactDigest(files),manifest_file_count:2};
 const config={get:async name=>name==='ULTRON_HATCHABLE_API_TOKEN'?'test-no-real-secret':''};
@@ -29,6 +29,7 @@ test('release reader requests authoritative Hatchable MCP get_deployment, not no
  assert.equal(calls,1);
  assert.equal(result.verified,true);
  assert.equal(result.artifactDigest,receipt.artifact_digest);
+ assert.equal(result.sourceSha,receipt.source_sha);
 });
 test('MCP Server-Sent Events response is parsed without accepting unrelated data',async()=>{
  const result=await verifyLiveHatchableManifest({deploymentRow:receipt,config,
@@ -51,6 +52,19 @@ test('wrong token, invalid MCP response and obsolete deployment stay held',async
     text:JSON.stringify({...snap,status:'superseded'})}]}})})});
  assert.equal(old.verified,false);
  assert.equal(old.reason,'live-deployment-version-or-status-mismatch');
+});
+test('unbound or foreign live source cannot be certified as independent',async()=>{
+ for(const source of [undefined,'d'.repeat(40)]){
+  const current={...snap};
+  if(source===undefined)delete current.source_sha;
+  else current.source_sha=source;
+  const response=await verifyLiveHatchableManifest({deploymentRow:receipt,config,
+   fetchImpl:async()=>({ok:true,status:200,text:async()=>JSON.stringify({
+    jsonrpc:'2.0',id:1,result:{content:[{type:'text',text:JSON.stringify(current)}]}
+   })})});
+  assert.equal(response.verified,false);
+  assert.equal(response.reason,'live-deployment-source-unverified');
+ }
 });
 test('configured manifest endpoint cannot exfiltrate token to a different host',async()=>{
  let calls=0;
