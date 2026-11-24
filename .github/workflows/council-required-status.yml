@@ -10,10 +10,10 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, edited]
   issue_comment:
     types: [created]
-  # Dependency trigger: core VERIFY must finish before a Gate App decision.
+  # Any prerequisite completion can wake the gate; all exact-head CI must pass.
   # Privileged job still checks out only trusted main, never PR code.
   workflow_run:
-    workflows: ["Ultron core verification"]
+    workflows: ["Ultron core verification", "Ultron ops audit lane", "Ultron Council Multi-Agent Debate Loop"]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -37,7 +37,9 @@ jobs:
          startsWith(github.event.comment.body, '/council recheck'))) ||
        (github.event_name == 'workflow_run' &&
         github.event.action == 'completed' &&
-        github.event.workflow_run.workflow_id == 388875616 &&
+        (github.event.workflow_run.workflow_id == 388875616 ||
+         github.event.workflow_run.workflow_id == 414195978 ||
+         github.event.workflow_run.workflow_id == 401204437) &&
         github.event.workflow_run.event == 'pull_request' &&
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_repository.id == 1424939667 &&

@@ -223,13 +223,13 @@ export function councilExactHeadCiReady(inventory,sourceSha){
  }
  return true;
 }
-/** Only a completed successful same-repo run of the PINNED core workflow
+/** Only a completed successful same-repo run of a PINNED prerequisite workflow
  * can trigger a post-CI recheck. PR head/base are later independently
  * reread, and all code still comes exclusively from trusted main.
  */
-function completedCorePrNumber(payload){
+function completedPrerequisitePrNumber(payload){
  const run=payload?.workflow_run,prs=run?.pull_requests;
- if(payload?.action!=='completed'||run?.workflow_id!==CORE_CI_WORKFLOW_ID||
+ if(payload?.action!=='completed'||![CORE_CI_WORKFLOW_ID,414195978,401204437].includes(run?.workflow_id)||
   run?.event!=='pull_request'||run?.status!=='completed'||
   run?.conclusion!=='success'||run?.head_repository?.id!==REPO_ID||
   !SHA.test(run?.head_sha||'')||!Array.isArray(prs)||prs.length!==1)
@@ -241,12 +241,12 @@ function completedCorePrNumber(payload){
  return p.number;
 }
 // Resolve a target from trusted GitHub event metadata, never issue/PR prose.
-// Includes verified completed core CI; never trusts workflow_run.run-name.
+// Includes verified completed prerequisite CI; never trusts workflow_run.run-name.
 export function selectCouncilTargetNumber(eventName,payload={}){
  const raw=eventName==='pull_request_target'?payload?.pull_request?.number:
   eventName==='issue_comment'?payload?.issue?.number:
   eventName==='workflow_dispatch'?payload?.inputs?.pr_number:
-  eventName==='workflow_run'?completedCorePrNumber(payload):null;
+  eventName==='workflow_run'?completedPrerequisitePrNumber(payload):null;
  if(typeof raw==='number')return Number.isSafeInteger(raw)&&raw>0?raw:null;
  if(typeof raw!=='string'||!/^[1-9][0-9]*$/.test(raw))return null;
  const number=Number(raw);

@@ -81,7 +81,7 @@ test('exact-head Council evidence remains pending until every required CI and at
 });
 test('trusted Council workflow waits for completed core CI without loading untrusted PR code',()=>{
  const yaml=readFileSync(new URL('../.github/workflows/council-required-status.yml',import.meta.url),'utf8');
- assert.match(yaml,/workflow_run:\s*\n\s*workflows:\s*\["Ultron core verification"\]\s*\n\s*types:\s*\[completed\]/);
+ assert.match(yaml,/workflow_run:\s*\n\s*workflows:\s*\["Ultron core verification", "Ultron ops audit lane", "Ultron Council Multi-Agent Debate Loop"\]\s*\n\s*types:\s*\[completed\]/);
  assert.match(yaml,/github\.event\.workflow_run\.workflow_id == 388875616/);
  assert.match(yaml,/gate\.councilExactHeadCiReady\(checks\.data,pr\.head\.sha\)/);
  assert.match(yaml,/Council CI incomplete; deferring Gate App decision/);
