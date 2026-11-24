@@ -159,7 +159,7 @@ test('independent PR read disagreement and moving canonical main never promote C
 });
 
 test('owner GET route requires an immutable grant-bound deployment readback',()=>{
- const api=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8');
+ const api=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../cloud/hatchable/lib/release-proof-readback.js',import.meta.url),'utf8');
  assert.match(api,/collectMergedCouncilReadback/);
  assert.match(api,/sourcePr:.*sourcePr/);
  assert.match(api,/findDeploymentReleaseReceipt/);

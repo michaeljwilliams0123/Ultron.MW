@@ -59,6 +59,8 @@ export async function proxyToOrigin(
   }
   const headers = new Headers(request.headers);
   headers.delete("host");
+  headers.delete("x-ultron-release-proof-ts");
+  headers.delete("x-ultron-release-proof-mac");
   headers.set("Origin", origin.origin);
   headers.set("X-Ultron-Origin-Lock", env.ORIGIN_LOCK_SECRET);
   headers.set("X-Forwarded-Host", url.host);
