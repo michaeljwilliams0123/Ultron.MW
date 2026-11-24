@@ -111,7 +111,7 @@ async function recordDeploymentReleaseReceipt({db,verifiedGrant,input}){
 }
 
 export async function submitDeploymentReleaseReceipt({
- db,config,request,envelope,verifyManifest=verifyLiveHatchableManifest
+ db,config,request,envelope,fetchGithub,verifyManifest=verifyLiveHatchableManifest
 }={}){
  const input=normalizeDeploymentReceiptRequest(request);
  if(!input||typeof db?.query!=='function'||typeof config?.get!=='function')
@@ -131,7 +131,7 @@ export async function submitDeploymentReleaseReceipt({
  // Require authenticated live bytes before committing an immutable receipt.
  let manifest;
  try{
-  manifest=await verifyManifest({config,deploymentRow:{
+  manifest=await verifyManifest({config,fetchGithub,deploymentRow:{
    target:input.target,source_sha:input.sourceSha,
    artifact_digest:input.artifactDigest,
    manifest_file_count:input.manifestFileCount

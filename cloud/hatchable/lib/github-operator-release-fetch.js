@@ -12,7 +12,7 @@ const ROUTES=[
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/commits/'+SHA+'/pulls$'),
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/commits/'+SHA+'/check-runs$'),
  /^\/repos\/michaeljwilliams0123\/Ultron\.MW\/actions\/workflows\/verify\.yml\/runs$/,
- new RegExp('^'+ROOT.replaceAll('.','\\.')+'/actions/runs/'+ID+'/jobs$')
+ new RegExp('^'+ROOT.replaceAll('.','\\.')+'/actions/runs/'+ID+'/(jobs|artifacts)$')
 ];
 const validQuery=(name,value)=>{
  switch(name){
@@ -22,6 +22,7 @@ const validQuery=(name,value)=>{
   case 'sort': return value==='updated';
   case 'direction': return value==='desc';
   case 'branch': return value==='main';
+  case 'head_sha': return /^[a-f0-9]{40}$/.test(value);
   case 'event': return value==='push';
   case 'check_name': return value==='ultron/council-7of7';
   case 'filter': return value==='all';
