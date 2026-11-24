@@ -31,7 +31,7 @@ export default async function(req,res){
  let deploymentRow=null;
  try{deploymentRow=await findDeploymentReleaseReceipt({db,sourceSha:sha});}catch{}
  const liveManifest=deploymentRow
-  ?await verifyLiveHatchableManifest({deploymentRow,config})
+  ?await verifyLiveHatchableManifest({deploymentRow,config,fetchGithub})
   :null;
  const deployment=deploymentRow?{
   target:deploymentRow.target,sourceSha:deploymentRow.source_sha,
@@ -54,7 +54,10 @@ export default async function(req,res){
   driftDetails:{ciVerified:proof.ci.verified,councilVerified:proof.council.verified,
    deploymentReceiptRecorded:!!deploymentRow,
    independentManifestReadback:Boolean(liveManifest?.verified),
-   manifestReason:liveManifest?.reason||null,missingGates},
+   manifestReason:liveManifest?.reason||null,
+   sourceAttribution:liveManifest?.sourceAttribution||null,
+   attestorRunId:liveManifest?.attestorRunId||null,
+   attestorArtifactId:liveManifest?.attestorArtifactId||null,missingGates},
   observation:{ciState:ci?.state??'unavailable',
   councilSourceState:councilSource.councilCheck?'observed':'unavailable',
   deploymentState:liveManifest?.state||(deploymentRow?'receipt-only-unverified':'unavailable'),

@@ -33,7 +33,7 @@ test('receipt route enforces owner, origin and exact mode bodies',async()=>{
  const source=readFileSync(new URL(
   '../../cloud/hatchable/api/brain/deployment-release-receipt.js',import.meta.url),'utf8');
  const hatchableUrl='data:text/javascript;base64,'+Buffer.from(
-  'export const db={};export const config={};').toString('base64');
+  'export const db={};export const config={};export const api={};').toString('base64');
  const libUrl='data:text/javascript;base64,'+Buffer.from(`
   export async function prepareDeploymentReleaseReceipt(){return {ok:true,status:'prepared',marker:'prepare'}}
   export async function submitDeploymentReleaseReceipt({envelope}){
@@ -43,6 +43,7 @@ test('receipt route enforces owner, origin and exact mode bodies',async()=>{
   export async function readDeploymentReleaseReceipt(){return {ok:true,status:'observed',marker:'reconcile'}}
  `).toString('base64');
  const route=await import('data:text/javascript;base64,'+Buffer.from(source
+  .replace("'lib/github-operator-release-fetch.js'",JSON.stringify(new URL('../../cloud/hatchable/lib/github-operator-release-fetch.js',import.meta.url).href))
   .replace("'hatchable'",`'${hatchableUrl}'`)
   .replace("'lib/deployment-release-receipt.js'",`'${libUrl}'`))
   .toString('base64')+'#route');

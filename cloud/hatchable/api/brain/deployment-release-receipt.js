@@ -1,4 +1,5 @@
-import {db,config} from 'hatchable';
+import {db,config,api} from 'hatchable';
+import {createAuthenticatedGithubReleaseFetch} from 'lib/github-operator-release-fetch.js';
 import {
  prepareDeploymentReleaseReceipt,submitDeploymentReleaseReceipt,
  readDeploymentReleaseReceipt
@@ -38,7 +39,8 @@ export default async function(req,res){
  try{
   if(body.mode==='prepare')result=await prepareDeploymentReleaseReceipt({db,request:body.request});
   else if(body.mode==='submit')result=await submitDeploymentReleaseReceipt({
-   db,config,request:body.request,envelope:body.envelope});
+   db,config,request:body.request,envelope:body.envelope,
+   fetchGithub:createAuthenticatedGithubReleaseFetch({call:(name,args)=>api.call(name,args)})});
   else result=await readDeploymentReleaseReceipt({
    db,request:body.request,grantId:body.grantId});
  }catch{return res.status(503).json(fail('receipt-outcome-unresolved','reconcile-required'));}

@@ -1,4 +1,5 @@
 import {deploymentArtifactDigest} from './deployment-release-receipt/read.js';
+import {verifyIndependentSourceInventory} from './independent-source-inventory.js';
 
 const TARGET=/^hatchable-v([1-9][0-9]{0,8})$/;
 const SHA=/^[a-f0-9]{40}$/;
@@ -7,7 +8,7 @@ const HEX64=/^[a-f0-9]{64}$/;
 const PROJECT_ID='proj_A6GCXRSKizko';
 
 export async function verifyLiveHatchableManifest({
- deploymentRow,config,fetchImpl=globalThis.fetch
+ deploymentRow,config,fetchImpl=globalThis.fetch,fetchGithub
 }={}){
  if(!deploymentRow||!TARGET.test(deploymentRow.target||'')||
   !SHA.test(deploymentRow.source_sha||'')||
@@ -79,10 +80,10 @@ export async function verifyLiveHatchableManifest({
    return {verified:false,state:'manifest-drift-detected',
     reason:'live-deployment-version-or-status-mismatch'};
   }
-  // The platform must independently attest the deployment's source commit.
-  // A signed request is not proof that its source SHA shipped with these bytes.
+  // Explicit conflicting or malformed provider attribution always denies.
   const liveSourceSha=snap.source_sha??snap.sourceSha;
-  if(!SHA.test(liveSourceSha||'')||liveSourceSha!==deploymentRow.source_sha){
+  if((snap.source_sha!=null&&snap.sourceSha!=null&&snap.source_sha!==snap.sourceSha)||
+   (liveSourceSha!=null&&(!SHA.test(liveSourceSha)||liveSourceSha!==deploymentRow.source_sha))){
    return {verified:false,state:'receipt-only-unverified',
     reason:'live-deployment-source-unverified'};
   }
@@ -101,9 +102,16 @@ export async function verifyLiveHatchableManifest({
     reason:'live-artifact-digest-mismatch',liveDigest,
     liveFileCount:files.length};
   }
+  // Missing provider lineage may use independently authenticated GitHub
+  // source-inventory evidence, never a caller assertion or stale receipt.
+  const independent=liveSourceSha==null?await verifyIndependentSourceInventory({
+   sourceSha:deploymentRow.source_sha,files,fetchGithub}):null;
+  if(liveSourceSha==null&&!independent)return {verified:false,state:'receipt-only-unverified',
+   reason:'live-deployment-source-unverified'};
   return {verified:true,state:'live-manifest-verified',
-   target:deploymentRow.target,sourceSha:liveSourceSha,artifactDigest:liveDigest,
-   manifestFileCount:files.length};
+   target:deploymentRow.target,sourceSha:liveSourceSha??independent.sourceSha,artifactDigest:liveDigest,
+   manifestFileCount:files.length,sourceAttribution:independent?'independent-content-equivalence':'provider-source-sha',
+   ...(independent?{attestorRunId:independent.runId,attestorArtifactId:independent.artifactId,sourceDigest:independent.sourceDigest}: {})};
  }catch{
   return {verified:false,state:'receipt-only-unverified',
    reason:'hatchable-manifest-readback-unavailable'};
