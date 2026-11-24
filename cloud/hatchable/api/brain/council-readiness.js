@@ -1,7 +1,7 @@
 // Owner-only, read-only wiring verification for the canonical Hatchable brain.
 // Never claims installed identities or authenticated live Council workers.
 import {db} from 'hatchable';
-import {assessCouncilWiring} from 'lib/council-wiring.js';
+import {assessCouncilWiring,COUNCIL_TABLES} from 'lib/council-wiring.js';
 import {CAPABILITIES} from 'lib/brain-core.js';
 export const access='admin';
 export const methods=['GET'];
@@ -10,7 +10,8 @@ export default async function(req,res){
  try{
   const observed=await db.query(
    "SELECT table_name FROM information_schema.tables "+
-   "WHERE table_schema=current_schema() AND table_type='BASE TABLE'"
+   "WHERE table_schema=current_schema() AND table_type='BASE TABLE' AND table_name = ANY($1::text[])",
+   [COUNCIL_TABLES]
   );
   if(!Array.isArray(observed?.rows)||
      observed.rows.some(row=>typeof row?.table_name!=='string'))

@@ -17,11 +17,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
 label{display:block;margin:10px 0 5px;font-weight:600}
 input[type=file]{max-width:100%;width:100%}#sheet{min-width:210px}
-#result,#status{white-space:pre-line}#result{padding:12px;background:#0c1b30;border-radius:8px;min-height:42px}
+#result,#status{white-space:pre-line}#result{padding:12px;background:#0c1b30;color:#ecf3ff!important;border:1px solid #354965;border-radius:8px;min-height:42px}
 .scroll{overflow:auto;border:1px solid #38516d;border-radius:8px;max-height:400px}
 table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #38516d;min-width:80px;max-width:280px;white-space:pre-wrap;overflow-wrap:anywhere;padding:7px}
 th{background:#203a58;position:sticky;top:0}td{background:#0e1e33}.warn{color:#ffd195}
 .file-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px;border-bottom:1px solid #334964;overflow-wrap:anywhere}
+.file-item button{white-space:nowrap;flex-shrink:0}
 .file-item:last-child{border-bottom:0}#files{max-height:320px;overflow:auto}
 #cell-value{width:100%;max-width:340px}#cell-ref{width:105px;text-transform:uppercase}
 @media(max-width:740px){.grid{grid-template-columns:1fr}}

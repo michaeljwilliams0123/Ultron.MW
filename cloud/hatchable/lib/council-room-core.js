@@ -1,8 +1,11 @@
+import {createHash} from 'node:crypto';
 import {config} from 'hatchable';
 import {observeMahoragaMain} from 'lib/mahoraga-actions.js';
 import {inspectOpenIssue} from 'lib/council-issues.js';
 import {makeIssueCouncilPlan} from 'lib/issue-council-plan.js';
 import {detectOwnerDecisions,approvalCards,companionLead} from 'lib/council-front-door.js';
+import {dispatchCouncilDeepReasoning,bindCouncilDeepRequestDigest} from 'lib/council-deep-dispatch.js';
+import {getWorkersAiReadiness,runWorkersAi} from 'lib/cloudflare-workers-ai.js';
 
 const ROLES = Object.freeze([
  ['builder','Builder','Execution path'],
@@ -39,7 +42,6 @@ async function repoSnapshot(repo){
 function member(role,id,body,kind='inference',status='complete'){
  return {role,id,body:clean(body,1200),kind,status};
 }
-
 function issuePlanRequest(body){
  const prefix='ULTRON_ISSUE_REMEDIATION_V1\n';
  if(!body.startsWith(prefix))return null;
@@ -53,8 +55,9 @@ function issuePlanRequest(body){
  return {number:data.number,url};
 }
 
-export async function buildCouncilRoomResult({message}){
+export async function buildCouncilRoomResult({message,task={},db}){
  const prompt=clean(message.body,1600);
+ const deepMode=message.context?.reasoningMode==='deep'||/^@deep\b/i.test(prompt);
  const mentions=Array.isArray(message.mentions)?message.mentions:[];
  const issueRequest=issuePlanRequest(String(message.body||''));
  const [ultronResult,mahoragaResult,issueResult]=await Promise.allSettled([
@@ -92,8 +95,7 @@ export async function buildCouncilRoomResult({message}){
   generator:'A useful extension is to promote successful conversations into reusable routines: inputs, validation, execution adapter, expected result and approval boundary. Keep the room interface stable while adapters can vary.',
   sentinel:'I am watching the two live evidence sources represented here: Ultron.MW and Mahoraga. Cloudflare is not part of the core control path; it should appear only when a task explicitly needs managed browser or VM execution.',
   companion:'I will keep this thread as the owner-facing continuity layer: what you asked, what each member concluded, what ran, what is blocked, and the next concrete action. Current topic: “'+prompt+'”.'
- };
- const issueReview=issue?makeIssueCouncilPlan({issue,
+ }; const issueReview=issue?makeIssueCouncilPlan({issue,
   sourceSha:ultron.status==='observed'?ultron.sha:null,mode:'plan'}):null;
  const members=ROLES.filter(([id])=>targets.includes(id)).map(([id,role])=>{
   const assessment=issueReview?.roles.find(x=>x.role===role);
@@ -109,9 +111,40 @@ export async function buildCouncilRoomResult({message}){
  const cards=Number.isSafeInteger(messageId)&&messageId>0?
   approvalCards({taskKey:'room:'+messageId,ops:ownerOps}):[];
  const companion=companionLead({prompt,members,observed,cards,issue});
+ const taskId=Number(task?.id);
+ const roomKey=typeof message.room_key==='string'&&message.room_key?message.room_key:'owner-main';
+ let reasoningBridge={
+  mode:deepMode?'deep':'fast',
+  engine:deepMode?'github-council-gemini-groq':'hatchable-fast-template',
+  status:deepMode?'awaiting-github-dispatch':'complete',
+  paidCents:0
+ };
+ if(deepMode&&Number.isSafeInteger(taskId)&&taskId>0){
+  const requestDigest=createHash('sha256')
+   .update(JSON.stringify({taskId:String(taskId),roomKey,prompt}))
+   .digest('hex');
+  const bound=await bindCouncilDeepRequestDigest({
+   db,taskId:String(taskId),requestDigest,roomKey
+  });
+  // Never send an external dispatch with an unbound correlation digest.
+  const dispatch=bound?await dispatchCouncilDeepReasoning({
+   taskId:String(taskId),requestDigest,roomKey,config
+  }):{ok:false,status:'dispatch-failed',error:'request-digest-prebind-denied'};
+  reasoningBridge={
+   mode:'deep',
+   engine:'github-council-gemini-groq',
+   status:dispatch?.ok?'dispatched':(dispatch?.status||'dispatch-failed'),
+   requestDigest:dispatch?.requestDigest||requestDigest,
+   workflow:dispatch?.workflow||'council-deep-reasoning.yml',
+   ...(dispatch?.dispatchedAt?{dispatchedAt:dispatch.dispatchedAt}:{}),
+   ...(dispatch?.error?{error:dispatch.error}:{}),
+   paidCents:0
+  };
+ }
  return {
   objective:'council.room',at:new Date().toISOString(),
   frontDoor:'companion-first-v1',companion,approvalCards:cards,ownerDecisionsDetected:ownerOps,
+  reasoningBridge,
   source:'hatchable-council-room',prompt,
   summary:issue?'Issue #'+issue.number+' is open; Council prepared an advisory remediation plan.':
    'Council completed '+members.length+' member responses with Ultron.MW and Mahoraga evidence.',
