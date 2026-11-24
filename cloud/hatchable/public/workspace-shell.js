@@ -2,7 +2,7 @@
  const modules=[
   ['/council-room.html','Council','Conversations & decisions','conversation'],
   ['/workspace.html','Workspace','Objectives, learning & systems','workspace'],
-  ['/','Cloud controls','Runtime & activity','cloud'],
+  ['/index.html?controls=1','Cloud controls','Runtime & activity','cloud'],
   ['/monitoring.html','Monitoring','Read-only system evidence','cloud'],
   ['/connectors.html','Connections','Providers & capabilities','connections'],
   ['/repair-operations.html','Operations','Repairs & governed execution','operations'],
@@ -15,7 +15,7 @@
  function el(tag,cls,text){const e=document.createElement(tag);e.className=cls;if(text)e.textContent=text;return e;}
  document.body.classList.add('ultron-ui');
  const isCouncil=location.pathname==='/council-room.html';
- const selected=modules.find(m=>m[0]===location.pathname)||modules.find(m=>m[0]==='/workspace.html');
+ const selected=modules.find(m=>m[0].split('?')[0]===location.pathname)||modules.find(m=>m[0]==='/workspace.html');
  const nav=el('aside','u-sidebar');nav.id='u-sidebar';nav.setAttribute('aria-label','Ultron navigation');
  const brand=el('a','u-brand');brand.href='/council-room.html';brand.append(el('span','u-mark','U'),el('span','','Ultron'));brand.append(el('small','','Owner workspace'));nav.append(brand);
  const links=el('nav','u-modules');links.setAttribute('aria-label','Modules');

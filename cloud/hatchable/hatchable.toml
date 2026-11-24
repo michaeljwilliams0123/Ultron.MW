@@ -31,7 +31,6 @@ scopes        = ["api"]
 required      = false
 description   = "Privileged GitLab branch canary only; fixed project, signed grant and independent readback required."
 
-
 # One owner-authorized Hugging Face Hub connection for both repository reads
 # and writes. Reuse the existing Hub write token in protected Setup; it is
 # encrypted by Hatchable and never committed, rendered to clients, or duplicated.

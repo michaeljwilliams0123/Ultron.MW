@@ -55,8 +55,10 @@ function mountThreads(){
  slot.append(node('div','u-chat-heading','Conversations'));
  const create=node('button','u-new-chat','＋ New conversation');create.type='button';create.addEventListener('click',()=>{threadEditor('create');document.dispatchEvent(new CustomEvent('ultron:close-navigation'));});
  const search=node('input','u-chat-search');search.type='search';search.placeholder='Search conversations';search.setAttribute('aria-label','Search conversations');search.value=state.search;
- search.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.search=search.value;load();},250);});
- const filter=node('button','u-chat-filter','Show archived');filter.type='button';filter.addEventListener('click',()=>{state.archived=!state.archived;filter.textContent=state.archived?'Show active':'Show archived';load();});
+ const applySearch=()=>{clearTimeout(searchTimer);state.search=search.value;load();};
+ search.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(applySearch,120);});
+ search.addEventListener('search',applySearch);
+ const filter=node('button','u-chat-filter','Show archived');filter.type='button';filter.addEventListener('click',async()=>{state.archived=!state.archived;filter.textContent=state.archived?'Show active':'Show archived';filter.disabled=true;try{await load();}finally{filter.disabled=false;}});
  const list=node('div','u-chat-list');list.id='u-chat-list';list.setAttribute('aria-label','Saved Council conversations');
  slot.append(create,search,filter,list);renderThreads();
 }
