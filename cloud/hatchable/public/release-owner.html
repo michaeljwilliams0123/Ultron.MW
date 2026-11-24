@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<title>Ultron — Release verification</title>
+<link rel="stylesheet" href="/workspace-shell.css">
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif}body{margin:0;background:#0c1425;color:#e6f0ff}main{max-width:720px;margin:auto;padding:24px 18px 64px}a{color:#aac9ff}section{background:#13223a;border:1px solid #34465e;border-radius:12px;padding:18px;margin-top:20px}label{display:block;margin-top:14px}input,select{width:100%;box-sizing:border-box;background:#182a45;color:#f2f7ff;border:1px solid #587498;border-radius:7px;padding:11px;font:inherit}button{background:#90b5ff;color:#081626;font:600 15px system-ui;border:0;padding:12px;border-radius:8px;margin:12px 8px 0 0}button:disabled{opacity:.5}pre{white-space:pre-wrap;overflow-wrap:anywhere}p{line-height:1.55}.muted{color:#bac8db}
+</style>
+</head>
+<body><main>
+<nav><a href="/">Command Center</a> · <a href="/passkey-owner.html">Owner passkeys</a></nav>
+<h1>Release verification</h1><div data-sign-in-card></div>
+<p>Authorize a receipt for one already-deployed release. This does not deploy, change permissions, or grant future releases. The server independently checks the current source and deployed manifest before and after your passkey approval.</p>
+<section><h2>Exact release</h2>
+<label for="target">Deployment version</label><input id="target" placeholder="hatchable-v158" autocomplete="off" maxlength="19">
+<label for="sha">GitHub main commit</label><input id="sha" autocomplete="off" maxlength="40">
+<label for="digest">Full manifest digest</label><input id="digest" placeholder="sha256:…" autocomplete="off" maxlength="71">
+<label for="count">Manifest file count</label><input id="count" type="number" min="1" max="5000" step="1">
+<label for="credential">Enrolled owner passkey</label><select id="credential"></select>
+<button id="load">Refresh owner passkeys</button><button id="prepare" disabled>Check live release</button>
+<p class="muted">Compare these values with the authenticated Hatchable manifest and the signed GitHub inventory. No signing credentials or envelope upload is needed.</p>
+<pre id="details" aria-live="polite"></pre>
+<button id="authorize" disabled>Authorize exact receipt with passkey</button>
+<button id="reconcile" disabled>Reconcile existing receipt</button>
+</section><section><h2>Production status</h2><button id="verify">Refresh production proof</button><pre id="status" role="status" aria-live="polite">Checking owner session…</pre></section>
+</main><script src="/sign-in.js" defer></script><script src="/release-owner.js" defer></script></body></html>
