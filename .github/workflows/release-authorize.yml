@@ -1,0 +1,75 @@
+name: Autonomous Release Authorization
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Authorization mode (decision-only or authorize)'
+        required: true
+        default: 'decision-only'
+        type: choice
+        options:
+          - decision-only
+          - authorize
+      target:
+        description: 'Observed Hatchable target (e.g. hatchable-v159)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  authorize-release-receipt:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: production-autonomous-release
+    timeout-minutes: 5
+    steps:
+      - name: Configure Git bare-repository policy
+        run: git config --global safe.bareRepository explicit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Emit release-eligibility statement
+        env:
+          POLICY_MODE: ${{ inputs.mode }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const stmt = {
+              schema: 'ultron.release-eligibility.v1',
+              repository: process.env.GITHUB_REPOSITORY,
+              repositoryId: Number(process.env.GITHUB_REPOSITORY_ID),
+              sourceSha: process.env.GITHUB_SHA,
+              workflowRef: process.env.GITHUB_WORKFLOW_REF,
+              workflowRunId: Number(process.env.GITHUB_RUN_ID),
+              workflowAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+              intendedProjectId: 'proj_A6GCXRSKizko',
+              intendedEnvironment: 'production',
+              mode: process.env.POLICY_MODE
+            };
+            fs.writeFileSync('release-eligibility.json', JSON.stringify(stmt, null, 2));
+          "
+
+      - name: Request GitHub OIDC token and evaluate standing policy
+        env:
+          AUTHORIZE_URL: https://ultron-mw-cloud.hatchable.site/api/brain/deployment-release-authorize
+          POLICY_MODE: ${{ inputs.mode }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          OIDC_JWT=$(curl -fsSL -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=ultron.release-authorizer.v1" | node -e "
+              const d = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
+              if (!d.value) process.exit(1);
+              process.stdout.write(d.value);
+            ")
+          curl -fsSL -X POST "${AUTHORIZE_URL}" \
+            -H "Authorization: Bearer ${OIDC_JWT}" \
+            -H "Content-Type: application/json" \
+            -d "{\"mode\":\"${POLICY_MODE}\",\"target\":\"${TARGET}\"}"
