@@ -145,7 +145,7 @@ test('chat-execute route enforces owner, origin and ultron-chat wires passkey me
  assert.match(ui,/\/api\/brain\/chat-execute/);
  assert.match(ui,/navigator\.credentials/);
  assert.match(ui,/driftDetails/);
- const proof=read('cloud/hatchable/api/brain/release-proof.js');
+ const proof=read('cloud/hatchable/lib/release-proof-readback.js');
  assert.match(proof,/driftDetails/);
  assert.match(proof,/verifyLiveHatchableManifest/);
 });

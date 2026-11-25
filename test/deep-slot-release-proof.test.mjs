@@ -77,7 +77,7 @@ test('SLOT-06 cloud tick records pickup and never marks queued work as done',()=
  assert.match(source,/slot_evidence:slotEvidence/);
 });
 test('RELEASE-04 owner route exposes unknown release honestly',()=>{
- const source=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8');
+ const source=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../cloud/hatchable/lib/release-proof-readback.js',import.meta.url),'utf8');
  assert.match(source,/access='admin'/);
  assert.match(source,/methods=\['GET'\]/);
  assert.match(source,/collectMergedCouncilReadback/);
