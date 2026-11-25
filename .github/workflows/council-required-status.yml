@@ -265,7 +265,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: council-live-review-${{ github.run_id }}
-          path: council-live-review-result.json
+          path: |
+            council-live-review-result.json
+            council-hold-remediation.json
           if-no-files-found: ignore
           retention-days: 30
       - name: Mint dedicated Council Gate App token
@@ -307,7 +309,14 @@ jobs:
             try{result=JSON.parse(fs.readFileSync('council-release-gate.json','utf8'));}catch{result=null;}
             const body=gate.buildGateCheckRun(result,{sha,prNumber:number,
               detailsUrl:'https://github.com/'+owner+'/'+repo+'/actions/runs/'+context.runId});
-            await github.rest.checks.create({owner,repo,...body});
+            // Only main-generated, exact-head diagnostic metadata; not a release grant.
+            let remediation=null;
+            try{remediation=JSON.parse(fs.readFileSync('council-hold-remediation.json','utf8'));}catch{}
+            const output={...body.output};
+            if(remediation?.authorization==='held'&&remediation.sourceSha===sha&&
+               remediation.baseSha===expected.base.sha&&remediation.prNumber===number)
+              output.text=JSON.stringify(remediation);
+            await github.rest.checks.create({owner,repo,...body,output});
             core.info('Published '+body.conclusion+' '+body.name+' on '+sha);
       - name: Fail closed when the Council Gate App is not configured
         if: steps.prepare.outputs.skip == 'false' && steps.app.outputs.token == ''

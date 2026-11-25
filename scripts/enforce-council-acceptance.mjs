@@ -4,6 +4,7 @@
 import {readFileSync,writeFileSync,appendFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {evaluateTrustedCouncilGate,gatePasses} from '../src/council-trusted-gate.mjs';
+import {planCouncilRemediation} from '../src/council-hold-remediation.mjs';
 
 function read(path){
  if(typeof path!=='string'||!path||path.includes('..'))return null;
@@ -22,6 +23,8 @@ const result=evaluateTrustedCouncilGate({report,receipt,pr,
  overrideComment,ownerPublicJwk});
 writeFileSync('council-release-gate.json',JSON.stringify(result,null,2)+'\n');
 const pass=gatePasses(result,pr?.head?.sha,pr?.number);
+const remediation=planCouncilRemediation({result,receipt});
+writeFileSync('council-hold-remediation.json',JSON.stringify(remediation,null,2)+'\n');
 const summary=[
  '## Council release gate (trusted v2)',
  '**Decision:** '+result.status+(pass?' (pass)':' (HOLD)'),
@@ -35,6 +38,7 @@ const summary=[
  '**Security-sensitive paths:** '+((result.securityPaths||[]).join(', ')||'none'),
  '**Owner key pinned on main:** '+(ownerPublicJwk?'yes':'no (override unavailable)'),
  '**Override:** '+(result.overrideUsed?'SIGNED OWNER EXCEPTION #'+result.overrideCommentId:'none'),
+ '**Remediation route:** '+(remediation?.route||'unavailable'),
  'Seven logical role votes are not seven independent authenticated GitHub accounts.',
  'No Council decision overrides required tests, branch rules or deployment gates.'
 ].join('\n')+'\n';
