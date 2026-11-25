@@ -184,7 +184,7 @@ test('P0-1: security-sensitive path changes force human-required and missing/tru
   const denied = [
     '.github/workflows/verify.yml',
     'cloud/hatchable/lib/standing-release-policy.js',
-    'cloud/hatchable/migrations/0053_standing_release_policy.sql',
+    'cloud/hatchable/migrations/0054_standing_release_policy.sql',
     'cloudflare/edge-shield/src/proxy.ts',
   ];
   for (const path of denied) {

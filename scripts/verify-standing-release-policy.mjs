@@ -40,7 +40,7 @@ if (shapeErr) {
 for (const sensitive of [
   '.github/workflows/verify.yml',
   'cloud/hatchable/lib/standing-release-policy.js',
-  'cloud/hatchable/migrations/0053_standing_release_policy.sql',
+  'cloud/hatchable/migrations/0054_standing_release_policy.sql',
   'cloudflare/edge-shield/src/proxy.ts',
 ]) {
   const check = classifyChangedPaths([sensitive], samplePolicy);
