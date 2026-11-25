@@ -19,7 +19,7 @@ const spec={
   'lane-ops-audit.yml':{triggers:['workflow_run','pull_request','schedule','workflow_dispatch'],jobs:['audit','self-scan-pr','mirror','reef-runtime-probe','diagnose','act','reconcile']},
   'lane-owner-canary.yml':{triggers:['workflow_dispatch'],jobs:['read-only','one-branch','inspect-or-verify','marker-write','secondary-admin-verify','verify']},
   'owner-comment-router.yml':{triggers:['issue_comment','pull_request_review_comment','issues','workflow_dispatch'],jobs:['cloud','pr-conversation','issue-implementation','council-command','codex-trigger-audit','public-chat']},
-  'release-authorize.yml':{triggers:['workflow_dispatch'],jobs:['authorize-release-receipt']},
+  'release-authorize.yml':{triggers:['workflow_dispatch','workflow_run','schedule'],jobs:['authorize-release-receipt']},
   'verify.yml':{triggers:['push','pull_request','workflow_dispatch'],jobs:['test','attested-receipt','fixed-comparison']},
 };
 test('eight canonical lanes, Council gate and two manual verification utilities',()=>{
