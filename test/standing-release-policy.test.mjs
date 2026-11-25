@@ -249,7 +249,14 @@ test('submitDeploymentReleaseReceipt accepts standing-policy-v1 only with matchi
   const denied = await submitDeploymentReleaseReceipt({
     db: { query: async () => ({ rows: [] }) },
     config: { get: async () => '{}' },
-    request: { target: 'hatchable-v159', sourceSha: sha, artifactDigest: digest, manifestFileCount: 286 },
+    request: {
+      key: `hatchable-v159-${sha.slice(0, 8)}`,
+      target: 'hatchable-v159',
+      sourceSha: sha,
+      artifactDigest: digest,
+      manifestFileCount: 286,
+      independentReadback: true,
+    },
     authorizationType: 'standing-policy-v1',
     standingAuthorization: { ok: false, decision: 'denied' },
   });

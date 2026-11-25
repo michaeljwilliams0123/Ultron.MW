@@ -95,11 +95,14 @@ export async function evaluateAndAuthorizeAutonomousRelease({
     return { ok: false, decision: 'human-required', reason: 'rollback-requires-owner-ceremony' };
   }
 
+  const receiptKey = `${live.target}-${oidcIdentity.sha.slice(0, 8)}`.slice(0, 48);
   const normalized = normalizeDeploymentReceiptRequest({
+    key: receiptKey,
     target: live.target,
     sourceSha: oidcIdentity.sha,
     artifactDigest: live.artifactDigest,
     manifestFileCount: live.manifestFileCount,
+    independentReadback: true,
   });
   if (!normalized) return { ok: false, decision: 'denied', reason: 'deployment-request-invalid' };
 
