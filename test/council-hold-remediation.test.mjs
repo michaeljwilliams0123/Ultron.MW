@@ -89,3 +89,10 @@ test('owner-only hold creates an investigation, never reruns to obtain a differe
  assert.equal(r[0].ownerRequired,true);assert.equal(f.calls[0].path,'/issues');
  assert.match(f.calls[0].body.body,/no automatic governance edits/);
 });
+
+test('real provider rate-limit telemetry and advisory model dissent are correctly classified',()=>{
+ const p=planCouncilRemediation({result,receipt:{modelReview:{results:{Builder:{...models.Builder,attempts:[{outcome:'rate-limited',status:429}]}}}}});
+ assert.equal(p.route,'retry-model');
+ const all=planCouncilRemediation({result:{...result,securitySensitive:true},receipt:{modelReview:{results:{Builder:{source:'model',modelInvoked:true,verdict:'hold',disagreements:[]},Steward:{source:'model',modelInvoked:true,verdict:'hold',disagreements:[]}}}}});
+ assert.deepEqual(all.dissentRoles,['Builder','Steward']);
+});

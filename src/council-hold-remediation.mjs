@@ -3,20 +3,20 @@ const SHA=/^[a-f0-9]{40}$/;
 const REPO='michaeljwilliams0123/Ultron.MW',REPO_ID=1424939667;
 const GATE_APP_ID=5765239,GATE_WORKFLOW_ID=416079861;
 const SCHEMA='ultron.council-hold-remediation.v1';
-const MODEL_ROLES=['Builder','Skeptic','Sentinel'];
-const transient=/^(?:http-429|http-5[0-9]{2}|error|timeout)$/;
+const MODEL_ROLES=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
+const transient=/^(?:rate-limited|http-429|http-5[0-9]{2}|error|timeout)$/;
 const pos=n=>Number.isSafeInteger(n)&&n>0;
 const repoOk=r=>r?.id===REPO_ID&&r.full_name===REPO;
 const exact=(p,q)=>p?.number===q?.number&&p?.head?.sha===q?.head?.sha&&p?.base?.sha===q?.base?.sha;
 const safePr=p=>p?.state==='open'&&pos(p.number)&&p.base?.ref==='main'&&repoOk(p.base.repo)&&repoOk(p.head?.repo)&&SHA.test(p.head.sha)&&SHA.test(p.base.sha);
 const usable=p=>p?.schema===SCHEMA&&pos(p.prNumber)&&SHA.test(p.sourceSha)&&SHA.test(p.baseSha)&&p.authorization==='held';
 const routes=new Set(['retry-model','collect-evidence','investigate','restore-provider','owner-review']);
-export function planCouncilRemediation({result,receipt}={}){
+export function planCouncilRemediation({result,receipt,taintEvidence}={}){
  const r=result||{},models=receipt?.modelReview?.results||{};
  if(!pos(r.prNumber)||!SHA.test(r.sourceSha||'')||!SHA.test(r.baseSha||''))return null;
  const base={schema:SCHEMA,prNumber:r.prNumber,sourceSha:r.sourceSha,baseSha:r.baseSha,
   authorization:['accepted','accepted-owner-routine','owner-overridden'].includes(r.status)?'accepted':'held',ownerRequired:r.securitySensitive!==false,route:'none',
-  transientRoles:[],unavailableRoles:[],dissentRoles:[]};
+  transientRoles:[],unavailableRoles:[],dissentRoles:[],evidenceGaps:[]};
  if(base.authorization==='accepted')return Object.freeze(base);
  for(const role of MODEL_ROLES){
   const m=models[role];
@@ -27,6 +27,9 @@ export function planCouncilRemediation({result,receipt}={}){
    if(m?.fallbackReason==='free-tier-exhausted-or-failed'&&failures.length&&failures.every(a=>transient.test(a.outcome)))base.transientRoles.push(role);
    else base.unavailableRoles.push(role);
   }
+ }
+ if(taintEvidence?.schema==='ultron.council-taint-evidence.v1'&&taintEvidence.sourceSha===r.sourceSha&&taintEvidence.prNumber===r.prNumber&&Array.isArray(taintEvidence.reports)){
+  base.evidenceGaps=taintEvidence.reports.filter(x=>x?.status!=='no-known-flow'&&typeof x?.file==='string'&&/^[a-zA-Z0-9_.\/-]{1,160}$/.test(x.file)&&!x.file.split('/').includes('..')).slice(0,5).map(x=>({file:x.file,status:['unknown','findings','parse-error','source-unavailable'].includes(x.status)?x.status:'unknown',unknownKinds:(x.unknownKinds||[]).filter(k=>['callback-analysis-incomplete','dynamic-property-access','unresolved-tainted-call','unresolved-dynamic-call','unsupported-statement','analysis-budget','unclassified-analysis-limit'].includes(k)).slice(0,3)}));
  }
  if(base.ownerRequired)base.route='owner-review';
  else if(['missing-or-stale-council-evidence','missing-or-duplicate-role','missing-or-duplicate-publication','incomplete-role-evidence','changed-file-list-incomplete','changed-file-list-invalid'].includes(r.reason))base.route='collect-evidence';
@@ -64,6 +67,7 @@ export function councilRemediationIssue(p){
   body:[marker,'Exact-head Council investigation; this is not approval or a request to execute untrusted code.',
    'PR: #'+p.prNumber,'Head: '+p.sourceSha,'Base: '+p.baseSha,'Route: '+p.route,
    'Transient models: '+roles(p.transientRoles),'Unavailable models: '+roles(p.unavailableRoles),'Model dissent: '+roles(p.dissentRoles),
+   'Bounded static evidence gaps: '+(Array.isArray(p.evidenceGaps)?p.evidenceGaps.filter(x=>/^[a-zA-Z0-9_.\/-]{1,160}$/.test(x?.file||'')&&['unknown','findings','parse-error','source-unavailable'].includes(x.status)).slice(0,5).map(x=>x.file+' ('+x.status+')').join(', ')||'none reported':'unavailable'),
    'Sentinel: collect the exact-head check and provider evidence. Skeptic: independently reproduce any concrete defect before routing a bounded draft fix through the existing self-repair lane. Builder: add a failing-then-passing test for a verified defect. Reevaluate on the new head.',
    p.ownerRequired?'Steward: critical change requires owner authorization; no automatic governance edits.':'Steward: escalate only after bounded recovery or unresolved material risk.',
    'No merge, deploy, credential change, paid inference or signed-owner exception is authorized by this issue.'].join('\n\n')};

@@ -23,7 +23,7 @@ const result=evaluateTrustedCouncilGate({report,receipt,pr,
  overrideComment,ownerPublicJwk});
 writeFileSync('council-release-gate.json',JSON.stringify(result,null,2)+'\n');
 const pass=gatePasses(result,pr?.head?.sha,pr?.number);
-const remediation=planCouncilRemediation({result,receipt});
+const remediation=planCouncilRemediation({result,receipt,taintEvidence:read(process.env.COUNCIL_TAINT_EVIDENCE_FILE)});
 writeFileSync('council-hold-remediation.json',JSON.stringify(remediation,null,2)+'\n');
 const summary=[
  '## Council release gate (trusted v2)',
