@@ -11,6 +11,7 @@ const ROUTES=[
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/pulls/'+ID+'$'),
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/commits/'+SHA+'/pulls$'),
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/commits/'+SHA+'/check-runs$'),
+ new RegExp('^'+ROOT.replaceAll('.','\\.')+'/compare/'+SHA+'\\.\\.\\.'+SHA+'$'),
  /^\/repos\/michaeljwilliams0123\/Ultron\.MW\/actions\/workflows\/verify\.yml\/runs$/,
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/actions/runs/'+ID+'/(jobs|artifacts)$')
 ];

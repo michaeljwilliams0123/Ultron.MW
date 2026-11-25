@@ -40,7 +40,7 @@ export default {
     }
     if (path.startsWith("/__ultron/admin")) return handleAdmin(request, env, ctx);
     // Internal readback is called directly by the Workflow, never via the public proxy.
-    if (path === "/api/brain/release-proof-edge") return applyOwnHeaders(json({error:"not_found"},404));
+    if (path === "/api/brain/release-proof-edge" || path === "/api/brain/release-authorization-wakeup") return applyOwnHeaders(json({error:"not_found"},404));
     const policy = policyFor(path);
     if (policy) {
       const verdict = await enforceRateLimit(request, env, policy);
