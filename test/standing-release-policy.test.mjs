@@ -348,3 +348,25 @@ test('hybrid security boundaries remain owner-required even with a narrower cust
   assert.equal(classifyChangedPaths([file],{...basePolicy,deniedPaths:['private/**']}).eligible,false);
  }
 });
+
+test('standing enrollment accepts a real 32-byte WebAuthn challenge encoded as base64url', async () => {
+  const { enrollStandingPolicy } = await import('../cloud/hatchable/lib/standing-release-policy.js');
+  const { createHash } = await import('node:crypto');
+  const pair = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const credentialId = Buffer.from('test-only-standing-policy-credential').toString('base64url');
+  const policy = { ...basePolicy, ownerCredentialId: credentialId };
+  const challenge = Buffer.from(computeStandingPolicySha256(policy), 'hex').toString('base64url');
+  const client = Buffer.from(JSON.stringify({ type:'webauthn.get', challenge, origin:'https://ultron-mw-cloud.hatchable.site', crossOrigin:false }));
+  const auth = Buffer.alloc(37);
+  createHash('sha256').update('ultron-mw-cloud.hatchable.site').digest().copy(auth);
+  auth[32] = 5;
+  const signature = sign('sha256', Buffer.concat([auth, createHash('sha256').update(client).digest()]), pair.privateKey);
+  const proof = { credentialId, authenticatorData:auth.toString('base64url'), clientDataJSON:client.toString('base64url'), signature:signature.toString('base64url') };
+  const db = { async query(sql) {
+    if (sql.includes('FROM brain_owner_passkeys')) return { rows:[{ credential_id:credentialId, public_key_spki:pair.publicKey.export({type:'spki',format:'der'}).toString('base64url'), revoked_at:null }] };
+    if (sql.includes('INSERT INTO brain_standing_release_policies')) return { rows:[{ policy_id:policy.policyId, enabled:true }] };
+    throw Error('Unexpected query');
+  }};
+  const result = await enrollStandingPolicy({db,policy,passkeyProof:proof,enabled:true,now});
+  assert.equal(result.ok,true,result.reason);
+});

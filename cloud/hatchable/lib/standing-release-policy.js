@@ -166,7 +166,7 @@ export async function enrollStandingPolicy({
       credentialId: passkeyProof.credentialId,
       expectedCredentialId: keyRow.credential_id,
       publicKeySpki: keyRow.public_key_spki,
-      challenge: policySha256,
+      challenge: btoa(String.fromCharCode(...policySha256.match(/../g).map(hex => parseInt(hex, 16)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
       authenticatorData: passkeyProof.authenticatorData,
       clientDataJSON: passkeyProof.clientDataJSON,
       signature: passkeyProof.signature,
