@@ -111,11 +111,23 @@ async function recordDeploymentReleaseReceipt({db,verifiedGrant,input}){
 }
 
 export async function submitDeploymentReleaseReceipt({
- db,config,request,envelope,fetchGithub,verifyManifest=verifyLiveHatchableManifest
+ db,config,request,envelope,authorizationType='owner-grant-v1',standingAuthorization=null,
+ fetchGithub,verifyManifest=verifyLiveHatchableManifest
 }={}){
  const input=normalizeDeploymentReceiptRequest(request);
  if(!input||typeof db?.query!=='function'||typeof config?.get!=='function')
   return held('request-invalid');
+ if(authorizationType==='standing-policy-v1'){
+  if(!standingAuthorization?.ok||standingAuthorization.decision!=='authorized'||
+    !Number.isSafeInteger(standingAuthorization.receiptId)||
+    standingAuthorization.eligibility?.sourceSha!==input.sourceSha||
+    standingAuthorization.eligibility?.artifactDigest!==input.artifactDigest||
+    standingAuthorization.eligibility?.target!==input.target){
+   return held('standing-authorization-invalid');
+  }
+  return readDeploymentReleaseReceipt({db,request:input,grantId:null,receiptId:standingAuthorization.receiptId});
+ }
+ if(authorizationType!=='owner-grant-v1')return held('authorization-type-invalid');
  let publicJwk;
  try{publicJwk=JSON.parse(await config.get('ULTRON_SECURITY_ADJUDICATOR_PUBLIC_JWK'));}
  catch{return held('adjudicator-unconfigured');}
