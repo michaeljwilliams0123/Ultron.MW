@@ -63,7 +63,7 @@ test('never forward credentials to foreign repo, URLs, write methods or hidden q
 });
 
 test('release handler wires authenticated operator into both CI and Council reads',()=>{
- const source=readFileSync(new URL('../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8');
+ const source=readFileSync(new URL('../cloud/hatchable/lib/release-proof-readback.js',import.meta.url),'utf8');
  assert.match(source,/createAuthenticatedGithubReleaseFetch/);
  assert.match(source,/collectConnectivity\(\{db,fetchGithub/);
  assert.match(source,/collectMergedCouncilReadback\(\{commitSha:sha,fetchGithub/);

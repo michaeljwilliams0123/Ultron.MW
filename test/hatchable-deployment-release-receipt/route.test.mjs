@@ -86,7 +86,7 @@ test('receipt route enforces owner, origin and exact mode bodies',async()=>{
 
 test('release-proof route reads an exact-main deployment receipt instead of inventing one',()=>{
  const source=readFileSync(new URL(
-  '../../cloud/hatchable/api/brain/release-proof.js',import.meta.url),'utf8');
+  '../../cloud/hatchable/lib/release-proof-readback.js',import.meta.url),'utf8');
  assert.match(source,/findDeploymentReleaseReceipt/);
  assert.match(source,/sourcePr:councilSource\.sourcePr,deployment/);
  assert.doesNotMatch(source,/sourcePr:councilSource\.sourcePr,deployment:\{\}/);
