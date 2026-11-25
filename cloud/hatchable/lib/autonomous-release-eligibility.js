@@ -4,7 +4,6 @@ import {
   computeStandingPolicySha256,
 } from './standing-release-policy.js';
 import {
-  deploymentArtifactDigest,
   deploymentReceiptResource,
   normalizeDeploymentReceiptRequest,
 } from './deployment-release-receipt/read.js';
@@ -127,7 +126,7 @@ export async function evaluateAndAuthorizeAutonomousRelease({
   // check jti + release tuple uniqueness, insert receipt + claim atomically.
   const grantId = `standing-${policyRow.policy_id}-v${policyRow.policy_version}-${oidcIdentity.jti.slice(0, 32)}`;
   const resource = deploymentReceiptResource(normalized);
-  const digest = deploymentArtifactDigest(normalized);
+  const digest = normalized.artifactDigest;
   const expiresAtIso = new Date(now + 300000).toISOString();
 
   const sql = `
