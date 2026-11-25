@@ -17,8 +17,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  attestations: write
 
 jobs:
   authorize-release-receipt:
@@ -26,6 +24,9 @@ jobs:
     runs-on: ubuntu-24.04
     environment: production-autonomous-release
     timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Configure Git bare-repository policy
         run: git config --global safe.bareRepository explicit
