@@ -1,21 +1,39 @@
 const PATH='/api/brain/release-proof-edge';
 const REPO='michaeljwilliams0123/Ultron.MW';
-const message=ts=>'ultron.edge.release-proof.read.v1\nGET\n'+PATH+'\n'+REPO+'\n'+ts;
+const message=(ts,nonce)=>'ultron.edge.release-proof.read.v1\nGET\n'+PATH+'\n'+REPO+'\n'+ts+'\n'+nonce;
 const enc=new TextEncoder();
-const SHA=/^[a-f0-9]{40}$/,DIGEST=/^sha256:[a-f0-9]{64}$/;
+const SHA=/^[a-f0-9]{40}$/,DIGEST=/^sha256:[a-f0-9]{64}$/,NONCE=/^[a-zA-Z0-9_-]{16,64}$/;
 const header=(h,n)=>typeof h?.get==='function'?h.get(n):h?.[n]??null;
-export async function authorizeEdgeReleaseReadback({headers,secret,now=Date.now(),method}={}){
+const seenNonces=new Map();
+const MAX_REPLAY_WINDOW_MS=60000;
+function consumeMemoryNonce(nonce,now){
+ for(const [k,exp] of seenNonces)if(exp<=now)seenNonces.delete(k);
+ if(seenNonces.has(nonce))return false;
+ seenNonces.set(nonce,now+MAX_REPLAY_WINDOW_MS);
+ return true;
+}
+export async function authorizeEdgeReleaseReadback({headers,secret,now=Date.now(),method,consumeNonce}={}){
  if(method!=='GET'||typeof secret!=='string'||secret.length<32)return false;
- const ts=header(headers,'x-ultron-release-proof-ts'),mac=header(headers,'x-ultron-release-proof-mac');
- if(typeof ts!=='string'||!/^\d{10}$/.test(ts)||typeof mac!=='string'||!/^[a-f0-9]{64}$/.test(mac)||
- !Number.isFinite(now)||Math.abs(now-Number(ts)*1000)>60000)return false;
+ const ts=header(headers,'x-ultron-release-proof-ts');
+ const nonce=header(headers,'x-ultron-release-proof-nonce');
+ const mac=header(headers,'x-ultron-release-proof-mac');
+ if(typeof ts!=='string'||!/^\d{10}$/.test(ts)||typeof nonce!=='string'||!NONCE.test(nonce)||
+ typeof mac!=='string'||!/^[a-f0-9]{64}$/.test(mac)||
+ !Number.isFinite(now)||Math.abs(now-Number(ts)*1000)>MAX_REPLAY_WINDOW_MS)return false;
  try{
   const key=await crypto.subtle.importKey('raw',enc.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['verify']);
-  return await crypto.subtle.verify('HMAC',key,Uint8Array.from(mac.match(/../g),x=>parseInt(x,16)),enc.encode(message(ts)));
+  const ok=await crypto.subtle.verify('HMAC',key,Uint8Array.from(mac.match(/../g),x=>parseInt(x,16)),enc.encode(message(ts,nonce)));
+  if(!ok)return false;
+  if(!consumeMemoryNonce(nonce,now))return false;
+  if(typeof consumeNonce==='function'){
+   const durable=await consumeNonce(nonce,Number(ts));
+   if(!durable)return false;
+  }
+  return true;
  }catch{return false;}
 }
 const gates=['ci','council-7of7','signed-deployment-receipt','independent-manifest-readback'];
-export function projectEdgeReleaseProof(p){
+export function projectEdgeReleaseProof(p,{now=Date.now()}={}){
  const identity=p?.schema==='ultron.release-proof.v1'&&p.repo===REPO&&SHA.test(p.commitSha||'');
  const details=p?.driftDetails;
  const exact=identity&&p.deployment?.sourceSha===p.commitSha&&
@@ -26,6 +44,7 @@ export function projectEdgeReleaseProof(p){
   details?.councilVerified===true&&details?.deploymentReceiptRecorded===true&&details?.independentManifestReadback===true&&
   Array.isArray(details.missingGates)&&details.missingGates.length===0);
  return {schema:'ultron.edge.release-proof.v1',repo:REPO,verified,status:verified?'verified':'unverified',
+  observedAt:new Date(Number.isFinite(now)?now:Date.now()).toISOString(),
   commitSha:identity?p.commitSha:null,target:exact?p.deployment.target:null,
   artifactDigest:exact?p.deployment.artifactDigest:null,receiptId:exact?p.deployment.receiptId:null,
   evidenceSha256:identity&&/^[a-f0-9]{64}$/.test(p.evidenceSha256||'')?p.evidenceSha256:null,
