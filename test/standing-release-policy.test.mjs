@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import {
   CANONICAL_COUNCIL_APP_ID,
@@ -13,7 +14,10 @@ import {
   validateStandingPolicyShape,
 } from '../cloud/hatchable/lib/standing-release-policy.js';
 import { verifyGithubReleaseOidc } from '../cloud/hatchable/lib/github-oidc-release-identity.js';
-import { evaluateAndAuthorizeAutonomousRelease } from '../cloud/hatchable/lib/autonomous-release-eligibility.js';
+import {
+  STANDING_RECEIPT_GRANT_OPERATION,
+  evaluateAndAuthorizeAutonomousRelease,
+} from '../cloud/hatchable/lib/autonomous-release-eligibility.js';
 import { submitDeploymentReleaseReceipt } from '../cloud/hatchable/lib/deployment-release-receipt.js';
 
 const now = Date.parse('2026-11-24T23:00:00Z');
@@ -81,6 +85,8 @@ const baseEvidence = {
   councilVerified: true,
   provenanceVerified: true,
   provenanceSha: sha,
+  changedFilesAvailable: true,
+  changedFilesTruncated: false,
   changedFiles: ['public/app.js', 'docs/README.md'],
   previousDeploymentVersion: 158,
   liveDeployment: {
@@ -92,7 +98,7 @@ const baseEvidence = {
   },
 };
 
-function makeFakeDb({ policyOverrides = {}, transactionOutcome = 'recorded', jtiConflict = false } = {}) {
+function makeFakeDb({ policyOverrides = {}, transactionOutcome = 'recorded', jtiConflict = false, queries = [] } = {}) {
   const policyRow = {
     policy_id: basePolicy.policyId,
     policy_version: basePolicy.policyVersion,
@@ -110,7 +116,8 @@ function makeFakeDb({ policyOverrides = {}, transactionOutcome = 'recorded', jti
     ...policyOverrides,
   };
   return {
-    async query(sql) {
+    async query(sql, params) {
+      queries.push({ sql, params });
       if (sql.includes('FROM brain_standing_release_policies ORDER BY')) {
         return { rows: policyOverrides === null ? [] : [policyRow] };
       }
@@ -152,7 +159,28 @@ test('standing policy shape enforces zero-spend and 31-day max window', () => {
   assert.equal(validateStandingPolicyShape({ ...basePolicy, expiresAt: '2027-02-01T00:00:00Z' }), 'policy-window-invalid');
 });
 
-test('security-sensitive path changes force human-required rather than silent approval', async () => {
+test('P0-1: security-sensitive path changes force human-required and missing/truncated changedFiles fail closed', async () => {
+  const routeSrc = readFileSync(new URL('../cloud/hatchable/api/brain/deployment-release-authorize.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(routeSrc, /req\.body\??\.changedFiles/);
+  assert.match(routeSrc, /\/compare\//);
+
+  const oidc = { sha, jti: 'jti-1', workflowRef: CANONICAL_WORKFLOW_REF, workflowRunId: 1, workflowAttempt: 1 };
+  for (const badDiff of [
+    { changedFilesAvailable: false },
+    { changedFilesTruncated: true },
+    { changedFiles: null },
+  ]) {
+    const res = await evaluateAndAuthorizeAutonomousRelease({
+      db: makeFakeDb(),
+      oidcIdentity: oidc,
+      evidence: { ...baseEvidence, ...badDiff },
+      mode: 'authorize',
+      now,
+    });
+    assert.equal(res.ok, false);
+    assert.equal(res.reason, 'changed-files-inventory-unavailable');
+  }
+
   const denied = [
     '.github/workflows/verify.yml',
     'cloud/hatchable/lib/standing-release-policy.js',
@@ -163,7 +191,7 @@ test('security-sensitive path changes force human-required rather than silent ap
     assert.equal(classifyChangedPaths([path], basePolicy).eligible, false);
     const res = await evaluateAndAuthorizeAutonomousRelease({
       db: makeFakeDb(),
-      oidcIdentity: { sha, jti: 'jti-1', workflowRef: CANONICAL_WORKFLOW_REF, workflowRunId: 1, workflowAttempt: 1 },
+      oidcIdentity: oidc,
       evidence: { ...baseEvidence, changedFiles: [path] },
       mode: 'authorize',
       now,
@@ -174,8 +202,50 @@ test('security-sensitive path changes force human-required rather than silent ap
   }
 });
 
-test('evaluator denies expired, revoked, disabled, budget-exhausted, missing-gate, and rollback releases', async () => {
+test('P0-2: missing previousDeploymentVersion fails closed and rollbacks require owner ceremony', async () => {
   const oidc = { sha, jti: 'jti-2', workflowRef: CANONICAL_WORKFLOW_REF, workflowRunId: 2, workflowAttempt: 1 };
+  const missingPrev = await evaluateAndAuthorizeAutonomousRelease({
+    db: makeFakeDb(),
+    oidcIdentity: oidc,
+    evidence: { ...baseEvidence, previousDeploymentVersion: null },
+    mode: 'authorize',
+    now,
+  });
+  assert.equal(missingPrev.ok, false);
+  assert.equal(missingPrev.reason, 'previous-deployment-version-unavailable');
+
+  const rollback = await evaluateAndAuthorizeAutonomousRelease({
+    db: makeFakeDb(),
+    oidcIdentity: oidc,
+    evidence: { ...baseEvidence, previousDeploymentVersion: 160 },
+    mode: 'authorize',
+    now,
+  });
+  assert.equal(rollback.ok, false);
+  assert.equal(rollback.decision, 'human-required');
+  assert.equal(rollback.reason, 'rollback-requires-owner-ceremony');
+});
+
+test('P0-3: standing receipt grant uses cloud.release-receipt.record, never cloud.deploy', async () => {
+  assert.equal(STANDING_RECEIPT_GRANT_OPERATION, 'cloud.release-receipt.record');
+  const queries = [];
+  const oidc = { sha, jti: 'jti-p03', workflowRef: CANONICAL_WORKFLOW_REF, workflowRunId: 30, workflowAttempt: 1 };
+  const res = await evaluateAndAuthorizeAutonomousRelease({
+    db: makeFakeDb({ queries }),
+    oidcIdentity: oidc,
+    evidence: baseEvidence,
+    mode: 'authorize',
+    now,
+  });
+  assert.equal(res.ok, true);
+  const txQuery = queries.find(q => q.sql.includes('WITH policy_lock AS'));
+  assert.ok(txQuery);
+  assert.match(txQuery.sql, /cloud\.release-receipt\.record/);
+  assert.doesNotMatch(txQuery.sql, /'cloud\.deploy'/);
+});
+
+test('evaluator denies expired, revoked, disabled, budget-exhausted, and missing-gate releases', async () => {
+  const oidc = { sha, jti: 'jti-2b', workflowRef: CANONICAL_WORKFLOW_REF, workflowRunId: 2, workflowAttempt: 1 };
   const cases = [
     { db: makeFakeDb({ policyOverrides: { revoked_at: '2026-11-24T22:00:00Z' } }), reason: 'policy-revoked' },
     { db: makeFakeDb({ policyOverrides: { enabled: false } }), reason: 'policy-disabled' },
@@ -185,7 +255,6 @@ test('evaluator denies expired, revoked, disabled, budget-exhausted, missing-gat
     { db: makeFakeDb(), evidence: { ...baseEvidence, ciVerified: false }, reason: 'ci-not-verified' },
     { db: makeFakeDb(), evidence: { ...baseEvidence, provenanceVerified: false }, reason: 'sigstore-provenance-not-verified' },
     { db: makeFakeDb(), evidence: { ...baseEvidence, liveDeployment: { ...baseEvidence.liveDeployment, verified: false } }, reason: 'hatchable-manifest-not-verified' },
-    { db: makeFakeDb(), evidence: { ...baseEvidence, previousDeploymentVersion: 160 }, reason: 'rollback-requires-owner-ceremony' },
   ];
   for (const c of cases) {
     const res = await evaluateAndAuthorizeAutonomousRelease({

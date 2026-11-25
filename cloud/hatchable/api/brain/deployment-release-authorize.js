@@ -9,12 +9,39 @@ import { verifyLiveHatchableManifest } from 'lib/hatchable-manifest-readback.js'
 export const access = 'public';
 export const methods = ['POST'];
 
+const SHA = /^[a-f0-9]{40}$/;
+const TARGET_RE = /^hatchable-v([1-9][0-9]{0,8})$/;
+
 function extractBearer(headers) {
   const auth = typeof headers?.get === 'function'
     ? headers.get('authorization')
     : (headers?.authorization || headers?.Authorization || '');
   const m = /^Bearer\s+([^\s]+)$/.exec(String(auth || ''));
   return m ? m[1] : null;
+}
+
+async function fetchIndependentChangedFiles({ fetchGithub, baseSha, headSha }) {
+  if (!SHA.test(baseSha || '') || !SHA.test(headSha || '')) {
+    return { available: false, truncated: false, files: [] };
+  }
+  if (baseSha === headSha) {
+    return { available: true, truncated: false, files: [] };
+  }
+  const url = `https://api.github.com/repos/michaeljwilliams0123/Ultron.MW/compare/${baseSha}...${headSha}?per_page=100&page=1`;
+  const res = await fetchGithub(url, { method: 'GET' });
+  if (!res.ok) return { available: false, truncated: false, files: [] };
+  const body = await res.json();
+  if (!body || !Array.isArray(body.files) || (body.status !== 'ahead' && body.status !== 'identical')) {
+    return { available: false, truncated: false, files: [] };
+  }
+  // GitHub compare returns up to 300 files; fail closed if truncated or >= 100 on single page.
+  const truncated = body.files.length >= 100 || (Number.isSafeInteger(body.total_commits) && body.files.length >= 300);
+  const files = [];
+  for (const f of body.files) {
+    if (typeof f?.filename === 'string' && f.filename) files.push(f.filename);
+    if (typeof f?.previous_filename === 'string' && f.previous_filename) files.push(f.previous_filename);
+  }
+  return { available: !truncated, truncated, files };
 }
 
 export default async function (req, res) {
@@ -48,6 +75,25 @@ export default async function (req, res) {
     const councilSource = mainSha
       ? await collectMergedCouncilReadback({ commitSha: mainSha, fetchGithub })
       : { councilCheck: null };
+
+    // P0-2: Independently retrieve previous verified deployment version & source SHA.
+    const prevRes = await db.query(
+      `SELECT target, source_sha FROM brain_deployment_release_receipts ORDER BY id DESC LIMIT 1`,
+    );
+    const prevRow = prevRes?.rows?.[0] || null;
+    const prevMatch = TARGET_RE.exec(prevRow?.target || '');
+    const previousDeploymentVersion = prevMatch ? Number(prevMatch[1]) : null;
+    const previousSourceSha = SHA.test(prevRow?.source_sha || '') ? prevRow.source_sha : null;
+
+    // P0-1: Independently fetch changed files from GitHub compare API; never trust req.body.changedFiles.
+    const diff = mainSha && previousSourceSha
+      ? await fetchIndependentChangedFiles({ fetchGithub, baseSha: previousSourceSha, headSha: mainSha }).catch(() => ({
+          available: false,
+          truncated: false,
+          files: [],
+        }))
+      : { available: false, truncated: false, files: [] };
+
     const liveDeployment = await verifyLiveHatchableManifest({
       config,
       fetchGithub,
@@ -66,7 +112,10 @@ export default async function (req, res) {
       councilVerified: councilSource?.councilCheck?.conclusion === 'success',
       provenanceVerified: Boolean(liveDeployment?.verified && liveDeployment?.attestorRunId),
       provenanceSha: oidcIdentity.sha,
-      changedFiles: Array.isArray(req.body?.changedFiles) ? req.body.changedFiles : [],
+      changedFilesAvailable: diff.available,
+      changedFilesTruncated: diff.truncated,
+      changedFiles: diff.files,
+      previousDeploymentVersion,
       liveDeployment,
     };
 

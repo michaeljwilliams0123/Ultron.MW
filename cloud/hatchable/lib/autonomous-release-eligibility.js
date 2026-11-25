@@ -10,6 +10,8 @@ import {
 
 const SHA = /^[a-f0-9]{40}$/;
 
+export const STANDING_RECEIPT_GRANT_OPERATION = 'cloud.release-receipt.record';
+
 function parseTargetVersion(target) {
   const m = /^hatchable-v([1-9][0-9]{0,8})$/.exec(target || '');
   return m ? Number(m[1]) : null;
@@ -72,7 +74,12 @@ export async function evaluateAndAuthorizeAutonomousRelease({
     return { ok: false, decision: 'denied', reason: 'sigstore-provenance-not-verified' };
   }
 
-  const pathCheck = classifyChangedPaths(evidence.changedFiles || [], policyJson);
+  // P0-1: Fail closed unless an independently fetched, non-truncated changed-file inventory is present.
+  if (!evidence.changedFilesAvailable || !Array.isArray(evidence.changedFiles) || evidence.changedFilesTruncated) {
+    return { ok: false, decision: 'denied', reason: 'changed-files-inventory-unavailable' };
+  }
+
+  const pathCheck = classifyChangedPaths(evidence.changedFiles, policyJson);
   if (!pathCheck.eligible) {
     return {
       ok: false,
@@ -88,9 +95,12 @@ export async function evaluateAndAuthorizeAutonomousRelease({
   if (!live?.verified || live.sourceSha !== oidcIdentity.sha || !deploymentVersion) {
     return { ok: false, decision: 'denied', reason: 'hatchable-manifest-not-verified' };
   }
-  if (Number.isSafeInteger(evidence.previousDeploymentVersion) &&
-      deploymentVersion <= evidence.previousDeploymentVersion &&
-      !policyJson.allowRollback) {
+
+  // P0-2: Fail closed unless the authoritative previous deployment version is established.
+  if (!Number.isSafeInteger(evidence.previousDeploymentVersion) || evidence.previousDeploymentVersion < 1) {
+    return { ok: false, decision: 'denied', reason: 'previous-deployment-version-unavailable' };
+  }
+  if (deploymentVersion <= evidence.previousDeploymentVersion && !policyJson.allowRollback) {
     return { ok: false, decision: 'human-required', reason: 'rollback-requires-owner-ceremony' };
   }
 
@@ -115,6 +125,7 @@ export async function evaluateAndAuthorizeAutonomousRelease({
     artifactDigest: normalized.artifactDigest,
     manifestFileCount: normalized.manifestFileCount,
     deploymentVersion,
+    previousDeploymentVersion: evidence.previousDeploymentVersion,
     receiptKey: normalized.key,
   };
 
@@ -122,8 +133,7 @@ export async function evaluateAndAuthorizeAutonomousRelease({
     return { ok: true, decision: 'authorized', mode: 'decision-only', eligibility };
   }
 
-  // Atomic transaction: lock policy row, re-verify stop_version/revoked/expiry,
-  // check jti + release tuple uniqueness, insert receipt + claim atomically.
+  // P0-3: Authority separation — use non-deploy operation 'cloud.release-receipt.record'.
   const grantId = `standing-${policyRow.policy_id}-v${policyRow.policy_version}-${oidcIdentity.jti.slice(0, 32)}`;
   const resource = deploymentReceiptResource(normalized);
   const digest = normalized.artifactDigest;
@@ -148,7 +158,7 @@ export async function evaluateAndAuthorizeAutonomousRelease({
       WHERE receipt_key = $10 OR (target = $11 AND source_sha = $7 AND artifact_digest = $8)
     ), admitted_grant AS (
       INSERT INTO brain_authority_grants(grant_id, objective_id, actor, operation, resource, policy_sha, expires_at)
-      SELECT $12, $10, 'github:standing-policy-v1', 'cloud.deploy', $13, $3, $14::timestamptz
+      SELECT $12, $10, 'github:standing-policy-v1', '${STANDING_RECEIPT_GRANT_OPERATION}', $13, $3, $14::timestamptz
       FROM (TABLE policy_lock) AS pl
       WHERE NOT EXISTS (SELECT 1 FROM (TABLE existing_claim) AS ec)
         AND NOT EXISTS (SELECT 1 FROM (TABLE existing_receipt) AS er)
