@@ -85,7 +85,7 @@ export default async function (req, res) {
     const previousDeploymentVersion = prevMatch ? Number(prevMatch[1]) : null;
     const previousSourceSha = SHA.test(prevRow?.source_sha || '') ? prevRow.source_sha : null;
 
-    // P0-1: Independently fetch changed files from GitHub compare API; never trust req.body.changedFiles.
+    // P0-1: Independently fetch changed files from GitHub compare API; never trust caller-supplied file lists.
     const diff = mainSha && previousSourceSha
       ? await fetchIndependentChangedFiles({ fetchGithub, baseSha: previousSourceSha, headSha: mainSha }).catch(() => ({
           available: false,
