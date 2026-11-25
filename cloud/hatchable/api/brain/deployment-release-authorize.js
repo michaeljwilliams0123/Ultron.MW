@@ -4,7 +4,7 @@ import { evaluateAndAuthorizeAutonomousRelease } from 'lib/autonomous-release-el
 import { createAuthenticatedGithubReleaseFetch } from 'lib/github-operator-release-fetch.js';
 import { collectConnectivity } from 'lib/connectivity-view.js';
 import { collectMergedCouncilReadback } from 'lib/release-github-readback.js';
-import { verifyLiveHatchableManifest } from 'lib/hatchable-manifest-readback.js';
+import { discoverAutonomousReleaseManifest } from 'lib/autonomous-release-manifest.js';
 
 export const access = 'public';
 export const methods = ['POST'];
@@ -65,8 +65,14 @@ export default async function (req, res) {
     });
   }
 
-  const mode = req.body?.mode === 'authorize' ? 'authorize' : 'decision-only';
+  const requestedMode=req.body?.mode ?? 'decision-only';
+  if(!['auto','authorize','decision-only'].includes(requestedMode))return res.status(400).json({ok:false,decision:'denied',reason:'mode-invalid'});
+  let mode=requestedMode;
   try {
+    if(mode==='auto'){
+      const policy=await db.query('SELECT enabled FROM brain_standing_release_policies ORDER BY policy_version DESC LIMIT 1');
+      mode=policy?.rows?.[0]?.enabled===true?'authorize':'decision-only';
+    }
     const fetchGithub = createAuthenticatedGithubReleaseFetch({
       call: (name, args) => api.call(name, args),
     });
@@ -94,16 +100,7 @@ export default async function (req, res) {
         }))
       : { available: false, truncated: false, files: [] };
 
-    const liveDeployment = await verifyLiveHatchableManifest({
-      config,
-      fetchGithub,
-      deploymentRow: {
-        target: req.body?.target || null,
-        source_sha: oidcIdentity.sha,
-        artifact_digest: req.body?.artifactDigest || null,
-        manifest_file_count: req.body?.manifestFileCount ?? null,
-      },
-    }).catch(() => null);
+    const liveDeployment=await discoverAutonomousReleaseManifest({config,fetchGithub,sourceSha:oidcIdentity.sha});
 
     const evidence = {
       mainSha,

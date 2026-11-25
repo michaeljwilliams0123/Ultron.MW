@@ -67,3 +67,15 @@ DROP TRIGGER IF EXISTS brain_autonomous_release_claim_immutable_trg
 CREATE TRIGGER brain_autonomous_release_claim_immutable_trg
  BEFORE UPDATE OR DELETE ON brain_autonomous_release_claims
  FOR EACH ROW EXECUTE FUNCTION brain_autonomous_release_claim_immutable();
+
+-- Durable dispatch admission; native recovery is independent.
+CREATE TABLE IF NOT EXISTS brain_release_dispatch_nonces (
+ nonce TEXT PRIMARY KEY,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+CREATE TABLE IF NOT EXISTS brain_release_dispatch_windows (
+ source_sha CHAR(40) NOT NULL CHECK(source_sha ~ '^[a-f0-9]{40}$'),
+ window_id BIGINT NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+ PRIMARY KEY(source_sha,window_id)
+);

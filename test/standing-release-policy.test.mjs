@@ -332,3 +332,19 @@ test('submitDeploymentReleaseReceipt accepts standing-policy-v1 only with matchi
   assert.equal(denied.ok, false);
   assert.equal(denied.reason, 'standing-authorization-invalid');
 });
+
+test('OIDC event allowlist admits both recovery triggers and rejects other event types',async()=>{
+ for(const event_name of ['workflow_dispatch','workflow_run','schedule']){
+  const result=await verifyGithubReleaseOidc({token:mintOidcJwt({event_name}),fetchJwks,now});
+  assert.equal(result.sha,sha);
+ }
+ for(const event_name of ['push','repository_dispatch','issue_comment','pull_request','pull_request_target']){
+  await assert.rejects(verifyGithubReleaseOidc({token:mintOidcJwt({event_name}),fetchJwks,now}));
+ }
+});
+
+test('hybrid security boundaries remain owner-required even with a narrower custom deny list',()=>{
+ for(const file of ['cloudflare/edge-shield/src/release-authorization.ts','cloud/hatchable/api/brain/release-authorization-wakeup.js','cloud/hatchable/lib/autonomous-release-manifest.js','cloud/hatchable/lib/release-proof-readback.js']){
+  assert.equal(classifyChangedPaths([file],{...basePolicy,deniedPaths:['private/**']}).eligible,false);
+ }
+});

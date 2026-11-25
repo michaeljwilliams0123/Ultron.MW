@@ -79,7 +79,7 @@ export async function verifyGithubReleaseOidc({
   if (claims.ref !== CANONICAL_BRANCH_REF) deny('oidc-branch-invalid');
   if (claims.environment !== expectedEnvironment) deny('oidc-environment-invalid');
   if (claims.workflow_ref !== expectedWorkflowRef) deny('oidc-workflow-invalid');
-  if (claims.event_name === 'pull_request' || claims.event_name === 'pull_request_target') {
+  if (!['workflow_dispatch','workflow_run','schedule'].includes(claims.event_name)) {
     deny('oidc-pr-event-denied');
   }
   if (!SHA.test(claims.sha || '')) deny('oidc-sha-invalid');

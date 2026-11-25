@@ -27,6 +27,19 @@ export const DEFAULT_DENIED_SECURITY_PATHS = Object.freeze([
   'cloudflare/edge-shield/src/proxy.ts',
   'cloudflare/edge-shield/src/admin.ts',
   'cloudflare/edge-shield/src/release-readback.ts',
+  'cloudflare/edge-shield/src/release-authorization.ts',
+  'cloudflare/edge-shield/src/workflows/release-proof.ts',
+  'cloudflare/edge-shield/src/index.ts',
+  'cloudflare/edge-shield/src/queue.ts',
+  'cloudflare/edge-shield/src/webhooks.ts',
+  'cloudflare/edge-shield/wrangler*.toml',
+  'cloud/hatchable/api/brain/release-authorization-wakeup.js',
+  'cloud/hatchable/lib/autonomous-release-manifest.js',
+  'cloud/hatchable/lib/release-proof*',
+  'cloud/hatchable/lib/hatchable-manifest-readback.js',
+  'cloud/hatchable/lib/independent-source-inventory.js',
+  'cloud/hatchable/lib/council-deep-dispatch.js',
+  'cloud/hatchable/lib/github-operator-release-fetch.js',
 ]);
 
 function sortKeysDeep(value) {
@@ -85,7 +98,7 @@ export function matchPathPattern(filePath, pattern) {
 
 export function classifyChangedPaths(changedFiles, policy) {
   const denied = Array.isArray(policy?.deniedPaths) && policy.deniedPaths.length
-    ? policy.deniedPaths
+    ? [...DEFAULT_DENIED_SECURITY_PATHS,...policy.deniedPaths]
     : DEFAULT_DENIED_SECURITY_PATHS;
   const allowed = Array.isArray(policy?.allowedPathClasses) && policy.allowedPathClasses.length
     ? policy.allowedPathClasses
