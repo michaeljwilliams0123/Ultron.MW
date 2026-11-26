@@ -152,35 +152,16 @@
     if (!Number.isSafeInteger(maxReleases) || maxReleases < 1 || maxReleases > 100) throw Error('Max releases must be 1–100.');
     if (!Number.isSafeInteger(days) || days < 1 || days > 31) throw Error('Validity days must be 1–31.');
 
-    const now = Date.now();
-    const policy = {
-      schema: STANDING_POLICY_SCHEMA,
-      policyId: 'srp-' + crypto.randomUUID().replace(/-/g, '').slice(0, 16),
-      policyVersion: (Number(activePolicy?.policy_version) || 0) + 1,
-      ownerHandle: 'michaeljwilliams0123',
-      ownerCredentialId: credentialId,
-      notBefore: new Date(now).toISOString(),
-      expiresAt: new Date(now + days * 86400 * 1000).toISOString(),
-      stopVersion: currentStopVersion,
-      maxReleases,
-      repository: 'michaeljwilliams0123/Ultron.MW',
-      repositoryId: 1424939667,
-      projectId: 'proj_A6GCXRSKizko',
-      environment: 'production',
-      branchRef: 'refs/heads/main',
-      workflowRef: 'michaeljwilliams0123/Ultron.MW/.github/workflows/release-authorize.yml@refs/heads/main',
-      councilAppId: 5765239,
-      targetPrefix: 'hatchable-v',
-      allowRollback: false,
-      allowedPathClasses: ['**'],
-      deniedPaths: [...DEFAULT_DENIED_SECURITY_PATHS],
-      requiredCiContexts: ['Verify'],
-      requiredProvenancePredicate: 'ultron.release-eligibility.v1',
-      maxCostUsd: 0,
-      enabled,
-    };
-    const digestBytes = await sha256Bytes(canonicalStandingPolicyPayload(policy));
-    policy.policySha256 = bytesToHex(digestBytes);
+    const prepared = await json('/api/brain/release-standing-policy',
+      {mode:'prepare',credentialId,maxReleases,days,enabled});
+    const policy=prepared.policy;
+    if(!prepared.ok||!policy||policy.ownerCredentialId!==credentialId||
+      policy.maxReleases!==maxReleases||policy.enabled!==enabled||policy.maxCostUsd!==0||
+      policy.stopVersion!==currentStopVersion||prepared.rpId!==location.hostname||
+      Date.parse(prepared.challengeExpiresAt)-Date.now()<30000) throw Error('Prepared policy unavailable; refresh and try again.');
+    const digestBytes=await sha256Bytes(canonicalStandingPolicyPayload(policy));
+    if(bytesToHex(digestBytes)!==policy.policySha256||encode(digestBytes)!==prepared.challenge)
+      throw Error('Prepared policy digest mismatch.');
 
     if (!confirm(`Enroll standing release policy (${maxReleases} releases, ${days} days, $0 cost cap, enabled=${enabled})?`)) return;
 
@@ -201,8 +182,17 @@
       clientDataJSON: encode(assertion.response.clientDataJSON),
       signature: encode(assertion.response.signature),
     };
-    await json('/api/brain/release-standing-policy', { mode: 'enroll', policy, passkeyProof, enabled });
+    try { await json('/api/brain/release-standing-policy', { mode: 'enroll', policy, passkeyProof, enabled }); }
+    catch {
+      // Read back once; never replay an uncertain authorization.
+      await refreshStandingPolicy();
+      if(activePolicy?.policy_id!==policy.policyId||activePolicy?.policy_sha256!==policy.policySha256||
+         activePolicy?.enabled!==enabled) throw Error('Enrollment not observed. Refresh status before preparing another request.');
+      return;
+    }
     await refreshStandingPolicy();
+    if(activePolicy?.policy_id!==policy.policyId||activePolicy?.policy_sha256!==policy.policySha256||
+       activePolicy?.enabled!==enabled) throw Error('Enrollment not independently observed.');
   }
 
   async function revokeActivePolicy() {
@@ -221,6 +211,7 @@
   $('sp-enroll')?.addEventListener('click', act(enrollStandingPolicyWithPasskey));
   $('sp-revoke')?.addEventListener('click', act(revokeActivePolicy));
   $('credential')?.addEventListener('change', updateButtons);
+  if ($('credential')) new MutationObserver(updateButtons).observe($('credential'),{childList:true});
   $('load')?.addEventListener('click', () => setTimeout(updateButtons, 400));
   updateButtons();
   void act(refreshStandingPolicy)();

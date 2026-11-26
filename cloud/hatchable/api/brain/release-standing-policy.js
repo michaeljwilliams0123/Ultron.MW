@@ -2,6 +2,7 @@ import { db } from 'hatchable';
 import {
   CANONICAL_OWNER,
   enrollStandingPolicy,
+  prepareStandingPolicy,
   readActiveStandingPolicy,
   revokeStandingPolicy,
 } from 'lib/standing-release-policy.js';
@@ -27,12 +28,17 @@ export default async function (req, res) {
     return res.status(405).json({ ok: false, reason: 'method-not-allowed' });
   }
   const body = req.body || {};
+  if (body.mode === 'prepare') {
+    const result = await prepareStandingPolicy({db,credentialId:body.credentialId,
+      maxReleases:body.maxReleases,days:body.days,enabled:body.enabled});
+    return res.status(result.ok ? 200 : 422).json(result);
+  }
   if (body.mode === 'enroll') {
     const result = await enrollStandingPolicy({
       db,
       policy: body.policy,
       passkeyProof: body.passkeyProof,
-      enabled: Boolean(body.enabled),
+      enabled: body.enabled,
     });
     return res.status(result.ok ? 200 : 422).json(result);
   }

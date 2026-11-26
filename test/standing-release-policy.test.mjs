@@ -355,11 +355,28 @@ test('hybrid security boundaries remain owner-required even with a narrower cust
 });
 
 test('standing enrollment accepts a real 32-byte WebAuthn challenge encoded as base64url', async () => {
-  const { enrollStandingPolicy } = await import('../cloud/hatchable/lib/standing-release-policy.js');
+  const { enrollStandingPolicy, prepareStandingPolicy } = await import('../cloud/hatchable/lib/standing-release-policy.js');
   const { createHash } = await import('node:crypto');
   const pair = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const credentialId = Buffer.from('test-only-standing-policy-credential').toString('base64url');
-  const policy = { ...basePolicy, ownerCredentialId: credentialId, enabled: true };
+  let admitted=false, consumed=false, preparedDigest;
+  const db = { async query(sql,params) {
+    if(sql.includes('AS next_version'))return {rows:[{stop_version:1,next_version:1}]};
+    if(sql.includes('INSERT INTO brain_standing_policy_challenges')){
+      admitted=true;preparedDigest=params[1];return {rows:[{expires_at:new Date(now+300000).toISOString()}]};
+    }
+    if (sql.includes('SELECT credential_id, public_key_spki, revoked_at FROM brain_owner_passkeys')) return { rows:[{ credential_id:credentialId, public_key_spki:pair.publicKey.export({type:'spki',format:'der'}).toString('base64url'), revoked_at:null }] };
+    if (sql.includes('WITH claimed AS')) {
+      assert.match(sql,/ch\.used_at IS NULL/); assert.match(sql,/ch\.expires_at>clock_timestamp\(\)/);
+      if(!admitted||consumed||params[2]!==preparedDigest)return {rows:[]};
+      consumed=true;return {rows:[{policy_id:params[0],enabled:true}]};
+    }
+    throw Error('Unexpected query');
+  }};
+  const prepared=await prepareStandingPolicy({db,credentialId,maxReleases:20,days:30,enabled:true,now});
+  assert.equal(prepared.ok,true);
+  const policy=prepared.policy;
+  assert.equal(prepared.challenge,Buffer.from(computeStandingPolicySha256(policy),'hex').toString('base64url'));
   const challenge = Buffer.from(computeStandingPolicySha256(policy), 'hex').toString('base64url');
   const client = Buffer.from(JSON.stringify({ type:'webauthn.get', challenge, origin:'https://ultron-mw-cloud.hatchable.site', crossOrigin:false }));
   const auth = Buffer.alloc(37);
@@ -367,18 +384,15 @@ test('standing enrollment accepts a real 32-byte WebAuthn challenge encoded as b
   auth[32] = 5;
   const signature = sign('sha256', Buffer.concat([auth, createHash('sha256').update(client).digest()]), pair.privateKey);
   const proof = { credentialId, authenticatorData:auth.toString('base64url'), clientDataJSON:client.toString('base64url'), signature:signature.toString('base64url') };
-  const db = { async query(sql) {
-    if (sql.includes('FROM brain_owner_passkeys')) return { rows:[{ credential_id:credentialId, public_key_spki:pair.publicKey.export({type:'spki',format:'der'}).toString('base64url'), revoked_at:null }] };
-    if (sql.includes('INSERT INTO brain_standing_release_policies')) return { rows:[{ policy_id:policy.policyId, enabled:true }] };
-    throw Error('Unexpected query');
-  }};
   assert.notEqual(computeStandingPolicySha256(policy), computeStandingPolicySha256({...policy, enabled:false}));
   const mismatch = await enrollStandingPolicy({db,policy,passkeyProof:proof,enabled:false,now});
   assert.deepEqual(mismatch,{ok:false,reason:'signed-enabled-state-mismatch'});
-  const tampered = await enrollStandingPolicy({db,policy:{...policy,enabled:false},passkeyProof:proof,enabled:false,now});
+  const tampered = await enrollStandingPolicy({db,policy:{...policy,enabled:false,policySha256:undefined},passkeyProof:proof,enabled:false,now});
   assert.deepEqual(tampered,{ok:false,reason:'owner-passkey-signature-invalid'});
   const result = await enrollStandingPolicy({db,policy,passkeyProof:proof,enabled:true,now});
   assert.equal(result.ok,true,result.reason);
+  const replay=await enrollStandingPolicy({db,policy,passkeyProof:proof,enabled:true,now});
+  assert.deepEqual(replay,{ok:false,reason:'policy-challenge-stale-or-consumed'});
 });
 
 test('autonomous receipt fails closed for paused runtime, changed stop version, or revoked owner credential', async () => {

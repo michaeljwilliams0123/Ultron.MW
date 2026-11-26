@@ -138,6 +138,49 @@ export function validateStandingPolicyShape(policy) {
   return null;
 }
 
+function policyChallenge(digest) {
+  return btoa(String.fromCharCode(...digest.match(/../g).map(hex => parseInt(hex, 16))))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export async function prepareStandingPolicy({db, credentialId, maxReleases, days, enabled, now = Date.now()} = {}) {
+  if (typeof db?.query !== 'function') return {ok:false,reason:'db-unavailable'};
+  if (typeof credentialId !== 'string' || !/^[A-Za-z0-9_-]{16,1024}$/.test(credentialId) ||
+      !Number.isSafeInteger(maxReleases) || maxReleases < 1 || maxReleases > 100 ||
+      !Number.isSafeInteger(days) || days < 1 || days > 31 || typeof enabled !== 'boolean') {
+    return {ok:false,reason:'policy-prepare-input-invalid'};
+  }
+  const observed=await db.query(
+    `SELECT c.version AS stop_version,
+       (SELECT COALESCE(MAX(policy_version),0)+1 FROM brain_standing_release_policies) AS next_version
+       FROM brain_runtime_control c JOIN brain_owner_passkeys k
+       ON k.credential_id=$1 AND k.revoked_at IS NULL WHERE c.id=1 AND c.paused=FALSE`,[credentialId]);
+  const row=observed?.rows?.[0];
+  if (!row) return {ok:false,reason:'runtime-stop-or-owner-credential-denied'};
+  const policy={
+    schema:STANDING_POLICY_SCHEMA,policyId:'srp-'+globalThis.crypto.randomUUID().replace(/-/g,''),
+    policyVersion:Number(row.next_version),ownerHandle:CANONICAL_OWNER,ownerCredentialId:credentialId,
+    notBefore:new Date(now).toISOString(),expiresAt:new Date(now+days*86400000).toISOString(),
+    stopVersion:Number(row.stop_version),maxReleases,repository:CANONICAL_REPO,repositoryId:CANONICAL_REPO_ID,
+    projectId:CANONICAL_PROJECT_ID,environment:CANONICAL_ENVIRONMENT,branchRef:CANONICAL_BRANCH_REF,
+    workflowRef:CANONICAL_WORKFLOW_REF,councilAppId:CANONICAL_COUNCIL_APP_ID,targetPrefix:'hatchable-v',
+    allowRollback:false,allowedPathClasses:['**'],deniedPaths:[...DEFAULT_DENIED_SECURITY_PATHS],
+    requiredCiContexts:['Verify'],requiredProvenancePredicate:'ultron.release-eligibility.v1',maxCostUsd:0,enabled,
+  };
+  const shapeErr=validateStandingPolicyShape(policy);
+  if(shapeErr)return {ok:false,reason:shapeErr};
+  policy.policySha256=computeStandingPolicySha256(policy);
+  const saved=await db.query(
+    `INSERT INTO brain_standing_policy_challenges
+       (policy_id,policy_sha256,credential_id,policy_version,stop_version,expires_at)
+       VALUES($1,$2,$3,$4,$5,clock_timestamp()+interval '5 minutes')
+       RETURNING expires_at`,
+    [policy.policyId,policy.policySha256,credentialId,policy.policyVersion,policy.stopVersion]);
+  if(saved?.rows?.length!==1)return {ok:false,reason:'policy-challenge-unavailable'};
+  return {ok:true,policy,challenge:policyChallenge(policy.policySha256),rpId:'ultron-mw-cloud.hatchable.site',
+    challengeExpiresAt:new Date(saved.rows[0].expires_at).toISOString()};
+}
+
 export async function enrollStandingPolicy({
   db,
   policy,
@@ -170,7 +213,7 @@ export async function enrollStandingPolicy({
       credentialId: passkeyProof.credentialId,
       expectedCredentialId: keyRow.credential_id,
       publicKeySpki: keyRow.public_key_spki,
-      challenge: btoa(String.fromCharCode(...policySha256.match(/../g).map(hex => parseInt(hex, 16)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+      challenge: policyChallenge(policySha256),
       authenticatorData: passkeyProof.authenticatorData,
       clientDataJSON: passkeyProof.clientDataJSON,
       signature: passkeyProof.signature,
@@ -180,15 +223,28 @@ export async function enrollStandingPolicy({
   }
 
   const res = await db.query(
-    `INSERT INTO brain_standing_release_policies (
+    `WITH claimed AS (
+       UPDATE brain_standing_policy_challenges ch SET used_at=clock_timestamp()
+       WHERE ch.policy_id=$1 AND ch.policy_sha256=$3 AND ch.credential_id=$5
+         AND ch.policy_version=$2 AND ch.stop_version=$6 AND ch.used_at IS NULL
+         AND ch.expires_at>clock_timestamp()
+         AND EXISTS(SELECT 1 FROM brain_runtime_control c
+           WHERE c.id=1 AND c.version=$6 AND c.paused=FALSE FOR SHARE)
+         AND EXISTS(SELECT 1 FROM brain_owner_passkeys k
+           WHERE k.credential_id=$5 AND k.revoked_at IS NULL FOR SHARE)
+         AND NOT EXISTS(SELECT 1 FROM brain_standing_release_policies p WHERE p.policy_version >= $2)
+       RETURNING policy_id
+     ), inserted AS (
+     INSERT INTO brain_standing_release_policies (
        policy_id, policy_version, policy_sha256, owner_handle, owner_credential_id,
        stop_version, max_releases, repository, repository_id, project_id, environment,
        branch_ref, workflow_ref, council_app_id, max_cost_usd, enabled, policy_json,
        owner_signature, enrolled_at, not_before, expires_at
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, $15, $16::jsonb,
-       $17::jsonb, to_timestamp($18), $19::timestamptz, $20::timestamptz
-     ) RETURNING policy_id, policy_version, policy_sha256, enabled, stop_version, expires_at`,
+     ) SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, $15, $16::jsonb,
+       $17::jsonb, to_timestamp($18), $19::timestamptz, $20::timestamptz FROM claimed
+       ON CONFLICT DO NOTHING
+       RETURNING policy_id, policy_version, policy_sha256, enabled, stop_version, expires_at
+     ) SELECT * FROM inserted`,
     [
       policy.policyId,
       policy.policyVersion,
@@ -212,7 +268,7 @@ export async function enrollStandingPolicy({
       policy.expiresAt,
     ],
   );
-  if (res?.rows?.length !== 1) return { ok: false, reason: 'policy-enroll-failed' };
+  if (res?.rows?.length !== 1) return { ok: false, reason: 'policy-challenge-stale-or-consumed' };
   return { ok: true, policy: res.rows[0] };
 }
 

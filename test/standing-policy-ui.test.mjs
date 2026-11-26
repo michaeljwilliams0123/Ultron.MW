@@ -65,3 +65,11 @@ test('standing-policy.js denied paths and canonical SHA-256 match server policy 
   }
   assert.notEqual(browserCanonical(policy), browserCanonical({...policy,enabled:false}));
 });
+
+test('browser uses server-prepared policy and checks exact readback before reporting success', () => {
+  const js=fs.readFileSync(new URL('../cloud/hatchable/public/standing-policy.js',import.meta.url),'utf8');
+  assert.match(js,/mode:'prepare',credentialId,maxReleases,days,enabled/);
+  assert.match(js,/encode\(digestBytes\)!==prepared.challenge/);
+  assert.match(js,/activePolicy\?\.policy_id!==policy.policyId/);
+  assert.doesNotMatch(js,/crypto.randomUUID/);
+});
