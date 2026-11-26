@@ -125,6 +125,7 @@ export const OIDC_JOBS=Object.freeze({
   'cloud-pr.yml':['create-pr'],
   'lane-governed-task.yml':['work'],
   'owner-comment-router.yml':['issue-implementation','council-command'],
+  'release-authorize.yml':['authorize-release-receipt'],
 });
 
 /** Council gate and optional manual-only diagnostics besides the eight canonical lanes.
@@ -132,7 +133,7 @@ export const OIDC_JOBS=Object.freeze({
  * security and SDK checks stay inside verify.yml. */
 export const NON_LEGACY_WORKFLOWS=Object.freeze([
   'council-required-status.yml','composio-v3.yml','secret-isolation.yml',
-  'council-deep-reasoning.yml'
+  'council-deep-reasoning.yml','release-authorize.yml'
 ]);
 
 export function laneFiles(){return Object.values(LANES).map(l=>l.file);}

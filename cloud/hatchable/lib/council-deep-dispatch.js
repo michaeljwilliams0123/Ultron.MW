@@ -41,7 +41,7 @@ function clean(value,max=120){
 function b64json(value){
  return Buffer.from(JSON.stringify(value)).toString('base64url');
 }
-async function readAppCredentials(config){
+export async function readAppCredentials(config){
  const [appIdRaw,installationIdRaw,privateKeyRaw]=await Promise.all([
   config.get('ULTRON_GITHUB_APP_ID'),
   config.get('ULTRON_GITHUB_INSTALLATION_ID'),
@@ -55,7 +55,7 @@ async function readAppCredentials(config){
   throw Error('github-app-credentials-unconfigured');
  return {appId,installationId,privateKey};
 }
-async function mintActionsToken({credentials,fetchImpl=globalThis.fetch,now=Date.now}){
+export async function mintActionsToken({credentials,fetchImpl=globalThis.fetch,now=Date.now}){
  const ts=now();
  const seconds=Math.floor(ts/1000);
  if(!Number.isSafeInteger(ts)||seconds<1)throw Error('clock-invalid');

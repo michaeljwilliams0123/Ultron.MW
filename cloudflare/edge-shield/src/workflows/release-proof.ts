@@ -3,6 +3,7 @@ import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { Env, ReleaseProofParams } from "../lib";
 import { purgeCache } from "../proxy";
 import { readCanonicalReleaseProof } from "../release-readback";
+import { shouldWakeAuthorization, dispatchReleaseAuthorization } from "../release-authorization";
 
 export class ReleaseProofWorkflow extends WorkflowEntrypoint<Env, ReleaseProofParams> {
   async run(event: WorkflowEvent<ReleaseProofParams>, step: WorkflowStep) {
@@ -12,7 +13,16 @@ export class ReleaseProofWorkflow extends WorkflowEntrypoint<Env, ReleaseProofPa
       retries: { limit: 3, delay: "10 seconds", backoff: "exponential" },
       timeout: "2 minutes",
     }, () => readCanonicalReleaseProof({origin:this.env.HATCHABLE_CORE_ORIGIN,secret:this.env.ORIGIN_LOCK_SECRET}));
-    if (!proof.verified) return { status: "blocked", proof };
+    if (!proof.verified) {
+      if (p.mode === "watch" && shouldWakeAuthorization(proof,p.sourceSha) && proof.commitSha) {
+        const sourceSha=proof.commitSha;
+        const wakeup=await step.do("wake-release-authorization",{
+          retries:{limit:2,delay:"30 seconds",backoff:"exponential"},timeout:"1 minute"
+        },()=>dispatchReleaseAuthorization({origin:this.env.HATCHABLE_CORE_ORIGIN,secret:this.env.ORIGIN_LOCK_SECRET,sourceSha}));
+        return {status:"authorization-wakeup",proof,wakeup};
+      }
+      return { status: "blocked", proof };
+    }
     if (p.sourceSha && p.sourceSha !== proof.commitSha) return { status: "superseded-event", proof };
     if (p.mode !== "sync") return { status: "verified", proof };
     const lock = await step.do("verify-origin-lock", () => this.verifyOriginLock());
