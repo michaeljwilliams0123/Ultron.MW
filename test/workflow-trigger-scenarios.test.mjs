@@ -16,7 +16,7 @@ const spec={
   'council-required-status.yml':{triggers:['pull_request_target','issue_comment','workflow_run','workflow_dispatch'],jobs:['trusted-council-status']},
   'lane-governed-task.yml':{triggers:['issues','workflow_dispatch'],jobs:['work']},
   'lane-lab-evidence.yml':{triggers:['workflow_dispatch'],jobs:['heldout-evaluation','cpu-evaluation','generate','publish','held-out']},
-  'lane-ops-audit.yml':{triggers:['workflow_run','pull_request','schedule','workflow_dispatch'],jobs:['audit','self-scan-pr','mirror','reef-runtime-probe','diagnose','act','reconcile']},
+  'lane-ops-audit.yml':{triggers:['workflow_run','pull_request','schedule','workflow_dispatch'],jobs:['audit','self-scan-pr','mirror','reef-runtime-probe','diagnose','act','reconcile','council-hold-remediation']},
   'lane-owner-canary.yml':{triggers:['workflow_dispatch'],jobs:['read-only','one-branch','inspect-or-verify','marker-write','secondary-admin-verify','verify']},
   'owner-comment-router.yml':{triggers:['issue_comment','pull_request_review_comment','issues','workflow_dispatch'],jobs:['cloud','pr-conversation','issue-implementation','council-command','codex-trigger-audit','public-chat']},
   'release-authorize.yml':{triggers:['workflow_dispatch','workflow_run','schedule'],jobs:['authorize-release-receipt']},

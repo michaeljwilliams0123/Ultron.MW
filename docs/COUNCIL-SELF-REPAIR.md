@@ -52,3 +52,10 @@ cutover it folds into the ops-audit lane (Sentinel).
 (`ultron/repair-*` branches, ledgered). This loop is the trigger and triage
 front end. A later phase can route Builder handoffs into that engine instead
 of an outside agent.
+
+## Council HOLD remediation (exact-head)
+The trusted release gate now publishes a bounded diagnostic route separately from the verdict. It never changes the verdict, grants new authority, or imports PR code. Security-sensitive changes still require the signed owner exception; a model outage is not a code vulnerability.
+
+The existing ops-audit lane scans canonical open PRs hourly at :19 UTC, or via owner-only ops_task=council-hold-remediation. It reads the latest completed dedicated Council Gate App check, exact PR head/base and the pinned gate workflow ID. It rechecks before a write. A transient provider outage or missing role evidence can rerun that exact trusted workflow once, after 15 minutes and within 48 hours. Real dissent is investigated rather than re-voted; non-transient credential or input-policy problems are diagnosed. An unresolved hold gets at most one bot-owned investigation issue for the exact PR/head/base. Existing CI self-repair continues to handle independently observed failed tests and bounded draft fixes. Model suggestions are unverified hypotheses, not commands or proof of defects.
+
+Set ULTRON_COUNCIL_REMEDIATION_MODE=act for automatic rechecks and investigation records only. Default is report-only; off disables the job. Global ULTRON_SELF_REPAIR_MODE=off also stops it. The separate mode does not activate existing broader CI repair permissions, Copilot assignment, paid inference, merging, deployment or owner-exception signing. Maximum five admitted writes per hourly scan; incomplete inventories and moved heads deny writes. Legacy checks without trusted remediation metadata are reported only until the next exact-head trusted recheck. Verify on main before claiming live acceptance.
