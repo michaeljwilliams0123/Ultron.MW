@@ -20,6 +20,10 @@ and authorization contracts are implemented. Static screening is not proof of
 absence of vulnerabilities. No independent GitHub identity is inferred from
 shared-controller signatures.
 
+## Phase 2: diagnostic publisher and consumer contract
+
+The trusted Gate App emits an additive exact-head/base/PR shadow JSON record and SHA-256 digest in its existing check summary. Both byte-identical release-proof consumers expose a diagnostic-only readback parser with pinned App identity, scope, policy-version, quorum and digest validation. No shadow output is a production proof, even on a green check; legacy proof output and digest remain unchanged. The active v3 proof contract and real deployment canaries remain separate prerequisites.
+
 ## Required subsequent changes (before activation)
 
 1. Collect real shadow output for each risk tier and typed dissent; implement

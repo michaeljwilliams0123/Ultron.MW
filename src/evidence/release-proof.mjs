@@ -55,6 +55,39 @@ function trustedGateDecision(check,commitSha,prNumber){
  return null;
 }
 
+
+/** Parse additive v3 diagnostics from the dedicated publisher, not authorization.
+ * Hash detects corruption; GitHub App provenance authenticates the readback.
+ * A shadow result never satisfies trustedGateDecision or changes proof digests.
+ */
+export async function readAdaptiveCouncilShadow(check,{sourceSha,baseSha,prNumber}={}){
+ if(!SHA.test(sourceSha||'')||!SHA.test(baseSha||'')||!Number.isSafeInteger(prNumber)||prNumber<1||
+  !Number.isSafeInteger(check?.id)||check.id<1||check.name!==GATE.name||check.head_sha!==sourceSha||
+  check.app?.id!==GATE.id||check.app?.slug!==GATE.slug||check.status!=='completed'||
+  !['success','failure'].includes(check.conclusion)||typeof check.output?.summary!=='string')return null;
+ const lines=check.output.summary.split('\n');
+ const field=name=>{const prefix='**'+name+':** ';const values=lines.filter(l=>l.startsWith(prefix));return values.length===1?values[0].slice(prefix.length):null;};
+ if(field('PR')!=='#'+prNumber||field('Head')!==sourceSha)return null;
+ const raw=field('Adaptive shadow'),digest=field('Adaptive shadow SHA-256');
+ if(typeof raw!=='string'||raw.length>4096||!/^[a-f0-9]{64}$/.test(digest||'')||await hash(raw)!==digest)return null;
+ try{
+  const s=JSON.parse(raw),tiers=['administrative','low','standard','high','critical'],thresholds=[4,5,6,7,7];
+  if(!s||Object.keys(s).length!==16||s.schema!=='ultron.council-adaptive-shadow.v1'||s.policyVersion!==3||
+   s.mode!=='shadow'||s.authorizesMerge!==false||s.sourceSha!==sourceSha||s.baseSha!==baseSha||s.prNumber!==prNumber||
+   !Number.isInteger(s.riskTier)||s.riskTier<0||s.riskTier>4||s.riskName!==tiers[s.riskTier]||
+   s.requiredCount!==thresholds[s.riskTier]||s.paidSpendAuthorizedUsd!==0||!Number.isInteger(s.approvedCount)||
+   s.approvedCount<0||s.approvedCount>7||!['eligible','held'].includes(s.decision)||
+   typeof s.reason!=='string'||!/^[a-z0-9-]{1,100}$/.test(s.reason))return null;
+  const roles=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
+  const modelRoles=['Builder','Skeptic','Sentinel'];
+  const list=(a,allowed)=>Array.isArray(a)&&a.length<=allowed.length&&new Set(a).size===a.length&&a.every(x=>allowed.includes(x));
+  if(!list(s.nonApprovals,roles)||!list(s.unavailableModels,modelRoles))return null;
+  if(s.decision==='eligible'&&(s.riskTier>2||s.approvedCount<s.requiredCount||
+   s.approvedCount+s.nonApprovals.length!==7||s.unavailableModels.length>1||s.reason!=='shadow-quorum-satisfied'))return null;
+  return Object.freeze({...s,nonApprovals:Object.freeze([...s.nonApprovals]),unavailableModels:Object.freeze([...s.unavailableModels])});
+ }catch{return null;}
+}
+
 export async function buildReleaseProof({commitSha,ci,councilCheck=null,
  prNumber=null,sourcePr=null,deployment={}}={}){
  if(!SHA.test(commitSha||''))throw Error('release-proof-invalid-sha');

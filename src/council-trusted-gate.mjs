@@ -17,6 +17,7 @@
  *   generic Actions commit status (C2). Without that App configured the gate
  *   publishes nothing and stays closed.
  */
+import {createHash} from 'node:crypto';
 import {evaluateCouncilAcceptance,validateOwnerOverride} from './council-release-gate.mjs';
 
 export const GATE_CHECK_NAME='ultron/council-7of7';
@@ -157,6 +158,29 @@ export function gatePasses(result,sha,prNumber){
     result.overrideSignatureVerified===true));
 }
 
+// Diagnostic output is additive; the required v2 check remains authoritative.
+function shadowLines(result,sha,prNumber){
+ const s=result?.adaptiveShadow;
+ const tiers=['administrative','low','standard','high','critical'],thresholds=[4,5,6,7,7];
+ if(s?.schema!=='ultron.council-adaptive-shadow.v1'||s.policyVersion!==3||s.mode!=='shadow'||s.authorizesMerge!==false||
+  s.sourceSha!==sha||s.baseSha!==result.baseSha||s.prNumber!==prNumber||!SHA.test(s.baseSha||'')||
+  !Number.isInteger(s.riskTier)||s.riskTier<0||s.riskTier>4||s.riskName!==tiers[s.riskTier]||
+  s.requiredCount!==thresholds[s.riskTier]||s.paidSpendAuthorizedUsd!==0||
+  !Number.isInteger(s.approvedCount)||s.approvedCount<0||s.approvedCount>7||
+  !['eligible','held'].includes(s.decision)||typeof s.reason!=='string'||!/^[a-z0-9-]{1,100}$/.test(s.reason)||
+  (s.decision==='eligible'&&(s.approvedCount<s.requiredCount||s.riskTier>2||s.reason!=='shadow-quorum-satisfied')))return [];
+ const roles=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
+ const modelRoles=['Builder','Skeptic','Sentinel'];
+ const list=(a,allowed)=>Array.isArray(a)&&a.length<=allowed.length&&new Set(a).size===a.length&&a.every(x=>allowed.includes(x));
+ if(!list(s.nonApprovals,roles)||!list(s.unavailableModels,modelRoles)||
+  (s.decision==='eligible'&&(s.approvedCount+s.nonApprovals.length!==7||s.unavailableModels.length>1)))return [];
+ const payload=JSON.stringify({schema:s.schema,policyVersion:3,mode:'shadow',authorizesMerge:false,sourceSha:sha,
+  baseSha:s.baseSha,prNumber,riskTier:s.riskTier,riskName:s.riskName,requiredCount:s.requiredCount,
+  approvedCount:s.approvedCount,nonApprovals:s.nonApprovals,unavailableModels:s.unavailableModels,
+  paidSpendAuthorizedUsd:0,decision:s.decision,reason:s.reason});
+ return ['**Adaptive shadow:** '+payload,'**Adaptive shadow SHA-256:** '+createHash('sha256').update(payload).digest('hex')];
+}
+
 /** Check-run body for the dedicated gate App. Anything not proven passes as failure. */
 export function buildGateCheckRun(result,{sha,prNumber,detailsUrl}={}){
  if(!SHA.test(sha||''))throw Error('Council gate check target invalid');
@@ -175,6 +199,7 @@ export function buildGateCheckRun(result,{sha,prNumber,detailsUrl}={}){
   '**Held roles:** '+((result?.holdRoles||[]).join(', ')||'none'),
   '**Model hold/unavailable:** '+((result?.modelHoldRoles||[]).join(', ')||'none'),
   '**Security-sensitive paths:** '+((result?.securityPaths||[]).join(', ')||'none'),
+  ...shadowLines(result,sha,prNumber),
   'Evaluated by main-branch code only. Green CI never lifts a security hold.'
  ];
  return Object.freeze({name:GATE_CHECK_NAME,head_sha:sha,status:'completed',

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {buildReleaseProof} from '../src/evidence/release-proof.mjs';
+import {buildReleaseProof,readAdaptiveCouncilShadow} from '../src/evidence/release-proof.mjs';
+
+import {buildGateCheckRun} from '../src/council-trusted-gate.mjs';
 
 const HEAD='a'.repeat(40),PR=463;
 const ci={verified:true,status:'verified',headSha:HEAD,workflowId:388875616,runId:43688109614};
@@ -90,4 +92,48 @@ test('even a green Council gate never substitutes for CI or deployed exact-byte 
 test('source and Hatchable release-proof policy remain byte-identical',()=>{
  assert.equal(readFileSync(new URL('../src/evidence/release-proof.mjs',import.meta.url),'utf8'),
  readFileSync(new URL('../cloud/hatchable/lib/release-proof.js',import.meta.url),'utf8'));
+});
+
+const BASE='c'.repeat(40);
+const shadowResult={schema:'ultron.council-adaptive-shadow.v1',policyVersion:3,mode:'shadow',authorizesMerge:false,
+ sourceSha:HEAD,baseSha:BASE,prNumber:PR,riskTier:2,riskName:'standard',requiredCount:6,approvedCount:6,
+ nonApprovals:['Companion'],unavailableModels:[],paidSpendAuthorizedUsd:0,decision:'eligible',reason:'shadow-quorum-satisfied'};
+const shadowGate={schema:'ultron.council-trusted-gate.v2',status:'held',reason:'council-not-unanimous',
+ sourceSha:HEAD,baseSha:BASE,prNumber:PR,approvedCount:6,holdRoles:['Companion'],modelHoldRoles:[],
+ securitySensitive:false,securityPaths:[],adaptiveShadow:shadowResult};
+const publishedShadow=()=>({...check,...buildGateCheckRun(shadowGate,{sha:HEAD,prNumber:PR})});
+test('dedicated App publishes verifiable exact-head/base shadow diagnostics without changing required gate',async()=>{
+ const c=publishedShadow();
+ assert.equal(c.conclusion,'failure');
+ const r=await readAdaptiveCouncilShadow(c,{sourceSha:HEAD,baseSha:BASE,prNumber:PR});
+ assert.equal(r?.decision,'eligible');
+ assert.equal(r?.requiredCount,6);
+ assert.equal(r?.approvedCount,6);
+ assert.equal(r?.authorizesMerge,false);
+ assert.equal((await buildReleaseProof({...args,councilCheck:c})).verified,false);
+});
+test('shadow readback denies wrong app, base, head, PR, digest and duplicate evidence',async()=>{
+ const c=publishedShadow();
+ const context={sourceSha:HEAD,baseSha:BASE,prNumber:PR};
+ const cases=[
+  {...c,app:{id:15368,slug:'github-actions'}},
+  {...c,head_sha:'d'.repeat(40)},
+  {...c,output:{...c.output,summary:c.output.summary.replace('"approvedCount":6','"approvedCount":7')}},
+  {...c,output:{...c.output,summary:c.output.summary+'\n'+c.output.summary}},
+  {...c,output:{...c.output,summary:c.output.summary.replace('**Adaptive shadow SHA-256:**','**Wrong digest:**')}}
+ ];
+ for(const bad of cases)assert.equal(await readAdaptiveCouncilShadow(bad,context),null);
+ assert.equal(await readAdaptiveCouncilShadow(c,{...context,baseSha:'e'.repeat(40)}),null);
+ assert.equal(await readAdaptiveCouncilShadow(c,{...context,prNumber:PR+1}),null);
+});
+test('publisher refuses shadow metadata that is mismatched, authority-bearing or below quorum',async()=>{
+ for(const altered of [{baseSha:'e'.repeat(40)},{authorizesMerge:true},{requiredCount:4},{approvedCount:5},{paidSpendAuthorizedUsd:1}]){
+  const c={...check,...buildGateCheckRun({...shadowGate,adaptiveShadow:{...shadowResult,...altered}},{sha:HEAD,prNumber:PR})};
+  assert.equal(c.conclusion,'failure');
+  assert.equal(await readAdaptiveCouncilShadow(c,{sourceSha:HEAD,baseSha:BASE,prNumber:PR}),null);
+ }
+});
+test('even a success conclusion cannot convert a shadow receipt into production release proof',async()=>{
+ const c={...publishedShadow(),conclusion:'success'};
+ assert.equal((await buildReleaseProof({...args,councilCheck:c})).verified,false);
 });
