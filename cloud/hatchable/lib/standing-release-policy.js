@@ -40,6 +40,21 @@ export const DEFAULT_DENIED_SECURITY_PATHS = Object.freeze([
   'cloud/hatchable/lib/independent-source-inventory.js',
   'cloud/hatchable/lib/council-deep-dispatch.js',
   'cloud/hatchable/lib/github-operator-release-fetch.js',
+  '.github/**',
+  'config/**',
+  'src/council-*.mjs',
+  'src/security/**',
+  'src/evidence/release-proof.mjs',
+  'scripts/council-*.mjs',
+  'scripts/enforce-council-acceptance.mjs',
+  'scripts/verify*',
+  'cloud/hatchable/lib/webauthn-owner.js',
+  'cloud/hatchable/lib/autonomy-control.js',
+  'cloud/hatchable/lib/release-github-readback.js',
+  'cloud/hatchable/public/release-owner.html',
+  'cloud/hatchable/public/standing-policy.js',
+  'package.json',
+  'package-lock.json',
 ]);
 
 function sortKeysDeep(value) {

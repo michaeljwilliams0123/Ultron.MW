@@ -414,3 +414,12 @@ test('autonomous receipt fails closed for paused runtime, changed stop version, 
   assert.match(sql,/c\.version = \$4 AND c\.paused = FALSE FOR SHARE/);
   assert.match(sql,/k\.revoked_at IS NULL FOR SHARE/);
 });
+
+// The standing grant cannot authorize a policy or release-verifier change even
+// when the last PR was routine and the signed user policy permits all paths.
+test('standing release policy denies Council governance and owner enrollment paths',()=>{
+ for(const file of ["config/council-adaptive-policy.json","src/council-trusted-gate.mjs","src/council-adaptive-governance.mjs","src/evidence/release-proof.mjs","scripts/enforce-council-acceptance.mjs","cloud/hatchable/lib/webauthn-owner.js","cloud/hatchable/lib/release-github-readback.js","cloud/hatchable/public/release-owner.html","cloud/hatchable/public/standing-policy.js","package-lock.json"]){
+  assert.equal(classifyChangedPaths([file],{allowedPathClasses:['**'],deniedPaths:['private/**']}).eligible,false,file);
+ }
+ assert.equal(classifyChangedPaths(['src/format-number.mjs'],{allowedPathClasses:['**']}).eligible,true);
+});
