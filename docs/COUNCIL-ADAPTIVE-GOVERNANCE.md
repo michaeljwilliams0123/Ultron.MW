@@ -46,3 +46,7 @@ The trusted Gate App emits an additive exact-head/base/PR shadow JSON record and
 Verification: node --test test/council-adaptive-governance.test.mjs; full
 node scripts/verify.mjs and required CI. Production rollout is not established
 by shadow eligibility. Keep budget $0 and the dedicated publisher unchanged.
+
+## Coordinated activation candidate
+
+The candidate integrates #551 and #554. The protected-main policy file remains `shadow` until the compatible consumer is independently deployed and a protected change enables `active`. Active authorization uses an additional dedicated-App receipt bound to the shadow digest, actual squash parent, source tree, head and PR. Lower quorum applies only to tiers 0–2, with typed non-material dissent and verified evidence. Critical and high paths retain legacy gate requirements; untyped dissent is never promoted. The standing-policy endpoint checks authenticated Council decisions, not generic green checks, and rejects owner-exception decisions as standing authority. No live cutover is claimed.

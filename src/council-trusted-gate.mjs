@@ -37,6 +37,7 @@ const SECURITY_PATHS=Object.freeze([
  /(?:^|\/)[^/]*(?:auth|credential|secret|token|signing|signature|capabilit|permission|ruleset|admin|oidc|passkey)[^/]*$/i,
  /^package(?:-lock)?\.json$/,
  /^scripts\/(?:verify|lint-workflows|verify-audited-lockfile)\b/,
+ /(?:^|\/)(?:standing-release-policy|standing-policy|release-(?:owner|proof|github-readback|standing-policy|authoriz[^/]*|receipt[^/]*|attest[^/]*)|deployment-release[^/]*|autonomous-release[^/]*|github-operator-release-fetch|council-adaptive-governance|council-hold-remediation)(?:[./-]|$)/i,
  /^SECURITY\.md$/
 ]);
 const INFRA_PATHS=Object.freeze([/^\.github\//,/^cloud\//,/^scripts\//,/^hubs\//]);
@@ -144,11 +145,38 @@ export function evaluateTrustedCouncilGate({report,receipt,pr,files,filesComplet
  return Object.freeze({...base,...common,schema:'ultron.council-trusted-gate.v2'});
 }
 
+// Trusted main alone chooses activation; candidate content is never consulted.
+export function applyAdaptivePolicy(legacy,shadow,policy){
+ if(policy?.schema!=='ultron.council-adaptive-policy.v3'||policy.policyVersion!==3||
+  policy.mode!=='active'||policy.maxPaidSpendUsd!==0||!legacy||
+  legacy.securitySensitive!==false||legacy.overrideUsed!==false||
+  !['accepted','accepted-owner-routine','held'].includes(legacy.status)||
+  (legacy.status==='held'&&legacy.reason!=='council-not-unanimous'))return legacy;
+ const next={...legacy,status:'accepted-adaptive',reason:'adaptive-quorum-satisfied',
+  requiredCount:shadow?.requiredCount,adaptiveShadow:shadow};
+ return adaptiveAccepted(next,legacy.sourceSha,legacy.prNumber)?Object.freeze(next):legacy;
+}
+function adaptiveAccepted(result,sha,prNumber){
+ const s=result?.adaptiveShadow;
+ return result?.status==='accepted-adaptive'&&result.securitySensitive===false&&result.overrideUsed===false&&
+  Array.isArray(result.securityPaths)&&result.securityPaths.length===0&&s?.decision==='eligible'&&
+  s.riskTier<=2&&s.requiredCount===result.requiredCount&&s.approvedCount===result.approvedCount&&
+  Array.isArray(result.holdRoles)&&Array.isArray(result.modelHoldRoles)&&
+  result.holdRoles.join(',')===s.nonApprovals?.join(',')&&result.modelHoldRoles.join(',')===s.unavailableModels?.join(',')&&
+  shadowLines(result,sha,prNumber).length===2;
+}
+function activeLines(result,sha,prNumber){
+ if(!adaptiveAccepted(result,sha,prNumber))return [];
+ const s=result.adaptiveShadow, shadowDigest=shadowLines(result,sha,prNumber)[1].split(':** ')[1];
+ const payload=JSON.stringify({schema:'ultron.council-adaptive-decision.v1',policyVersion:3,mode:'active',
+  authorizesMerge:true,sourceSha:sha,baseSha:s.baseSha,prNumber,shadowDigest});
+ return ['**Adaptive active:** '+payload,'**Adaptive active SHA-256:** '+createHash('sha256').update(payload).digest('hex')];
+}
 export function gatePasses(result,sha,prNumber){
  return !!result&&SHA.test(sha||'')&&SHA.test(result.baseSha||'')&&
   result.sourceSha===sha&&result.prNumber===prNumber&&
   result.schema==='ultron.council-trusted-gate.v2'&&
-  ((result.status==='accepted'&&result.approvedCount===7&&
+  (adaptiveAccepted(result,sha,prNumber)||(result.status==='accepted'&&result.approvedCount===7&&
     result.securitySensitive===false)||
    (result.status==='accepted-owner-routine'&&result.approvedCount===7&&
     result.securitySensitive===false&&Array.isArray(result.holdRoles)&&
@@ -185,7 +213,9 @@ function shadowLines(result,sha,prNumber){
 export function buildGateCheckRun(result,{sha,prNumber,detailsUrl}={}){
  if(!SHA.test(sha||''))throw Error('Council gate check target invalid');
  const pass=gatePasses(result,sha,prNumber);
- const title=pass?(result.status==='accepted'?
+ const title=pass?(result.status==='accepted-adaptive'?
+   'Adaptive Council v3 decision on exact head':
+   result.status==='accepted'?
    '7/7 Council roles and model reviews on exact head':
    result.status==='accepted-owner-routine'?
    '7/7 Council roles on exact head (owner-routine non-security)':
@@ -200,6 +230,7 @@ export function buildGateCheckRun(result,{sha,prNumber,detailsUrl}={}){
   '**Model hold/unavailable:** '+((result?.modelHoldRoles||[]).join(', ')||'none'),
   '**Security-sensitive paths:** '+((result?.securityPaths||[]).join(', ')||'none'),
   ...shadowLines(result,sha,prNumber),
+  ...activeLines(result,sha,prNumber),
   'Evaluated by main-branch code only. Green CI never lifts a security hold.'
  ];
  return Object.freeze({name:GATE_CHECK_NAME,head_sha:sha,status:'completed',

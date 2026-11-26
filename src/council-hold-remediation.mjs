@@ -15,7 +15,7 @@ export function planCouncilRemediation({result,receipt,taintEvidence}={}){
  const r=result||{},models=receipt?.modelReview?.results||{};
  if(!pos(r.prNumber)||!SHA.test(r.sourceSha||'')||!SHA.test(r.baseSha||''))return null;
  const base={schema:SCHEMA,prNumber:r.prNumber,sourceSha:r.sourceSha,baseSha:r.baseSha,
-  authorization:['accepted','accepted-owner-routine','owner-overridden'].includes(r.status)?'accepted':'held',ownerRequired:r.securitySensitive!==false,route:'none',
+  authorization:['accepted','accepted-owner-routine','accepted-adaptive','owner-overridden'].includes(r.status)?'accepted':'held',ownerRequired:r.securitySensitive!==false,route:'none',
   transientRoles:[],unavailableRoles:[],dissentRoles:[],evidenceGaps:[]};
  if(base.authorization==='accepted')return Object.freeze(base);
  for(const role of MODEL_ROLES){

@@ -1,0 +1,6 @@
+{
+  "schema": "ultron.council-adaptive-policy.v3",
+  "policyVersion": 3,
+  "mode": "shadow",
+  "maxPaidSpendUsd": 0
+}

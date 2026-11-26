@@ -88,8 +88,32 @@ export async function readAdaptiveCouncilShadow(check,{sourceSha,baseSha,prNumbe
  }catch{return null;}
 }
 
+// A shadow result is not authorization. An active decision has a separate
+// dedicated-App success envelope bound to the shadow digest and squash base.
+export async function readAdaptiveCouncilDecision(check,{sourceSha,baseSha,prNumber}={}){
+ if(check?.conclusion!=='success'||check.output?.title!=='Adaptive Council v3 decision on exact head')return null;
+ const shadow=await readAdaptiveCouncilShadow(check,{sourceSha,baseSha,prNumber});
+ if(shadow?.decision!=='eligible'||shadow.riskTier>2)return null;
+ const lines=check.output.summary.split('\n');
+ const field=name=>{const prefix='**'+name+':** ';const values=lines.filter(l=>l.startsWith(prefix));return values.length===1?values[0].slice(prefix.length):null;};
+ if(field('Decision')!=='accepted-adaptive'||field('Security-sensitive paths')!=='none'||
+  field('Role approvals')!==shadow.approvedCount+'/7'||field('Held roles')!==(shadow.nonApprovals.join(', ')||'none')||
+  field('Model hold/unavailable')!==(shadow.unavailableModels.join(', ')||'none'))return null;
+ const expected=JSON.stringify({schema:'ultron.council-adaptive-decision.v1',policyVersion:3,mode:'active',
+  authorizesMerge:true,sourceSha,baseSha,prNumber,shadowDigest:field('Adaptive shadow SHA-256')});
+ if(field('Adaptive active')!==expected||field('Adaptive active SHA-256')!==await hash(expected))return null;
+ return Object.freeze({mode:shadow.approvedCount+'/7',ownerExceptionUsed:false,policyVersion:3,riskTier:shadow.riskTier,requiredCount:shadow.requiredCount});
+}
+export async function readTrustedMergedCouncilDecision({commitSha,sourcePr,councilCheck,integrationBaseSha}={}){
+ if(!SHA.test(commitSha||''))return null;
+ const source=trustedSquashLineage(sourcePr,commitSha);
+ if(!source)return null;
+ if(councilCheck?.output?.title==='Adaptive Council v3 decision on exact head')
+  return readAdaptiveCouncilDecision(councilCheck,{sourceSha:source.headSha,baseSha:integrationBaseSha,prNumber:source.prNumber});
+ return trustedGateDecision(councilCheck,source.headSha,source.prNumber);
+}
 export async function buildReleaseProof({commitSha,ci,councilCheck=null,
- prNumber=null,sourcePr=null,deployment={}}={}){
+ prNumber=null,sourcePr=null,integrationBaseSha=null,deployment={}}={}){
  if(!SHA.test(commitSha||''))throw Error('release-proof-invalid-sha');
  const ciValid=ci?.verified===true&&ci?.status==='verified'&&
   ci?.headSha===commitSha&&ci?.workflowId===388875616&&
@@ -97,7 +121,8 @@ export async function buildReleaseProof({commitSha,ci,councilCheck=null,
  const source=sourcePr===null?null:trustedSquashLineage(sourcePr,commitSha);
  const councilHead=sourcePr===null?commitSha:source?.headSha;
  const councilPr=sourcePr===null?prNumber:source?.prNumber;
- const council=councilHead?trustedGateDecision(councilCheck,councilHead,councilPr):null;
+ const council=sourcePr!==null?await readTrustedMergedCouncilDecision({commitSha,sourcePr,councilCheck,integrationBaseSha}):
+  councilHead?trustedGateDecision(councilCheck,councilHead,councilPr):null;
  const councilValid=council!==null;
  const deploymentValid=deployment?.target?.startsWith('hatchable-v')&&
   deployment?.sourceSha===commitSha&&DIGEST.test(deployment?.artifactDigest||'')&&
@@ -113,7 +138,8 @@ export async function buildReleaseProof({commitSha,ci,councilCheck=null,
    checkRunId:councilValid?councilCheck.id:null,
    sourceHeadSha:councilValid?councilHead:null,
    prNumber:councilValid?councilPr:null,
-   ownerExceptionUsed:council?.ownerExceptionUsed??false,verified:councilValid}),
+   ownerExceptionUsed:council?.ownerExceptionUsed??false,verified:councilValid,
+   ...(council?.policyVersion===3?{policyVersion:3,riskTier:council.riskTier,requiredCount:council.requiredCount}:{})}),
   deployment:Object.freeze({target:deployment?.target??null,
    artifactDigest:deployment?.artifactDigest??null,receiptId:deployment?.receiptId??null,
    sourceSha:deployment?.sourceSha??null,verified:!!deploymentValid})};
