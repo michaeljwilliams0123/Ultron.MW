@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
+import { createHash } from 'node:crypto';
 import {
   DEFAULT_DENIED_SECURITY_PATHS,
   computeStandingPolicySha256,
+  canonicalStandingPolicyPayload,
   validateStandingPolicyShape,
 } from '../cloud/hatchable/lib/standing-release-policy.js';
 
@@ -25,7 +28,7 @@ test('standing-policy.js denied paths and canonical SHA-256 match server policy 
     policyId: 'srp-uitest123456',
     policyVersion: 1,
     ownerHandle: 'michaeljwilliams0123',
-    ownerCredentialId: '4UnIsY659zyDO2d0uS8Q6p6jjv8',
+    ownerCredentialId: 'test-only-standing-policy-credential',
     notBefore: '2026-11-25T00:00:00.000Z',
     expiresAt: '2026-12-26T00:00:00.000Z',
     stopVersion: 7,
@@ -44,8 +47,21 @@ test('standing-policy.js denied paths and canonical SHA-256 match server policy 
     requiredCiContexts: ['Verify'],
     requiredProvenancePredicate: 'ultron.release-eligibility.v1',
     maxCostUsd: 0,
+    enabled: true,
   };
   assert.equal(validateStandingPolicyShape(policy), null);
   const serverSha = computeStandingPolicySha256(policy);
   assert.match(serverSha, /^[a-f0-9]{64}$/);
+  const start = js.indexOf('  function sortKeysDeep');
+  const end = js.indexOf('  const decode =');
+  assert.ok(start >= 0 && end > start);
+  const constants = js.slice(js.indexOf('  const STANDING_POLICY_SCHEMA'), start);
+  const browserCanonical = vm.runInNewContext(constants + js.slice(start, end) + '\ncanonicalStandingPolicyPayload');
+  for (const enabled of [true, false]) {
+    const candidate = {...policy, enabled};
+    const actual = browserCanonical(candidate);
+    assert.equal(actual, canonicalStandingPolicyPayload(candidate));
+    assert.equal(createHash('sha256').update(actual).digest('hex'), computeStandingPolicySha256(candidate));
+  }
+  assert.notEqual(browserCanonical(policy), browserCanonical({...policy,enabled:false}));
 });

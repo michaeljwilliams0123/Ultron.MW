@@ -354,7 +354,7 @@ test('standing enrollment accepts a real 32-byte WebAuthn challenge encoded as b
   const { createHash } = await import('node:crypto');
   const pair = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const credentialId = Buffer.from('test-only-standing-policy-credential').toString('base64url');
-  const policy = { ...basePolicy, ownerCredentialId: credentialId };
+  const policy = { ...basePolicy, ownerCredentialId: credentialId, enabled: true };
   const challenge = Buffer.from(computeStandingPolicySha256(policy), 'hex').toString('base64url');
   const client = Buffer.from(JSON.stringify({ type:'webauthn.get', challenge, origin:'https://ultron-mw-cloud.hatchable.site', crossOrigin:false }));
   const auth = Buffer.alloc(37);
@@ -367,6 +367,11 @@ test('standing enrollment accepts a real 32-byte WebAuthn challenge encoded as b
     if (sql.includes('INSERT INTO brain_standing_release_policies')) return { rows:[{ policy_id:policy.policyId, enabled:true }] };
     throw Error('Unexpected query');
   }};
+  assert.notEqual(computeStandingPolicySha256(policy), computeStandingPolicySha256({...policy, enabled:false}));
+  const mismatch = await enrollStandingPolicy({db,policy,passkeyProof:proof,enabled:false,now});
+  assert.deepEqual(mismatch,{ok:false,reason:'signed-enabled-state-mismatch'});
+  const tampered = await enrollStandingPolicy({db,policy:{...policy,enabled:false},passkeyProof:proof,enabled:false,now});
+  assert.deepEqual(tampered,{ok:false,reason:'owner-passkey-signature-invalid'});
   const result = await enrollStandingPolicy({db,policy,passkeyProof:proof,enabled:true,now});
   assert.equal(result.ok,true,result.reason);
 });

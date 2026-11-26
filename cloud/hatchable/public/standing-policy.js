@@ -69,6 +69,7 @@
       requiredCiContexts: Array.isArray(policy.requiredCiContexts) ? [...policy.requiredCiContexts].sort() : ['Verify'],
       requiredProvenancePredicate: policy.requiredProvenancePredicate || 'ultron.release-eligibility.v1',
       maxCostUsd: 0,
+      ...(typeof policy.enabled === 'boolean' ? { enabled: policy.enabled } : {}),
     }));
   }
 
@@ -176,6 +177,7 @@
       requiredCiContexts: ['Verify'],
       requiredProvenancePredicate: 'ultron.release-eligibility.v1',
       maxCostUsd: 0,
+      enabled,
     };
     const digestBytes = await sha256Bytes(canonicalStandingPolicyPayload(policy));
     policy.policySha256 = bytesToHex(digestBytes);

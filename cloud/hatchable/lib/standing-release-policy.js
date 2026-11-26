@@ -77,6 +77,7 @@ export function canonicalStandingPolicyPayload(policy) {
     requiredCiContexts: Array.isArray(policy.requiredCiContexts) ? [...policy.requiredCiContexts].sort() : ['Verify'],
     requiredProvenancePredicate: policy.requiredProvenancePredicate || 'ultron.release-eligibility.v1',
     maxCostUsd: 0,
+    ...(typeof policy.enabled === 'boolean' ? { enabled: policy.enabled } : {}),
   }));
 }
 
@@ -147,6 +148,9 @@ export async function enrollStandingPolicy({
   if (typeof db?.query !== 'function') return { ok: false, reason: 'db-unavailable' };
   const shapeErr = validateStandingPolicyShape(policy);
   if (shapeErr) return { ok: false, reason: shapeErr };
+  if (typeof policy.enabled !== 'boolean' || policy.enabled !== enabled) {
+    return { ok: false, reason: 'signed-enabled-state-mismatch' };
+  }
   if (!passkeyProof || passkeyProof.credentialId !== policy.ownerCredentialId) {
     return { ok: false, reason: 'owner-passkey-mismatch' };
   }
