@@ -4,6 +4,7 @@
  * prose, labels, and policy files cannot choose their own tier.
  */
 import {classifyTrustedRisk,councilExactHeadCiReady} from './council-trusted-gate.mjs';
+import {buildCouncilExactHeadEvidence} from './council-exact-head-evidence.mjs';
 
 const SHA=/^[a-f0-9]{40}$/;
 const ROLES=Object.freeze(['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion']);
@@ -78,12 +79,27 @@ export function evaluateAdaptiveShadow({pr,files,filesComplete,report,receipt,ci
   if(!role||published.has(role))return result('held','duplicate-or-unknown-publication');
   published.set(role,p);
  }
- let unresolved=false;
+ let unresolved=false,nonMaterialAdvisories=0;
+ const exact=buildCouncilExactHeadEvidence(ci);
+ const changedTests=files.some(f=>['added','modified'].includes(f.status)&&/^test\/[A-Za-z0-9_.\/-]+\.test\.(?:mjs|cjs|js|ts|tsx|jsx)$/.test(f.filename));
  for(const role of ROLES){
   const m=members.get(role),p=published.get(role);
   if(!m||!p||!empty(p.unknowns)||!empty(p.dissentTags)||!validEvidenceRefs(p.evidenceRefs)){unresolved=true;details.nonApprovals.push(role);continue;}
   if(m.verdict==='proceed'&&p.conclusion==='proceed')details.approvedCount++;
-  else {details.nonApprovals.push(role);if(!advisory(m.verdict)||m.verdict!==p.conclusion)unresolved=true;}
+  else {
+   details.nonApprovals.push(role);
+   // The real legacy producer retains its HOLD; no vote is manufactured.
+   // Only a deterministic prose objection, with changed tests, exact CI,
+   // clean publication and affirmative independent model analysis, is advisory.
+   const model=receipt.modelReview?.results?.Skeptic;
+   const proseOnly=role==='Skeptic'&&risk.tier<=2&&m.verdict==='hold'&&p.conclusion==='proceed'&&
+    m.advisoryReason==='missing-test-prose-with-verified-ci'&&changedTests&&exact.verified===true&&
+    exact.sourceSha===sourceSha&&exact.baseSha===baseSha&&exact.prNumber===prNumber&&
+    model?.source==='model'&&model.modelInvoked===true&&model.verdict==='proceed'&&
+    empty(model.disagreements)&&empty(model.findings);
+   if(proseOnly)nonMaterialAdvisories++;
+   else if(!advisory(m.verdict)||m.verdict!==p.conclusion)unresolved=true;
+  }
  }
  if(details.approvedCount!==legacy.approvedCount)return result('held','legacy-role-count-mismatch');
  if(unresolved)return result('held','material-or-unclassified-role-dissent');
@@ -97,8 +113,12 @@ export function evaluateAdaptiveShadow({pr,files,filesComplete,report,receipt,ci
  if(details.approvedCount<risk.requiredCount)return result('held','tier-quorum-not-met');
  if(details.approvedCount===7&&(report.hold!==false||receipt.decision!=='proceed'))
   return result('held','unexplained-governor-hold');
- if(details.approvedCount<7&&(report.hold!==true||receipt.decision!=='hold'))
-  return result('held','inconsistent-governor-evidence');
+ if(details.approvedCount<7){
+  const governorHeld=report.hold===true&&receipt.decision==='hold';
+  const governorProceed=report.hold===false&&receipt.decision==='proceed'&&
+   nonMaterialAdvisories===details.nonApprovals.length;
+  if(!governorHeld&&!governorProceed)return result('held','inconsistent-governor-evidence');
+ }
  if(risk.tier===4)return result('held','critical-owner-authority-and-enhanced-validation-required');
  if(risk.tier===3)return result('held','enhanced-validation-required');
  // The existing role signatures are shared-controller attestations, not seven

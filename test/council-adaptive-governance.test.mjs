@@ -43,3 +43,32 @@ test('explicit provider outage is separate from affirmative model evidence; miss
   const b=facts();mutate(b);assert.equal(evaluateAdaptiveShadow(b).decision,'held');
  }
 });
+
+test('real Skeptic advisory about missing PR test prose is non-material only with changed tests and independently verified CI',async()=>{
+ const {assessAsMember}=await import('../src/council-members.mjs');
+ const {buildCouncilExactHeadEvidence}=await import('../src/council-exact-head-evidence.mjs');
+ const f=facts('src/format-number.mjs',7);
+ f.files.push({filename:'test/format-number.test.mjs',status:'added'});
+ f.taint.candidateFiles=2;f.taint.scannedFiles=2;
+ f.taint.reports.push({file:'test/format-number.test.mjs',status:'no-known-flow',findings:[],unknownCount:0});
+ f.ci.comparison.merge_base_commit={sha:B};
+ f.ci.checkRuns.check_runs.forEach((c,i)=>{c.id=i+1;c.app.slug='github-actions';});
+ const reviewEvidence=buildCouncilExactHeadEvidence(f.ci);
+ assert.equal(reviewEvidence.verified,true);
+ const member=assessAsMember('Skeptic',{title:'Add number formatting',body:'Implement rounding for display.',isPr:true,itemNumber:P,sourceSha:H,flags:{},ownerMode:true,reviewEvidence,governorPosition:{conclusion:'proceed',confidence:.85,unknowns:[]}});
+ assert.equal(member.verdict,'hold');
+ f.report.memberAssessments[1]=member;
+ f.legacy.approvedCount=6;f.legacy.holdRoles=['Skeptic'];
+ const result=evaluateAdaptiveShadow(f);
+ assert.equal(result.decision,'eligible');
+ assert.equal(result.approvedCount,6);assert.deepEqual(result.nonApprovals,['Skeptic']);
+ for(const mutate of [
+  x=>{x.files[1].status='removed';x.taint.candidateFiles=1;x.taint.scannedFiles=1;x.taint.reports.pop();},
+  x=>{x.ci.comparison.merge_base_commit.sha='f'.repeat(40);},
+  x=>{x.receipt.modelReview.results.Skeptic.verdict='hold';},
+  x=>{x.report.memberAssessments[1]={...member,advisoryReason:null};},
+  x=>{x.receipt.publication.members[1].unknowns=['unresolved'];}
+ ]){
+  const altered=structuredClone(f);mutate(altered);assert.equal(evaluateAdaptiveShadow(altered).decision,'held');
+ }
+});
