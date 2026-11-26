@@ -76,6 +76,7 @@ const basePolicy = {
   workflowRef: CANONICAL_WORKFLOW_REF,
   councilAppId: CANONICAL_COUNCIL_APP_ID,
   maxCostUsd: 0,
+  enabled: true,
 };
 
 const baseEvidence = {
@@ -98,10 +99,11 @@ const baseEvidence = {
   },
 };
 
-function makeFakeDb({ policyOverrides = {}, transactionOutcome = 'recorded', jtiConflict = false, queries = [] } = {}) {
+function makeFakeDb({ policyOverrides = {}, runtimeAuthority = {stop_version:1, paused:false, credential_id:basePolicy.ownerCredentialId}, transactionOutcome = 'recorded', jtiConflict = false, queries = [] } = {}) {
   const policyRow = {
     policy_id: basePolicy.policyId,
     policy_version: basePolicy.policyVersion,
+    owner_credential_id: basePolicy.ownerCredentialId,
     policy_sha256: computeStandingPolicySha256(basePolicy),
     stop_version: 1,
     max_releases: 20,
@@ -120,6 +122,9 @@ function makeFakeDb({ policyOverrides = {}, transactionOutcome = 'recorded', jti
       queries.push({ sql, params });
       if (sql.includes('FROM brain_standing_release_policies ORDER BY')) {
         return { rows: policyOverrides === null ? [] : [policyRow] };
+      }
+      if (sql.startsWith('SELECT c.version AS stop_version')) {
+        return { rows: runtimeAuthority ? [runtimeAuthority] : [] };
       }
       if (sql.includes('WITH policy_lock AS')) {
         if (jtiConflict) return { rows: [{ outcome: 'conflict', claim_id: 7, receipt_id: 42 }] };
@@ -374,4 +379,24 @@ test('standing enrollment accepts a real 32-byte WebAuthn challenge encoded as b
   assert.deepEqual(tampered,{ok:false,reason:'owner-passkey-signature-invalid'});
   const result = await enrollStandingPolicy({db,policy,passkeyProof:proof,enabled:true,now});
   assert.equal(result.ok,true,result.reason);
+});
+
+test('autonomous receipt fails closed for paused runtime, changed stop version, or revoked owner credential', async () => {
+  const oidc = { sha, jti: 'jti-stop-fence', workflowRef: CANONICAL_WORKFLOW_REF, workflowRunId: 1, workflowAttempt: 1 };
+  for (const runtimeAuthority of [
+    {stop_version:1, paused:true, credential_id:basePolicy.ownerCredentialId},
+    {stop_version:2, paused:false, credential_id:basePolicy.ownerCredentialId},
+    null,
+  ]) {
+    const queries=[];
+    const result=await evaluateAndAuthorizeAutonomousRelease({db:makeFakeDb({runtimeAuthority,queries}),oidcIdentity:oidc,evidence:baseEvidence,mode:'authorize',now});
+    assert.equal(result.reason,'runtime-stop-or-owner-credential-denied');
+    assert.ok(!queries.some(q=>q.sql.includes('WITH policy_lock AS')));
+  }
+  const queries=[];
+  const accepted=await evaluateAndAuthorizeAutonomousRelease({db:makeFakeDb({queries}),oidcIdentity:oidc,evidence:baseEvidence,mode:'authorize',now});
+  assert.equal(accepted.ok,true);
+  const sql=queries.find(q=>q.sql.includes('WITH policy_lock AS')).sql;
+  assert.match(sql,/c\.version = \$4 AND c\.paused = FALSE FOR SHARE/);
+  assert.match(sql,/k\.revoked_at IS NULL FOR SHARE/);
 });
