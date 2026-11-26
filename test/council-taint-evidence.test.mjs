@@ -31,3 +31,15 @@ test('malicious path and untrusted source bytes stay out of model summary',()=>{
  assert.doesNotMatch(text,/ghp_z|credential/);
  assert.throws(()=>scanCouncilChangedFiles({sourceSha:'bad',prNumber:460,sources:[]}),/taint-input-invalid/);
 });
+
+test('bounded scan reports omitted candidates and callback limitation without raw source',()=>{
+ const source='const a = [1,2].map(x => x+1);';
+ const e=scanCouncilChangedFiles({sourceSha:sha,prNumber:460,candidateTotal:15,maxFiles:12,sources:[
+  {filename:'cloudflare/edge-shield/src/handler.ts',source}
+ ]});
+ assert.equal(e.candidateFiles,15);
+ assert.equal(e.complete,false);
+ assert.equal(e.reports[0].file,'cloudflare/edge-shield/src/handler.ts');
+ assert.ok(e.reports[0].unknownKinds.includes('callback-analysis-incomplete'));
+ assert.doesNotMatch(JSON.stringify(e),/x\+1/);
+});

@@ -17,6 +17,7 @@
  *   generic Actions commit status (C2). Without that App configured the gate
  *   publishes nothing and stays closed.
  */
+import {createHash} from 'node:crypto';
 import {evaluateCouncilAcceptance,validateOwnerOverride} from './council-release-gate.mjs';
 
 export const GATE_CHECK_NAME='ultron/council-7of7';
@@ -36,6 +37,7 @@ const SECURITY_PATHS=Object.freeze([
  /(?:^|\/)[^/]*(?:auth|credential|secret|token|signing|signature|capabilit|permission|ruleset|admin|oidc|passkey)[^/]*$/i,
  /^package(?:-lock)?\.json$/,
  /^scripts\/(?:verify|lint-workflows|verify-audited-lockfile)\b/,
+ /(?:^|\/)(?:standing-release-policy|standing-policy|release-(?:owner|proof|github-readback|standing-policy|authoriz[^/]*|receipt[^/]*|attest[^/]*)|deployment-release[^/]*|autonomous-release[^/]*|github-operator-release-fetch|council-adaptive-governance|council-hold-remediation)(?:[./-]|$)/i,
  /^SECURITY\.md$/
 ]);
 const INFRA_PATHS=Object.freeze([/^\.github\//,/^cloud\//,/^scripts\//,/^hubs\//]);
@@ -143,11 +145,38 @@ export function evaluateTrustedCouncilGate({report,receipt,pr,files,filesComplet
  return Object.freeze({...base,...common,schema:'ultron.council-trusted-gate.v2'});
 }
 
+// Trusted main alone chooses activation; candidate content is never consulted.
+export function applyAdaptivePolicy(legacy,shadow,policy){
+ if(policy?.schema!=='ultron.council-adaptive-policy.v3'||policy.policyVersion!==3||
+  policy.mode!=='active'||policy.maxPaidSpendUsd!==0||!legacy||
+  legacy.securitySensitive!==false||legacy.overrideUsed!==false||
+  !['accepted','accepted-owner-routine','held'].includes(legacy.status)||
+  (legacy.status==='held'&&legacy.reason!=='council-not-unanimous'))return legacy;
+ const next={...legacy,status:'accepted-adaptive',reason:'adaptive-quorum-satisfied',
+  requiredCount:shadow?.requiredCount,adaptiveShadow:shadow};
+ return adaptiveAccepted(next,legacy.sourceSha,legacy.prNumber)?Object.freeze(next):legacy;
+}
+function adaptiveAccepted(result,sha,prNumber){
+ const s=result?.adaptiveShadow;
+ return result?.status==='accepted-adaptive'&&result.securitySensitive===false&&result.overrideUsed===false&&
+  Array.isArray(result.securityPaths)&&result.securityPaths.length===0&&s?.decision==='eligible'&&
+  s.riskTier<=2&&s.requiredCount===result.requiredCount&&s.approvedCount===result.approvedCount&&
+  Array.isArray(result.holdRoles)&&Array.isArray(result.modelHoldRoles)&&
+  result.holdRoles.join(',')===s.nonApprovals?.join(',')&&result.modelHoldRoles.join(',')===s.unavailableModels?.join(',')&&
+  shadowLines(result,sha,prNumber).length===2;
+}
+function activeLines(result,sha,prNumber){
+ if(!adaptiveAccepted(result,sha,prNumber))return [];
+ const s=result.adaptiveShadow, shadowDigest=shadowLines(result,sha,prNumber)[1].split(':** ')[1];
+ const payload=JSON.stringify({schema:'ultron.council-adaptive-decision.v1',policyVersion:3,mode:'active',
+  authorizesMerge:true,sourceSha:sha,baseSha:s.baseSha,prNumber,shadowDigest});
+ return ['**Adaptive active:** '+payload,'**Adaptive active SHA-256:** '+createHash('sha256').update(payload).digest('hex')];
+}
 export function gatePasses(result,sha,prNumber){
  return !!result&&SHA.test(sha||'')&&SHA.test(result.baseSha||'')&&
   result.sourceSha===sha&&result.prNumber===prNumber&&
   result.schema==='ultron.council-trusted-gate.v2'&&
-  ((result.status==='accepted'&&result.approvedCount===7&&
+  (adaptiveAccepted(result,sha,prNumber)||(result.status==='accepted'&&result.approvedCount===7&&
     result.securitySensitive===false)||
    (result.status==='accepted-owner-routine'&&result.approvedCount===7&&
     result.securitySensitive===false&&Array.isArray(result.holdRoles)&&
@@ -157,11 +186,36 @@ export function gatePasses(result,sha,prNumber){
     result.overrideSignatureVerified===true));
 }
 
+// Diagnostic output is additive; the required v2 check remains authoritative.
+function shadowLines(result,sha,prNumber){
+ const s=result?.adaptiveShadow;
+ const tiers=['administrative','low','standard','high','critical'],thresholds=[4,5,6,7,7];
+ if(s?.schema!=='ultron.council-adaptive-shadow.v1'||s.policyVersion!==3||s.mode!=='shadow'||s.authorizesMerge!==false||
+  s.sourceSha!==sha||s.baseSha!==result.baseSha||s.prNumber!==prNumber||!SHA.test(s.baseSha||'')||
+  !Number.isInteger(s.riskTier)||s.riskTier<0||s.riskTier>4||s.riskName!==tiers[s.riskTier]||
+  s.requiredCount!==thresholds[s.riskTier]||s.paidSpendAuthorizedUsd!==0||
+  !Number.isInteger(s.approvedCount)||s.approvedCount<0||s.approvedCount>7||
+  !['eligible','held'].includes(s.decision)||typeof s.reason!=='string'||!/^[a-z0-9-]{1,100}$/.test(s.reason)||
+  (s.decision==='eligible'&&(s.approvedCount<s.requiredCount||s.riskTier>2||s.reason!=='shadow-quorum-satisfied')))return [];
+ const roles=['Builder','Skeptic','Steward','Predictor','Generator','Sentinel','Companion'];
+ const modelRoles=['Builder','Skeptic','Sentinel'];
+ const list=(a,allowed)=>Array.isArray(a)&&a.length<=allowed.length&&new Set(a).size===a.length&&a.every(x=>allowed.includes(x));
+ if(!list(s.nonApprovals,roles)||!list(s.unavailableModels,modelRoles)||
+  (s.decision==='eligible'&&(s.approvedCount+s.nonApprovals.length!==7||s.unavailableModels.length>1)))return [];
+ const payload=JSON.stringify({schema:s.schema,policyVersion:3,mode:'shadow',authorizesMerge:false,sourceSha:sha,
+  baseSha:s.baseSha,prNumber,riskTier:s.riskTier,riskName:s.riskName,requiredCount:s.requiredCount,
+  approvedCount:s.approvedCount,nonApprovals:s.nonApprovals,unavailableModels:s.unavailableModels,
+  paidSpendAuthorizedUsd:0,decision:s.decision,reason:s.reason});
+ return ['**Adaptive shadow:** '+payload,'**Adaptive shadow SHA-256:** '+createHash('sha256').update(payload).digest('hex')];
+}
+
 /** Check-run body for the dedicated gate App. Anything not proven passes as failure. */
 export function buildGateCheckRun(result,{sha,prNumber,detailsUrl}={}){
  if(!SHA.test(sha||''))throw Error('Council gate check target invalid');
  const pass=gatePasses(result,sha,prNumber);
- const title=pass?(result.status==='accepted'?
+ const title=pass?(result.status==='accepted-adaptive'?
+   'Adaptive Council v3 decision on exact head':
+   result.status==='accepted'?
    '7/7 Council roles and model reviews on exact head':
    result.status==='accepted-owner-routine'?
    '7/7 Council roles on exact head (owner-routine non-security)':
@@ -175,6 +229,8 @@ export function buildGateCheckRun(result,{sha,prNumber,detailsUrl}={}){
   '**Held roles:** '+((result?.holdRoles||[]).join(', ')||'none'),
   '**Model hold/unavailable:** '+((result?.modelHoldRoles||[]).join(', ')||'none'),
   '**Security-sensitive paths:** '+((result?.securityPaths||[]).join(', ')||'none'),
+  ...shadowLines(result,sha,prNumber),
+  ...activeLines(result,sha,prNumber),
   'Evaluated by main-branch code only. Green CI never lifts a security hold.'
  ];
  return Object.freeze({name:GATE_CHECK_NAME,head_sha:sha,status:'completed',

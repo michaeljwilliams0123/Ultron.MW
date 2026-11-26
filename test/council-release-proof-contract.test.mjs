@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {buildReleaseProof} from '../src/evidence/release-proof.mjs';
+import {buildReleaseProof,readAdaptiveCouncilShadow,readAdaptiveCouncilDecision,readTrustedMergedCouncilDecision} from '../src/evidence/release-proof.mjs';
+
+import {buildGateCheckRun,applyAdaptivePolicy,gatePasses} from '../src/council-trusted-gate.mjs';
 
 const HEAD='a'.repeat(40),PR=463;
 const ci={verified:true,status:'verified',headSha:HEAD,workflowId:388875616,runId:43688109614};
@@ -90,4 +92,82 @@ test('even a green Council gate never substitutes for CI or deployed exact-byte 
 test('source and Hatchable release-proof policy remain byte-identical',()=>{
  assert.equal(readFileSync(new URL('../src/evidence/release-proof.mjs',import.meta.url),'utf8'),
  readFileSync(new URL('../cloud/hatchable/lib/release-proof.js',import.meta.url),'utf8'));
+});
+
+const BASE='c'.repeat(40);
+const shadowResult={schema:'ultron.council-adaptive-shadow.v1',policyVersion:3,mode:'shadow',authorizesMerge:false,
+ sourceSha:HEAD,baseSha:BASE,prNumber:PR,riskTier:2,riskName:'standard',requiredCount:6,approvedCount:6,
+ nonApprovals:['Companion'],unavailableModels:[],paidSpendAuthorizedUsd:0,decision:'eligible',reason:'shadow-quorum-satisfied'};
+const shadowGate={schema:'ultron.council-trusted-gate.v2',status:'held',reason:'council-not-unanimous',
+ sourceSha:HEAD,baseSha:BASE,prNumber:PR,approvedCount:6,holdRoles:['Companion'],modelHoldRoles:[],
+ securitySensitive:false,securityPaths:[],adaptiveShadow:shadowResult};
+const publishedShadow=()=>({...check,...buildGateCheckRun(shadowGate,{sha:HEAD,prNumber:PR})});
+test('dedicated App publishes verifiable exact-head/base shadow diagnostics without changing required gate',async()=>{
+ const c=publishedShadow();
+ assert.equal(c.conclusion,'failure');
+ const r=await readAdaptiveCouncilShadow(c,{sourceSha:HEAD,baseSha:BASE,prNumber:PR});
+ assert.equal(r?.decision,'eligible');
+ assert.equal(r?.requiredCount,6);
+ assert.equal(r?.approvedCount,6);
+ assert.equal(r?.authorizesMerge,false);
+ assert.equal((await buildReleaseProof({...args,councilCheck:c})).verified,false);
+});
+test('shadow readback denies wrong app, base, head, PR, digest and duplicate evidence',async()=>{
+ const c=publishedShadow();
+ const context={sourceSha:HEAD,baseSha:BASE,prNumber:PR};
+ const cases=[
+  {...c,app:{id:15368,slug:'github-actions'}},
+  {...c,head_sha:'d'.repeat(40)},
+  {...c,output:{...c.output,summary:c.output.summary.replace('"approvedCount":6','"approvedCount":7')}},
+  {...c,output:{...c.output,summary:c.output.summary+'\n'+c.output.summary}},
+  {...c,output:{...c.output,summary:c.output.summary.replace('**Adaptive shadow SHA-256:**','**Wrong digest:**')}}
+ ];
+ for(const bad of cases)assert.equal(await readAdaptiveCouncilShadow(bad,context),null);
+ assert.equal(await readAdaptiveCouncilShadow(c,{...context,baseSha:'e'.repeat(40)}),null);
+ assert.equal(await readAdaptiveCouncilShadow(c,{...context,prNumber:PR+1}),null);
+});
+test('publisher refuses shadow metadata that is mismatched, authority-bearing or below quorum',async()=>{
+ for(const altered of [{baseSha:'e'.repeat(40)},{authorizesMerge:true},{requiredCount:4},{approvedCount:5},{paidSpendAuthorizedUsd:1}]){
+  const c={...check,...buildGateCheckRun({...shadowGate,adaptiveShadow:{...shadowResult,...altered}},{sha:HEAD,prNumber:PR})};
+  assert.equal(c.conclusion,'failure');
+  assert.equal(await readAdaptiveCouncilShadow(c,{sourceSha:HEAD,baseSha:BASE,prNumber:PR}),null);
+ }
+});
+test('even a success conclusion cannot convert a shadow receipt into production release proof',async()=>{
+ const c={...publishedShadow(),conclusion:'success'};
+ assert.equal((await buildReleaseProof({...args,councilCheck:c})).verified,false);
+});
+
+const trustedPolicy={schema:'ultron.council-adaptive-policy.v3',policyVersion:3,mode:'active',maxPaidSpendUsd:0};
+const MAIN='d'.repeat(40);
+const repo={id:1424939667,full_name:'michaeljwilliams0123/Ultron.MW'};
+const mergedPr={number:PR,state:'closed',draft:false,merged_at:'2026-11-26T12:00:00Z',merge_commit_sha:MAIN,head:{sha:HEAD,repo},base:{ref:'main',repo}};
+const activeResult=()=>applyAdaptivePolicy({...shadowGate,overrideUsed:false},shadowResult,trustedPolicy);
+const activeCheck=()=>({...check,...buildGateCheckRun(activeResult(),{sha:HEAD,prNumber:PR})});
+test('protected active policy permits valid routine quorum only, never shadow or critical authorization',()=>{
+ assert.equal(gatePasses(applyAdaptivePolicy({...shadowGate,overrideUsed:false},shadowResult,{...trustedPolicy,mode:'shadow'}),HEAD,PR),false);
+ assert.equal(gatePasses(activeResult(),HEAD,PR),true);
+ for(const invalid of [{riskTier:4,riskName:'critical',requiredCount:7},{approvedCount:5},{baseSha:'e'.repeat(40)},{paidSpendAuthorizedUsd:1},{decision:'held'}])
+  assert.equal(gatePasses(applyAdaptivePolicy({...shadowGate,overrideUsed:false},{...shadowResult,...invalid},trustedPolicy),HEAD,PR),false);
+ assert.equal(gatePasses(applyAdaptivePolicy({...shadowGate,overrideUsed:false,securitySensitive:true},shadowResult,trustedPolicy),HEAD,PR),false);
+});
+test('active Council receipt verifies on exact merged lineage and actual integration base',async()=>{
+ const c=activeCheck(),context={sourceSha:HEAD,baseSha:BASE,prNumber:PR};
+ assert.equal(c.conclusion,'success');
+ assert.equal((await readAdaptiveCouncilDecision(c,context))?.mode,'6/7');
+ assert.equal(await readAdaptiveCouncilDecision(c,{...context,baseSha:'e'.repeat(40)}),null);
+ assert.equal(await readAdaptiveCouncilDecision({...c,app:{id:15368,slug:'github-actions'}},context),null);
+ assert.equal(await readAdaptiveCouncilDecision({...c,output:{...c.output,summary:c.output.summary.replace('**Role approvals:** 6/7','**Role approvals:** 7/7')}},context),null);
+ const merged={commitSha:MAIN,sourcePr:mergedPr,councilCheck:c,integrationBaseSha:BASE};
+ assert.equal((await readTrustedMergedCouncilDecision(merged))?.requiredCount,6);
+ assert.equal(await readTrustedMergedCouncilDecision({...merged,integrationBaseSha:null}),null);
+ const a={...merged,ci:{...ci,headSha:MAIN},deployment:{...deployment,sourceSha:MAIN}};
+ assert.equal((await buildReleaseProof(a)).verified,true);
+ assert.equal((await buildReleaseProof({...a,integrationBaseSha:null})).verified,false);
+ assert.equal((await buildReleaseProof({...a,councilCheck:publishedShadow()})).verified,false);
+});
+test('standing receipt path authenticates actual dedicated Council decision, not a green check alone',()=>{
+ const api=readFileSync(new URL('../cloud/hatchable/api/brain/deployment-release-authorize.js',import.meta.url),'utf8');
+ assert.match(api,/readTrustedMergedCouncilDecision\(\{commitSha:mainSha,\.\.\.councilSource\}\)/);
+ assert.match(api,/councilVerified: Boolean\(councilDecision && !councilDecision.ownerExceptionUsed\)/);
 });

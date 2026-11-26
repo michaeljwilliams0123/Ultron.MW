@@ -49,6 +49,7 @@ export async function readCanonicalReleaseProof({db,config,api}){
    status:ci?.state==='observed'&&ci?.conclusion==='success'?'verified':'unavailable',
    headSha:ci?.sourceSha,workflowId:388875616,runId:ci?.runId},
   councilCheck:councilSource.councilCheck,
+  integrationBaseSha:councilSource.integrationBaseSha,
   sourcePr:councilSource.sourcePr,deployment});
  const missingGates=[];
  if(!proof.ci.verified)missingGates.push('ci');

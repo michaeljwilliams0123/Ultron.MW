@@ -126,6 +126,7 @@ const BRAINS={
       if(c.flags.security)reasons.push('Security language raises the bar for counter-evidence.');
       const bad=!tests||c.flags.security;
       return{verdict:bad?'hold':'proceed',headline:bad?'Unproven; needs a falsifiable test.':'Claims are testable.',
+        ...(!tests&&!c.flags.security&&c.exactHeadEvidence?{advisoryReason:'missing-test-prose-with-verified-ci'}:{}),
         reasons,actions:[c.isPr?
           act(bad?'review.request-changes':'review.comment',bad?'Request a failing-then-passing test.':'Record that no counterexample was found.'):
           act('issue.comment','Post the strongest counterexample to be answered.')]};
@@ -197,6 +198,7 @@ export function assessAsMember(role,{title='',body='',isPr=false,itemNumber=0,so
   return Object.freeze({identity:councilMemberIdentity(role),identityState:memberIdentityState(role),abilities:COUNCIL_ABILITIES[role],mandate:brain.mandate,
     verdict:r.verdict,confidence:Number(ctx.governor.confidence.toFixed(2)),
     headline:r.headline,reasons:Object.freeze(r.reasons),
+    ...(r.advisoryReason?{advisoryReason:r.advisoryReason}:{}),
     actions:Object.freeze(r.actions.map(a=>Object.freeze(a)))});
 }
 

@@ -3,6 +3,7 @@ import { verifyGithubReleaseOidc } from 'lib/github-oidc-release-identity.js';
 import { evaluateAndAuthorizeAutonomousRelease } from 'lib/autonomous-release-eligibility.js';
 import { createAuthenticatedGithubReleaseFetch } from 'lib/github-operator-release-fetch.js';
 import { collectConnectivity } from 'lib/connectivity-view.js';
+import { readTrustedMergedCouncilDecision } from 'lib/release-proof.js';
 import { collectMergedCouncilReadback } from 'lib/release-github-readback.js';
 import { discoverAutonomousReleaseManifest } from 'lib/autonomous-release-manifest.js';
 
@@ -102,11 +103,12 @@ export default async function (req, res) {
 
     const liveDeployment=await discoverAutonomousReleaseManifest({config,fetchGithub,sourceSha:oidcIdentity.sha});
 
+    const councilDecision=await readTrustedMergedCouncilDecision({commitSha:mainSha,...councilSource});
     const evidence = {
       mainSha,
       ciVerified: observation.ci?.state === 'observed' && observation.ci?.conclusion === 'success',
       ciSha: observation.ci?.sourceSha || null,
-      councilVerified: councilSource?.councilCheck?.conclusion === 'success',
+      councilVerified: Boolean(councilDecision && !councilDecision.ownerExceptionUsed),
       provenanceVerified: Boolean(liveDeployment?.verified && liveDeployment?.attestorRunId),
       provenanceSha: oidcIdentity.sha,
       changedFilesAvailable: diff.available,

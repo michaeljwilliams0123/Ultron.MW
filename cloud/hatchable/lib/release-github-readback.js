@@ -56,11 +56,21 @@ export async function collectMergedCouncilReadback({commitSha,fetchGithub=fetch}
   const latest=candidates.reduce((last,check)=>
    !last||check.id>last.id?check:last,null);
 
+  // Verify actual squash parent and matching source/main trees for v3.
+  let integrationBaseSha=null;
+  if(latest?.output?.title==='Adaptive Council v3 decision on exact head'){
+   const [merged,head]=await Promise.all([read('/commits/'+commitSha),read('/commits/'+sourcePr.head.sha)]);
+   const m=merged.body,h=head.body;
+   if(merged.hasNext||head.hasNext||m?.sha!==commitSha||h?.sha!==sourcePr.head.sha||
+    !Array.isArray(m.parents)||m.parents.length!==1||!SHA.test(m.parents[0]?.sha||'')||
+    !SHA.test(m.commit?.tree?.sha||'')||m.commit.tree.sha!==h.commit?.tree?.sha)return empty();
+   integrationBaseSha=m.parents[0].sha;
+  }
   // Re-read current main last: a merge during the lookup cannot be certified
   // using an old main CI/deployment observation.
   const current=await read('/git/ref/heads/main');
   if(current.hasNext||current.body?.object?.sha!==commitSha)return empty();
-  return {sourcePr:fresh.body,councilCheck:latest};
+  return {sourcePr:fresh.body,councilCheck:latest,...(integrationBaseSha?{integrationBaseSha}:{})};
  }catch{
   return empty();
  }
