@@ -66,3 +66,16 @@ test('browser execution belongs to the local Ultron owner runtime, not CI or hos
  }
  assert.doesNotThrow(()=>createDurableWebReadWorker({db,routes:f.routes,clock,authorizeRead}));
 });
+
+test('an unadmitted web path cannot invoke provider health or reserve an attempt',async()=>{
+ const f=fixture();
+ let probes=0;
+ const route=f.routes[0];
+ const adapter={...route.adapter,health:async()=>{probes++;return route.adapter.health();}};
+ const db={query:async()=>{throw Error('Unexpected database access');}};
+ const worker=createDurableWebReadWorker({db,routes:[{...route,adapter}],clock,authorizeRead:async()=>true});
+ const denied=await worker.execute({...request,path:'/unapproved.html'});
+ assert.equal(denied.status,'held');
+ assert.equal(probes,0);
+ assert.equal(f.calls(),0);
+});

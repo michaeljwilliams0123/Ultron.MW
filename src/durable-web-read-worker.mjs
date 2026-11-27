@@ -38,11 +38,13 @@ export function createDurableWebReadWorker({db,routes,clock,authorizeRead}={}){
    if(u.origin!==r.origin||u.protocol!=='https:')return held('invalid-origin');
    if(await authorizeRead(r)!==true)return held('read-authorization-required');
    const {path,idempotencyKey,...request}=r;
+   // Denied paths must not contact a provider, even for health checks.
+   if(!inventory.some(entry=>entry.allowedPaths.includes(path)))return held('path-not-admitted');
    // Probe only configured routes for this exact operation and identity.
    // Do not skip a denied higher-priority binding.
    for(const entry of inventory){
     const b=broker.status(entry.bindingId);
-    if(b.operations.some(op=>op.name===r.operation)&&b.origins.includes(r.origin)&&b.actorRef===r.actorRef)
+    if(entry.allowedPaths.includes(path)&&b.operations.some(op=>op.name===r.operation)&&b.origins.includes(r.origin)&&b.actorRef===r.actorRef)
      await broker.health(entry.bindingId);
    }
    const selected=selectWebReadBinding({broker,request,
