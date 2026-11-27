@@ -5,3 +5,14 @@ The first UWIF increment is a protocol-neutral **read-only selector** over the e
 The host must supply the candidate inventory from trusted configuration, not from page text or tool results. Actual browser adapters, live session authorization, normalized data delivery, scheduler binding and cross-browser conformance remain future acceptance steps. Keep existing Chrome/OS organization policy and browser consent intact. No new runtime dependency or paid provider.
 
 Primary references: https://www.w3.org/TR/webdriver-bidi/ ; https://developer.chrome.com/docs/devtools/agents/get-started/configuration/ ; https://developer.chrome.com/docs/extensions/develop/security-privacy/user-privacy .
+
+### Read result delivery
+A trusted local composition can supply authorizeResult alongside authorizeRead.
+Only a fresh completed read with independent provider observation, a JSON
+payload at most 20,000 UTF-8 bytes, and current approval for disclosure returns
+data marked untrusted-provider-data. The default remains receipt-only.
+Replayed requests and durable receipts expose digests only; a lost response
+does not permit redispatch or recover the original payload. Do not copy raw
+webpage data into the shared Drive ledger or treat page text as instructions.
+This is an in-process consumer contract, not a native messaging transport,
+device pairing, or production scheduler binding.
