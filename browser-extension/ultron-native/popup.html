@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ultron Native Read</title>
+<link rel="stylesheet" href="popup.css"></head><body>
+<h1>Ultron Native Read</h1><p>Local pairing and one owner-approved read canary. No website access.</p>
+<section id="pair"><label>Host ID<input id="host" value="ultron-local-browser" maxlength="80"></label>
+<label>Host public key (SPKI PEM)<textarea id="pem" rows="4" maxlength="512"></textarea></label>
+<label>Independently verified SHA-256 fingerprint<input id="fingerprint" maxlength="64"></label>
+<button id="enroll" disabled>Prepare device enrollment</button></section>
+<section id="paired" hidden><label>Public enrollment (register on the trusted host)<textarea id="public" readonly rows="8"></textarea></label>
+<p>Read only: ultron-mw-cloud.hatchable.site/browser-write-acceptance.html. Cost limit: $0.</p>
+<button id="run" disabled>Authorize one read</button></section>
+<pre id="status" role="status" aria-live="polite">Loading local pairing...</pre>
+<script type="module" src="popup.mjs"></script></body></html>
