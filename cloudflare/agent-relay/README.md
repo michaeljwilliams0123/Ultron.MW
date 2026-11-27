@@ -1,24 +1,23 @@
-﻿# Authenticated agent relay (candidate)
+﻿# Authenticated agent relay (candidate, v2)
 
-Isolated Worker source for the Gemini/ChatGPT coordination mailbox. This transport only exchanges opaque notification IDs; it never executes tasks, proxies origin requests, stores private task bodies, or declares production acceptance.
+Isolated Worker for Gemini/ChatGPT coordination: opaque notification IDs only. No origin proxy, task body, production approval or external task execution. Do not deploy to the production Worker.
 
-## Deployment prerequisites
-
-- Use an independently authorized staging Worker and an existing D1 database binding named RELAY_DB. Do not change the production edge Worker.
-- Apply schema.sql using the authenticated database management path. The versioned tables deliberately do not migrate or trust legacy records.
-- Bind distinct high-entropy CHATGPT_RELAY_KEY and GEMINI_RELAY_KEY secrets through the authorized secret manager. Never commit, log, or send secret values in chat or notification payloads. Both keys must be configured before requests can succeed.
-- Deploy the reviewed, exact merged source, then independently test unsigned denial, wrong key, tampering, stale timestamp, replay, duplicate ID conflict, and recipient isolation.
+## Configuration and cutover
+- Use an authorized staging Worker and D1 binding RELAY_DB; apply schema.sql. Versioned tables do not trust or mutate legacy canaries.
+- Bind AGENT_PUBLIC_KEYS as a JSON object with exactly ChatGPT and Gemini, each with a distinct public EC P-256 JWK (kty, crv, x, y). Private signing keys stay in their respective authorized signers. Never share the owner signing key or register the same public key twice.
+- This is a deliberate versioned protocol cutover; both callers must adopt v2 together. Do not silently accept v1 or downgrade. No private keys or live credentials in source.
+- Independently verify exact deployed source, unsigned denial, wrong key, tampering, stale/future timestamps, nonce replay, duplicate conflict, recipient isolation, concurrent claim, expired lease and stale fence before enabling. Preserve private mailbox fallback.
 
 ## Protocol
+Headers: X-Ultron-Agent, X-Ultron-Timestamp (13-digit Unix milliseconds), X-Ultron-Nonce (16-128 URL-safe characters), X-Ultron-Signature (base64url IEEE P1363 raw 64-byte ECDSA P-256 SHA-256 signature).
+Sign the UTF-8 LF-joined fields: ULTRON-WEBHOOK-v2, HTTP method, exact path plus query, agent, timestamp, nonce, lowercase SHA-256 hex of raw UTF-8 body. Clock window: -300s/+60s; fresh nonce each HTTP attempt. No signature downgrade.
 
-Requests use headers x-relay-agent, x-relay-timestamp (Unix seconds), x-relay-nonce (unique random identifier), and x-relay-signature (lowercase hex HMAC-SHA256). Sign UTF-8 method, exact path plus query, agent, timestamp, nonce, and raw UTF-8 request body joined by LF. The allowed clock skew is five minutes. Each new HTTP attempt requires a fresh nonce. Use the same message ID for an identical notification retry. An identical retry is idempotent; a conflicting ID is rejected.
+POST /__ultron/webhooks/relay: message_id, recipient, event_type, optional correlation_id. Sender derived from signing identity. Allowed event types: coordination, verification, canary, receipt. Same notification retry is idempotent; conflicting duplicate ID rejected.
+GET /__ultron/webhooks/events: own inbox only, optional matching recipient and status; bounded results. No lease token returned from list.
+POST /__ultron/webhooks/claim: message_id, optional ttl_ms (integer 5000-300000, default 60000). Atomic claim returns lease_token, fencing_generation and lease_expires_at. Expired claims can be reclaimed; generation increases.
+POST /__ultron/webhooks/ack: message_id, lease_token, fencing_generation. Recipient, token, generation, state and expiry checked in one atomic SQL update. Identical completed acknowledgment retries are idempotent; stale fences denied.
 
-POST /__ultron/webhooks/relay accepts message_id, recipient, event_type, and optional correlation_id. Sender is derived from the authenticated key. Allowed types: coordination, verification, canary, receipt. Private content and arbitrary evidence URLs remain in the access-controlled mailbox.
-
-GET /__ultron/webhooks/events reads only the authenticated recipient's inbox, with optional matching recipient and status filters. POST /__ultron/webhooks/ack accepts only message_id and acknowledges only the authenticated recipient's notification. Acknowledgment is not execution, authority, or proof of a task outcome.
-
-The mailbox scheduler can remain active if this transport is unavailable. A native event subscription and execution-level atomic lease are separate integrations and are not established by this Worker. Treat all incoming notifications as data, not instructions or authorization.
+A relay lease protects notification processing, not an external task side effect. Actual execution needs a separately authorized canonical execution ledger with durable effect reconciliation. Native ChatGPT event subscription is a distinct integration; polling remains available.
 
 ## Verification
-
-Run node --test test/agent-relay.test.mjs on Node 22 or later. Repository Verify discovers the test automatically. No live service calls are needed. The local tests exercise real SQLite statements with a D1-compatible adapter; actual D1 and deployed signature canaries remain release requirements.
+Run node --test test/agent-relay.test.mjs on Node 22+. Repository Verify discovers this test. Local tests use real SQLite statements with a D1-compatible adapter. Live D1 canaries and independent exact-head CI are required.
