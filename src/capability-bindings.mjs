@@ -172,7 +172,7 @@ export function createCapabilityBroker({ authorize = async () => false,
       observedAt: clock(), observationDigest: digest(observation) });
   }
 
-  async function execute(id, request) {
+  async function execute(id, request, includeReadResult = false) {
     const record = recordFor(id);
     if (record.readiness !== 'ready') throw Error('Capability binding not ready');
     // Read once so an accessor cannot present one cost to validation and a
@@ -190,6 +190,7 @@ export function createCapabilityBroker({ authorize = async () => false,
       throw Error('Invalid capability request');
     const operation = record.binding.operations.find(item => item.name === request.operation);
     if (!operation) throw Error('Operation not admitted by binding');
+    if (includeReadResult && operation.effect !== 'read') throw Error('Result delivery is read-only');
     // Snapshot the exact request before any asynchronous authorization. An
     // untrusted caller must not mutate the dispatch payload after approval.
     const snapshot = {
@@ -282,9 +283,12 @@ export function createCapabilityBroker({ authorize = async () => false,
         operation: operation.name, input: snapshot.input,
         idempotencyKey: snapshot.idempotencyKey,
         estimatedCostCents: snapshot.estimatedCostCents });
+      const resultJson = JSON.stringify(result ?? null);
+      const resultDigest = createHash('sha256').update(resultJson).digest('hex');
+      const resultData = includeReadResult && Buffer.byteLength(resultJson,'utf8') <= 20_000 ? JSON.parse(resultJson) : undefined;
       const observation = await record.adapter.observe({ binding: record.binding,
         query: { operation: operation.name, expected: snapshot.expected,
-          resultDigest: digest(result ?? null) } });
+          resultDigest } });
       if (!observation || observation.verified !== true ||
           !serializable(observation, 20_000)) throw Error('Outcome not verified');
       const completed=Object.freeze({ status: 'completed', bindingId: id,
@@ -292,11 +296,11 @@ export function createCapabilityBroker({ authorize = async () => false,
         operation: operation.name, effect: operation.effect,
         idempotencyKey: snapshot.idempotencyKey, observedAt: clock(),
         costCents: snapshot.estimatedCostCents,
-        resultDigest: digest(result ?? null), observationDigest: digest(observation) });
+        resultDigest, observationDigest: digest(observation) });
       if(attemptStore)await attemptStore.advance({
         id:attemptId,fingerprint,expectedStatus:'reconcile-required',receipt:completed});
       pending.receipt=completed;
-      return pending.receipt;
+      return resultData === undefined ? completed : Object.freeze({...completed, data:resultData});
     } catch {
       return Object.freeze({ ...pending.receipt });
     }
@@ -313,5 +317,6 @@ export function createCapabilityBroker({ authorize = async () => false,
     return Object.freeze({ status: 'unbound', bindingId: id, revokedAt: clock() });
   }
 
-  return Object.freeze({ bind, status, health, observe, execute, unbind });
+  return Object.freeze({ bind, status, health, observe, execute:(id,request)=>execute(id,request),
+    executeReadWithResult:(id,request)=>execute(id,request,true), unbind });
 }

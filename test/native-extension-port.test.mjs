@@ -48,3 +48,14 @@ test('invalid receipt after dispatch is uncertain, not a completed action',async
  const r=await exchangeNativeRead({runtime:f.runtime,client:f.client,task});
  assert.equal(r.status,'reconcile-required');assert.equal(f.counts().posted,1);assert.equal(f.counts().opened,1);
 });
+
+test('elapsed exchange deadline prevents dispatch even before delayed timer callback',async()=>{
+ const onMessage=event(),onDisconnect=event();let posts=0;
+ const pending=exchangeNativeRead({timeoutMs:10,task,
+  client:{signRead:async()=>({}),verifyReceipt:async()=>({status:'completed'})},
+  runtime:{connectNative:()=>({onMessage,onDisconnect,disconnect(){},postMessage(){posts++;onMessage.emit({});}})}});
+ Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,35);
+ onMessage.emit({});
+ assert.equal((await pending).status,'held');assert.equal(posts,0);
+ assert.equal(onMessage.count()+onDisconnect.count(),0);
+});
