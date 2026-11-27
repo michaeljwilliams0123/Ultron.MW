@@ -184,6 +184,18 @@ async function withEnrollmentLock(dest, fn, { timeoutMs = 2000 } = {}) {
   }
 }
 
+const SID_RE = /^S-1-[0-9-]+$/;
+const BROAD_WINDOWS_SIDS = new Set(['S-1-1-0', 'S-1-5-7', 'S-1-5-11', 'S-1-5-32-545', 'S-1-5-32-546']);
+
+export async function getCurrentWindowsSid() {
+  if (process.platform !== 'win32') return null;
+  const { stdout } = await execFileAsync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], { windowsHide: true });
+  const parts = stdout.trim().split(',').map(s => s.replace(/^"|"$/g, '').trim());
+  const sid = parts[1] || '';
+  if (!SID_RE.test(sid)) throw Error('native-host-windows-sid-unavailable');
+  return sid;
+}
+
 export async function restrictDirectoryAcl({
   dirPath,
   platform = process.platform,
@@ -191,9 +203,9 @@ export async function restrictDirectoryAcl({
 } = {}) {
   if (!absPathOk(dirPath)) throw Error('native-host-dir-path-invalid');
   if (platform === 'win32') {
-    if (!/^[a-zA-Z0-9._-]{1,64}$/.test(username)) throw Error('native-host-acl-username-invalid');
-    await execFileAsync('icacls.exe', [dirPath, '/inheritance:r', '/grant:r', `${username}:(OI)(CI)F`], { windowsHide: true });
-    return Object.freeze({ platform, restricted: true, principal: username, permission: '(OI)(CI)F' });
+    const sid = await getCurrentWindowsSid();
+    await execFileAsync('icacls.exe', [dirPath, '/inheritance:r', '/grant:r', `*${sid}:(OI)(CI)F`], { windowsHide: true });
+    return Object.freeze({ platform, restricted: true, sid, principal: username, permission: '(OI)(CI)F' });
   }
   await chmod(dirPath, 0o700);
   return Object.freeze({ platform, restricted: true, mode: '0700' });
@@ -206,9 +218,9 @@ export async function restrictPrivateKeyAcl({
 } = {}) {
   if (!absPathOk(privateKeyPath)) throw Error('native-host-private-key-path-invalid');
   if (platform === 'win32') {
-    if (!/^[a-zA-Z0-9._-]{1,64}$/.test(username)) throw Error('native-host-acl-username-invalid');
-    await execFileAsync('icacls.exe', [privateKeyPath, '/inheritance:r', '/grant:r', `${username}:(R)`], { windowsHide: true });
-    return Object.freeze({ platform, restricted: true, principal: username, permission: 'R' });
+    const sid = await getCurrentWindowsSid();
+    await execFileAsync('icacls.exe', [privateKeyPath, '/inheritance:r', '/grant:r', `*${sid}:(R)`], { windowsHide: true });
+    return Object.freeze({ platform, restricted: true, sid, principal: username, permission: 'R' });
   }
   await chmod(privateKeyPath, 0o600);
   return Object.freeze({ platform, restricted: true, mode: '0600' });
@@ -216,28 +228,51 @@ export async function restrictPrivateKeyAcl({
 
 export async function verifyWindowsAcl({
   targetPath,
-  username = process.env.USERNAME || '',
 } = {}) {
   if (process.platform !== 'win32') return Object.freeze({ platform: process.platform, verified: true });
-  if (!absPathOk(targetPath) || !/^[a-zA-Z0-9._-]{1,64}$/.test(username)) throw Error('native-host-acl-verify-invalid');
-  const { stdout } = await execFileAsync('icacls.exe', [targetPath], { windowsHide: true });
-  const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^Successfully processed/i.test(l));
-  const broad = /\b(Everyone|BUILTIN\\Users|NT AUTHORITY\\Authenticated Users|BUILTIN\\Guests)\b/i;
-  if (lines.some(l => broad.test(l) || /\(I\)/.test(l))) {
+  if (!absPathOk(targetPath)) throw Error('native-host-acl-verify-invalid');
+  const currentSid = await getCurrentWindowsSid();
+  const ps = [
+    '$ErrorActionPreference = "Stop";',
+    `$acl = Get-Acl -LiteralPath ${JSON.stringify(resolve(targetPath))};`,
+    '$rules = @($acl.Access | ForEach-Object {',
+    '  $sid = try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $_.IdentityReference.Value };',
+    '  [PSCustomObject]@{ sid = $sid; inherited = $_.IsInherited; type = $_.AccessControlType.ToString() }',
+    '});',
+    '[PSCustomObject]@{ protected = $acl.AreAccessRulesProtected; rules = $rules } | ConvertTo-Json -Compress -Depth 3',
+  ].join(' ');
+  const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true });
+  const parsed = JSON.parse(stdout.trim());
+  const rules = Array.isArray(parsed?.rules) ? parsed.rules : (parsed?.rules ? [parsed.rules] : []);
+  if (parsed?.protected !== true || rules.length === 0) {
     throw Error('native-host-acl-too-broad');
   }
-  const hasOwner = lines.some(l => l.toLowerCase().includes(username.toLowerCase()));
-  if (!hasOwner) throw Error('native-host-acl-owner-missing');
-  return Object.freeze({ platform: 'win32', verified: true, principal: username });
+  if (rules.some(r => r.inherited === true || BROAD_WINDOWS_SIDS.has(r.sid))) {
+    throw Error('native-host-acl-too-broad');
+  }
+  const allowRules = rules.filter(r => r.type === 'Allow');
+  if (allowRules.length === 0 || allowRules.some(r => r.sid !== currentSid)) {
+    throw Error('native-host-acl-owner-missing');
+  }
+  return Object.freeze({ platform: 'win32', verified: true, sid: currentSid });
 }
 
 function repoIntegrityFiles(repoRoot) {
+  const req = createRequire(join(repoRoot, 'package.json'));
+  const pgliteEntry = req.resolve('@electric-sql/pglite');
+  const pglitePkg = join(dirname(pgliteEntry), '..', 'package.json');
   return [
     ['repo:native-browser-transport.mjs', join(repoRoot, 'src', 'computer', 'native-browser-transport.mjs')],
     ['repo:native-browser-client.mjs', join(repoRoot, 'src', 'computer', 'native-browser-client.mjs')],
-    ['repo:durable-web-read-worker.mjs', join(repoRoot, 'src', 'durable-web-read-worker.mjs')],
+    ['repo:native-browser-host-package.mjs', join(repoRoot, 'src', 'computer', 'native-browser-host-package.mjs')],
     ['repo:native-browser-playwright-adapter.mjs', join(repoRoot, 'src', 'computer', 'native-browser-playwright-adapter.mjs')],
+    ['repo:durable-web-read-worker.mjs', join(repoRoot, 'src', 'durable-web-read-worker.mjs')],
+    ['repo:capability-bindings.mjs', join(repoRoot, 'src', 'capability-bindings.mjs')],
+    ['repo:capability-attempt-store.mjs', join(repoRoot, 'src', 'capability-attempt-store.mjs')],
+    ['repo:universal-web-routing.mjs', join(repoRoot, 'src', 'universal-web-routing.mjs')],
     ['repo:0011_capability_attempts.sql', join(repoRoot, 'cloud', 'hatchable', 'migrations', '0011_capability_attempts.sql')],
+    ['dep:pglite-entry', pgliteEntry],
+    ['dep:pglite-package', pglitePkg],
   ];
 }
 
@@ -263,14 +298,16 @@ async function writeSignedIntegrityManifest({ dest, repoRoot, hostPrivateKey }) 
   return manifestBody;
 }
 
-export async function verifyHostPackageIntegrity({ targetDir } = {}) {
+export async function verifyHostPackageIntegrity({ targetDir, expectedFingerprint = null } = {}) {
   if (!absPathOk(targetDir)) throw Error('native-host-package-dir-invalid');
   const dest = await assertNoSymlinkOrJunction(targetDir);
   const pairingInfo = JSON.parse(await readFile(await assertNoSymlinkOrJunction(join(dest, 'pairing-info.json')), 'utf8'));
   const hostPubPem = assertSpkiEd25519(pairingInfo?.hostPublicKey);
   const hostPub = createPublicKey(hostPubPem);
   const fp = sha256Hex(hostPub.export({ type: 'spki', format: 'der' }));
-  if (fp !== pairingInfo.fingerprint) throw Error('native-host-integrity-fingerprint-mismatch');
+  if (fp !== pairingInfo.fingerprint || (expectedFingerprint !== null && fp !== expectedFingerprint)) {
+    throw Error('native-host-integrity-fingerprint-mismatch');
+  }
 
   const manifestRaw = await readFile(await assertNoSymlinkOrJunction(join(dest, 'integrity-manifest.json')), 'utf8');
   const sigRaw = (await readFile(await assertNoSymlinkOrJunction(join(dest, 'integrity-manifest.sig')), 'utf8')).trim();
@@ -339,28 +376,80 @@ export async function createHostAuthorizer({ targetDir, hostId, extensionOrigin,
   });
 }
 
-function renderHostEntrypoint({ repoRoot }) {
+function renderHostEntrypoint({ repoRoot, expectedFingerprint }) {
   const transportUrl = pathToFileURL(join(repoRoot, 'src', 'computer', 'native-browser-transport.mjs')).href;
   const workerUrl = pathToFileURL(join(repoRoot, 'src', 'durable-web-read-worker.mjs')).href;
   const playwrightAdapterUrl = pathToFileURL(join(repoRoot, 'src', 'computer', 'native-browser-playwright-adapter.mjs')).href;
   const packageUrl = pathToFileURL(join(repoRoot, 'src', 'computer', 'native-browser-host-package.mjs')).href;
   const req = createRequire(join(repoRoot, 'package.json'));
   const pgliteUrl = pathToFileURL(req.resolve('@electric-sql/pglite')).href;
-  return `import { createPrivateKey } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+  return `import { createHash, createPrivateKey, createPublicKey, verify } from 'node:crypto';
+import { lstat, readFile, realpath } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PGlite } from ${JSON.stringify(pgliteUrl)};
-import { serveNativeBrowserPort } from ${JSON.stringify(transportUrl)};
-import { createDurableWebReadWorker } from ${JSON.stringify(workerUrl)};
-import { createPlaywrightReadAdapter } from ${JSON.stringify(playwrightAdapterUrl)};
-import { assertNoSymlinkOrJunction, createHostAuthorizer, validateEnrollmentList, verifyHostPackageIntegrity } from ${JSON.stringify(packageUrl)};
 
-const dir = await assertNoSymlinkOrJunction(dirname(fileURLToPath(import.meta.url)));
-await verifyHostPackageIntegrity({ targetDir: dir });
-const config = JSON.parse(await readFile(await assertNoSymlinkOrJunction(join(dir, 'host-config.json')), 'utf8'));
-const hostPrivateKey = createPrivateKey(await readFile(await assertNoSymlinkOrJunction(join(dir, 'host-private.pem')), 'utf8'));
-const enrollments = validateEnrollmentList(JSON.parse(await readFile(await assertNoSymlinkOrJunction(join(dir, 'enrollments.json')), 'utf8')));
+const EXPECTED_FINGERPRINT = ${JSON.stringify(expectedFingerprint)};
+const samePath = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+async function safePath(p) {
+  const r = resolve(p);
+  if ((await lstat(r)).isSymbolicLink()) throw Error('native-host-symlink-or-junction-denied');
+  const real = await realpath(r);
+  if (!samePath(real, join(await realpath(dirname(r)), basename(r)))) throw Error('native-host-reparse-path-denied');
+  return real;
+}
+const sha256Hex = buf => createHash('sha256').update(buf).digest('hex');
+
+const dir = await safePath(dirname(fileURLToPath(import.meta.url)));
+const pairingInfo = JSON.parse(await readFile(await safePath(join(dir, 'pairing-info.json')), 'utf8'));
+const hostPub = createPublicKey(pairingInfo.hostPublicKey);
+if (sha256Hex(hostPub.export({ type: 'spki', format: 'der' })) !== EXPECTED_FINGERPRINT || pairingInfo.fingerprint !== EXPECTED_FINGERPRINT) {
+  throw Error('native-host-integrity-fingerprint-mismatch');
+}
+const manifestRaw = await readFile(await safePath(join(dir, 'integrity-manifest.json')), 'utf8');
+const sigRaw = (await readFile(await safePath(join(dir, 'integrity-manifest.sig')), 'utf8')).trim();
+if (!verify(null, Buffer.from(manifestRaw, 'utf8'), hostPub, Buffer.from(sigRaw, 'base64url'))) {
+  throw Error('native-host-integrity-signature-invalid');
+}
+const manifest = JSON.parse(manifestRaw);
+if (manifest?.schema !== 'ultron.native-browser.integrity.v1' || !manifest.files || typeof manifest.files !== 'object') {
+  throw Error('native-host-integrity-manifest-invalid');
+}
+const repoFiles = {
+  'repo:native-browser-transport.mjs': join(manifest.repoRoot, 'src', 'computer', 'native-browser-transport.mjs'),
+  'repo:native-browser-client.mjs': join(manifest.repoRoot, 'src', 'computer', 'native-browser-client.mjs'),
+  'repo:native-browser-host-package.mjs': join(manifest.repoRoot, 'src', 'computer', 'native-browser-host-package.mjs'),
+  'repo:native-browser-playwright-adapter.mjs': join(manifest.repoRoot, 'src', 'computer', 'native-browser-playwright-adapter.mjs'),
+  'repo:durable-web-read-worker.mjs': join(manifest.repoRoot, 'src', 'durable-web-read-worker.mjs'),
+  'repo:capability-bindings.mjs': join(manifest.repoRoot, 'src', 'capability-bindings.mjs'),
+  'repo:capability-attempt-store.mjs': join(manifest.repoRoot, 'src', 'capability-attempt-store.mjs'),
+  'repo:universal-web-routing.mjs': join(manifest.repoRoot, 'src', 'universal-web-routing.mjs'),
+  'repo:0011_capability_attempts.sql': join(manifest.repoRoot, 'cloud', 'hatchable', 'migrations', '0011_capability_attempts.sql'),
+  'dep:pglite-entry': fileURLToPath(${JSON.stringify(pgliteUrl)}),
+  'dep:pglite-package': join(dirname(fileURLToPath(${JSON.stringify(pgliteUrl)})), '..', 'package.json'),
+};
+for (const name of ['host-config.json', 'pairing-info.json', 'ultron-native-host.mjs', 'ultron-native-host.cmd', 'com.ultron.browser.json']) {
+  if (sha256Hex(await readFile(await safePath(join(dir, name)))) !== manifest.files['pkg:' + name]) {
+    throw Error('native-host-integrity-tampered:' + name);
+  }
+}
+for (const [label, fullPath] of Object.entries(repoFiles)) {
+  if (sha256Hex(await readFile(await safePath(fullPath))) !== manifest.files[label]) {
+    throw Error('native-host-integrity-tampered:' + label);
+  }
+}
+
+const [{ PGlite }, { serveNativeBrowserPort }, { createDurableWebReadWorker }, { createPlaywrightReadAdapter }, { createHostAuthorizer, validateEnrollmentList, verifyHostPackageIntegrity }] = await Promise.all([
+  import(${JSON.stringify(pgliteUrl)}),
+  import(${JSON.stringify(transportUrl)}),
+  import(${JSON.stringify(workerUrl)}),
+  import(${JSON.stringify(playwrightAdapterUrl)}),
+  import(${JSON.stringify(packageUrl)}),
+]);
+
+await verifyHostPackageIntegrity({ targetDir: dir, expectedFingerprint: EXPECTED_FINGERPRINT });
+const config = JSON.parse(await readFile(await safePath(join(dir, 'host-config.json')), 'utf8'));
+const hostPrivateKey = createPrivateKey(await readFile(await safePath(join(dir, 'host-private.pem')), 'utf8'));
+const enrollments = validateEnrollmentList(JSON.parse(await readFile(await safePath(join(dir, 'enrollments.json')), 'utf8')));
 const callerOrigin = process.argv[2] || '';
 const active = enrollments.filter(e => e.hostId === config.hostId && e.extensionOrigin === config.extensionOrigin && e.revokedAt === null);
 if (callerOrigin !== config.extensionOrigin || active.length !== 1 || config.authorizeRead !== true) {
@@ -377,7 +466,7 @@ const authorizer = await createHostAuthorizer({
 });
 const db = new PGlite(config.dbPath);
 try {
-  await db.exec(await readFile(await assertNoSymlinkOrJunction(config.migrationPath), 'utf8'));
+  await db.exec(await readFile(await safePath(config.migrationPath), 'utf8'));
   const binding = {
     id: config.bindingId,
     provider: 'playwright',
@@ -394,7 +483,7 @@ try {
   const adapter = adapterModule?.createAdapter
     ? adapterModule.createAdapter(config)
     : config.adapterMode === 'playwright'
-      ? createPlaywrightReadAdapter({ origin: config.origin, actorRef: config.actorRef, allowedPaths: config.paths, requiredMarker: config.requiredMarker ?? null })
+      ? createPlaywrightReadAdapter({ origin: config.origin, actorRef: config.actorRef, allowedPaths: config.paths, requiredMarker: config.requiredMarker ?? null, authorizeBeforeDispatch: authorizer.verifyActive })
       : {
           health: async () => ({ status: 'held', actorRef: config.actorRef, grantedScopes: [] }),
           execute: async () => { throw Error('native-host-browser-adapter-not-configured'); },
@@ -500,7 +589,7 @@ export async function packageNativeBrowserHost({
   const privateKeyAcl = await restrictPrivateKeyAcl({ privateKeyPath });
   await atomicWriteFile(join(dest, 'enrollments.json'), '[]\n', { mode: 0o600 });
   await atomicWriteFile(join(dest, 'pairing-info.json'), JSON.stringify(pairingInfo, null, 2) + '\n', { mode: 0o600 });
-  await atomicWriteFile(hostScriptPath, renderHostEntrypoint({ repoRoot }), { mode: 0o600 });
+  await atomicWriteFile(hostScriptPath, renderHostEntrypoint({ repoRoot, expectedFingerprint: identity.fingerprint }), { mode: 0o600 });
   await atomicWriteFile(cmdPath, cmdContent, { mode: 0o700 });
   await atomicWriteFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
 

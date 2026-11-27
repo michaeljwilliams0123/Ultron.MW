@@ -398,3 +398,95 @@ test('in-flight revocation, atomic enrollment locking, and host package integrit
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('context.on(page) preserves primary page while closing secondary popups, and authorizeBeforeDispatch blocks revoked dispatch', async () => {
+  const origin = 'https://ultron-mw-cloud.hatchable.site';
+  const path = '/browser-write-acceptance.html';
+  const makePopupAdapter = (emitSecondaryPopup) => {
+    let primaryClosed = false;
+    let popupClosed = false;
+    const adapter = createPlaywrightReadAdapter({
+      origin,
+      allowedPaths: [path],
+      loadPlaywright: async () => ({
+        chromium: {
+          launch: async () => ({
+            newContext: async () => {
+              const listeners = new Map();
+              const primaryPage = {
+                setDefaultTimeout() {},
+                on() {},
+                async goto() {
+                  if (emitSecondaryPopup) {
+                    const popup = { close: async () => { popupClosed = true; } };
+                    for (const fn of listeners.get('page') || []) fn(popup);
+                  }
+                  return { status: () => 200, headers: () => ({ 'content-type': 'text/html' }) };
+                },
+                url: () => origin + path,
+                evaluate: async () => ({ title: 'Ultron Acceptance', headingCount: 1, textSample: 'OK' }),
+                close: async () => { primaryClosed = true; },
+              };
+              return {
+                on: (evt, fn) => {
+                  if (!listeners.has(evt)) listeners.set(evt, []);
+                  listeners.get(evt).push(fn);
+                },
+                route: async () => {},
+                newPage: async () => {
+                  for (const fn of listeners.get('page') || []) fn(primaryPage);
+                  return primaryPage;
+                },
+              };
+            },
+            close: async () => {},
+          }),
+        },
+      }),
+    });
+    return { adapter, state: () => ({ primaryClosed, popupClosed }) };
+  };
+
+  const task = { operation: 'page.inspect', estimatedCostCents: 0, input: { url: origin + path } };
+  const primaryOnly = makePopupAdapter(false);
+  const res = await primaryOnly.adapter.execute(task);
+  assert.equal(res.status, 200);
+  assert.equal(primaryOnly.state().primaryClosed, false);
+
+  const withPopup = makePopupAdapter(true);
+  await assert.rejects(withPopup.adapter.execute(task), /activity-denied/);
+  assert.equal(withPopup.state().primaryClosed, false);
+  assert.equal(withPopup.state().popupClosed, true);
+
+  let launches = 0;
+  let active = true;
+  const revokedAdapter = createPlaywrightReadAdapter({
+    origin,
+    allowedPaths: [path],
+    authorizeBeforeDispatch: async () => active,
+    loadPlaywright: async () => ({
+      chromium: {
+        launch: async () => { launches++; throw Error('should-not-launch'); },
+      },
+    }),
+  });
+  active = false;
+  await assert.rejects(revokedAdapter.execute(task), /authorization-revoked/);
+  assert.equal(launches, 0);
+});
+
+test('integrity manifest covers transitive dependencies and pinned fingerprint root', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ultron-host-trans-'));
+  const targetDir = join(dir, 'pkg');
+  try {
+    const pkg = await packageNativeBrowserHost({ targetDir, repoRoot, extensionOrigin });
+    const manifest = JSON.parse(await readFile(join(targetDir, 'integrity-manifest.json'), 'utf8'));
+    for (const key of ['repo:capability-bindings.mjs', 'repo:capability-attempt-store.mjs', 'repo:universal-web-routing.mjs', 'dep:pglite-entry']) {
+      assert.match(manifest.files[key], /^[a-f0-9]{64}$/);
+    }
+    assert.equal((await verifyHostPackageIntegrity({ targetDir, expectedFingerprint: pkg.pairingInfo.fingerprint })).verified, true);
+    await assert.rejects(verifyHostPackageIntegrity({ targetDir, expectedFingerprint: '0'.repeat(64) }), /fingerprint-mismatch/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

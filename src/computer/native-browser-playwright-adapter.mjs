@@ -12,12 +12,14 @@ export function createPlaywrightReadAdapter({
   allowedPaths = ['/browser-write-acceptance.html'],
   timeoutMs = 15000,
   requiredMarker = null,
+  authorizeBeforeDispatch = null,
   loadPlaywright = async () => import('playwright'),
 } = {}) {
   if (!validOrigin(origin) || !ID.test(actorRef || '') ||
       !Array.isArray(allowedPaths) || !allowedPaths.length || allowedPaths.length > 32 ||
       allowedPaths.some(p => !pathOk(p)) || !Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 30000 ||
-      (requiredMarker !== null && typeof requiredMarker !== 'string' && !(requiredMarker instanceof RegExp))) {
+      (requiredMarker !== null && typeof requiredMarker !== 'string' && !(requiredMarker instanceof RegExp)) ||
+      (authorizeBeforeDispatch !== null && typeof authorizeBeforeDispatch !== 'function')) {
     throw Error('native-host-playwright-config-invalid');
   }
   const permitted = new Set(allowedPaths);
@@ -61,6 +63,9 @@ export function createPlaywrightReadAdapter({
       if (typeof pw?.chromium?.launch !== 'function') {
         throw Error('native-host-playwright-unavailable');
       }
+      if (authorizeBeforeDispatch && (await authorizeBeforeDispatch()) !== true) {
+        throw Error('native-host-playwright-authorization-revoked');
+      }
       const browser = await pw.chromium.launch({ headless: true });
       try {
         let routeRejection = null;
@@ -68,10 +73,6 @@ export function createPlaywrightReadAdapter({
         let responseContentType = 'text/html';
         let blockedActivity = false;
         const context = await browser.newContext({ acceptDownloads: false, javaScriptEnabled: false, serviceWorkers: 'block' });
-        context.on?.('page', extraPage => {
-          blockedActivity = true;
-          extraPage?.close?.().catch(() => {});
-        });
         await context.route('**/*', async route => {
           const request = route.request();
           if (request.method() !== 'GET' || !request.isNavigationRequest() || request.url() !== u.href) {
@@ -104,6 +105,12 @@ export function createPlaywrightReadAdapter({
           }
         });
         const page = await context.newPage();
+        context.on?.('page', extraPage => {
+          if (extraPage && extraPage !== page) {
+            blockedActivity = true;
+            extraPage?.close?.().catch(() => {});
+          }
+        });
         page.on?.('download', download => {
           blockedActivity = true;
           download?.cancel?.().catch(() => {});
