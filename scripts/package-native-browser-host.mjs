@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
-import { packageNativeBrowserHost, enrollNativeDevice } from '../src/computer/native-browser-host-package.mjs';
+import { packageNativeBrowserHost, enrollNativeDevice, revokeNativeDevice } from '../src/computer/native-browser-host-package.mjs';
 
-const [, , mode, targetDir, arg3] = process.argv;
+const [, , mode, targetDir, arg3, arg4] = process.argv;
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
 if (mode === 'package' && targetDir && arg3) {
@@ -15,6 +15,7 @@ if (mode === 'package' && targetDir && arg3) {
     packaged: pkg.targetDir,
     manifestPath: pkg.manifestPath,
     cmdPath: pkg.cmdPath,
+    privateKeyAcl: pkg.privateKeyAcl,
     pairingInfo: pkg.pairingInfo,
     registryPlan: pkg.registryPlan,
     manualRegistrationNote: 'Run reg add manually only after reviewing manifestPath and extensionOrigin.',
@@ -23,6 +24,9 @@ if (mode === 'package' && targetDir && arg3) {
   const enrollment = await readFile(arg3, 'utf8');
   const record = await enrollNativeDevice({ targetDir, enrollment });
   console.log(JSON.stringify({ enrolled: record.deviceId, hostId: record.hostId, extensionOrigin: record.extensionOrigin }, null, 2));
+} else if (mode === 'revoke' && targetDir && arg3) {
+  const record = await revokeNativeDevice({ targetDir, deviceId: arg3, reason: arg4 || 'owner-revoked' });
+  console.log(JSON.stringify({ revoked: record.deviceId, revokedAt: record.revokedAt, reason: record.revokedReason }, null, 2));
 } else {
-  throw Error('Usage: node scripts/package-native-browser-host.mjs <package <new-abs-dir> <extension-origin> | enroll <pkg-dir> <enrollment-json-path>>');
+  throw Error('Usage: node scripts/package-native-browser-host.mjs <package <new-abs-dir> <extension-origin> | enroll <pkg-dir> <enrollment-json-path> | revoke <pkg-dir> <device-id> [reason]>');
 }

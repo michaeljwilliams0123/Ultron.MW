@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { PGlite } from '@electric-sql/pglite';
 import { encodeNativeFrame, readNativeFrame } from '../src/computer/native-browser-transport.mjs';
 import { createNativeBrowserClient } from '../src/computer/native-browser-client.mjs';
@@ -13,9 +14,13 @@ import { createLocalPairing, publicEnrollment, canaryTask } from '../browser-ext
 import {
   packageNativeBrowserHost,
   enrollNativeDevice,
+  revokeNativeDevice,
   buildWindowsHostWrapper,
   buildWindowsRegistryManifestPlan,
 } from '../src/computer/native-browser-host-package.mjs';
+import { createPlaywrightReadAdapter } from '../src/computer/native-browser-playwright-adapter.mjs';
+
+const execFileAsync = promisify(execFile);
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 const extensionOrigin = 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/';
@@ -158,7 +163,84 @@ test('packaged Windows .cmd host completes authenticated PGlite exchange with PR
     } finally {
       await db.close();
     }
+
+    // Live device revocation must immediately block subsequent host invocations.
+    const revoked = await revokeNativeDevice({ targetDir, deviceId: pairing.deviceId, reason: 'lost-device' });
+    assert.ok(revoked.revokedAt);
+    assert.equal(revoked.revokedReason, 'lost-device');
+    await assert.rejects(revokeNativeDevice({ targetDir, deviceId: pairing.deviceId }), /not-found-or-revoked/);
+    const afterRevoke = await runPackagedHost(extensionOrigin, null);
+    assert.notEqual(afterRevoke.code, 0);
+    assert.equal(await readFile(marker, 'utf8'), 'dispatch\n');
+
+    if (process.platform === 'win32') {
+      const { stdout: aclOut } = await execFileAsync('icacls.exe', [pkg.privateKeyPath], { windowsHide: true });
+      assert.equal(aclOut.includes('BUILTIN\\Users'), false);
+      assert.equal(aclOut.includes('Everyone'), false);
+      assert.ok(aclOut.toLowerCase().includes((process.env.USERNAME || '').toLowerCase()));
+    }
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('bounded Playwright read adapter fails closed when unavailable and enforces $0 read-only origin/path bounds', async () => {
+  const missing = createPlaywrightReadAdapter({
+    origin: 'https://ultron-mw-cloud.hatchable.site',
+    loadPlaywright: async () => { throw Error('not-installed'); },
+  });
+  assert.equal((await missing.health()).status, 'held');
+  await assert.rejects(missing.execute({
+    operation: 'page.inspect',
+    estimatedCostCents: 0,
+    input: { url: 'https://ultron-mw-cloud.hatchable.site/browser-write-acceptance.html' },
+  }), /playwright-unavailable/);
+
+  let closed = false;
+  const mockAdapter = createPlaywrightReadAdapter({
+    origin: 'https://ultron-mw-cloud.hatchable.site',
+    allowedPaths: ['/browser-write-acceptance.html'],
+    loadPlaywright: async () => ({
+      chromium: {
+        launch: async () => ({
+          newContext: async () => ({
+            newPage: async () => ({
+              setDefaultTimeout() {},
+              async goto() {},
+              url: () => 'https://ultron-mw-cloud.hatchable.site/browser-write-acceptance.html',
+              evaluate: async () => ({ title: 'Ultron Acceptance', headingCount: 1 }),
+            }),
+          }),
+          close: async () => { closed = true; },
+        }),
+      },
+    }),
+  });
+  assert.equal((await mockAdapter.health()).status, 'ready');
+  await assert.rejects(mockAdapter.execute({
+    operation: 'page.inspect',
+    estimatedCostCents: 10,
+    input: { url: 'https://ultron-mw-cloud.hatchable.site/browser-write-acceptance.html' },
+  }), /request-invalid/);
+  await assert.rejects(mockAdapter.execute({
+    operation: 'page.inspect',
+    estimatedCostCents: 0,
+    input: { url: 'https://ultron-mw-cloud.hatchable.site/other.html' },
+  }), /path-denied/);
+  const data = await mockAdapter.execute({
+    operation: 'page.inspect',
+    estimatedCostCents: 0,
+    input: { url: 'https://ultron-mw-cloud.hatchable.site/browser-write-acceptance.html' },
+  });
+  assert.deepEqual(data, {
+    url: 'https://ultron-mw-cloud.hatchable.site/browser-write-acceptance.html',
+    title: 'Ultron Acceptance',
+    headingCount: 1,
+  });
+  assert.equal(closed, true);
+  assert.deepEqual(await mockAdapter.observe({ query: { resultDigest: 'a'.repeat(64) } }), {
+    verified: true,
+    origin: 'https://ultron-mw-cloud.hatchable.site',
+  });
+  assert.deepEqual(await mockAdapter.unbind(), { revoked: true });
 });

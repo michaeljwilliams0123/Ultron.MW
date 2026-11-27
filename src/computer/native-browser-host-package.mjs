@@ -1,9 +1,13 @@
+import { execFile } from 'node:child_process';
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { isAbsolute, join, resolve, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { createChromiumHostManifest } from './native-browser-transport.mjs';
+
+const execFileAsync = promisify(execFile);
 
 const EXT = /^chrome-extension:\/\/[a-p]{32}\/$/;
 const ID = /^[a-z0-9][a-z0-9_.:-]{2,79}$/i;
@@ -79,6 +83,7 @@ export function buildEnrollmentRecord({ hostId, deviceId, extensionOrigin, devic
 function renderHostEntrypoint({ repoRoot }) {
   const transportUrl = pathToFileURL(join(repoRoot, 'src', 'computer', 'native-browser-transport.mjs')).href;
   const workerUrl = pathToFileURL(join(repoRoot, 'src', 'durable-web-read-worker.mjs')).href;
+  const playwrightAdapterUrl = pathToFileURL(join(repoRoot, 'src', 'computer', 'native-browser-playwright-adapter.mjs')).href;
   const req = createRequire(join(repoRoot, 'package.json'));
   const pgliteUrl = pathToFileURL(req.resolve('@electric-sql/pglite')).href;
   return `import { createPrivateKey } from 'node:crypto';
@@ -88,6 +93,7 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from ${JSON.stringify(pgliteUrl)};
 import { serveNativeBrowserPort } from ${JSON.stringify(transportUrl)};
 import { createDurableWebReadWorker } from ${JSON.stringify(workerUrl)};
+import { createPlaywrightReadAdapter } from ${JSON.stringify(playwrightAdapterUrl)};
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(await readFile(join(dir, 'host-config.json'), 'utf8'));
@@ -116,12 +122,16 @@ try {
     credentialRef: null,
   };
   const adapterModule = config.adapterModulePath ? await import(config.adapterModulePath) : null;
-  const adapter = adapterModule?.createAdapter ? adapterModule.createAdapter(config) : {
-    health: async () => ({ status: 'held', actorRef: config.actorRef, grantedScopes: [] }),
-    execute: async () => { throw Error('native-host-browser-adapter-not-configured'); },
-    observe: async () => ({ verified: false, origin: config.origin }),
-    unbind: async () => ({ revoked: true }),
-  };
+  const adapter = adapterModule?.createAdapter
+    ? adapterModule.createAdapter(config)
+    : config.adapterMode === 'playwright'
+      ? createPlaywrightReadAdapter({ origin: config.origin, actorRef: config.actorRef, allowedPaths: config.paths })
+      : {
+          health: async () => ({ status: 'held', actorRef: config.actorRef, grantedScopes: [] }),
+          execute: async () => { throw Error('native-host-browser-adapter-not-configured'); },
+          observe: async () => ({ verified: false, origin: config.origin }),
+          unbind: async () => ({ revoked: true }),
+        };
   const worker = createDurableWebReadWorker({
     db,
     routes: [{ protocol: 'playwright', binding, adapter, allowedPaths: config.paths }],
@@ -149,6 +159,21 @@ try {
 `;
 }
 
+export async function restrictPrivateKeyAcl({
+  privateKeyPath,
+  platform = process.platform,
+  username = process.env.USERNAME || '',
+} = {}) {
+  if (!absPathOk(privateKeyPath)) throw Error('native-host-private-key-path-invalid');
+  if (platform === 'win32') {
+    if (!/^[a-zA-Z0-9._-]{1,64}$/.test(username)) throw Error('native-host-acl-username-invalid');
+    await execFileAsync('icacls.exe', [privateKeyPath, '/inheritance:r', '/grant:r', `${username}:(R)`], { windowsHide: true });
+    return Object.freeze({ platform, restricted: true, principal: username, permission: 'R' });
+  }
+  await chmod(privateKeyPath, 0o600);
+  return Object.freeze({ platform, restricted: true, mode: '0600' });
+}
+
 export async function packageNativeBrowserHost({
   targetDir,
   repoRoot,
@@ -162,6 +187,7 @@ export async function packageNativeBrowserHost({
   bindingExpiresAt = '2027-12-31T00:00:00Z',
   authorizeRead = false,
   adapterModulePath = null,
+  adapterMode = 'stub',
 } = {}) {
   if (!absPathOk(targetDir) || !absPathOk(repoRoot) || !EXT.test(extensionOrigin || '') ||
       !ID.test(hostId || '') || !ID.test(actorRef || '') || !validOrigin(origin) ||
@@ -190,6 +216,7 @@ export async function packageNativeBrowserHost({
     bindingExpiresAt,
     authorizeRead: authorizeRead === true,
     adapterModulePath,
+    adapterMode: adapterMode === 'playwright' ? 'playwright' : 'stub',
     dbPath,
     migrationPath,
     hostPublicKey: identity.hostPublicKey,
@@ -202,8 +229,10 @@ export async function packageNativeBrowserHost({
     fingerprint: identity.fingerprint,
   });
 
+  const privateKeyPath = join(dest, 'host-private.pem');
   await writeFile(join(dest, 'host-config.json'), JSON.stringify(hostConfig, null, 2) + '\n', 'utf8');
-  await writeFile(join(dest, 'host-private.pem'), identity.hostPrivateKeyPem, { encoding: 'utf8', mode: 0o600 });
+  await writeFile(privateKeyPath, identity.hostPrivateKeyPem, { encoding: 'utf8', mode: 0o600 });
+  const privateKeyAcl = await restrictPrivateKeyAcl({ privateKeyPath });
   await writeFile(join(dest, 'enrollments.json'), '[]\n', 'utf8');
   await writeFile(join(dest, 'pairing-info.json'), JSON.stringify(pairingInfo, null, 2) + '\n', 'utf8');
   await writeFile(hostScriptPath, renderHostEntrypoint({ repoRoot }), 'utf8');
@@ -215,6 +244,8 @@ export async function packageNativeBrowserHost({
     manifestPath,
     cmdPath,
     hostScriptPath,
+    privateKeyPath,
+    privateKeyAcl,
     pairingInfo,
     registryPlan: buildWindowsRegistryManifestPlan({ manifestPath }),
   });
@@ -243,4 +274,22 @@ export async function enrollNativeDevice({ targetDir, enrollment, clock = () => 
   existing.push(record);
   await writeFile(enrollmentsPath, JSON.stringify(existing, null, 2) + '\n', 'utf8');
   return record;
+}
+
+export async function revokeNativeDevice({ targetDir, deviceId, reason = 'owner-revoked', clock = () => new Date().toISOString() } = {}) {
+  if (!absPathOk(targetDir)) throw Error('native-host-package-dir-invalid');
+  if (!ID.test(deviceId || '')) throw Error('native-host-device-id-invalid');
+  const dest = resolve(targetDir);
+  const enrollmentsPath = join(dest, 'enrollments.json');
+  const existing = JSON.parse(await readFile(enrollmentsPath, 'utf8'));
+  const index = existing.findIndex(e => e.deviceId === deviceId && e.revokedAt === null);
+  if (index === -1) throw Error('native-host-device-not-found-or-revoked');
+  const updated = Object.freeze({
+    ...existing[index],
+    revokedAt: clock(),
+    revokedReason: String(reason || 'owner-revoked').slice(0, 120),
+  });
+  existing[index] = updated;
+  await writeFile(enrollmentsPath, JSON.stringify(existing, null, 2) + '\n', 'utf8');
+  return updated;
 }
