@@ -63,5 +63,15 @@ test('both owner and service read-only routes use canonical readback, and proxy 
  assert.match(proxy,/x-ultron-release-proof-nonce/);
  assert.match(proxy,/x-ultron-release-proof-mac/);
  const workflow=read('cloudflare/edge-shield/src/workflows/release-proof.ts');
- assert.match(workflow,/readCanonicalReleaseProof/);assert.match(workflow,/if \(!proof\.verified\)/);
+ assert.match(workflow,/readReleaseProofForWorkflow/);assert.match(workflow,/if \(observation.status === "held"\) return observation/);assert.match(workflow,/if \(!proof\.verified\)/);
+});
+
+test('quota and authentication failures become held evidence, never a verified proof',async()=>{
+ const {readReleaseProofForWorkflow}=await import('../cloudflare/edge-shield/src/release-readback.ts');
+ for(const status of [401,403,429]){
+  let calls=0;
+  const result=await readReleaseProofForWorkflow({origin,secret,now,nonce:'nonce-unique-00000008',fetchImpl:async()=>{calls++;return new Response('untrusted body',{status})}});
+  assert.deepEqual(result,{status:'held',reason:status===429?'origin-rate-limited':'origin-authorization-denied',httpStatus:status});
+  assert.equal(calls,1);assert.equal(Object.hasOwn(result,'proof'),false);
+ }
 });
