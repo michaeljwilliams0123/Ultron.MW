@@ -79,3 +79,15 @@ test('an unadmitted web path cannot invoke provider health or reserve an attempt
  assert.equal(probes,0);
  assert.equal(f.calls(),0);
 });
+
+test('browser-native WebMCP is subject to the same Ultron local-owner boundary',()=>{
+ const f=fixture();
+ const db={query:async()=>{throw Error('No database call expected')}};
+ const authorizeRead=async()=>true;
+ const route={...f.routes[0],protocol:'webmcp'};
+ assert.doesNotThrow(()=>createDurableWebReadWorker({db,routes:[route],clock,authorizeRead}));
+ for(const identity of [{runtime:'github-actions',authMethod:'workflow-identity'},{runtime:'hosted-worker',authMethod:'oauth2'},{runtime:'cloud-api',authMethod:'app-token'},{runtime:'local-node',authMethod:'oauth2'}]){
+  const foreign={...route,binding:{...route.binding,...identity}};
+  assert.throws(()=>createDurableWebReadWorker({db,routes:[foreign],clock,authorizeRead}),/ultron-local-browser-authority-required/);
+ }
+});

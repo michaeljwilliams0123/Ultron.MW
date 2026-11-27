@@ -3,7 +3,7 @@
 import {createCapabilityBroker} from './capability-bindings.mjs';
 import {createPostgresCapabilityAttemptStore} from './capability-attempt-store.mjs';
 import {selectWebReadBinding} from './universal-web-routing.mjs';
-const browserProtocols=new Set(['bidi','cdp','playwright','semantic-ui']);
+const browserProtocols=new Set(['webmcp','bidi','cdp','playwright','semantic-ui']);
 const held=reason=>Object.freeze({status:'held',reason,productionAccepted:false});
 const pathPattern=/^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]*$/;
 const pathOk=p=>typeof p==='string'&&p.length<=512&&pathPattern.test(p)&&
