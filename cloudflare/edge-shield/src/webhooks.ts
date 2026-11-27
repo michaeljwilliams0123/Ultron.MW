@@ -20,7 +20,7 @@ export async function handleGithubWebhook(request: Request, env: Env): Promise<R
     return applyOwnHeaders(json({ error: "invalid_json" }, 400));
   }
   const mapped = mapEvent(event, payload, delivery);
-  if (!mapped) {
+  if (!mapped || mapped.repo !== env.GITHUB_REPO) {
     return applyOwnHeaders(json({ ok: true, ignored: event, delivery }, 202));
   }
   await env.EVENTS.send(mapped);
@@ -36,10 +36,12 @@ function mapEvent(event: string, payload: any, delivery: string): EdgeEvent | nu
     return { ...base, kind: "push", branch: "main", sha: payload.after };
   }
   if (event === "check_suite") {
-    if (payload.action !== "completed") return null;
+    if (payload.action !== "completed" || payload.check_suite?.head_branch !== "main" || payload.check_suite?.conclusion !== "success") return null;
+    if (payload.check_suite?.head_repository?.full_name && payload.check_suite.head_repository.full_name !== repo) return null;
     return {
       ...base,
       kind: "check_suite",
+      branch: "main",
       sha: payload.check_suite?.head_sha,
       conclusion: payload.check_suite?.conclusion,
     };
