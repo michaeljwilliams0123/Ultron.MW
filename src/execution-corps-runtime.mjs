@@ -11,6 +11,7 @@ export function createPostgresExecutionCorps({db,repair,githubServices,cloudServ
  if(typeof db?.query!=='function'||typeof repair?.authorize!=='function'||
     typeof repair?.get!=='function'||typeof repair?.post!=='function'||
     typeof repair?.updateRef!=='function'||typeof repair?.repairer?.propose!=='function'||
+    (repair.readFailureTrace!==undefined&&typeof repair.readFailureTrace!=='function')||
     (repair.now!==undefined&&typeof repair.now!=='function'))
   throw Error('repair-runtime-trusted-services-required');
  const {get,post,updateRef,readFailureTrace,repairer,authorize,now}=repair;

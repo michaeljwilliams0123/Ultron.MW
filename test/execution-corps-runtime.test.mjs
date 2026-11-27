@@ -73,3 +73,16 @@ test('recreated Medic reconciles a previously dispatched patch through GitHub re
   assert.deepEqual(f.calls,{write:0,propose:0});
  }finally{await f.db.close();}
 });
+
+test('Medic rejects malformed service bindings before provider access',()=>{
+ const unused=()=>{throw Error('Unexpected provider call');};
+ const db={query:unused};
+ const repair={get:unused,post:unused,updateRef:unused,repairer:{propose:unused},authorize:unused};
+ const invalid=[{db:{} ,repair},{db:null,repair},{db,repair:null},
+  {db,repair:{...repair,get:null}},{db,repair:{...repair,post:1}},
+  {db,repair:{...repair,updateRef:false}},{db,repair:{...repair,repairer:{propose:'bad'}}},
+  {db,repair:{...repair,authorize:'allow'}},{db,repair:{...repair,now:1}},
+  {db,repair:{...repair,readFailureTrace:'not-a-function'}}];
+ for(const services of invalid)assert.throws(()=>createPostgresExecutionCorps(services),/repair-runtime-trusted-services-required/);
+ assert.doesNotThrow(()=>createPostgresExecutionCorps({db,repair}));
+});
