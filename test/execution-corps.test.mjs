@@ -16,6 +16,21 @@ test('unbound executors and unrecognized agents do not dispatch',async()=>{
  }
  assert.equal((await corps.execute({agent:'arbitrary-shell'})).status,'held');
 });
+test('hostile request proxies fail closed instead of rejecting execution',async()=>{
+ const descriptorTrap=new Proxy({agent:'relay',query:{}},{
+  getOwnPropertyDescriptor(){throw Error('hostile descriptor trap');}
+ });
+ const ownKeysTrap=new Proxy({agent:'relay',query:{}},{
+  ownKeys(){throw Error('hostile ownKeys trap');}
+ });
+ const corps=createExecutionCorps();
+ for(const request of [descriptorTrap,ownKeysTrap]){
+  const result=await corps.execute(request);
+  assert.equal(result.status,'held');
+  assert.equal(result.reason,'invalid-execution-request');
+  assert.equal(result.productionAccepted,false);
+ }
+});
 test('Composio relay executes a fixed read and never upgrades an unverified response',async()=>{
  let calls=0;
  const query={profile:'multi-account',actor:'ultron-admin',grant:{id:'test'}};
