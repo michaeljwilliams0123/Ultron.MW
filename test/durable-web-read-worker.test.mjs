@@ -91,3 +91,62 @@ test('browser-native WebMCP is subject to the same Ultron local-owner boundary',
   assert.throws(()=>createDurableWebReadWorker({db,routes:[foreign],clock,authorizeRead}),/ultron-local-browser-authority-required/);
  }
 });
+
+test('authorized fresh read delivers bounded data but replay and ledger expose only receipt',async()=>{
+ const {PGlite}=await import('@electric-sql/pglite');
+ const db=new PGlite();
+ try{
+  await db.exec(readFileSync(new URL('../cloud/hatchable/migrations/0011_capability_attempts.sql',import.meta.url),'utf8'));
+  const f=fixture(), opts={db,routes:f.routes,clock,authorizeRead:async()=>true,authorizeResult:async()=>true};
+  const first=await createDurableWebReadWorker(opts).execute(request);
+  assert.equal(first.status,'completed');
+  assert.deepEqual(first.data,{headingCount:1});
+  assert.equal(first.dataTrust,'untrusted-provider-data');
+  const second=await createDurableWebReadWorker(opts).execute(request);
+  assert.equal(second.resumed,true);
+  assert.equal(Object.hasOwn(second,'data'),false);
+  assert.equal(f.calls(),1);
+  const rows=await db.query('SELECT receipt FROM capability_attempts');
+  assert.equal(JSON.stringify(rows.rows).includes('headingCount'),false);
+ }finally{await db.close();}
+});
+
+test('result disclosure requires separate live authorization and is absent by default',async()=>{
+ const {PGlite}=await import('@electric-sql/pglite');
+ const db=new PGlite();
+ try{
+  await db.exec(readFileSync(new URL('../cloud/hatchable/migrations/0011_capability_attempts.sql',import.meta.url),'utf8'));
+  const f=fixture(), opts={db,routes:f.routes,clock,authorizeRead:async()=>true};
+  const absent=await createDurableWebReadWorker(opts).execute(request);
+  assert.equal(absent.status,'completed');
+  assert.equal(Object.hasOwn(absent,'data'),false);
+  const denied=await createDurableWebReadWorker({...opts,authorizeResult:async()=>false}).execute({...request,idempotencyKey:'read:browser002'});
+  assert.equal(denied.status,'completed');
+  assert.equal(Object.hasOwn(denied,'data'),false);
+  let active=true;
+  const route=f.routes[0];
+  const revoked=await createDurableWebReadWorker({...opts,routes:[{...route,adapter:{...route.adapter,observe:async()=>{active=false;return {verified:true,origin};}}}],authorizeRead:async()=>active,authorizeResult:async()=>true}).execute({...request,idempotencyKey:'read:browser003'});
+  assert.equal(revoked.status,'completed');
+  assert.equal(Object.hasOwn(revoked,'data'),false);
+ }finally{await db.close();}
+});
+
+test('oversized or unverified browser payload cannot reach the consumer',async()=>{
+ const {PGlite}=await import('@electric-sql/pglite');
+ const db=new PGlite();
+ try{
+  await db.exec(readFileSync(new URL('../cloud/hatchable/migrations/0011_capability_attempts.sql',import.meta.url),'utf8'));
+  const f=fixture(),route=f.routes[0];
+  const options={db,clock,authorizeRead:async()=>true,authorizeResult:async()=>true};
+  const oversize={...route,adapter:{...route.adapter,execute:async()=>({text:'\u20ac'.repeat(7000)})}};
+  const large=await createDurableWebReadWorker({...options,routes:[oversize]}).execute(request);
+  assert.equal(large.status,'completed');
+  assert.equal(Object.hasOwn(large,'data'),false);
+  const uncertain={...route,adapter:{...route.adapter,observe:async()=>({verified:false,origin})}};
+  const failed=await createDurableWebReadWorker({...options,routes:[uncertain]}).execute({...request,idempotencyKey:'read:browser004'});
+  assert.equal(failed.status,'reconcile-required');
+  assert.equal(Object.hasOwn(failed,'data'),false);
+  const rows=await db.query('SELECT receipt FROM capability_attempts');
+  assert.equal(JSON.stringify(rows.rows).includes('headingCount'),false);
+ }finally{await db.close();}
+});
