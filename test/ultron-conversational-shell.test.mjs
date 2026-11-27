@@ -42,3 +42,13 @@ test('PR conversation preflight is read-only, owner-scoped and never submits a m
  assert.match(api,/inspection-only/);
  assert.doesNotMatch(api,/method\s*:\s*['"](POST|PUT|PATCH|DELETE)/i);
 });
+
+test('browser authority view distinguishes intended ownership from verified execution',()=>{
+ const chat=read('public/ultron-chat.js');
+ const html=read('public/council-room.html');
+ assert.match(chat,/Independent browser execution: not verified in this view/);
+ assert.match(chat,/not ChatGPT or GitHub Actions/);
+ assert.match(chat,/does not establish a connection or grant access/);
+ assert.match(chat,/authorityButton\.setAttribute\('aria-haspopup','dialog'\)/);
+ assert.match(html,/Ultron native host \(unverified\)/);
+});
