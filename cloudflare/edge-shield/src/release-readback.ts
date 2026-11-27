@@ -15,6 +15,7 @@ export async function readCanonicalReleaseProof({origin,secret,now=Date.now(),no
  const mac=Array.from(new Uint8Array(raw),x=>x.toString(16).padStart(2,'0')).join('');
  const r=await fetchImpl(ORIGIN+PATH,{method:'GET',redirect:'error',cache:'no-store',
   headers:{'x-ultron-release-proof-ts':ts,'x-ultron-release-proof-nonce':nonce,'x-ultron-release-proof-mac':mac,Accept:'application/json'}});
+ if(r.status===429||r.status===401||r.status===403)throw new OriginReadbackHeld(r.status);
  if(!r.ok)throw Error('canonical-proof-unavailable');
  const p=await r.json() as Proof;
  const observedMs=Date.parse(p?.observedAt||'');
@@ -27,4 +28,18 @@ export async function readCanonicalReleaseProof({origin,secret,now=Date.now(),no
  // Never retain extra provider response fields in a durable Workflow result.
  return {schema:p.schema,repo:p.repo,verified:p.verified,status:p.status,observedAt:p.observedAt,commitSha:p.commitSha,
   target:p.target,artifactDigest:p.artifactDigest,receiptId:p.receiptId,evidenceSha256:p.evidenceSha256,missingGates:p.missingGates};
+}
+
+class OriginReadbackHeld extends Error {
+ readonly httpStatus: number;
+ constructor(httpStatus: number) { super('canonical-proof-held'); this.httpStatus=httpStatus; }
+}
+type WorkflowReadback = {status:'observed';proof:Proof} |
+ {status:'held';reason:'origin-rate-limited'|'origin-authorization-denied';httpStatus:number};
+export async function readReleaseProofForWorkflow(args:Parameters<typeof readCanonicalReleaseProof>[0]):Promise<WorkflowReadback>{
+ try{return {status:'observed',proof:await readCanonicalReleaseProof(args)};}
+ catch(error){
+  if(!(error instanceof OriginReadbackHeld))throw error;
+  return {status:'held',reason:error.httpStatus===429?'origin-rate-limited':'origin-authorization-denied',httpStatus:error.httpStatus};
+ }
 }
