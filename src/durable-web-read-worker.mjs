@@ -3,6 +3,7 @@
 import {createCapabilityBroker} from './capability-bindings.mjs';
 import {createPostgresCapabilityAttemptStore} from './capability-attempt-store.mjs';
 import {selectWebReadBinding} from './universal-web-routing.mjs';
+const browserProtocols=new Set(['bidi','cdp','playwright','semantic-ui']);
 const held=reason=>Object.freeze({status:'held',reason,productionAccepted:false});
 const pathPattern=/^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]*$/;
 const pathOk=p=>typeof p==='string'&&p.length<=512&&pathPattern.test(p)&&
@@ -15,6 +16,9 @@ export function createDurableWebReadWorker({db,routes,clock,authorizeRead}={}){
  const inventory=routes.map(({protocol,binding,adapter,allowedPaths})=>{
   if(!Array.isArray(allowedPaths)||!allowedPaths.length||allowedPaths.some(p=>!pathOk(p))||
     binding.operations.some(op=>op.effect!=='read'))throw Error('web-worker-read-scope-required');
+  if(browserProtocols.has(protocol)&&
+    (binding.runtime!=='local-node'||binding.authMethod!=='local-owner'))
+   throw Error('ultron-local-browser-authority-required');
   broker.bind(binding,adapter);
   return Object.freeze({protocol,bindingId:binding.id,allowedPaths:Object.freeze([...allowedPaths])});
  });

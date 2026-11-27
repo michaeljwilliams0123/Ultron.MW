@@ -53,3 +53,16 @@ test('owner authorization denial and unknown paths never dispatch',async()=>{
   assert.equal((await db.query('SELECT count(*) AS n FROM capability_attempts')).rows[0].n,0);
  }finally{await db.close();}
 });
+
+test('browser execution belongs to the local Ultron owner runtime, not CI or hosted connectors',()=>{
+ const f=fixture();
+ const db={query:async()=>{throw Error('No database call expected')}};
+ const authorizeRead=async()=>true;
+ for(const protocol of ['bidi','cdp','playwright','semantic-ui']){
+  for(const identity of [{runtime:'github-actions',authMethod:'workflow-identity'},{runtime:'hosted-worker',authMethod:'oauth2'},{runtime:'cloud-api',authMethod:'app-token'},{runtime:'local-node',authMethod:'oauth2'}]){
+   const route={...f.routes[0],protocol,binding:{...f.routes[0].binding,...identity}};
+   assert.throws(()=>createDurableWebReadWorker({db,routes:[route],clock,authorizeRead}),/ultron-local-browser-authority-required/);
+  }
+ }
+ assert.doesNotThrow(()=>createDurableWebReadWorker({db,routes:f.routes,clock,authorizeRead}));
+});
