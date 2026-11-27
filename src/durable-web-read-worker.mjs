@@ -8,9 +8,9 @@ const held=reason=>Object.freeze({status:'held',reason,productionAccepted:false}
 const pathPattern=/^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]*$/;
 const pathOk=p=>typeof p==='string'&&p.length<=512&&pathPattern.test(p)&&
  !p.split('/').some(x=>x==='.'||x==='..');
-export function createDurableWebReadWorker({db,routes,clock,authorizeRead}={}){
+export function createDurableWebReadWorker({db,routes,clock,authorizeRead,authorizeResult}={}){
  const attemptStore=createPostgresCapabilityAttemptStore({db});
- if(typeof authorizeRead!=='function'||!Array.isArray(routes)||routes.length>32)
+ if(typeof authorizeRead!=='function'||(authorizeResult!==undefined&&typeof authorizeResult!=='function')||!Array.isArray(routes)||routes.length>32)
   throw Error('web-worker-trusted-host-required');
  const broker=createCapabilityBroker({clock,attemptStore});
  const inventory=routes.map(({protocol,binding,adapter,allowedPaths})=>{
@@ -53,8 +53,16 @@ export function createDurableWebReadWorker({db,routes,clock,authorizeRead}={}){
    const chosen=inventory.find(x=>x.bindingId===selected.bindingId);
    if(!chosen.allowedPaths.includes(path))return held('path-not-admitted');
    if(await authorizeRead(r)!==true)return held('read-authorization-required');
-   const receipt=await broker.execute(selected.bindingId,{operation:r.operation,idempotencyKey,
+   const execute=authorizeResult?broker.executeReadWithResult:broker.execute;
+   const {data,...receipt}=await execute(selected.bindingId,{operation:r.operation,idempotencyKey,
     estimatedCostCents:0,input:{url:r.origin+path},expected:{origin:r.origin}});
+   // Provider data is not a command. Disclosure is separate, fresh, and ephemeral.
+   if(data!==undefined&&receipt.status==='completed'&&!receipt.resumed){
+    try{
+     if(await authorizeResult(r,receipt)===true&&await authorizeRead(r)===true)
+      return Object.freeze({...receipt,data,dataTrust:'untrusted-provider-data',productionAccepted:false});
+    }catch{/* preserve completed receipt without disclosing data */}
+   }
    return Object.freeze({...receipt,productionAccepted:false});
   }catch{return held('web-worker-state-unavailable');}
  }});
