@@ -216,3 +216,17 @@ test('non-data accessor properties and malformed origin strings fail closed with
  const c2=createNativeBrowserClient({hostId:f.options.hostId,deviceId:f.options.deviceId,extensionOrigin,hostPublicKey:webHost,devicePrivateKey:webDevice,clock:()=>now,authorize:async()=>true});
  await assert.rejects(c2.signRead(s.challenge,{...task,origin:'not-a-url'}),/native-browser-task-invalid/);
 });
+
+test('one frame deadline applies even when the event loop delivers late payload bytes before its timeout callback',async t=>{
+ const input=new PassThrough();
+ const frame=encodeNativeFrame({purpose:'deadline-test'});
+ let clock=10000;
+ t.mock.method(Date,'now',()=>clock);
+ const pending=readNativeFrame(input,{timeoutMs:1000});
+ input.write(frame.subarray(0,4));
+ await new Promise(setImmediate);
+ clock=11001;
+ input.end(frame.subarray(4));
+ await assert.rejects(pending,/native-browser-frame-timeout/);
+ assert.equal(input.listenerCount('readable'),0);
+});

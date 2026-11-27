@@ -42,7 +42,9 @@ function readExact(stream,size,deadline){
   function ended(){failed(Error('native-browser-frame-truncated'));}
   function pull(){
    try{
+    if(Date.now()>=deadline)return failed(Error('native-browser-frame-timeout'));
     const bytes=stream.read(size);
+    if(Date.now()>=deadline)return failed(Error('native-browser-frame-timeout'));
     if(bytes!==null){
      if(!Buffer.isBuffer(bytes)||bytes.length!==size)return ended();
      cleanup();resolve(bytes);
