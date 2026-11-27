@@ -6,7 +6,11 @@ const ID=/^[a-z0-9][a-z0-9_.:-]{2,79}$/i;
 const KEY=/^[a-z0-9][a-z0-9_.:-]{7,127}$/i;
 const HASH=/^[a-f0-9]{64}$/;
 const FIELDS=['origin','actorRef','operation','scope','maxPaidCents','idempotencyKey','path'];
-const exact=(v,k)=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===k.length&&k.every(x=>Object.hasOwn(v,x));
+const exact=(v,k)=>{
+ if(v===null||typeof v!=='object'||Array.isArray(v))return false;
+ const d=Object.getOwnPropertyDescriptors(v);
+ return Reflect.ownKeys(d).length===k.length&&k.every(x=>d[x]?.enumerable&&Object.hasOwn(d[x],'value'));
+};
 const bytes=v=>new TextEncoder().encode(JSON.stringify(v));
 const base64url=v=>btoa(String.fromCharCode(...v)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 function signature(v){
@@ -18,8 +22,9 @@ function signature(v){
 function readTask(raw){
  if(!exact(raw,FIELDS))throw Error('native-browser-task-invalid');
  const t=Object.freeze(Object.fromEntries(FIELDS.map(k=>[k,raw[k]])));
- const u=new URL(t.origin);
- if(typeof t.origin!=='string'||u.protocol!=='https:'||u.origin!==t.origin||typeof t.actorRef!=='string'||!ID.test(t.actorRef)||
+ let u;
+ try{u=typeof t.origin==='string'?new URL(t.origin):null;}catch{throw Error('native-browser-task-invalid');}
+ if(!u||u.protocol!=='https:'||u.origin!==t.origin||typeof t.actorRef!=='string'||!ID.test(t.actorRef)||
   t.operation!=='page.inspect'||t.scope!=='page.read'||t.maxPaidCents!==0||typeof t.idempotencyKey!=='string'||!KEY.test(t.idempotencyKey)||
   typeof t.path!=='string'||t.path.length>512||!/^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]*$/.test(t.path)||t.path.split('/').some(x=>x==='.'||x==='..'))
   throw Error('native-browser-task-invalid');

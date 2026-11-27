@@ -193,3 +193,26 @@ test('native protocol survives actual host process restart with a persistent Pos
   assert.equal(await readFile(marker,'utf8'),'dispatch\n');
  }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+test('non-data accessor properties and malformed origin strings fail closed with normalized errors',async()=>{
+ const {createNativeBrowserClient}=await import('../src/computer/native-browser-client.mjs');
+ const f=fixture(),s=createNativeBrowserSession(f.options);
+ let hostGetterCalls=0,clientGetterCalls=0;
+ const hostTask={...task};
+ Object.defineProperty(hostTask,'path',{enumerable:true,get(){hostGetterCalls++;return task.path;}});
+ const hostMsg=f.request(s.challenge,{task:hostTask});
+ hostGetterCalls=0;
+ const res=await s.accept(hostMsg);
+ assert.equal(res.body.status,'held');
+ assert.equal(hostGetterCalls,0);
+ assert.equal(f.calls(),0);
+ const webDevice=await crypto.subtle.importKey('pkcs8',f.device.privateKey.export({format:'der',type:'pkcs8'}),'Ed25519',false,['sign']);
+ const webHost=await crypto.subtle.importKey('spki',f.host.publicKey.export({format:'der',type:'spki'}),'Ed25519',true,['verify']);
+ const c=createNativeBrowserClient({hostId:f.options.hostId,deviceId:f.options.deviceId,extensionOrigin,hostPublicKey:webHost,devicePrivateKey:webDevice,clock:()=>now,authorize:async()=>true});
+ const clientTask={...task};
+ Object.defineProperty(clientTask,'path',{enumerable:true,get(){clientGetterCalls++;return task.path;}});
+ await assert.rejects(c.signRead(s.challenge,clientTask),/native-browser-task-invalid/);
+ assert.equal(clientGetterCalls,0);
+ const c2=createNativeBrowserClient({hostId:f.options.hostId,deviceId:f.options.deviceId,extensionOrigin,hostPublicKey:webHost,devicePrivateKey:webDevice,clock:()=>now,authorize:async()=>true});
+ await assert.rejects(c2.signRead(s.challenge,{...task,origin:'not-a-url'}),/native-browser-task-invalid/);
+});
