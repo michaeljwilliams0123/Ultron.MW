@@ -33,11 +33,14 @@ export function createExecutionCorps({githubServices,repairServices,cloudService
   agents:EXECUTION_AGENTS,
   async execute(raw){
    // Reject top-level callback injection and unexpected arguments before dispatch.
-   const agent=Object.getOwnPropertyDescriptor(raw??{},'agent')?.value;
-   const keys=agent==='forge'||agent==='medic'?['agent','plan']:
-    agent==='nexus'?['agent','task','ownerGrant','ownerApproval']:
-    agent==='relay'?['agent','query']:null;
-   if(!keys||!shape(raw,keys))return held('invalid-execution-request');
+   let agent,keys;
+   try{
+    agent=Object.getOwnPropertyDescriptor(raw??{},'agent')?.value;
+    keys=agent==='forge'||agent==='medic'?['agent','plan']:
+     agent==='nexus'?['agent','task','ownerGrant','ownerApproval']:
+     agent==='relay'?['agent','query']:null;
+    if(!keys||!shape(raw,keys))return held('invalid-execution-request');
+   }catch{return held('invalid-execution-request');}
    let input;try{input=structuredClone(raw);}catch{return held('invalid-execution-payload');}
    try{
     if(agent==='forge'){
