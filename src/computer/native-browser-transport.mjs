@@ -11,7 +11,11 @@ const MAX_FRAME=32768;
 const LIFETIME=30000;
 const little=endianness()==='LE';
 const keys=['origin','actorRef','operation','scope','maxPaidCents','idempotencyKey','path'];
-const exact=(v,k)=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===k.length&&k.every(x=>Object.hasOwn(v,x));
+const exact=(v,k)=>{
+ if(v===null||typeof v!=='object'||Array.isArray(v))return false;
+ const d=Object.getOwnPropertyDescriptors(v);
+ return Reflect.ownKeys(d).length===k.length&&k.every(x=>d[x]?.enumerable&&Object.hasOwn(d[x],'value'));
+};
 const pathOk=p=>typeof p==='string'&&p.length<=512&&PATH.test(p)&&!p.split('/').some(x=>x==='.'||x==='..');
 const validOrigin=o=>{try{const u=new URL(o);return u.protocol==='https:'&&u.origin===o;}catch{return false;}};
 const seal=(key,body)=>Object.freeze({body:Object.freeze(body),signature:sign(null,Buffer.from(JSON.stringify(body)),key).toString('base64url')});
