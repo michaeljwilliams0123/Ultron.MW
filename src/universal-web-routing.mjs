@@ -21,8 +21,9 @@ function originAllowed(raw){
  const u=new URL(raw);
  return typeof raw==='string'&&u.origin===raw&&u.protocol==='https:'&&!u.username&&!u.password;
 }
-export function selectWebReadBinding({broker,candidates,request}={}){
+export function selectWebReadBinding(raw){
  try{
+  const {broker,candidates,request}=exact(raw,['broker','candidates','request']);
   const r=exact(request,['origin','actorRef','operation','scope','maxPaidCents']);
   if(!originAllowed(r.origin)||typeof r.actorRef!=='string'||typeof r.operation!=='string'||
      !actor.test(r.actorRef)||!name.test(r.operation)||

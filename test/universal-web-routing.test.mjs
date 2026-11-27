@@ -68,3 +68,12 @@ test('malformed or hostile input never supplies a routing authority',async()=>{
  assert.equal(selectWebReadBinding({...f,request:{...request,actorRef:[actorRef]}}).status,'held');
  assert.equal(selectWebReadBinding({...f,request:{...request,scope:{toString(){return 'page.read'}}}}).status,'held');
 });
+
+test('top-level malformed routing inputs fail closed without invoking accessors',async()=>{
+ const f=await fixture([['bidi','bidi-owner']]);
+ let accesses=0;
+ const hostile={...f,get request(){accesses++;throw Error('request accessor');}};
+ const proxy=new Proxy(f,{get(){throw Error('get trap');},ownKeys(){throw Error('reflection trap');}});
+ for(const raw of [null,hostile,proxy])assert.equal(selectWebReadBinding(raw).status,'held');
+ assert.equal(accesses,0);
+});
