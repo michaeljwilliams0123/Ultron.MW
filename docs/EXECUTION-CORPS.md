@@ -26,3 +26,9 @@ Use the existing `integrations/composio/index.mjs` worker with server-side scope
 - [ ] Connect the release action using existing protected merge/deployment receipt controls; do not infer production acceptance from worker output.
 
 Local verification: `node --test test/execution-corps.test.mjs test/github-operation-executor.test.mjs test/universal-cloud-executor.test.mjs test/autonomous-repair-loop.test.mjs`. This is source and adapter-contract verification only. No provider write or production activation is claimed.
+
+### PostgreSQL Medic composition
+
+The trusted Node host can construct Execution Corps using createPostgresExecutionCorps in src/execution-corps-runtime.mjs. This composition reuses migration 0039, the existing repair ledger, exact GitHub branch and commit readback, CI correlation and PR publisher. No additional queue, database or token broker is introduced. The host must supply installation-scoped GitHub transport, repair proposal adapter and real per-operation grant verifier. An authorized non-main branch and immutable repair plan are required. The scheduler must deliver admitted plans and resume reconciliation; this composition alone does not claim production activation.
+
+Regression coverage uses PGlite and simulated GitHub responses to check denied repairs remain undispatched and a restarted worker reconciles an existing patch checkpoint without replaying writes. Production App identity, signed grants, scheduler delivery and external mutation receipts remain separate acceptance requirements under #523 and #527.
