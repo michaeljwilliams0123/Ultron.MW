@@ -28,3 +28,20 @@ test('extension manifest has only native messaging permission, no automatic back
  for(const k of ['host_permissions','optional_host_permissions','optional_permissions','content_scripts','externally_connectable','background','web_accessible_resources'])assert.equal(Object.hasOwn(manifest,k),false);
  assert.equal(manifest.action.default_popup,'popup.html');
 });
+
+test('source popup resolves the canonical client and package contains the same implementation',async()=>{
+ const {createNativeBrowserClient}=await import('../src/computer/native-browser-client.mjs');
+ const source=await import('../browser-extension/ultron-native/native-browser-client.mjs');
+ assert.equal(source.createNativeBrowserClient,createNativeBrowserClient);
+ const {mkdtemp,rm}=await import('node:fs/promises');
+ const {tmpdir}=await import('node:os');
+ const {join}=await import('node:path');
+ const {execFileSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const dir=await mkdtemp(join(tmpdir(),'ultron-extension-package-test-'));
+ try{
+  const dest=join(dir,'package');
+  execFileSync(process.execPath,[fileURLToPath(new URL('../scripts/package-native-browser-extension.mjs',import.meta.url)),dest]);
+  assert.deepEqual(await readFile(join(dest,'native-browser-client.mjs')),await readFile(new URL('../src/computer/native-browser-client.mjs',import.meta.url)));
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
