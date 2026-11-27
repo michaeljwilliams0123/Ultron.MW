@@ -5,6 +5,7 @@
   ['/index.html?controls=1','Cloud controls','Runtime & activity','cloud'],
   ['/monitoring.html','Monitoring','Read-only system evidence','cloud'],
   ['/connectors.html','Connections','Providers & capabilities','connections'],
+  ['/agent-federation.html','Agent federation','Preview specialist routing','connections'],
   ['/repair-operations.html','Operations','Repairs & governed execution','operations'],
   ['/passkey-owner.html','Owner access','Passkeys & identity','access'],
   ['/github-pr-comment-canary.html','GitHub App','Scoped verification','github'],
