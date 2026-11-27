@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -204,6 +205,7 @@ test('bounded Playwright read adapter fails closed when unavailable and enforces
       chromium: {
         launch: async () => ({
           newContext: async () => ({
+            route: async () => {},
             newPage: async () => ({
               setDefaultTimeout() {},
               async goto() {},
@@ -238,9 +240,34 @@ test('bounded Playwright read adapter fails closed when unavailable and enforces
     headingCount: 1,
   });
   assert.equal(closed, true);
-  assert.deepEqual(await mockAdapter.observe({ query: { resultDigest: 'a'.repeat(64) } }), {
+  assert.deepEqual(await mockAdapter.observe({ query: { resultDigest: createHash('sha256').update(JSON.stringify(data)).digest('hex') } }), {
     verified: true,
     origin: 'https://ultron-mw-cloud.hatchable.site',
   });
   assert.deepEqual(await mockAdapter.unbind(), { revoked: true });
+});
+
+test('Playwright observation rejects unrelated digests and stale success after failure',async()=>{
+ const {createHash}=await import('node:crypto');
+ const origin='https://ultron-mw-cloud.hatchable.site',path='/browser-write-acceptance.html';
+ let fail=false;
+ const a=createPlaywrightReadAdapter({origin,allowedPaths:[path],loadPlaywright:async()=>({chromium:{launch:async()=>({newContext:async()=>({route:async()=>{},newPage:async()=>({setDefaultTimeout(){},async goto(){if(fail)throw Error('fixture-failure')},url:()=>origin+path,evaluate:async()=>({title:'fixture',headingCount:1})})}),close:async()=>{}})}})});
+ const task={operation:'page.inspect',estimatedCostCents:0,input:{url:origin+path}};
+ const result=await a.execute(task);
+ const digest=createHash('sha256').update(JSON.stringify(result)).digest('hex');
+ assert.equal((await a.observe({query:{resultDigest:'f'.repeat(64)}})).verified,false);
+ assert.equal((await a.observe({query:{resultDigest:digest}})).verified,true);
+ fail=true;await assert.rejects(a.execute(task),/fixture-failure/);
+ assert.equal((await a.observe({query:{resultDigest:digest}})).verified,false);
+});
+
+test('Playwright read adapter rejects unapproved URL components and final paths before extraction',async()=>{
+ const origin='https://ultron-mw-cloud.hatchable.site',path='/browser-write-acceptance.html';
+ let extracted=0,navigated=0;
+ const a=createPlaywrightReadAdapter({origin,allowedPaths:[path],loadPlaywright:async()=>({chromium:{launch:async()=>({newContext:async()=>({route:async()=>{},newPage:async()=>({setDefaultTimeout(){},async goto(){navigated++},url:()=>origin+'/not-admitted.html',evaluate:async()=>{extracted++;return{title:'fixture',headingCount:1}}})}),close:async()=>{}})}})});
+ const run=url=>a.execute({operation:'page.inspect',estimatedCostCents:0,input:{url}});
+ await assert.rejects(run(origin+path+'?unapproved=1'),/path-denied/);
+ assert.equal(navigated,0);
+ await assert.rejects(run(origin+path),/redirect-denied/);
+ assert.equal(extracted,0);
 });
