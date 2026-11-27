@@ -25,7 +25,7 @@ test('concurrent admission is paced and bounded per UTC day',()=>{
  assert.equal(apply(s,{kind:'admit'},t+24*600_000).result.reason,'daily-verification-limit');
 });
 test('provider quota hold survives all same-day admissions and resets at UTC midnight',()=>{
- const s=apply(null,{kind:'quota-hold'}).state;
+ const s=apply(null,{kind:'quota-hold',day:'2026-11-27'}).state;
  assert.equal(apply(s,{kind:'admit'},t+10_000).result.reason,'provider-quota-hold');
  const r=apply(s,{kind:'admit'},Date.parse('2026-11-28T00:00:00Z'));
  assert.equal(r.result.allowed,true);assert.equal(r.result.providerBytes,null);
@@ -40,4 +40,15 @@ test('conservation pacing increases as measured bandwidth rises',()=>{
  let s=apply(null,{kind:'observe',day:'2026-11-27',bytes:375_000_000}).state;
  s=apply(s,{kind:'admit'}).state;
  assert.equal(apply(s,{kind:'admit'},t+30*60_000).result.reason,'paced');
+});
+test('prior-day quota response cannot open the new UTC day circuit',()=>{
+ const s=apply(null,{kind:'admit'},Date.parse('2026-11-27T23:59:59Z')).state;
+ const next=apply(s,{kind:'quota-hold',day:s.day},Date.parse('2026-11-28T00:00:01Z'));
+ assert.equal(next.result.accepted,false);
+ assert.equal(next.state.quotaHold,false);
+ assert.equal(apply(next.state,{kind:'admit'},Date.parse('2026-11-28T00:00:02Z')).result.allowed,true);
+});
+test('quota hold without a valid admission day is rejected',()=>{
+ const r=apply(null,{kind:'quota-hold'});
+ assert.equal(r.result.accepted,false); assert.equal(r.state.quotaHold,false);
 });

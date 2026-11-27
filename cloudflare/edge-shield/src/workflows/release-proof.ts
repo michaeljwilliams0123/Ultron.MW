@@ -18,7 +18,7 @@ export class ReleaseProofWorkflow extends WorkflowEntrypoint<Env, ReleaseProofPa
     }, () => readReleaseProofForWorkflow({origin:this.env.HATCHABLE_CORE_ORIGIN,secret:this.env.ORIGIN_LOCK_SECRET}));
     // No retries or downstream actions for quota/authority denial; no cached proof.
     if (observation.status === "held" && observation.httpStatus === 429) {
-      await step.do('persist-origin-quota-hold',()=>bandwidthCommand(this.env,{kind:'quota-hold'}));
+      await step.do('persist-origin-quota-hold',()=>bandwidthCommand(this.env,{kind:'quota-hold',day:admission.day}));
     }
     if (observation.status === "held") return observation;
     const proof = observation.proof;

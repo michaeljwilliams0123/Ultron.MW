@@ -2,7 +2,7 @@
 export const TARGET_BYTES=400_000_000, LIMIT_BYTES=500_000_000;
 const RESERVATION_BYTES=2_000_000, DAILY_CHECKS=24;
 export type BandwidthState={day:string;providerBytes:number|null;estimatedBytes:number;checks:number;lastAdmittedAt:number|null;quotaHold:boolean};
-export type BandwidthAction={kind:'admit'|'status'|'quota-hold'}|{kind:'observe';day:string;bytes:number};
+export type BandwidthAction={kind:'admit'|'status'}|{kind:'quota-hold';day:string}|{kind:'observe';day:string;bytes:number};
 export function applyBandwidthAction(previous:BandwidthState|null|undefined,action:BandwidthAction,now=Date.now()){
  const day=new Date(now).toISOString().slice(0,10);
  const s:BandwidthState=previous?.day===day?{...previous}:{day,providerBytes:null,estimatedBytes:0,checks:0,lastAdmittedAt:null,quotaHold:false};
@@ -17,7 +17,7 @@ export function applyBandwidthAction(previous:BandwidthState|null|undefined,acti
    reason='provider-observed';
   }
  }else if(action.kind==='quota-hold'){
-  s.quotaHold=true;reason='provider-quota-hold';
+  if(action.day!==day){accepted=false;reason='invalid-or-stale-quota-hold';}else{s.quotaHold=true;reason='provider-quota-hold';}
  }else if(action.kind==='admit'){
   const pace=s.estimatedBytes>=375_000_000?3600_000:s.estimatedBytes>=300_000_000?1800_000:600_000;
   if(s.quotaHold)reason='provider-quota-hold';
