@@ -18,6 +18,10 @@ import {
   revokeNativeDevice,
   buildWindowsHostWrapper,
   buildWindowsRegistryManifestPlan,
+  createHostAuthorizer,
+  verifyHostPackageIntegrity,
+  verifyWindowsAcl,
+  validateEnrollmentList,
 } from '../src/computer/native-browser-host-package.mjs';
 import { createPlaywrightReadAdapter } from '../src/computer/native-browser-playwright-adapter.mjs';
 
@@ -76,6 +80,7 @@ test('packaged Windows .cmd host completes authenticated PGlite exchange with PR
       extensionOrigin,
       authorizeRead: true,
       adapterModulePath: pathToFileURL(adapterFile).href,
+      allowUnverifiedTestAdapter: true,
     });
 
     const pairing = await createLocalPairing(pkg.pairingInfo);
@@ -236,6 +241,8 @@ test('bounded Playwright read adapter fails closed when unavailable and enforces
   });
   assert.deepEqual(data, {
     url: 'https://ultron-mw-cloud.hatchable.site/browser-write-acceptance.html',
+    status: 200,
+    contentType: 'text/html',
     title: 'Ultron Acceptance',
     headingCount: 1,
   });
@@ -270,4 +277,124 @@ test('Playwright read adapter rejects unapproved URL components and final paths 
  assert.equal(navigated,0);
  await assert.rejects(run(origin+path),/redirect-denied/);
  assert.equal(extracted,0);
+});
+
+test('Playwright adapter rejects HTTP 401/403/404/429/500/503, redirects, non-HTML, error titles, and missing marker', async () => {
+  const origin = 'https://ultron-mw-cloud.hatchable.site';
+  const path = '/browser-write-acceptance.html';
+  const makeRouteAdapter = (status, headers = { 'content-type': 'text/html; charset=utf-8' }, title = 'Ultron Acceptance', textSample = 'ULTRON-ACCEPTANCE-OK', requiredMarker = null) =>
+    createPlaywrightReadAdapter({
+      origin,
+      allowedPaths: [path],
+      requiredMarker,
+      loadPlaywright: async () => ({
+        chromium: {
+          launch: async () => ({
+            newContext: async () => {
+              let handler;
+              return {
+                route: async (_pat, fn) => { handler = fn; },
+                newPage: async () => ({
+                  setDefaultTimeout() {},
+                  async goto(url) {
+                    let aborted = false;
+                    let fulfilled = null;
+                    await handler({
+                      request: () => ({ method: () => 'GET', isNavigationRequest: () => true, url: () => url }),
+                      fetch: async () => ({ status: () => status, headers: () => headers }),
+                      abort: async () => { aborted = true; },
+                      fulfill: async ({ response }) => { fulfilled = response; },
+                    });
+                    if (aborted) throw Error('net::ERR_FAILED');
+                    return fulfilled;
+                  },
+                  url: () => origin + path,
+                  evaluate: async () => ({ title, headingCount: 1, textSample }),
+                }),
+              };
+            },
+            close: async () => {},
+          }),
+        },
+      }),
+    });
+
+  const task = { operation: 'page.inspect', estimatedCostCents: 0, input: { url: origin + path } };
+  for (const code of [302, 401, 403, 404, 429, 500, 503]) {
+    const adapter = makeRouteAdapter(code);
+    await assert.rejects(adapter.execute(task), code === 302 ? /redirect-denied/ : new RegExp(`http-status-${code}`));
+  }
+  await assert.rejects(makeRouteAdapter(200, { 'content-type': 'application/json' }).execute(task), /content-type-denied/);
+  await assert.rejects(makeRouteAdapter(200, { 'content-type': 'text/plain' }).execute(task), /content-type-denied/);
+  await assert.rejects(makeRouteAdapter(200, { 'content-type': 'text/html' }, 'Temporarily unavailable').execute(task), /error-document-denied/);
+  await assert.rejects(makeRouteAdapter(200, { 'content-type': 'text/html' }, 'Ultron Acceptance', 'wrong body', 'ULTRON-ACCEPTANCE-OK').execute(task), /acceptance-marker-missing/);
+  const ok = await makeRouteAdapter(200, { 'content-type': 'text/html; charset=utf-8' }, 'Ultron Acceptance', 'ULTRON-ACCEPTANCE-OK', 'ULTRON-ACCEPTANCE-OK').execute(task);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.contentType, 'text/html');
+});
+
+test('in-flight revocation, atomic enrollment locking, and host package integrity fail closed', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ultron-host-sec-'));
+  const targetDir = join(dir, 'pkg');
+  try {
+    await assert.rejects(
+      packageNativeBrowserHost({ targetDir: join(dir, 'denied'), repoRoot, extensionOrigin, adapterModulePath: 'file:///evil.mjs' }),
+      /unverified-adapter-denied/,
+    );
+    await assert.rejects(
+      packageNativeBrowserHost({ targetDir: join(dir, 'prod-denied'), repoRoot, extensionOrigin, adapterModulePath: 'file:///evil.mjs', allowUnverifiedTestAdapter: true, productionMode: true }),
+      /unverified-adapter-denied/,
+    );
+
+    const pkg = await packageNativeBrowserHost({ targetDir, repoRoot, extensionOrigin, authorizeRead: true });
+    assert.equal((await verifyHostPackageIntegrity({ targetDir })).verified, true);
+    if (process.platform === 'win32') {
+      assert.equal((await verifyWindowsAcl({ targetPath: targetDir })).verified, true);
+      assert.equal((await verifyWindowsAcl({ targetPath: pkg.privateKeyPath })).verified, true);
+    }
+
+    const pairing1 = await createLocalPairing(pkg.pairingInfo);
+    const pairing2 = await createLocalPairing(pkg.pairingInfo);
+    // Concurrent enroll: single active device policy ensures only one succeeds.
+    const results = await Promise.allSettled([
+      enrollNativeDevice({ targetDir, enrollment: publicEnrollment(pairing1) }),
+      enrollNativeDevice({ targetDir, enrollment: publicEnrollment(pairing2) }),
+    ]);
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+    assert.equal(results.filter(r => r.status === 'rejected').length, 1);
+
+    const active = validateEnrollmentList(JSON.parse(await readFile(join(targetDir, 'enrollments.json'), 'utf8'))).find(e => e.revokedAt === null);
+    const authorizer = await createHostAuthorizer({
+      targetDir,
+      hostId: active.hostId,
+      extensionOrigin: active.extensionOrigin,
+      deviceId: active.deviceId,
+      devicePublicKey: active.devicePublicKey,
+    });
+    assert.equal(await authorizer.verifyActive(), true);
+
+    // Simulate revocation during dispatch: must return reconcile-required, never completed.
+    const wrapped = authorizer.wrapWorker({
+      async execute(t) {
+        await revokeNativeDevice({ targetDir, deviceId: active.deviceId, reason: 'inflight-revoke' });
+        return { status: 'completed', bindingId: 'playwright-owner', actorRef: t.actorRef, operation: t.operation, effect: 'read', costCents: 0, idempotencyKey: t.idempotencyKey, resultDigest: 'a'.repeat(64) };
+      },
+    });
+    const inflightOutcome = await wrapped.execute({ idempotencyKey: 'read:inflight-001' });
+    assert.equal(inflightOutcome.status, 'reconcile-required');
+    assert.equal(await authorizer.verifyActive(), false);
+
+    // Re-enrolling a previously revoked deviceId must be rejected.
+    await assert.rejects(enrollNativeDevice({ targetDir, enrollment: { ...publicEnrollment(pairing1), deviceId: active.deviceId, devicePublicKey: active.devicePublicKey } }), /already-enrolled/);
+
+    // Held lock fails closed.
+    await writeFile(join(targetDir, 'enrollments.lock'), '{"pid":99999}', 'utf8');
+    await assert.rejects(enrollNativeDevice({ targetDir, enrollment: publicEnrollment(pairing2) }), /lock-unavailable/);
+
+    // Tampered host-config.json fails integrity verification.
+    await writeFile(join(targetDir, 'host-config.json'), '{"tampered":true}\n', 'utf8');
+    await assert.rejects(verifyHostPackageIntegrity({ targetDir }), /integrity-tampered:host-config\.json/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
