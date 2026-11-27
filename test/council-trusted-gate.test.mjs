@@ -243,3 +243,30 @@ test('manual recheck stays owner-only, main-only and uses the trusted gate, not 
   assert.match(y,/ref: main/);
   assert.match(y,/Fail closed when the Council Gate App is not configured/);
 });
+
+test('signed exact-head owner override also passes gatePasses for non-security PRs',()=>{
+  const sha='a'.repeat(40),base='b'.repeat(40);
+  assert.equal(gatePasses({
+    schema:'ultron.council-trusted-gate.v2',
+    status:'owner-overridden',
+    sourceSha:sha,
+    baseSha:base,
+    prNumber:565,
+    securitySensitive:false,
+    overrideUsed:true,
+    overrideSignatureVerified:true,
+    approvedCount:2,
+    holdRoles:['Skeptic'],
+    modelHoldRoles:['Skeptic']
+  },sha,565),true);
+  assert.equal(gatePasses({
+    schema:'ultron.council-trusted-gate.v2',
+    status:'owner-overridden',
+    sourceSha:sha,
+    baseSha:base,
+    prNumber:565,
+    securitySensitive:false,
+    overrideUsed:true,
+    overrideSignatureVerified:false
+  },sha,565),false);
+});

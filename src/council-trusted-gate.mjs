@@ -181,7 +181,7 @@ export function gatePasses(result,sha,prNumber){
    (result.status==='accepted-owner-routine'&&result.approvedCount===7&&
     result.securitySensitive===false&&Array.isArray(result.holdRoles)&&
     result.holdRoles.length===0)||
-   (result.status==='owner-overridden'&&result.securitySensitive===true&&
+   (result.status==='owner-overridden'&&
     result.overrideUsed===true&&
     result.overrideSignatureVerified===true));
 }
