@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Ultron Native Read Canary",
+  "version": "0.1.0",
+  "description": "Owner-initiated signed native messaging read canary. No website access.",
+  "permissions": ["nativeMessaging"],
+  "action": {"default_popup": "popup.html"}
+}
