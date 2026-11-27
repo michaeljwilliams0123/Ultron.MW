@@ -6,6 +6,8 @@ const MAX_BYTES = 64 * 1024;
 const MAX_NODES = 8000;
 const MAX_CALL_DEPTH = 12;
 const MAX_IR_EDGES = 1000;
+const MAX_LOOP_PASSES = 4;
+const MAX_EVALUATION_STEPS = 40000;
 const USER_INPUTS = new Set(['req', 'request', 'event', 'payload', 'params', 'input', 'userInput', 'message', 'webhook']);
 const EXEC_METHODS = new Set(['exec', 'execSync', 'execFile', 'execFileSync', 'spawn', 'spawnSync']);
 const NODE_FIELDS = new Set(['loc', 'start', 'end', 'leadingComments', 'innerComments', 'trailingComments', 'extra', 'tokens', 'comments', 'errors']);
@@ -40,6 +42,35 @@ function bind(pattern, origins, env, edges, line) {
     for (const p of pattern.elements) bind(p, origins, env, edges, line);
   }
 }
+function sameEnv(a, b) {
+  if (a.size !== b.size) return false;
+  for (const [key, values] of a) {
+    const other = b.get(key);
+    if (!other || values.size !== other.size || [...values].some(value => !other.has(value))) return false;
+  }
+  return true;
+}
+// Only expression-bodied callbacks with a deliberately small, side-effect-free AST
+// are modeled as literal-array map operations. Everything else retains uncertainty.
+function pureCallbackExpression(node) {
+  if (!node) return false;
+  switch (node.type) {
+    case 'Identifier': case 'NumericLiteral': case 'StringLiteral':
+    case 'BooleanLiteral': case 'NullLiteral': return true;
+    case 'BinaryExpression': return ['+','-','*','/','%','**','===','!==','<','>','<=','>='].includes(node.operator) && pureCallbackExpression(node.left) && pureCallbackExpression(node.right);
+    case 'LogicalExpression': return pureCallbackExpression(node.left) && pureCallbackExpression(node.right);
+    case 'ConditionalExpression': return pureCallbackExpression(node.test) && pureCallbackExpression(node.consequent) && pureCallbackExpression(node.alternate);
+    case 'UnaryExpression': return ['!','+','-','~','typeof','void'].includes(node.operator) && pureCallbackExpression(node.argument);
+    default: return false;
+  }
+}
+function literalMapCallback(node) {
+  const callee = node.callee, fn = node.arguments?.[0];
+  return node.type === 'CallExpression' && callee?.type === 'MemberExpression' &&
+    !callee.computed && callee.property?.name === 'map' && callee.object?.type === 'ArrayExpression' &&
+    node.arguments.length === 1 && fn?.type === 'ArrowFunctionExpression' && !fn.async &&
+    fn.params.length <= 3 && fn.params.every(p => p.type === 'Identifier') && pureCallbackExpression(fn.body);
+}
 function mergeEnv(target, a, b) {
   for (const key of new Set([...a.keys(), ...b.keys()])) target.set(key, union(a.get(key), b.get(key)));
 }
@@ -58,6 +89,7 @@ export function analyzePayloadAST(codeSnippet) {
   const imports = new Map();
   const moduleNames = new Set(['child_process']);
   let nodes = 0;
+  let evaluationSteps = 0;
 
   function result(status) {
     return {
@@ -97,7 +129,7 @@ export function analyzePayloadAST(codeSnippet) {
       if (['CallExpression', 'NewExpression', 'OptionalCallExpression'].includes(node.type)) {
         if (['eval', 'Function', 'globalThis.eval', 'globalThis.Function', 'window.eval', 'window.Function'].includes(memberName(node.callee)))
           lexicalSinks.push({ sink: memberName(node.callee), node });
-        if (node.arguments?.some(arg => ['ArrowFunctionExpression', 'FunctionExpression'].includes(arg?.type)))
+        if (!literalMapCallback(node) && node.arguments?.some(arg => ['ArrowFunctionExpression', 'FunctionExpression'].includes(arg?.type)))
           callbacks.push(node.loc?.start?.line || 1);
       }
       if (['MemberExpression', 'OptionalMemberExpression'].includes(node.type) &&
@@ -145,6 +177,7 @@ export function analyzePayloadAST(codeSnippet) {
 
     function evaluate(node, env, depth = 0) {
       if (!node || typeof node !== 'object') return new Set();
+      if (++evaluationSteps > MAX_EVALUATION_STEPS) throw Error('Evaluation budget exceeded');
       if (depth > MAX_CALL_DEPTH * 3) { unknown('Expression depth exceeded'); return new Set(); }
       const next = x => evaluate(x, env, depth + 1);
       switch (node.type) {
@@ -172,6 +205,19 @@ export function analyzePayloadAST(codeSnippet) {
           const name = memberName(node.callee);
           const args = (node.arguments || []).map(a => next(a));
           const all = union(...args);
+          if (literalMapCallback(node)) {
+            const receiver = next(node.callee.object);
+            const value = executeFunction(node.arguments[0], [receiver, new Set(), receiver], env, depth + 1, '<literal-array-map>');
+            // Conservatively preserve input and callback-result taint.
+            return union(receiver, value);
+          }
+          // Inspect unsupported callback bodies as well as retaining the lexical
+          // coverage warning. Unknown callers may supply untrusted values.
+          for (const arg of node.arguments || []) {
+            if (!['ArrowFunctionExpression', 'FunctionExpression'].includes(arg?.type)) continue;
+            const origins = union(all, new Set(['unknown-callback-input']));
+            executeFunction(arg, (arg.params || []).map(() => origins), env, depth + 1, '<unknown-callback>');
+          }
           if (isGlobalEval(name) || imports.get(name) === 'eval') mark(name || 'eval', node, all, true);
           if (isExec(name)) mark(name, node, all);
           if (name === 'setTimeout' || name === 'setInterval') mark(name, node, args[0] || new Set());
@@ -231,12 +277,17 @@ export function analyzePayloadAST(codeSnippet) {
       return union(...returns);
       } finally { activeCalls.pop(); }
     }
-    function runStatements(statements, env, returns, depth = 0) {
+    function runStatements(statements, env, returns, depth = 0, loopContinues = null) {
       for (const stmt of statements || []) {
         if (!stmt) continue;
+        if (++evaluationSteps > MAX_EVALUATION_STEPS) throw Error('Evaluation budget exceeded');
         const line = stmt.loc?.start?.line || 1;
         switch (stmt.type) {
-          case 'BlockStatement': runStatements(stmt.body, env, returns, depth); break;
+          case 'BlockStatement': runStatements(stmt.body, env, returns, depth, loopContinues); break;
+          case 'ContinueStatement':
+            if (stmt.label || !loopContinues) unknown('Unsupported statement ContinueStatement at line ' + line);
+            else { loopContinues.push(clone(env)); return; }
+            break;
           case 'VariableDeclaration':
             for (const decl of stmt.declarations) {
               const requiredModule = decl.init?.type === 'CallExpression' && decl.init.callee?.name === 'require'
@@ -265,26 +316,47 @@ export function analyzePayloadAST(codeSnippet) {
           case 'IfStatement': {
             evaluate(stmt.test, env, depth);
             const left = clone(env), right = clone(env);
-            runStatements(stmt.consequent.type === 'BlockStatement' ? stmt.consequent.body : [stmt.consequent], left, returns, depth);
-            if (stmt.alternate) runStatements(stmt.alternate.type === 'BlockStatement' ? stmt.alternate.body : [stmt.alternate], right, returns, depth);
+            runStatements(stmt.consequent.type === 'BlockStatement' ? stmt.consequent.body : [stmt.consequent], left, returns, depth, loopContinues);
+            if (stmt.alternate) runStatements(stmt.alternate.type === 'BlockStatement' ? stmt.alternate.body : [stmt.alternate], right, returns, depth, loopContinues);
             mergeEnv(env, left, right); break;
           }
           case 'ForStatement': case 'WhileStatement': case 'DoWhileStatement':
           case 'ForOfStatement': case 'ForInStatement': {
-            const prior = clone(env), loop = clone(env);
-            if (stmt.init?.type === 'VariableDeclaration') runStatements([stmt.init], loop, returns, depth);
-            else evaluate(stmt.init || stmt.left, loop, depth);
-            evaluate(stmt.test || stmt.right, loop, depth);
-            runStatements(stmt.body?.type === 'BlockStatement' ? stmt.body.body : [stmt.body], loop, returns, depth);
-            evaluate(stmt.update, loop, depth);
-            mergeEnv(env, prior, loop); break;
+            const prior = clone(env), entry = clone(env);
+            if (stmt.init?.type === 'VariableDeclaration') runStatements([stmt.init], entry, returns, depth);
+            else evaluate(stmt.init, entry, depth);
+            let state = entry, stable = false;
+            for (let pass = 0; pass < MAX_LOOP_PASSES; pass++) {
+              const loop = clone(state), continues = [];
+              if (stmt.type === 'ForOfStatement' || stmt.type === 'ForInStatement') {
+                const origins = evaluate(stmt.right, loop, depth);
+                if (stmt.left?.type === 'VariableDeclaration') {
+                  for (const decl of stmt.left.declarations) bind(decl.id, origins, loop, edges, line);
+                } else if (stmt.left?.type === 'Identifier' || stmt.left?.type === 'ObjectPattern' || stmt.left?.type === 'ArrayPattern') bind(stmt.left, origins, loop, edges, line);
+                else unknown('Unsupported loop binding at line ' + line);
+              } else evaluate(stmt.test, loop, depth);
+              runStatements(stmt.body?.type === 'BlockStatement' ? stmt.body.body : [stmt.body], loop, returns, depth, continues);
+              for (const skipped of continues) mergeEnv(loop, loop, skipped);
+              evaluate(stmt.update, loop, depth);
+              const joined = clone(state);
+              mergeEnv(joined, state, loop);
+              if (sameEnv(joined, state)) { stable = true; state = joined; break; }
+              state = joined;
+            }
+            if (!stable) unknown('Loop analysis budget exceeded at line ' + line);
+            mergeEnv(env, prior, state); break;
           }
           case 'TryStatement': {
             const attempted = clone(env), caught = clone(env);
-            runStatements(stmt.block?.body, attempted, returns, depth);
-            runStatements(stmt.handler?.body?.body, caught, returns, depth);
+            runStatements(stmt.block?.body, attempted, returns, depth, loopContinues);
+            runStatements(stmt.handler?.body?.body, caught, returns, depth, loopContinues);
             mergeEnv(env, attempted, caught);
-            if (stmt.finalizer) runStatements(stmt.finalizer.body, env, returns, depth); break;
+            if (stmt.finalizer) {
+              // A finally block can alter a pending continue; do not certify that
+              // complex control flow with the bounded loop model.
+              if (loopContinues) unknown('Unsupported statement TryFinallyInLoop at line ' + line);
+              runStatements(stmt.finalizer.body, env, returns, depth, loopContinues);
+            } break;
           }
           case 'ExportNamedDeclaration': case 'ExportDefaultDeclaration':
             if (stmt.declaration) runStatements([stmt.declaration], env, returns, depth); break;
