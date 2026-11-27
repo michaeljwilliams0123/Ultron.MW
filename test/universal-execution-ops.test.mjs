@@ -226,3 +226,113 @@ test('autonomous remediation loop returns REMEDIATED on fix and INCIDENT_RECORDE
   assert.equal(exhausted.status, 'INCIDENT_RECORDED');
   assert.equal(exhausted.incident.attempted.length, 2);
 });
+
+test('real installed Chrome executes create -> modify -> PGlite restart reconcile -> compensate on controlled 127.0.0.1 surface', async (t) => {
+  const { existsSync } = await import('node:fs');
+  const http = await import('node:http');
+  const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+  const pwPath = 'C:\\Users\\mikewilliams\\AppData\\Local\\Temp\\ultron-browser-acceptance\\node_modules\\playwright\\index.mjs';
+  if (process.platform !== 'win32' || !existsSync(chromePath) || !existsSync(pwPath)) {
+    t.skip('Real Chrome + local Playwright fixture only present on SD009WC7');
+    return;
+  }
+  const pwMod = await import(`file:///${pwPath.replace(/\\/g, '/')}`);
+  const records = new Map();
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/browser-write-acceptance.html') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><html><head><title>Ultron Write Canary</title></head><body>
+        <form id="f" method="POST" action="/browser-write-acceptance.html"><input id="id" name="id"><input id="val" name="val"><button id="save" type="submit">Save</button></form>
+        <div id="out">${records.get('c1') || 'EMPTY'}</div>
+        </body></html>`);
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/browser-write-acceptance.html') {
+      let body = '';
+      req.on('data', c => { body += c; });
+      req.on('end', () => {
+        const params = new URLSearchParams(body);
+        const id = params.get('id') || '';
+        const val = params.get('val') || '';
+        if (val === '__COMPENSATE__') {
+          records.delete(id);
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+          res.end('<!doctype html><html><head><title>Ultron Write Canary</title></head><body><div id="out">COMPENSATED:' + id + '</div></body></html>');
+        } else {
+          records.set(id, val);
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+          res.end('<!doctype html><html><head><title>Ultron Write Canary</title></head><body><div id="out">SAVED:' + id + '=' + val + '</div></body></html>');
+        }
+      });
+      return;
+    }
+    res.writeHead(404).end('not found');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const addr = server.address();
+  const origin = `http://127.0.0.1:${addr.port}`;
+  const path = '/browser-write-acceptance.html';
+  const dir = await mkdtemp(join(tmpdir(), 'ultron-chrome-write-'));
+  try {
+    const db1 = new PGlite(join(dir, 'pg'));
+    await db1.exec(await readFile(new URL('../cloud/hatchable/migrations/0011_capability_attempts.sql', import.meta.url), 'utf8'));
+    const adapter = createNativeBrowserWriteAdapter({
+      origin,
+      allowedPaths: [path],
+      loadPlaywright: async () => ({ chromium: { launch: (o) => pwMod.chromium.launch({ ...o, executablePath: chromePath }) } }),
+    });
+    const broker1 = createUniversalExecutionBroker({ db: db1, authorize: async () => ({ authorized: true }) });
+    let dispatches = 0;
+
+    const createContract = makeContract({
+      operation: 'page.submit',
+      idempotencyKey: 'chrome:create-001',
+      deadlineMs: 60_000,
+      inputSchema: v => typeof v?.val === 'string',
+      outputSchema: v => typeof v?.url === 'string',
+      postconditions: async () => records.get('c1') === 'CANARY-001',
+      verify: async () => records.get('c1') === 'CANARY-001',
+      compensate: async () => {
+        await adapter.execute({
+          operation: 'page.compensate',
+          estimatedCostCents: 0,
+          input: { url: origin + path, fields: [{ selector: '#id', value: 'c1' }, { selector: '#val', value: '__COMPENSATE__' }], submitSelector: '#save' },
+        });
+        return { compensated: records.has('c1') === false };
+      },
+    });
+
+    const rCreate = await broker1.execute(createContract, { val: 'CANARY-001' }, {
+      executeProvider: async () => {
+        dispatches++;
+        return adapter.execute({
+          operation: 'page.submit',
+          estimatedCostCents: 0,
+          input: { url: origin + path, fields: [{ selector: '#id', value: 'c1' }, { selector: '#val', value: 'CANARY-001' }], submitSelector: '#save' },
+        });
+      },
+    });
+    assert.equal(rCreate.state, 'COMPLETED');
+    assert.equal(records.get('c1'), 'CANARY-001');
+    await db1.close();
+
+    // Restart broker on same PGlite DB and replay -> zero duplicate Chrome dispatches.
+    const db2 = new PGlite(join(dir, 'pg'));
+    const broker2 = createUniversalExecutionBroker({ db: db2, authorize: async () => ({ authorized: true }) });
+    const rReplay = await broker2.execute(createContract, { val: 'CANARY-001' }, {
+      executeProvider: async () => { dispatches++; return {}; },
+    });
+    assert.equal(rReplay.state, 'COMPLETED');
+    assert.equal(rReplay.resumed, true);
+    assert.equal(dispatches, 1);
+
+    // Compensate via real Chrome and confirm cleanup.
+    const rComp = await broker2.compensate(createContract, { val: 'CANARY-001' }, rReplay);
+    assert.equal(rComp.state, 'COMPENSATED');
+    assert.equal(records.has('c1'), false);
+    await db2.close();
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
