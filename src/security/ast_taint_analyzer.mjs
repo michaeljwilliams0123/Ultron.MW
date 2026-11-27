@@ -114,6 +114,7 @@ export function analyzePayloadAST(codeSnippet) {
     violations.push('AST Parsing Failure: ' + (error instanceof Error ? error.message.slice(0, 200) : 'invalid syntax'));
     return result('parse-error');
   }
+  const unknown = msg => { if (!unknowns.includes(msg)) unknowns.push(msg); };
   try {
     function visit(node, fn) {
       if (!node || typeof node !== 'object') return;
@@ -158,7 +159,6 @@ export function analyzePayloadAST(codeSnippet) {
         if (edges.length < MAX_IR_EDGES) edges.push({ from: source, to: sink, line });
       }
     };
-    const unknown = msg => { if (!unknowns.includes(msg)) unknowns.push(msg); };
     if (callbacks.length) unknown('Callback analysis incomplete at lines ' + [...new Set(callbacks)].join(','));
     const isExec = name => EXEC_METHODS.has(imports.get(name)) ||
       [...moduleNames].some(mod => name?.startsWith(mod + '.') && EXEC_METHODS.has(name.slice(mod.length + 1))) ||
@@ -325,18 +325,21 @@ export function analyzePayloadAST(codeSnippet) {
             const prior = clone(env), entry = clone(env);
             if (stmt.init?.type === 'VariableDeclaration') runStatements([stmt.init], entry, returns, depth);
             else evaluate(stmt.init, entry, depth);
+            const iterating = stmt.type === 'ForOfStatement' || stmt.type === 'ForInStatement';
+            const iterableOrigins = iterating ? evaluate(stmt.right, entry, depth) : null;
             let state = entry, stable = false;
             for (let pass = 0; pass < MAX_LOOP_PASSES; pass++) {
               const loop = clone(state), continues = [];
-              if (stmt.type === 'ForOfStatement' || stmt.type === 'ForInStatement') {
-                const origins = evaluate(stmt.right, loop, depth);
+              if (iterating) {
+                const origins = iterableOrigins;
                 if (stmt.left?.type === 'VariableDeclaration') {
                   for (const decl of stmt.left.declarations) bind(decl.id, origins, loop, edges, line);
                 } else if (stmt.left?.type === 'Identifier' || stmt.left?.type === 'ObjectPattern' || stmt.left?.type === 'ArrayPattern') bind(stmt.left, origins, loop, edges, line);
                 else unknown('Unsupported loop binding at line ' + line);
-              } else evaluate(stmt.test, loop, depth);
+              } else if (stmt.type !== 'DoWhileStatement') evaluate(stmt.test, loop, depth);
               runStatements(stmt.body?.type === 'BlockStatement' ? stmt.body.body : [stmt.body], loop, returns, depth, continues);
               for (const skipped of continues) mergeEnv(loop, loop, skipped);
+              if (stmt.type === 'DoWhileStatement') evaluate(stmt.test, loop, depth);
               evaluate(stmt.update, loop, depth);
               const joined = clone(state);
               mergeEnv(joined, state, loop);

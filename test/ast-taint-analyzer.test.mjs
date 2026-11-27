@@ -168,3 +168,23 @@ test('unmodeled callback parameter and tainted loop item still reach command sin
   assert.ok(loop.flows.some(flow => flow.sources.includes('req')));
   assert.equal(scan('external.map(x => x+1);').status,'unknown');
 });
+
+test('evaluation budget exhaustion returns uncertainty instead of throwing',()=>{
+ const source='function f(){'+'0;'.repeat(50)+'}'+'f();'.repeat(500);
+ const result=scan(source);
+ assert.equal(result.status,'unknown');
+ assert.ok(result.unknowns.some(message=>/budget exceeded/i.test(message)));
+ assert.equal(result.isSafe,false);
+});
+
+test('for-of iterable side effects happen before the first iteration, not every convergence pass',()=>{
+ const result=scan("import {exec} from 'node:child_process'; let command='fixed'; for(const value of (command='fixed',[1,2])) { exec(command); command=req.body.cmd; continue; }");
+ assert.equal(result.status,'findings');
+ assert.ok(result.flows.some(flow=>flow.sink==='exec'&&flow.sources.includes('req')));
+});
+
+test('do-while executes its body before a clearing test expression',()=>{
+ const result=scan("import {exec} from 'node:child_process'; let command=req.body.cmd; do { exec(command); continue; } while ((command='fixed',false));");
+ assert.equal(result.status,'findings');
+ assert.ok(result.flows.some(flow=>flow.sink==='exec'&&flow.sources.includes('req')));
+});
