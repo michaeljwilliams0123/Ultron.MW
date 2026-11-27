@@ -9,6 +9,7 @@ const ROUTES=[
  /^\/repos\/michaeljwilliams0123\/Ultron\.MW\/git\/ref\/heads\/main$/,
  /^\/repos\/michaeljwilliams0123\/Ultron\.MW\/pulls$/,
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/pulls/'+ID+'$'),
+ new RegExp('^'+ROOT.replaceAll('.','\\.')+'/commits/'+SHA+'$'),
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/commits/'+SHA+'/pulls$'),
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/commits/'+SHA+'/check-runs$'),
  new RegExp('^'+ROOT.replaceAll('.','\\.')+'/compare/'+SHA+'\\.\\.\\.'+SHA+'$'),

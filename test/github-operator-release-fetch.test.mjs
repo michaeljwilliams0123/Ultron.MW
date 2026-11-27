@@ -112,3 +112,12 @@ test('OAuth proxy failures are redacted and malformed upstream status is rejecte
  await assert.rejects(()=>broken(API+'/pulls/519'),
   /authenticated-github-readback-unavailable/);
 });
+
+test('exact commit readback remains scoped to canonical repository and full SHA',async()=>{
+ let calls=0;
+ const f=createAuthenticatedGithubReleaseFetch({call:async(name,req)=>{calls++;assert.equal(req.path,'/repos/michaeljwilliams0123/Ultron.MW/commits/'+SHA);return {status:200,body:{sha:SHA}};}});
+ assert.equal((await (await f(API+'/commits/'+SHA)).json()).sha,SHA);
+ await assert.rejects(()=>f(API+'/commits/main'),/out-of-scope/);
+ await assert.rejects(()=>f(API+'/commits/'+SHA,{method:'POST'}),/out-of-scope/);
+ assert.equal(calls,1);
+});

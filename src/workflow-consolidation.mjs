@@ -100,7 +100,7 @@ export const LEGACY_WORKFLOWS=Object.freeze([
   wf('gitlab-mirror.yml','ops-audit','absorbed',['mirror'],{pinnedBy:[
     pin('src/route-reference-audit.mjs','.github/workflows/lane-ops-audit.yml','route-reference audit (repo-internal)'),
   ]}),
-  wf('council-self-repair.yml','ops-audit','absorbed',['diagnose','act'],
+  wf('council-self-repair.yml','ops-audit','absorbed',['diagnose','act','council-hold-remediation'],
     {note:'Added by #411 after phase 1; folded into ops-audit as its header planned.'}),
   wf('cloud-objective.yml','comment-router','absorbed',['cloud'],{pinnedBy:[
     pin('src/self-observer.mjs',"'node src/cloud-entry.mjs'",'self-observer inventory (repo-internal)'),
