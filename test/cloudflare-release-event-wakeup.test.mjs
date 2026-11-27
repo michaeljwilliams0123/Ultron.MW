@@ -16,8 +16,8 @@ async function run(body,{binding=true,fail=false,duplicate=false}={}){
  return result;
 }
 test('completed core check wakes read-only watch with deterministic workflow ID and no caller manifest inputs',async()=>{
- const r=await run({...event,kind:'check_suite',conclusion:'success'});
- const expectedId=await deriveWorkflowInstanceId(REPO,'check_suite',sha,delivery);
+ const r=await run({...event,kind:'check_suite',branch:'main',conclusion:'success'});
+ const expectedId=await deriveWorkflowInstanceId(REPO,'check_suite',sha,'window-'+Math.floor(Date.parse(event.receivedAt)/600000));
  assert.match(expectedId,/^rp-[a-f0-9]{48}$/);
  assert.equal(r.ack,1);assert.equal(r.retry,0);
  assert.deepEqual(r.requests,[{id:expectedId,params:{mode:'watch',reason:'check_suite',repo:REPO,sourceSha:sha}}]);
@@ -35,14 +35,14 @@ test('main push and successful deployment wake watch without treating event as r
  }
 });
 test('duplicate workflow admission is acknowledged idempotently without retry',async()=>{
- const r=await run({...event,kind:'check_suite',conclusion:'success'},{duplicate:true});
+ const r=await run({...event,kind:'check_suite',branch:'main',conclusion:'success'},{duplicate:true});
  assert.equal(r.ack,1);assert.equal(r.retry,0);assert.equal(r.requests.length,0);
 });
 test('unknown repo, wrong branch, failed check, malformed SHA never start a watch',async()=>{
  for(const body of [
   {...event,kind:'push',branch:'main',repo:'other/repo'},
   {...event,kind:'push',branch:'dev'},
-  {...event,kind:'check_suite',conclusion:'failure'},
+  {...event,kind:'check_suite',branch:'main',conclusion:'failure'},
   {...event,kind:'deploy',sha:'bad'},
   {...event,kind:'unknown'}
  ]){
@@ -51,10 +51,24 @@ test('unknown repo, wrong branch, failed check, malformed SHA never start a watc
  }
 });
 test('failed workflow start is retried, not acknowledged',async()=>{
- const r=await run({...event,kind:'check_suite',conclusion:'success'},{fail:true});
+ const r=await run({...event,kind:'check_suite',branch:'main',conclusion:'success'},{fail:true});
  assert.equal(r.retry,1);assert.equal(r.ack,0);
 });
 test('unconfigured workflow binding does not pretend an event was processed',async()=>{
- const r=await run({...event,kind:'check_suite',conclusion:'success'},{binding:false});
+ const r=await run({...event,kind:'check_suite',branch:'main',conclusion:'success'},{binding:false});
  assert.equal(r.retry,1);assert.equal(r.ack,0);
+});
+
+test('non-main or missing-branch check suites are not release wakeups',async()=>{
+ for(const branch of ['feature/test',undefined]) {
+  const r=await run({...event,kind:'check_suite',branch,conclusion:'success'});
+  assert.equal(r.requests.length,0);assert.equal(r.ack,1);
+ }
+});
+test('check-suite bursts coalesce across delivery IDs; later buckets remain eligible',async()=>{
+ const a=await run({...event,kind:'check_suite',branch:'main',conclusion:'success'});
+ const b=await run({...event,delivery:'another-delivery-0001',receivedAt:'2026-11-24T22:09:59Z',kind:'check_suite',branch:'main',conclusion:'success'});
+ const c=await run({...event,delivery:'another-delivery-0002',receivedAt:'2026-11-24T22:10:00Z',kind:'check_suite',branch:'main',conclusion:'success'});
+ assert.equal(a.requests[0].id,b.requests[0].id);
+ assert.notEqual(a.requests[0].id,c.requests[0].id);
 });

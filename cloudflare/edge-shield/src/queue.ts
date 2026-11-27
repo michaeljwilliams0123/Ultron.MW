@@ -6,7 +6,7 @@ const DELIVERY_ID = /^[a-zA-Z0-9_-]{8,128}$/;
 function isReleaseWakeup(e: EdgeEvent, repo: string): boolean {
   if (!e || !repo || e.repo !== repo || !SHA.test(e.sha ?? "")) return false;
   return (e.kind === "push" && e.branch === "main") ||
-    (e.kind === "check_suite" && e.conclusion === "success") ||
+    (e.kind === "check_suite" && e.branch === "main" && e.conclusion === "success" && Number.isFinite(Date.parse(e.receivedAt))) ||
     e.kind === "deploy";
 }
 
@@ -46,7 +46,9 @@ export async function handleQueue(
         message.retry({ delaySeconds: 30 });
         continue;
       }
-      const id = await deriveWorkflowInstanceId(env.GITHUB_REPO, e.kind, e.sha!, e.delivery);
+      // Coalesce main CI bursts, but leave later time windows eligible for fresh proof.
+      const deliveryClass = e.kind === "check_suite" ? "window-" + Math.floor(Date.parse(e.receivedAt) / 600000) : e.delivery;
+      const id = await deriveWorkflowInstanceId(env.GITHUB_REPO, e.kind, e.sha!, deliveryClass);
       // Events are wake-up hints only, not release evidence or authority.
       // Never forward event-provided manifest inputs or purge before proof.
       try {
