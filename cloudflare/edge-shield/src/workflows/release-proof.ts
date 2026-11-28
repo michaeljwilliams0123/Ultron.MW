@@ -126,12 +126,47 @@ export class ReleaseProofWorkflow extends WorkflowEntrypoint<Env, ReleaseProofPa
     }
     const url = new URL(path, this.env.HATCHABLE_CORE_ORIGIN).toString();
     const ua = "ultron-edge-shield/lockcheck";
+    const MAX_PROBE_BYTES = 16_384;
+    const readBoundedBytes = async (res: Response): Promise<number> => {
+      if (!res.body) return 0;
+      const reader = res.body.getReader();
+      let total = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            total += value.byteLength;
+            if (total >= MAX_PROBE_BYTES) {
+              await reader.cancel("probe-byte-cap");
+              break;
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      return total;
+    };
     let actualBytes = 0;
     try {
       const bare = await fetch(url, { headers: { "User-Agent": ua }, redirect: "error" });
-      actualBytes += (await bare.arrayBuffer()).byteLength;
+      actualBytes += await readBoundedBytes(bare);
       if (bare.status === 429) {
         await bandwidthCommand(this.env, { kind: "quota-hold", day: lockReserve.day });
+        await reconcileBandwidth(this.env, {
+          reservationId: lockResId,
+          actualBytes,
+          day: lockReserve.day,
+        });
+        return {
+          ok: false,
+          enforced: false,
+          accepted: false,
+          bareStatus: 429,
+          lockedStatus: 0,
+          reason: "provider-quota-hold",
+        };
       }
       const locked = this.env.ORIGIN_LOCK_SECRET
         ? await fetch(url, {
@@ -140,7 +175,7 @@ export class ReleaseProofWorkflow extends WorkflowEntrypoint<Env, ReleaseProofPa
           })
         : null;
       if (locked) {
-        actualBytes += (await locked.arrayBuffer()).byteLength;
+        actualBytes += await readBoundedBytes(locked);
         if (locked.status === 429) {
           await bandwidthCommand(this.env, { kind: "quota-hold", day: lockReserve.day });
         }

@@ -43,7 +43,7 @@ export async function purgeCache(env: Env, paths: string[]) {
   return results;
 }
 
-function attachStreamingReconcile(
+export function attachStreamingReconcile(
   res: Response,
   env: Env,
   ctx: ExecutionContext,
@@ -87,33 +87,35 @@ function attachStreamingReconcile(
     );
   };
 
-  const counter = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      streamedBytes += chunk.byteLength;
-      controller.enqueue(chunk);
+  // Single backpressure-preserving stream (no tee / unbounded slow-client buffering).
+  const reader = res.body.getReader();
+  const clientStream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { value, done } = await reader.read();
+        if (done) {
+          settle(false);
+          controller.close();
+          return;
+        }
+        if (value) {
+          streamedBytes += value.byteLength;
+          controller.enqueue(value);
+        }
+      } catch (err) {
+        settle(true);
+        controller.error(err);
+      }
     },
-    flush() {
-      settle(false);
+    async cancel(reason) {
+      settle(true);
+      try {
+        await reader.cancel(reason);
+      } catch {
+        // Ignore upstream cancel errors after settling.
+      }
     },
   });
-
-  const countedBody = res.body.pipeThrough(counter);
-  // Monitor stream errors/cancellations without buffering in Worker memory.
-  const [clientStream, monitorStream] = countedBody.tee();
-  ctx.waitUntil(
-    (async () => {
-      const reader = monitorStream.getReader();
-      try {
-        while (true) {
-          const { done } = await reader.read();
-          if (done) break;
-        }
-        settle(false);
-      } catch {
-        settle(true);
-      }
-    })(),
-  );
 
   return new Response(clientStream, {
     status: res.status,

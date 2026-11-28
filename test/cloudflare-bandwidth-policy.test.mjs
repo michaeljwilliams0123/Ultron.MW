@@ -210,28 +210,63 @@ test('partial or cancelled transfer charges streamed bytes and idempotent duplic
   assert.equal(dupRec.result.estimatedBytes, 128_000);
 });
 
-test('late reconciliation after TTL expiry still commits actual bytes once and handles midnight rollover', () => {
+test('late reconciliation after TTL expiry preserves conservative exposure until settled and handles >200 records', () => {
   const r1 = applyBandwidthAction(
     null,
-    { kind: 'reserve', reservationId: 'long-1', bytes: 512_000, pathClass: 'discretionary' },
+    { kind: 'reserve', reservationId: 'long-1', bytes: 399_600_000, pathClass: 'discretionary' },
     DAY_MS,
   );
-  // After TTL expires, reservedBytes is released, but expiredId is tracked for late settlement
+  // After TTL expires, reservedBytes remains conservatively held until reconciliation
   const statusAfterExpiry = applyBandwidthAction(
     r1.state,
     { kind: 'status' },
     DAY_MS + RESERVATION_TTL_MS + 1000,
   );
-  assert.equal(statusAfterExpiry.result.reservedBytes, 0);
+  assert.equal(statusAfterExpiry.result.reservedBytes, 399_600_000);
+
+  // Competing admission after expiry is denied while outcome is unknown
+  const competing = applyBandwidthAction(
+    statusAfterExpiry.state,
+    { kind: 'reserve', reservationId: 'competing-1', bytes: 512_000, pathClass: 'discretionary' },
+    DAY_MS + RESERVATION_TTL_MS + 1500,
+  );
+  assert.equal(competing.result.allowed, false);
+  assert.equal(competing.result.reason, 'conservation-threshold');
 
   const late = applyBandwidthAction(
-    statusAfterExpiry.state,
+    competing.state,
     { kind: 'reconcile', reservationId: 'long-1', actualBytes: 250_000, day: '2026-11-27' },
     DAY_MS + RESERVATION_TTL_MS + 2000,
   );
   assert.equal(late.result.accepted, true);
   assert.equal(late.result.reason, 'late-reconciled');
+  assert.equal(late.result.reservedBytes, 0);
   assert.equal(late.result.estimatedBytes, 250_000);
+
+  // >200 settlement records remain tracked for idempotency / duplicate rejection
+  let st = late.state;
+  for (let i = 0; i < 250; i++) {
+    const res = applyBandwidthAction(
+      st,
+      { kind: 'reserve', reservationId: `bulk-${i}`, bytes: 1024, pathClass: 'discretionary' },
+      DAY_MS + RESERVATION_TTL_MS + 3000 + i,
+    );
+    assert.equal(res.result.allowed, true);
+    const rec = applyBandwidthAction(
+      res.state,
+      { kind: 'reconcile', reservationId: `bulk-${i}`, actualBytes: 512, day: '2026-11-27' },
+      DAY_MS + RESERVATION_TTL_MS + 3000 + i,
+    );
+    assert.equal(rec.result.accepted, true);
+    st = rec.state;
+  }
+  const replayFirst = applyBandwidthAction(
+    st,
+    { kind: 'reconcile', reservationId: 'long-1', actualBytes: 250_000, day: '2026-11-27' },
+    DAY_MS + RESERVATION_TTL_MS + 5000,
+  );
+  assert.equal(replayFirst.result.accepted, false);
+  assert.equal(replayFirst.result.reason, 'already-reconciled');
 
   // Midnight rollover: prior-day reservation cannot pollute the new UTC day
   const beforeMidnight = applyBandwidthAction(

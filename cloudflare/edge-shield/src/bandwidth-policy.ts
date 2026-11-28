@@ -7,7 +7,7 @@ export const UNKNOWN_LENGTH_ESTIMATE_BYTES = 512_000;
 export const MAX_CACHE_BUFFER_BYTES = 1_048_576;
 const DAILY_CHECKS = 24;
 export const RESERVATION_TTL_MS = 15 * 60_000;
-const MAX_TRACKED_IDS = 200;
+const MAX_TRACKED_IDS = 4096;
 
 export type BandwidthPathClass = 'discretionary' | 'workflow' | 'recovery';
 
@@ -27,6 +27,7 @@ export type BandwidthState = {
   lastAdmittedAt: number | null;
   quotaHold: boolean;
   reservations?: Record<string, BandwidthReservation>;
+  expiredReservations?: Record<string, number>;
   expiredIds?: string[];
   settledIds?: string[];
 };
@@ -63,20 +64,20 @@ function recomputeEstimated(s: BandwidthState): number {
 function pruneExpiredReservations(s: BandwidthState, now: number) {
   const reservations = s.reservations;
   if (!reservations) return;
-  let released = 0;
   let expiredIds = s.expiredIds ?? [];
+  const expiredReservations = s.expiredReservations ?? {};
   for (const [id, entry] of Object.entries(reservations)) {
     if (!entry || now - entry.createdAt > RESERVATION_TTL_MS) {
-      released += entry?.bytes ?? 0;
+      // Preserve conservative reservedBytes until outcome/reconciliation or day rollover.
+      if (entry && entry.bytes > 0 && expiredReservations[id] === undefined) {
+        expiredReservations[id] = entry.bytes;
+      }
       delete reservations[id];
       expiredIds = pushBounded(expiredIds, id);
     }
   }
+  s.expiredReservations = expiredReservations;
   s.expiredIds = expiredIds;
-  if (released > 0) {
-    s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - released);
-    s.estimatedBytes = recomputeEstimated(s);
-  }
 }
 
 export function applyBandwidthAction(
@@ -92,6 +93,9 @@ export function applyBandwidthAction(
           committedBytes: previous.committedBytes ?? previous.estimatedBytes,
           reservedBytes: previous.reservedBytes ?? 0,
           reservations: previous.reservations ? { ...previous.reservations } : {},
+          expiredReservations: previous.expiredReservations
+            ? { ...previous.expiredReservations }
+            : {},
           expiredIds: previous.expiredIds ? [...previous.expiredIds] : [],
           settledIds: previous.settledIds ? [...previous.settledIds] : [],
         }
@@ -105,6 +109,7 @@ export function applyBandwidthAction(
           lastAdmittedAt: null,
           quotaHold: false,
           reservations: {},
+          expiredReservations: {},
           expiredIds: [],
           settledIds: [],
         };
@@ -153,6 +158,7 @@ export function applyBandwidthAction(
       reason = 'invalid-reservation-request';
     } else if (
       (s.reservations && s.reservations[action.reservationId]) ||
+      (s.expiredReservations && s.expiredReservations[action.reservationId] !== undefined) ||
       s.settledIds?.includes(action.reservationId)
     ) {
       accepted = false;
@@ -189,7 +195,9 @@ export function applyBandwidthAction(
       reason = 'already-reconciled';
     } else {
       const existing = s.reservations?.[action.reservationId];
-      const wasExpired = s.expiredIds?.includes(action.reservationId) ?? false;
+      const expiredBytes = s.expiredReservations?.[action.reservationId];
+      const wasExpired =
+        expiredBytes !== undefined || (s.expiredIds?.includes(action.reservationId) ?? false);
       if (!existing && !wasExpired) {
         accepted = false;
         reason = 'unknown-or-invalid-reconciliation';
@@ -197,6 +205,10 @@ export function applyBandwidthAction(
         if (existing) {
           delete s.reservations![action.reservationId];
           s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - existing.bytes);
+          s.estimatedBytes = recomputeEstimated(s);
+        } else if (expiredBytes !== undefined) {
+          delete s.expiredReservations![action.reservationId];
+          s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - expiredBytes);
           s.estimatedBytes = recomputeEstimated(s);
         }
         s.expiredIds = (s.expiredIds ?? []).filter((id) => id !== action.reservationId);
@@ -212,6 +224,10 @@ export function applyBandwidthAction(
         allowed = true;
         reason = action.failed ? 'reconciled-failed' : 'reconciled';
       } else {
+        if (expiredBytes !== undefined) {
+          delete s.expiredReservations![action.reservationId];
+          s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - expiredBytes);
+        }
         s.expiredIds = (s.expiredIds ?? []).filter((id) => id !== action.reservationId);
         s.committedBytes = (s.committedBytes ?? 0) + action.actualBytes;
         s.estimatedBytes = recomputeEstimated(s);
