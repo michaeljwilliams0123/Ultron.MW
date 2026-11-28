@@ -68,3 +68,15 @@ test('SQLite rejects same-agent sender/recipient and invalid status at the schem
  assert.throws(()=>db.prepare('UPDATE agent_relay_v2_events SET status=? WHERE message_id=?').run('INJECTED','valid-001'),/CHECK constraint failed/);
  assert.equal(db.prepare('SELECT status FROM agent_relay_v2_events WHERE message_id=?').get('valid-001').status,'RECEIVED');
 });
+
+test('SQLite rejects claimed rows missing a usable lease and generation',()=>{
+ const {db}=setup();
+ const insert=db.prepare("INSERT INTO agent_relay_v2_events(message_id,sender,recipient,event_type,created_at,status,lease_token,lease_expires_at,fencing_generation) VALUES(?,?,?,?,?,?,?,?,?)");
+ const args=['claim-guard','ChatGPT','Gemini','canary',Date.now(),'CLAIMED'];
+ assert.throws(()=>insert.run(...args,null,null,0),/CHECK constraint failed/);
+ assert.throws(()=>insert.run(...args,'',Date.now()+1000,1),/CHECK constraint failed/);
+ assert.throws(()=>insert.run(...args,'token',null,1),/CHECK constraint failed/);
+ assert.throws(()=>insert.run(...args,'token',Date.now()+1000,0),/CHECK constraint failed/);
+ insert.run(...args,'token',Date.now()+1000,1);
+ assert.equal(db.prepare('SELECT status FROM agent_relay_v2_events WHERE message_id=?').get('claim-guard').status,'CLAIMED');
+});

@@ -23,3 +23,5 @@ A relay lease protects notification processing, not an external task side effect
 Run node --test test/agent-relay.test.mjs on Node 22+. Repository Verify discovers this test. Local tests use real SQLite statements with a D1-compatible adapter. Live D1 canaries and independent exact-head CI are required.
 
 Nonce expiry cleanup is traffic-driven: each authenticated new request deletes at most 100 expired rows, retaining all unexpired replay fences. No cron or origin request is required. Lease issue and expiry checks use the SQLite statement clock, including when storage admission is delayed. The regression suite verifies bounded cleanup and a lease expiring between request admission and the database update.
+
+The schema rejects CLAIMED rows without a nonempty lease token, expiry and positive fencing generation. Before v2 cutover, verify the actual D1 table definition includes this CHECK; CREATE TABLE IF NOT EXISTS does not retrofit an existing table. If an earlier v2 table exists, stop and plan a separately verified nondestructive migration; do not delete notification history.
