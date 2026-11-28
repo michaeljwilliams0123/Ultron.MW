@@ -1,0 +1,78 @@
+name: Ultron universal reusable loop
+# Reusable matrix data-loop with dynamic runner routing (ubuntu-24.04 or
+# vars.ULTRON_RUNNER_LABELS for self-hosted zero-credit nodes like SD009WC7).
+on:
+  workflow_call:
+    inputs:
+      items_json:
+        description: 'JSON array of items to iterate over'
+        required: true
+        type: string
+      runner_labels:
+        description: 'Optional JSON array of runner labels'
+        required: false
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      items_json:
+        description: 'JSON array of items to iterate over'
+        required: true
+        default: '["task-1", "task-2", "task-3"]'
+        type: string
+      runner_labels:
+        description: 'Optional JSON array of runner labels'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ultron-universal-loop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare-list:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      items: ${{ steps.set-list.outputs.items }}
+      runner_labels: ${{ steps.set-list.outputs.runner_labels }}
+    steps:
+      - name: Validate and emit matrix inputs
+        id: set-list
+        env:
+          ITEMS_JSON: ${{ inputs.items_json }}
+          INPUT_RUNNER_LABELS: ${{ inputs.runner_labels }}
+          VAR_RUNNER_LABELS: ${{ vars.ULTRON_RUNNER_LABELS }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const items = JSON.parse(process.env.ITEMS_JSON || '[]');
+          if (!Array.isArray(items) || items.length === 0 || items.length > 25) {
+            throw new Error('items_json must be a non-empty JSON array (max 25 items)');
+          }
+          const rawRunner = (process.env.INPUT_RUNNER_LABELS || process.env.VAR_RUNNER_LABELS || '["ubuntu-24.04"]').trim();
+          const runner = JSON.parse(rawRunner);
+          if (!Array.isArray(runner) || runner.length === 0) {
+            throw new Error('runner_labels must be a non-empty JSON array');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `items=${JSON.stringify(items)}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `runner_labels=${JSON.stringify(runner)}\n`);
+          NODE
+
+  execute-loop:
+    needs: prepare-list
+    runs-on: ${{ fromJson(needs.prepare-list.outputs.runner_labels) }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        item: ${{ fromJson(needs.prepare-list.outputs.items) }}
+    steps:
+      - name: Process matrix item
+        env:
+          MATRIX_ITEM: ${{ matrix.item }}
+        run: echo "Executing universal loop item ${MATRIX_ITEM}"
