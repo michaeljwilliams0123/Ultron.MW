@@ -2,9 +2,9 @@ name: Ultron universal reusable loop
 # Universal multi-pattern loop engine supporting:
 # 1. Dynamic Data Loop (Job Matrix via items_json)
 # 2. Step-Level Shell Retry Loop (retry_attempts + retry_delay_seconds)
-# 3. Recursive Self-Triggering Loop (mode=recursive with hard max_iterations <= 10)
-# 4. Cross-Repo / Reusable Workflow (workflow_call + workflow_dispatch)
-# Plus dynamic runner routing (ubuntu-24.04 or vars.ULTRON_RUNNER_LABELS).
+# 3. Bounded per-item iteration in one run (no recursive external dispatch)
+# 4. Reusable workflow within the canonical public repository.
+# Hosted runners are pinned; privileged dispatch is a separate owner-only job.
 on:
   workflow_call:
     inputs:
@@ -141,6 +141,7 @@ jobs:
           RETRY_DELAY: ${{ inputs.retry_delay_seconds }}
           ITERATION: ${{ inputs.iteration }}
           MAX_ITERATIONS: ${{ inputs.max_iterations }}
+          REPO_PRIVATE: '${{ github.event.repository.private }}'
         run: |
           node --input-type=module <<'NODE'
           import { appendFileSync } from 'node:fs';
@@ -149,6 +150,20 @@ jobs:
           const action = process.env.ACTION;
           if (!['noop-canary', 'dispatch-workflow', 'run-script'].includes(action)) throw new Error('Invalid action');
           const target = (process.env.TARGET || '').trim();
+          const canonical = process.env.GITHUB_REPOSITORY === 'michaeljwilliams0123/Ultron.MW';
+          if (!canonical || process.env.REPO_PRIVATE !== 'false') throw new Error('Canonical public repository required');
+          const ownerManualMain = process.env.GITHUB_ACTOR_ID === '308995719' &&
+            process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' &&
+            process.env.GITHUB_REF === 'refs/heads/main';
+          const allowedScripts = new Set([
+            'scripts/check-workflow-references.mjs',
+            'scripts/check-cloudflare-parity.mjs',
+            'scripts/audit-secret-isolation.mjs',
+          ]);
+          if (action !== 'noop-canary' && !ownerManualMain) throw new Error('Owner manual main required');
+          if (action === 'dispatch-workflow' && target !== 'contract-validation.yml') throw new Error('Workflow not allowlisted');
+          if (action === 'run-script' && !allowedScripts.has(target)) throw new Error('Script not allowlisted');
+          if (action === 'noop-canary' && target) throw new Error('Noop requires empty target');
           if (action === 'dispatch-workflow' && !/^[A-Za-z0-9_.-]+\.ya?ml$/.test(target)) {
             throw new Error('dispatch-workflow target must be a workflow filename (e.g. contract-validation.yml)');
           }
@@ -159,16 +174,25 @@ jobs:
           if (!Array.isArray(items) || items.length === 0 || items.length > 25) {
             throw new Error('items_json must be a non-empty JSON array (max 25 items)');
           }
+          if (items.some(i => typeof i !== 'string' || !/^[A-Za-z0-9_.:-]{1,80}$/.test(i)) || new Set(items).size !== items.length) {
+            throw new Error('Items must be unique bounded identifiers');
+          }
           const rawRunner = (process.env.INPUT_RUNNER_LABELS || process.env.VAR_RUNNER_LABELS || '["ubuntu-24.04"]').trim();
           const runner = JSON.parse(rawRunner);
-          if (!Array.isArray(runner) || runner.length === 0) {
+          if (!Array.isArray(runner) || runner.length !== 1 || runner[0] !== 'ubuntu-24.04') {
             throw new Error('runner_labels must be a non-empty JSON array');
           }
           const retries = Math.min(5, Math.max(1, Number.parseInt(process.env.RETRY_ATTEMPTS || '1', 10) || 1));
           const delay = Math.min(30, Math.max(0, Number.parseInt(process.env.RETRY_DELAY || '2', 10) || 0));
           const iter = Math.min(10, Math.max(1, Number.parseInt(process.env.ITERATION || '1', 10) || 1));
           const maxIter = Math.min(10, Math.max(1, Number.parseInt(process.env.MAX_ITERATIONS || '1', 10) || 1));
-          const shouldRecurse = mode === 'recursive' && iter < maxIter;
+          const endIter = mode === 'recursive' ? maxIter : iter;
+          if (iter > endIter || (mode === 'matrix' && (iter !== 1 || maxIter !== 1))) throw new Error('Invalid iteration range');
+          if (items.length * (endIter - iter + 1) * retries > 125) throw new Error('Total attempt budget exceeded');
+          if (action === 'dispatch-workflow' && (mode !== 'matrix' || items.length !== 1 || retries !== 1)) {
+            throw new Error('Dispatch requires one item, one attempt, no recursion');
+          }
+          const shouldRecurse = false;
 
           const out = [
             `items=${JSON.stringify(items)}`,
@@ -176,7 +200,7 @@ jobs:
             `retry_attempts=${retries}`,
             `retry_delay_seconds=${delay}`,
             `iteration=${iter}`,
-            `max_iterations=${maxIter}`,
+            `max_iterations=${endIter}`,
             `should_recurse=${shouldRecurse}`,
             `next_iteration=${iter + 1}`
           ].join('\n') + '\n';
@@ -185,11 +209,11 @@ jobs:
 
   execute-loop:
     needs: prepare-list
+    if: inputs.action != 'dispatch-workflow'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
-      actions: write
     strategy:
       fail-fast: false
       max-parallel: 5
@@ -197,7 +221,6 @@ jobs:
         item: ${{ fromJson(needs.prepare-list.outputs.items) }}
     steps:
       - name: Configure Git bare-repository policy
-        if: inputs.action == 'run-script'
         run: git config --global safe.bareRepository explicit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: inputs.action == 'run-script'
@@ -216,39 +239,39 @@ jobs:
           MAX_RETRIES: ${{ needs.prepare-list.outputs.retry_attempts }}
           RETRY_DELAY: ${{ needs.prepare-list.outputs.retry_delay_seconds }}
           ITERATION: ${{ needs.prepare-list.outputs.iteration }}
-          GH_TOKEN: ${{ github.token }}
+          MAX_ITERATIONS: ${{ needs.prepare-list.outputs.max_iterations }}
         shell: bash
         run: |
           set -euo pipefail
-          attempt=1
-          while true; do
-            echo "[iter=${ITERATION} item=${MATRIX_ITEM} attempt=${attempt}/${MAX_RETRIES}] action=${LOOP_ACTION}"
-            rc=0
-            if [ "$LOOP_ACTION" = "noop-canary" ]; then
-              echo "Canary OK for item=${MATRIX_ITEM}"
-            elif [ "$LOOP_ACTION" = "dispatch-workflow" ]; then
-              gh workflow run "$LOOP_TARGET" --repo "$GITHUB_REPOSITORY" --ref "${GITHUB_REF_NAME:-main}" || rc=$?
-            elif [ "$LOOP_ACTION" = "run-script" ]; then
-              node "$LOOP_TARGET" --item "$MATRIX_ITEM" || rc=$?
-            fi
-            if [ "$rc" -eq 0 ]; then
-              exit 0
-            fi
-            if [ "$attempt" -ge "$MAX_RETRIES" ]; then
-              echo "Exhausted ${MAX_RETRIES} attempt(s) for item=${MATRIX_ITEM}" >&2
-              exit "$rc"
-            fi
-            attempt=$((attempt + 1))
-            sleep "$RETRY_DELAY"
+          iteration="$ITERATION"
+          while [ "$iteration" -le "$MAX_ITERATIONS" ]; do
+            attempt=1
+            while true; do
+              echo "[iter=$iteration item=$MATRIX_ITEM attempt=$attempt/$MAX_RETRIES] action=$LOOP_ACTION"
+              rc=0
+              case "$LOOP_ACTION" in
+                noop-canary) echo "Canary OK for item=$MATRIX_ITEM iteration=$iteration" ;;
+                run-script) node "$LOOP_TARGET" --item "$MATRIX_ITEM" || rc=$? ;;
+                *) exit 2 ;;
+              esac
+              if [ "$rc" -eq 0 ]; then break; fi
+              if [ "$attempt" -ge "$MAX_RETRIES" ]; then exit "$rc"; fi
+              attempt=$((attempt + 1))
+              sleep "$RETRY_DELAY"
+            done
+            iteration=$((iteration + 1))
           done
 
-  recurse-next:
-    needs: [prepare-list, execute-loop]
+  dispatch-contract:
+    needs: prepare-list
     if: >-
-      success() &&
+      github.repository == 'michaeljwilliams0123/Ultron.MW' &&
       github.event_name == 'workflow_dispatch' &&
       github.actor == 'michaeljwilliams0123' &&
-      needs.prepare-list.outputs.should_recurse == 'true'
+      github.actor_id == '308995719' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.action == 'dispatch-workflow' &&
+      inputs.target == 'contract-validation.yml'
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -256,27 +279,6 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
-      NEXT_ITER: ${{ needs.prepare-list.outputs.next_iteration }}
-      MAX_ITER: ${{ needs.prepare-list.outputs.max_iterations }}
-      MODE: ${{ inputs.mode }}
-      ACTION: ${{ inputs.action }}
-      TARGET: ${{ inputs.target }}
-      ITEMS_JSON: ${{ needs.prepare-list.outputs.items }}
-      RUNNER_LABELS: ${{ needs.prepare-list.outputs.runner_labels }}
-      RETRY_ATTEMPTS: ${{ needs.prepare-list.outputs.retry_attempts }}
-      RETRY_DELAY: ${{ needs.prepare-list.outputs.retry_delay_seconds }}
     steps:
-      - name: Trigger next bounded recursive iteration
-        run: |
-          gh workflow run "Ultron universal reusable loop" \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "${GITHUB_REF_NAME:-main}" \
-            -f mode="$MODE" \
-            -f action="$ACTION" \
-            -f target="$TARGET" \
-            -f items_json="$ITEMS_JSON" \
-            -f runner_labels="$RUNNER_LABELS" \
-            -f retry_attempts="$RETRY_ATTEMPTS" \
-            -f retry_delay_seconds="$RETRY_DELAY" \
-            -f iteration="$NEXT_ITER" \
-            -f max_iterations="$MAX_ITER"
+      - name: Dispatch allowlisted contract validation once
+        run: gh workflow run contract-validation.yml --repo "$GITHUB_REPOSITORY" --ref main

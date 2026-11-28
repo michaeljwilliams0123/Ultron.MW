@@ -96,7 +96,7 @@ test('universal-loop.yml enforces bounded matrix, retry, script confinement, and
   const yml = readWorkflow('universal-loop.yml');
   const scanned = scanWorkflow(yml);
   assert.deepEqual([...scanned.triggers].sort(), ['workflow_call', 'workflow_dispatch']);
-  assert.deepEqual(scanned.jobs, ['prepare-list', 'execute-loop', 'recurse-next']);
+  assert.deepEqual(scanned.jobs, ['prepare-list', 'execute-loop', 'dispatch-contract']);
 
   // Bounds & confinement checks
   assert.match(yml, /items\.length > 25/);
@@ -109,7 +109,8 @@ test('universal-loop.yml enforces bounded matrix, retry, script confinement, and
   // Security & pinning
   assert.match(yml, /github\.event_name == 'workflow_dispatch'/);
   assert.match(yml, /github\.actor == 'michaeljwilliams0123'/);
-  assert.match(yml, /needs\.prepare-list\.outputs\.should_recurse == 'true'/);
+  assert.match(yml, /github\.actor_id == '308995719'/);
+  assert.match(yml, /Total attempt budget exceeded/);
   assert.match(yml, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
   assert.match(yml, /actions\/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1/);
   assert.match(yml, /persist-credentials:\s*false/);
@@ -128,5 +129,62 @@ test('contract-validation.yml and lane-ops-audit stale reaper preserve security 
   assert.ok(reaper, 'reap-stale-queued-runs job missing');
   assert.match(reaper, /github\.event\.schedule == '37 \* \* \* \*'/);
   assert.match(reaper, /inputs\.ops_task == 'reap-stale-queued-runs' &&\s+github\.actor == 'michaeljwilliams0123'/);
-  assert.match(reaper, /actions:\s*write/);
+  assert.match(reaper, /actions:\s*read/);
+});
+
+test('generic loop restricts effects and queued-run audit preserves evidence', () => {
+  const loop = readWorkflow('universal-loop.yml');
+  assert.match(loop, /allowedScripts/);
+  assert.match(loop, /ownerManualMain/);
+  assert.match(loop, /target !== 'contract-validation.yml'/);
+  const reaper = readWorkflow('lane-ops-audit.yml').split('\n  reap-stale-queued-runs:\n')[1];
+  assert.match(reaper, /actions:\s*read/);
+  assert.doesNotMatch(reaper, /deleteWorkflowRun|actions:\s*write/);
+});
+
+test('universal loop admission exercises actual inline validator without external effects', () => {
+  const yml = readWorkflow('universal-loop.yml');
+  const match = yml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
+  assert.ok(match, 'inline validator missing');
+  const dir = mkdtempSync(join(tmpdir(), 'ultron-loop-admission-'));
+  try {
+    const output = join(dir, 'output');
+    const base = {
+      MODE: 'matrix', ACTION: 'noop-canary', TARGET: '', ITEMS_JSON: '["canary"]',
+      INPUT_RUNNER_LABELS: '', VAR_RUNNER_LABELS: '', RETRY_ATTEMPTS: '1',
+      RETRY_DELAY: '0', ITERATION: '1', MAX_ITERATIONS: '1',
+      GITHUB_REPOSITORY: 'michaeljwilliams0123/Ultron.MW', REPO_PRIVATE: 'false',
+      GITHUB_ACTOR_ID: '308995719', GITHUB_EVENT_NAME: 'workflow_dispatch',
+      GITHUB_REF: 'refs/heads/main', GITHUB_OUTPUT: output,
+    };
+    const run = (overrides = {}) => {
+      writeFileSync(output, '');
+      return spawnSync(process.execPath, ['--input-type=module', '-e', match[1]], {
+        encoding: 'utf8', env: {...process.env, ...base, ...overrides},
+      });
+    };
+    assert.equal(run().status, 0);
+    assert.equal(run({MODE:'recursive',MAX_ITERATIONS:'3'}).status, 0);
+    assert.match(readFileSync(output,'utf8'), /max_iterations=3/);
+    assert.equal(run({ACTION:'run-script',TARGET:'scripts/check-cloudflare-parity.mjs'}).status, 0);
+    assert.equal(run({ACTION:'dispatch-workflow',TARGET:'contract-validation.yml'}).status, 0);
+    for (const bad of [
+      {REPO_PRIVATE:'true'}, {GITHUB_REPOSITORY:'foreign/repo'},
+      {ACTION:'dispatch-workflow',TARGET:'release-authorize.yml'},
+      {ACTION:'dispatch-workflow',TARGET:'contract-validation.yml',RETRY_ATTEMPTS:'2'},
+      {ACTION:'dispatch-workflow',TARGET:'contract-validation.yml',MODE:'recursive',MAX_ITERATIONS:'2'},
+      {ACTION:'run-script',TARGET:'scripts/verify.mjs'},
+      {ACTION:'run-script',TARGET:'scripts/check-cloudflare-parity.mjs',GITHUB_ACTOR_ID:'1'},
+      {ACTION:'run-script',TARGET:'scripts/check-cloudflare-parity.mjs',GITHUB_REF:'refs/heads/feature'},
+      {ITEMS_JSON:'["same","same"]'}, {ITEMS_JSON:'[{"item":"x"}]'},
+      {INPUT_RUNNER_LABELS:'["self-hosted"]'},
+      {MODE:'recursive',MAX_ITERATIONS:'10',RETRY_ATTEMPTS:'5',ITEMS_JSON:JSON.stringify(['one','two','three'])},
+    ]) {
+      const r = run(bad);
+      assert.notEqual(r.status, 0, JSON.stringify(bad));
+      assert.equal(readFileSync(output,'utf8'), '');
+    }
+  } finally {
+    rmSync(dir, {recursive:true,force:true});
+  }
 });

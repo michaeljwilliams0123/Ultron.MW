@@ -9,7 +9,7 @@ This document records the workflow patterns, reliability safeguards, and archite
    - *Purpose:* Runs fast, secret-free, zero-credit static checks (`check-workflow-references.mjs`, `check-cloudflare-parity.mjs`, `audit-secret-isolation.mjs`) on every PR and `main` push without booting Postgres or installing `npm` dependencies.
 2. **Stale Jobless Queued-Run Reaper (`.github/workflows/lane-ops-audit.yml`)**
    - *Origin:* `mahoraga` commit `bd6a470`.
-   - *Purpose:* Hourly (`37 * * * *`) and manual `reap-stale-queued-runs` sweep that deletes queued workflow runs older than 24 hours with `0` jobs at $0 cost, preventing runner-queue pileups without touching git refs.
+   - *Purpose:* Hourly (`37 * * * *`) and manual `reap-stale-queued-runs` sweep that reports queued workflow runs older than 24 hours with verified zero jobs; it preserves the runs and their audit evidence.
 3. **Matrix Verify + Auto-Cancel Concurrency (`.github/workflows/verify.yml`, `composio-v3.yml`, `secret-isolation.yml`)**
    - *Origin:* `mahoraga/verify.yml`.
    - *Purpose:* Adds `cancel-in-progress: true` concurrency groups to prevent rapid PR pushes from burning duplicate runner minutes.
@@ -20,7 +20,7 @@ This document records the workflow patterns, reliability safeguards, and archite
    - *Origin:* `mahoraga/scripts/cloudflare-cron-source-readback.mjs` & `cloudflare-execution-runtime.yml`.
    - *Purpose:* Statically verifies `cloudflare/edge-shield/wrangler.toml` (`name = "ultron-edge-shield"`, `crons = ["0 */6 * * *"]`) and `cloudflare/agent-relay/worker.mjs` syntax in CI.
 6. **Universal Multi-Pattern Loop Engine (`.github/workflows/universal-loop.yml`)**
-   - *Patterns:* Supports (1) JSON-array Matrix fan-out, (2) step-level Bash retry loops (`retry_attempts` / `retry_delay_seconds`), (3) bounded recursive self-triggering (`iteration < max_iterations`, hard-capped at 10), and (4) `workflow_call` reusability with dynamic `vars.ULTRON_RUNNER_LABELS` routing (e.g., `ubuntu-24.04` or local Windows node `SD009WC7`).
+   - *Patterns:* Supports (1) JSON-array Matrix fan-out, (2) step-level Bash retry loops (`retry_attempts` / `retry_delay_seconds`), (3) bounded per-item iteration in a single run, and (4) reusable calls within the canonical public repository on pinned `ubuntu-24.04`. Only allowlisted read-only scripts and a single contract-validation dispatch are permitted on owner manual main; the total attempt budget is 125.
 
 ## 2. Preserved `Ultron.MW` Boundaries
 
