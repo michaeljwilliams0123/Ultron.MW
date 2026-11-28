@@ -9,6 +9,7 @@ const actual=readdirSync(dir).filter(x=>x.endsWith('.yml')).sort();
 const source=name=>readFileSync(new URL(name,dir),'utf8');
 const spec={
   'composio-v3.yml':{triggers:['workflow_dispatch'],jobs:['isolated-sdk']},
+  'contract-validation.yml':{triggers:['pull_request','push','workflow_dispatch'],jobs:['validate']},
   'secret-isolation.yml':{triggers:['workflow_dispatch'],jobs:['source-secret-audit']},
   'cloud-pr.yml':{triggers:['workflow_call','issues'],jobs:['create-pr']},
   'council-debate.yml':{triggers:['issues','pull_request','workflow_call','workflow_dispatch'],jobs:['council-debate','prove','verify-principal']},
@@ -16,10 +17,11 @@ const spec={
   'council-required-status.yml':{triggers:['pull_request_target','issue_comment','workflow_run','workflow_dispatch'],jobs:['trusted-council-status']},
   'lane-governed-task.yml':{triggers:['issues','workflow_dispatch'],jobs:['work']},
   'lane-lab-evidence.yml':{triggers:['workflow_dispatch'],jobs:['heldout-evaluation','cpu-evaluation','generate','publish','held-out']},
-  'lane-ops-audit.yml':{triggers:['workflow_run','pull_request','schedule','workflow_dispatch'],jobs:['audit','self-scan-pr','mirror','reef-runtime-probe','diagnose','act','reconcile','council-hold-remediation']},
+  'lane-ops-audit.yml':{triggers:['workflow_run','pull_request','schedule','workflow_dispatch'],jobs:['audit','self-scan-pr','mirror','reef-runtime-probe','diagnose','act','reconcile','council-hold-remediation','reap-stale-queued-runs']},
   'lane-owner-canary.yml':{triggers:['workflow_dispatch'],jobs:['read-only','one-branch','inspect-or-verify','marker-write','secondary-admin-verify','verify']},
   'owner-comment-router.yml':{triggers:['issue_comment','pull_request_review_comment','issues','workflow_dispatch'],jobs:['cloud','pr-conversation','issue-implementation','council-command','codex-trigger-audit','public-chat']},
   'release-authorize.yml':{triggers:['workflow_dispatch','workflow_run','schedule'],jobs:['authorize-release-receipt']},
+  'universal-loop.yml':{triggers:['workflow_call','workflow_dispatch'],jobs:['prepare-list','execute-loop','dispatch-contract']},
   'verify.yml':{triggers:['push','pull_request','workflow_dispatch'],jobs:['test','attested-receipt','fixed-comparison']},
 };
 test('eight canonical lanes, Council gate and two manual verification utilities',()=>{
@@ -124,7 +126,7 @@ test('historical incident matrix never turns unknown failures into success',()=>
     assert.equal(result.projected,incident.expected,file+': '+incident.log);
     count++;
   }
-  assert.equal(count,78);
+  assert.equal(count,actual.length*6);
 });
 test('outcome reducer keeps every real failure red across all three-job permutations',()=>{
   const values=['red','admitted','success','neutral','skipped'];

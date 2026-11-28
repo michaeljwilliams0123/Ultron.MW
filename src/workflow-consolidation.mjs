@@ -100,7 +100,7 @@ export const LEGACY_WORKFLOWS=Object.freeze([
   wf('gitlab-mirror.yml','ops-audit','absorbed',['mirror'],{pinnedBy:[
     pin('src/route-reference-audit.mjs','.github/workflows/lane-ops-audit.yml','route-reference audit (repo-internal)'),
   ]}),
-  wf('council-self-repair.yml','ops-audit','absorbed',['diagnose','act','council-hold-remediation'],
+  wf('council-self-repair.yml','ops-audit','absorbed',['diagnose','act','council-hold-remediation','reap-stale-queued-runs'],
     {note:'Added by #411 after phase 1; folded into ops-audit as its header planned.'}),
   wf('cloud-objective.yml','comment-router','absorbed',['cloud'],{pinnedBy:[
     pin('src/self-observer.mjs',"'node src/cloud-entry.mjs'",'self-observer inventory (repo-internal)'),
@@ -133,7 +133,8 @@ export const OIDC_JOBS=Object.freeze({
  * security and SDK checks stay inside verify.yml. */
 export const NON_LEGACY_WORKFLOWS=Object.freeze([
   'council-required-status.yml','composio-v3.yml','secret-isolation.yml',
-  'council-deep-reasoning.yml','release-authorize.yml'
+  'council-deep-reasoning.yml','release-authorize.yml',
+  'contract-validation.yml','universal-loop.yml'
 ]);
 
 export function laneFiles(){return Object.values(LANES).map(l=>l.file);}

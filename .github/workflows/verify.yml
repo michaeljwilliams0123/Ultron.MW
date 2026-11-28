@@ -12,6 +12,9 @@ on:
         description: 'Optional bounded repair-attempt identifier (no secrets)'
         required: false
         type: string
+concurrency:
+  group: ultron-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

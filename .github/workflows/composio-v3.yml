@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ultron-composio-v3-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   isolated-sdk:
     runs-on: ubuntu-24.04
