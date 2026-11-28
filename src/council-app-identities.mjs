@@ -32,11 +32,14 @@ const APP_PROFILE={
  'owner-equivalent':Object.freeze({
    metadata:'read',administration:'write',actions:'write',
    contents:'write',workflows:'write',issues:'write',
-   pull_requests:'write',checks:'write',statuses:'write'
+   pull_requests:'write',checks:'write',statuses:'write',
+   deployments:'write',environments:'write',secrets:'write'
  })
 };
 export const OWNER_EQUIVALENT_OPS=Object.freeze([
  'branch.create','branch.update','branch.delete','file.write',
+ 'protected-main.update','workflow.update','secret.put','secret.delete',
+ 'deployment.create','repo.settings.update',
  'pr.create','pr.comment','pr.merge','pr.close',
  'issue.create','issue.comment','issue.close','issue.label','issue.assign',
  'review.comment','review.request-changes','review.approve',
@@ -208,10 +211,22 @@ export function decideCouncilAction(actor,request={}){
    reason:'bounded-external-operation'});
  }
  if(ownerEquivalent){
-  // Owner-equivalent members may touch any ref/path/workflow; only
-  // structural validity and the no-self-review rule remain.
-  if((['branch.create','branch.update','branch.delete','file.write'].includes(operation))&&
+  // Owner-equivalent members may use privileged surfaces, but all refs,
+  // repository paths and workflow names remain structurally bounded.
+  const refOps=['branch.create','branch.update','branch.delete','file.write',
+   'protected-main.update','workflow.update'];
+  if(refOps.includes(operation)&&
     (typeof request.branch!=='string'||!SAFE_REF.test(request.branch)||request.branch.includes('..')))
+   return Object.freeze({allowed:false,reason:'scope-denied'});
+  if(['branch.update','file.write','protected-main.update','workflow.update'].includes(operation)){
+   const path=String(request.path||'');
+   if(!/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(path)||
+      path.split('/').some(x=>x==='.'||x==='..')||path.includes('//'))
+    return Object.freeze({allowed:false,reason:'scope-denied'});
+   if(operation==='workflow.update'&&!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path))
+    return Object.freeze({allowed:false,reason:'workflow-not-approved'});
+  }
+  if(operation==='protected-main.update'&&request.branch!=='main')
    return Object.freeze({allowed:false,reason:'scope-denied'});
   if(operation==='actions.dispatch'&&
     (!SAFE_WORKFLOW.test(request.workflow||'')||!SAFE_REF.test(request.ref||'')))
