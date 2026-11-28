@@ -7,7 +7,8 @@
     "deploy": "wrangler deploy",
     "deploy:lite": "wrangler deploy -c wrangler.lite.toml",
     "typecheck": "tsc --noEmit",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test:runtime": "node --test test/runtime-integration.test.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261119.1",

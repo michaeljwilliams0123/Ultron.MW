@@ -1,0 +1,14 @@
+{
+  "name": "ultron-edge-runtime-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "vars": {
+    "ENVIRONMENT": "runtime-test",
+    "HATCHABLE_CORE_ORIGIN": "https://example.invalid",
+    "ENFORCE_CSP": "false"
+  }
+}
