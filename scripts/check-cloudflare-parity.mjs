@@ -6,8 +6,9 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const root = resolve(new URL('../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const root = fileURLToPath(new URL('../', import.meta.url));
 const wranglerPath = join(root, 'cloudflare', 'edge-shield', 'wrangler.toml');
 const relayWorkerPath = join(root, 'cloudflare', 'agent-relay', 'worker.mjs');
 

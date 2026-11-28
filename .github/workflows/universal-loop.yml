@@ -185,7 +185,7 @@ jobs:
 
   execute-loop:
     needs: prepare-list
-    runs-on: ${{ fromJson(needs.prepare-list.outputs.runner_labels) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
