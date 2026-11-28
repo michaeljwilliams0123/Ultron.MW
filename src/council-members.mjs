@@ -7,8 +7,8 @@
 import {createSign} from 'node:crypto';
 import {executionKey} from './council-execution-ledger.mjs';
 import {runLedgeredAction} from './council-ledger-client.mjs';
-import {COUNCIL_APP_ROLES,authenticateCouncilAppActor,decideCouncilAction,issueCouncilExecutionReceipt}
-  from './council-app-identities.mjs';
+import {COUNCIL_APP_ROLES,OWNER_EQUIVALENT_OPS,authenticateCouncilAppActor,
+  decideCouncilAction,issueCouncilExecutionReceipt} from './council-app-identities.mjs';
 import {councilAppBindingBlueprints} from './council-app-bindings.mjs';
 
 const REPO='michaeljwilliams0123/Ultron.MW';
@@ -52,9 +52,11 @@ export const COUNCIL_ABILITIES=Object.freeze({
   Sentinel:abilities(['actions.dispatch','issue.comment'],['mahoraga.repo.inspect']),
   Companion:abilities(['issue.comment'])
 });
-export function memberAbilityAdmission(role,operation){
+export function memberAbilityAdmission(role,operation,profile='scoped'){
   if(!Object.hasOwn(COUNCIL_ABILITIES,role)||typeof operation!=='string')
     return Object.freeze({allowed:false,reason:'role-operation-not-declared'});
+  if(profile==='owner-equivalent'&&OWNER_EQUIVALENT_OPS.includes(operation))
+    return Object.freeze({allowed:true,mode:'owner-admin'});
   const ability=COUNCIL_ABILITIES[role];
   if(ability.internal.includes(operation))
     return Object.freeze({allowed:true,mode:'internal'});
@@ -268,7 +270,7 @@ export async function verifyCouncilActionTarget(token,{number,isPr,sourceSha},fe
 /** Execute one action as the member's own App identity, gated by policy. */
 export async function executeMemberAction(actor,token,action,target,{fetchImpl=fetch,deps={}}={}){
   // Broad installation scopes do not widen autonomous member actions.
-  const admission=memberAbilityAdmission(actor?.role,action?.op);
+  const admission=memberAbilityAdmission(actor?.role,action?.op,actor?.profile);
   if(!admission.allowed)
     return{op:action?.op,status:'denied',reason:admission.reason};
   const decision=decideCouncilAction(actor,{operation:action.op,baseSha:actor.sourceSha,
@@ -312,10 +314,10 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
     case 'branch.create':{
       const ref=await call('GET','/git/ref/heads/main');
       await call('POST','/git/refs',{ref:'refs/heads/'+action.branch,sha:ref.object.sha});break;}
-    case 'branch.update':{
-      const content=String(action.content??'');
+    case 'branch.update':case 'protected-main.update':case 'workflow.update':{
+      const content=String(action.content??''),branch=action.branch;
       if(!content||Buffer.byteLength(content)>65536)throw Error('council-file-content-invalid');
-      const ref=await call('GET','/git/ref/heads/'+action.branch);
+      const ref=await call('GET','/git/ref/heads/'+branch);
       const parent=await call('GET','/git/commits/'+ref.object.sha);
       const blob=await call('POST','/git/blobs',{content,encoding:'utf-8'});
       const tree=await call('POST','/git/trees',{base_tree:parent.tree.sha,
@@ -323,9 +325,32 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
       const commit=await call('POST','/git/commits',{
         message:String(action.message||actor.role+' Council update').slice(0,120)+marker,
         tree:tree.sha,parents:[ref.object.sha]});
-      await call('PATCH','/git/refs/heads/'+action.branch,{sha:commit.sha,force:false});break;}
+      await call('PATCH','/git/refs/heads/'+branch,{sha:commit.sha,force:false});break;}
     case 'branch.delete':
       await call('DELETE','/git/refs/heads/'+action.branch);break;
+    case 'secret.put':{
+      const name=String(action.name||''),encrypted=String(action.encryptedValue||'');
+      const keyId=String(action.keyId||'');
+      if(!/^[A-Z][A-Z0-9_]{0,99}$/i.test(name)||
+         !/^[A-Za-z0-9+/=]{32,10000}$/.test(encrypted)||!/^\d+$/.test(keyId))
+        throw Error('council-secret-ciphertext-invalid');
+      await call('PUT','/actions/secrets/'+name,{encrypted_value:encrypted,key_id:keyId});break;}
+    case 'secret.delete':{
+      const name=String(action.name||'');
+      if(!/^[A-Z][A-Z0-9_]{0,99}$/i.test(name))throw Error('council-secret-name-invalid');
+      await call('DELETE','/actions/secrets/'+name);break;}
+    case 'deployment.create':{
+      const environment=String(action.environment||'').slice(0,100);
+      if(!/^[A-Za-z0-9_.-]+$/.test(environment))throw Error('council-environment-invalid');
+      await call('POST','/deployments',{ref:action.ref,environment,
+        auto_merge:false,required_contexts:[],transient_environment:Boolean(action.transient)});break;}
+    case 'repo.settings.update':{
+      const allowed=['allow_squash_merge','allow_merge_commit','allow_rebase_merge',
+        'allow_auto_merge','delete_branch_on_merge','has_issues','has_projects','has_wiki'];
+      const settings=Object.fromEntries(Object.entries(action.settings||{})
+        .filter(([key,value])=>allowed.includes(key)&&typeof value==='boolean'));
+      if(!Object.keys(settings).length)throw Error('council-repo-settings-invalid');
+      await call('PATCH','',settings);break;}
     case 'actions.dispatch':
       await call('POST','/actions/workflows/'+action.workflow+'/dispatches',{ref:action.ref||'main'});break;
     case 'computer.browser':{
