@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {buildAgentDocs} from '../scripts/build-agent-docs.mjs';
+import {buildAgentDocs,buildCrawlerPolicy} from '../scripts/build-agent-docs.mjs';
 
 const publicDir=new URL('../cloud/hatchable/public/',import.meta.url);
 const read=path=>readFileSync(new URL(path,publicDir),'utf8').replace(/\r\n/g,'\n');
@@ -35,4 +35,10 @@ test('all 42 scanner findings have unique, truthful dispositions',()=>{
   const ids=[...doc.matchAll(/^\| ([SPLC]\d+) \|/gm)].map(m=>m[1]);
   assert.deepEqual(ids.sort(),expected.sort());
   assert.match(doc,/No post-release scan or deployed acceptance has been established/);
+});
+
+test('crawler output is generated from the same curated asset contract',()=>{
+  assert.equal(read('robots.txt'),buildCrawlerPolicy());
+  assert.ok(buildCrawlerPolicy().includes('Disallow: /\n'));
+  for(const path of ['workspace.html','release-owner.html','index.html','api/brain/status'])assert.ok(!buildCrawlerPolicy().includes('Allow: /'+path));
 });
