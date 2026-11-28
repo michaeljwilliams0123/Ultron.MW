@@ -50,7 +50,7 @@ for(const role of COUNCIL_APP_ROLES){
  }
 }
 
-// RED: exact-effect contracts, tested using only an injected local transport.
+// exact-effect contracts, tested using only an injected local transport.
 // These tests deliberately remain failing until the admin executor is hardened.
 function transport(){
  const calls=[];
@@ -60,14 +60,14 @@ function transport(){
  };
  return {calls,fetchImpl};
 }
-test('RED: squash merge must pin the exact authorized head or deny before mutation',async()=>{
+test('squash merge must pin the exact authorized head or deny before mutation',async()=>{
  const actor=await actorFor('Builder');const {calls,fetchImpl}=transport();
  const r=await executeMemberAction(actor,'fixture-token',{op:'pr.merge'},{number:1,prAuthor:'fixture-human'},{fetchImpl});
  const write=calls.find(c=>c.method==='PUT'&&c.url.endsWith('/merge'));
  if(r.status==='denied')assert.equal(write,undefined);
  else assert.equal(write?.body?.sha,sha);
 });
-test('RED: deployment must use immutable authorized commit and preserve required checks or deny',async()=>{
+test('deployment must use immutable authorized commit and preserve required checks or deny',async()=>{
  const actor=await actorFor('Builder');const {calls,fetchImpl}=transport();
  const r=await executeMemberAction(actor,'fixture-token',{op:'deployment.create',ref:'main',environment:'fixture'},{number:1},{fetchImpl});
  const write=calls.find(c=>c.method==='POST'&&c.url.endsWith('/deployments'));
@@ -77,14 +77,51 @@ test('RED: deployment must use immutable authorized commit and preserve required
   assert.notDeepEqual(write?.body?.required_contexts,[]);
  }
 });
-test('RED: secret mutation without verified exact effect cannot report completion',async()=>{
+test('secret mutation without verified exact effect cannot report completion',async()=>{
  const actor=await actorFor('Builder');const {fetchImpl}=transport();
  const r=await executeMemberAction(actor,'fixture-token',{op:'secret.delete',name:'FIXTURE_ONLY'},{number:1,caseSha:'c'.repeat(64)},{fetchImpl});
  assert.ok(r.status!=='done'||r.receipt,'done must include durable exact-effect evidence');
 });
-test('RED: approval without verified PR author must deny before mutation',async()=>{
+test('approval without verified PR author must deny before mutation',async()=>{
  const actor=await actorFor('Builder');const {calls,fetchImpl}=transport();
  const r=await executeMemberAction(actor,'fixture-token',{op:'review.approve',text:'fixture'},{number:1},{fetchImpl});
  assert.equal(r.status,'denied');
  assert.equal(calls.filter(c=>c.method==='POST').length,0);
 });
+
+test('approval pins fresh canonical non-self PR',async()=>{
+ const actor=await actorFor('Builder');
+ const calls=[];
+ const r={id:1424939667,full_name:repo};
+ const fetchImpl=async(url,init={})=>{
+  calls.push({url,method:init.method,body:init.body?JSON.parse(init.body):undefined});
+  if(init.method==='GET')return {ok:true,status:200,json:async()=>({number:1,state:'open',draft:false,head:{sha,repo:r},base:{ref:'main',repo:r},user:{id:123,login:'fixture-human',type:'User'}})};
+  return {ok:true,status:200,json:async()=>({id:42})};
+ };
+ const result=await executeMemberAction(actor,'fixture-token',{op:'review.approve',text:'fixture'},{number:1,prAuthor:'fixture-human'},{fetchImpl});
+ assert.equal(result.status,'done');
+ assert.equal(calls.length,2);
+ assert.equal(calls[0].method,'GET');
+ assert.equal(calls[1].method,'POST');
+ assert.equal(calls[1].body.commit_id,sha);
+});
+for(const [label,mutate] of [
+ ['self author',p=>({...p,user:{id:123,login:'ultron-mw-builder[bot]',type:'Bot'}})],
+ ['changed head',p=>({...p,head:{...p.head,sha:other}})],
+ ['foreign head repo',p=>({...p,head:{...p.head,repo:{id:1,full_name:'other/repo'}}})],
+ ['closed PR',p=>({...p,state:'closed'})],
+ ['draft PR',p=>({...p,draft:true})],
+ ['changed author',p=>({...p,user:{id:124,login:'different-human',type:'User'}})],
+ ['missing author',p=>({...p,user:null})],
+]){
+ test('approval denies '+label+' before write',async()=>{
+  const actor=await actorFor('Builder');const r={id:1424939667,full_name:repo};let writes=0;
+  const fetchImpl=async(url,init={})=>{
+   if(init.method!=='GET'){writes++;throw Error('unexpected mutation');}
+   return{ok:true,status:200,json:async()=>mutate({number:1,state:'open',draft:false,head:{sha,repo:r},base:{ref:'main',repo:r},user:{id:123,login:'fixture-human',type:'User'}})};
+  };
+  const result=await executeMemberAction(actor,'fixture-token',{op:'review.approve',text:'fixture'},{number:1,prAuthor:'fixture-human'},{fetchImpl});
+  assert.equal(result.status,'denied');
+  assert.equal(writes,0);
+ });
+}
