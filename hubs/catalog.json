@@ -36,8 +36,18 @@
       "kind": "harness",
       "id": "owner-workflow",
       "path": "hubs/harness/owner-workflow.json",
-      "revision": 2,
-      "sha256": "1a6b38370e535a46196c42369d576871849ace8153cb7f998632f435ddc49954",
+      "revision": 3,
+      "sha256": "8d15b7f90fb8e737bc0e3e41393f786d8fc42ab61f66b751c4dbf61a23e4a597",
+      "tests": [
+        "test/git-hubs.test.mjs"
+      ]
+    },
+    {
+      "kind": "skill",
+      "id": "matt-engineering",
+      "path": "hubs/skills/matt-engineering/SKILL.md",
+      "revision": 1,
+      "sha256": "2bf9dc738013d0018c8d4cafe51f76255fa62f96e6727529ff6165ead2d81c0b",
       "tests": [
         "test/git-hubs.test.mjs"
       ]

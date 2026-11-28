@@ -28,8 +28,8 @@ test('hub content fingerprints are stable across Git line-ending conversion',()=
 });
 test('all public Git hubs pass committed integrity and reference gates',async()=>{
   const verified=await verifyGitHubs(root);
-  assert.equal(verified.accepted,4);
-  assert.deepEqual(verified.byType,{memory:1,skill:2,harness:1});
+  assert.equal(verified.accepted,5);
+  assert.deepEqual(verified.byType,{memory:1,skill:3,harness:1});
 });
 test('tampered memory or skill contents cannot pass the committed digest',async()=>{
   const temp=await stage();
