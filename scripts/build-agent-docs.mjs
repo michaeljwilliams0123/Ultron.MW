@@ -29,7 +29,7 @@ const index = '# Ultron MW\n\n> Public agent documentation for an owner-controll
 export function buildAgentDocs() {
   return {
     'llms.txt': index,
-    'llms-full.txt': index+'\n---\n\n'+agents+'\n---\n\n'+glossary,
+    'llms-full.txt': index+'\n---\n\n'+markdown.replace(/^---\n[\s\S]*?\n---\n\n/,'')+'\n---\n\n'+agents+'\n---\n\n'+glossary,
     'AGENTS.md': agents,
     'glossary.md': glossary,
     'agent-guide.html': guide,
