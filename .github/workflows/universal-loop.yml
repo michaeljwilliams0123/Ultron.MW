@@ -1,11 +1,30 @@
 name: Ultron universal reusable loop
-# Reusable matrix data-loop with dynamic runner routing (ubuntu-24.04 or
-# vars.ULTRON_RUNNER_LABELS for self-hosted zero-credit nodes like SD009WC7).
+# Universal multi-pattern loop engine supporting:
+# 1. Dynamic Data Loop (Job Matrix via items_json)
+# 2. Step-Level Shell Retry Loop (retry_attempts + retry_delay_seconds)
+# 3. Recursive Self-Triggering Loop (mode=recursive with hard max_iterations <= 10)
+# 4. Cross-Repo / Reusable Workflow (workflow_call + workflow_dispatch)
+# Plus dynamic runner routing (ubuntu-24.04 or vars.ULTRON_RUNNER_LABELS).
 on:
   workflow_call:
     inputs:
+      mode:
+        description: 'Loop mode: matrix or recursive'
+        required: false
+        type: string
+        default: 'matrix'
+      action:
+        description: 'Step action: noop-canary | dispatch-workflow | run-script'
+        required: false
+        type: string
+        default: 'noop-canary'
+      target:
+        description: 'Workflow filename (for dispatch-workflow) or scripts/*.mjs path (for run-script)'
+        required: false
+        type: string
+        default: ''
       items_json:
-        description: 'JSON array of items to iterate over'
+        description: 'JSON array of items to iterate over (1-25 items)'
         required: true
         type: string
       runner_labels:
@@ -13,10 +32,52 @@ on:
         required: false
         type: string
         default: ''
+      retry_attempts:
+        description: 'Step-level retry count per item (1-5)'
+        required: false
+        type: number
+        default: 1
+      retry_delay_seconds:
+        description: 'Seconds between step-level retries (0-30)'
+        required: false
+        type: number
+        default: 2
+      iteration:
+        description: 'Current recursive iteration (1-10)'
+        required: false
+        type: number
+        default: 1
+      max_iterations:
+        description: 'Hard cap on recursive iterations (1-10)'
+        required: false
+        type: number
+        default: 1
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'Loop mode'
+        required: true
+        type: choice
+        default: 'matrix'
+        options:
+          - matrix
+          - recursive
+      action:
+        description: 'Step action'
+        required: true
+        type: choice
+        default: 'noop-canary'
+        options:
+          - noop-canary
+          - dispatch-workflow
+          - run-script
+      target:
+        description: 'Workflow filename (dispatch-workflow) or scripts/*.mjs path (run-script)'
+        required: false
+        default: ''
+        type: string
       items_json:
-        description: 'JSON array of items to iterate over'
+        description: 'JSON array of items to iterate over (1-25 items)'
         required: true
         default: '["task-1", "task-2", "task-3"]'
         type: string
@@ -25,13 +86,33 @@ on:
         required: false
         default: ''
         type: string
+      retry_attempts:
+        description: 'Step-level retry count per item (1-5)'
+        required: false
+        default: '1'
+        type: string
+      retry_delay_seconds:
+        description: 'Seconds between step-level retries (0-30)'
+        required: false
+        default: '2'
+        type: string
+      iteration:
+        description: 'Current recursive iteration (1-10)'
+        required: false
+        default: '1'
+        type: string
+      max_iterations:
+        description: 'Hard cap on recursive iterations (1-10)'
+        required: false
+        default: '1'
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ultron-universal-loop-${{ github.ref }}
-  cancel-in-progress: true
+  group: ultron-universal-loop-${{ github.ref }}-${{ inputs.mode || 'matrix' }}
+  cancel-in-progress: false
 
 jobs:
   prepare-list:
@@ -40,16 +121,40 @@ jobs:
     outputs:
       items: ${{ steps.set-list.outputs.items }}
       runner_labels: ${{ steps.set-list.outputs.runner_labels }}
+      retry_attempts: ${{ steps.set-list.outputs.retry_attempts }}
+      retry_delay_seconds: ${{ steps.set-list.outputs.retry_delay_seconds }}
+      iteration: ${{ steps.set-list.outputs.iteration }}
+      max_iterations: ${{ steps.set-list.outputs.max_iterations }}
+      should_recurse: ${{ steps.set-list.outputs.should_recurse }}
+      next_iteration: ${{ steps.set-list.outputs.next_iteration }}
     steps:
-      - name: Validate and emit matrix inputs
+      - name: Validate loop bounds, matrix items, and runner labels
         id: set-list
         env:
+          MODE: ${{ inputs.mode || 'matrix' }}
+          ACTION: ${{ inputs.action || 'noop-canary' }}
+          TARGET: ${{ inputs.target || '' }}
           ITEMS_JSON: ${{ inputs.items_json }}
           INPUT_RUNNER_LABELS: ${{ inputs.runner_labels }}
           VAR_RUNNER_LABELS: ${{ vars.ULTRON_RUNNER_LABELS }}
+          RETRY_ATTEMPTS: ${{ inputs.retry_attempts }}
+          RETRY_DELAY: ${{ inputs.retry_delay_seconds }}
+          ITERATION: ${{ inputs.iteration }}
+          MAX_ITERATIONS: ${{ inputs.max_iterations }}
         run: |
           node --input-type=module <<'NODE'
           import { appendFileSync } from 'node:fs';
+          const mode = process.env.MODE;
+          if (!['matrix', 'recursive'].includes(mode)) throw new Error('Invalid mode');
+          const action = process.env.ACTION;
+          if (!['noop-canary', 'dispatch-workflow', 'run-script'].includes(action)) throw new Error('Invalid action');
+          const target = (process.env.TARGET || '').trim();
+          if (action === 'dispatch-workflow' && !/^[A-Za-z0-9_.-]+\.ya?ml$/.test(target)) {
+            throw new Error('dispatch-workflow target must be a workflow filename (e.g. contract-validation.yml)');
+          }
+          if (action === 'run-script' && !/^scripts\/[A-Za-z0-9_.-]+\.mjs$/.test(target)) {
+            throw new Error('run-script target must be confined to scripts/*.mjs');
+          }
           const items = JSON.parse(process.env.ITEMS_JSON || '[]');
           if (!Array.isArray(items) || items.length === 0 || items.length > 25) {
             throw new Error('items_json must be a non-empty JSON array (max 25 items)');
@@ -59,20 +164,119 @@ jobs:
           if (!Array.isArray(runner) || runner.length === 0) {
             throw new Error('runner_labels must be a non-empty JSON array');
           }
-          appendFileSync(process.env.GITHUB_OUTPUT, `items=${JSON.stringify(items)}\n`);
-          appendFileSync(process.env.GITHUB_OUTPUT, `runner_labels=${JSON.stringify(runner)}\n`);
+          const retries = Math.min(5, Math.max(1, Number.parseInt(process.env.RETRY_ATTEMPTS || '1', 10) || 1));
+          const delay = Math.min(30, Math.max(0, Number.parseInt(process.env.RETRY_DELAY || '2', 10) || 0));
+          const iter = Math.min(10, Math.max(1, Number.parseInt(process.env.ITERATION || '1', 10) || 1));
+          const maxIter = Math.min(10, Math.max(1, Number.parseInt(process.env.MAX_ITERATIONS || '1', 10) || 1));
+          const shouldRecurse = mode === 'recursive' && iter < maxIter;
+
+          const out = [
+            `items=${JSON.stringify(items)}`,
+            `runner_labels=${JSON.stringify(runner)}`,
+            `retry_attempts=${retries}`,
+            `retry_delay_seconds=${delay}`,
+            `iteration=${iter}`,
+            `max_iterations=${maxIter}`,
+            `should_recurse=${shouldRecurse}`,
+            `next_iteration=${iter + 1}`
+          ].join('\n') + '\n';
+          appendFileSync(process.env.GITHUB_OUTPUT, out);
           NODE
 
   execute-loop:
     needs: prepare-list
     runs-on: ${{ fromJson(needs.prepare-list.outputs.runner_labels) }}
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
     strategy:
       fail-fast: false
+      max-parallel: 5
       matrix:
         item: ${{ fromJson(needs.prepare-list.outputs.items) }}
     steps:
-      - name: Process matrix item
+      - name: Configure Git bare-repository policy
+        if: inputs.action == 'run-script'
+        run: git config --global safe.bareRepository explicit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.action == 'run-script'
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: inputs.action == 'run-script'
+        with:
+          node-version: '22'
+      - name: Execute bounded retry loop for matrix item
         env:
           MATRIX_ITEM: ${{ matrix.item }}
-        run: echo "Executing universal loop item ${MATRIX_ITEM}"
+          LOOP_ACTION: ${{ inputs.action || 'noop-canary' }}
+          LOOP_TARGET: ${{ inputs.target || '' }}
+          MAX_RETRIES: ${{ needs.prepare-list.outputs.retry_attempts }}
+          RETRY_DELAY: ${{ needs.prepare-list.outputs.retry_delay_seconds }}
+          ITERATION: ${{ needs.prepare-list.outputs.iteration }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt=1
+          while true; do
+            echo "[iter=${ITERATION} item=${MATRIX_ITEM} attempt=${attempt}/${MAX_RETRIES}] action=${LOOP_ACTION}"
+            rc=0
+            if [ "$LOOP_ACTION" = "noop-canary" ]; then
+              echo "Canary OK for item=${MATRIX_ITEM}"
+            elif [ "$LOOP_ACTION" = "dispatch-workflow" ]; then
+              gh workflow run "$LOOP_TARGET" --repo "$GITHUB_REPOSITORY" --ref "${GITHUB_REF_NAME:-main}" || rc=$?
+            elif [ "$LOOP_ACTION" = "run-script" ]; then
+              node "$LOOP_TARGET" --item "$MATRIX_ITEM" || rc=$?
+            fi
+            if [ "$rc" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$attempt" -ge "$MAX_RETRIES" ]; then
+              echo "Exhausted ${MAX_RETRIES} attempt(s) for item=${MATRIX_ITEM}" >&2
+              exit "$rc"
+            fi
+            attempt=$((attempt + 1))
+            sleep "$RETRY_DELAY"
+          done
+
+  recurse-next:
+    needs: [prepare-list, execute-loop]
+    if: >-
+      success() &&
+      github.event_name == 'workflow_dispatch' &&
+      github.actor == 'michaeljwilliams0123' &&
+      needs.prepare-list.outputs.should_recurse == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NEXT_ITER: ${{ needs.prepare-list.outputs.next_iteration }}
+      MAX_ITER: ${{ needs.prepare-list.outputs.max_iterations }}
+      MODE: ${{ inputs.mode }}
+      ACTION: ${{ inputs.action }}
+      TARGET: ${{ inputs.target }}
+      ITEMS_JSON: ${{ needs.prepare-list.outputs.items }}
+      RUNNER_LABELS: ${{ needs.prepare-list.outputs.runner_labels }}
+      RETRY_ATTEMPTS: ${{ needs.prepare-list.outputs.retry_attempts }}
+      RETRY_DELAY: ${{ needs.prepare-list.outputs.retry_delay_seconds }}
+    steps:
+      - name: Trigger next bounded recursive iteration
+        run: |
+          gh workflow run "Ultron universal reusable loop" \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "${GITHUB_REF_NAME:-main}" \
+            -f mode="$MODE" \
+            -f action="$ACTION" \
+            -f target="$TARGET" \
+            -f items_json="$ITEMS_JSON" \
+            -f runner_labels="$RUNNER_LABELS" \
+            -f retry_attempts="$RETRY_ATTEMPTS" \
+            -f retry_delay_seconds="$RETRY_DELAY" \
+            -f iteration="$NEXT_ITER" \
+            -f max_iterations="$MAX_ITER"

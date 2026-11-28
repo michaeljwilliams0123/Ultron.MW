@@ -1,6 +1,6 @@
 name: Ultron zero-credit contract validation
 # Ported from Mahoraga contract-validation.yml: zero-credit, zero-secret static
-# workflow-reference and credential-isolation gate on every PR and main push.
+# workflow-reference, Cloudflare parity, and credential-isolation gate on PRs and main.
 on:
   pull_request:
     types: [opened, reopened, synchronize]
@@ -31,5 +31,7 @@ jobs:
           node-version: '22'
       - name: Check GitHub Actions workflow references
         run: node scripts/check-workflow-references.mjs
+      - name: Check Cloudflare Worker config and cron parity
+        run: node scripts/check-cloudflare-parity.mjs
       - name: Audit source for accidental credentials
         run: node scripts/audit-secret-isolation.mjs
