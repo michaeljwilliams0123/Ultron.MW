@@ -29,3 +29,24 @@ test('edge invokes discovery policy before origin proxy',()=>{
   assert.match(source,/const discovery = unsupportedDiscoveryResponse\(path, request\.method\);\s*if \(discovery\) return applyOwnHeaders\(discovery\);/);
   assert.ok(source.indexOf('const discovery =')<source.indexOf('await proxyToOrigin('));
 });
+
+test('alternate encodings and repeated trailing slashes cannot become false HTML 200 responses',async()=>{
+  for(const path of ['/.well-known/%75cp','/.well-known/ucp///','/.well-known/api%2Dcatalog','/.well-known/oauth-authorization-server//']){
+    const request=new Request('https://example.invalid'+path+'?irrelevant=1');
+    const response=unsupportedDiscoveryResponse(new URL(request.url).pathname,request.method);
+    assert.equal(response?.status,404,path);
+    assert.deepEqual(await response.json(),{error:'not_found'});
+  }
+});
+test('unsupported methods return no misleading discovery content',async()=>{
+  for(const method of ['POST','OPTIONS','DELETE']){
+    const response=unsupportedDiscoveryResponse('/.well-known/ucp',method);
+    assert.equal(response.status,404);
+    assert.deepEqual(await response.json(),{error:'not_found'});
+  }
+});
+test('reserved separators and unrelated paths do not widen the policy',()=>{
+  for(const path of ['/.well-known%2Fucp','/.well-known/ucp/child','/.well-known/%zz','/.well-known/oauth-protected-resource/mcp','/.well-known/UCP']){
+    assert.equal(unsupportedDiscoveryResponse(path,'GET'),null,path);
+  }
+});
