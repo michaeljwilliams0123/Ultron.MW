@@ -38,6 +38,11 @@ export function buildAgentDocs() {
     'sitemap.xml': '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'+pages.map(([path])=>'  <url><loc>'+url(path)+'</loc><lastmod>'+modified+'</lastmod></url>').join('\n')+'\n</urlset>\n',
   };
 }
+export function buildCrawlerPolicy() {
+  return ['User-agent: *', 'Disallow: /',
+    ...Object.keys(buildAgentDocs()).sort().map(path => 'Allow: /'+path+'$'),
+    'Sitemap: '+url('sitemap.xml'), ''].join('\n');
+}
 export function validateAgentDocs(docs) {
   if (Object.keys(docs).length !== allowed.size || Object.keys(docs).some(p => !allowed.has(p))) throw Error('unexpected-public-document');
   const canonicalDocs = buildAgentDocs();
@@ -59,7 +64,7 @@ export function validateAgentDocs(docs) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const docs = buildAgentDocs();
   validateAgentDocs(docs);
-  for (const [path, body] of Object.entries(docs)) {
+  for (const [path, body] of Object.entries({...docs,'robots.txt':buildCrawlerPolicy()})) {
     const destination = resolve(root, path);
     if (process.argv.includes('--check')) {
       if (readFileSync(destination, 'utf8').replace(/\r\n/g,'\n') !== body) throw Error('generated-doc-drift: '+path);

@@ -1,0 +1,11 @@
+User-agent: *
+Disallow: /
+Allow: /AGENTS.md$
+Allow: /agent-guide.html$
+Allow: /agent-guide.md$
+Allow: /glossary.md$
+Allow: /llms-full.txt$
+Allow: /llms.txt$
+Allow: /sitemap.md$
+Allow: /sitemap.xml$
+Sitemap: https://ultron-mw-cloud.hatchable.site/sitemap.xml
