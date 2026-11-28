@@ -6,7 +6,7 @@
 <title>Ultron — Release verification</title>
 <link rel="stylesheet" href="/workspace-shell.css">
 <style>
-:root{color-scheme:dark;font-family:system-ui,sans-serif}body{margin:0;background:#0c1425;color:#e6f0ff}main{max-width:720px;margin:auto;padding:24px 18px 64px}a{color:#aac9ff}section{background:#13223a;border:1px solid #34465e;border-radius:12px;padding:18px;margin-top:20px}label{display:block;margin-top:14px}input,select{width:100%;box-sizing:border-box;background:#182a45;color:#f2f7ff;border:1px solid #587498;border-radius:7px;padding:11px;font:inherit}button{background:#90b5ff;color:#081626;font:600 15px system-ui;border:0;padding:12px;border-radius:8px;margin:12px 8px 0 0}button:disabled{opacity:.5}pre{white-space:pre-wrap;overflow-wrap:anywhere}p{line-height:1.55}.muted{color:#bac8db}
+:root{color-scheme:dark;font-family:system-ui,sans-serif}body{margin:0;background:#0c1425;color:#e6f0ff}main{max-width:720px;margin:auto;padding:24px 18px 64px}a{color:#aac9ff}section{background:#13223a;border:1px solid #34465e;border-radius:12px;padding:18px;margin-top:20px}label{display:block;margin-top:14px}input,select{width:100%;box-sizing:border-box;background:#182a45;color:#f2f7ff;border:1px solid #587498;border-radius:7px;padding:11px;font:inherit}input[type=checkbox]{width:auto;margin-right:8px}button{background:#90b5ff;color:#081626;font:600 15px system-ui;border:0;padding:12px;border-radius:8px;margin:12px 8px 0 0}button:disabled{opacity:.5}pre{white-space:pre-wrap;overflow-wrap:anywhere}p{line-height:1.55}.muted{color:#bac8db}.check{display:flex;align-items:center;margin-top:14px}
 </style>
 </head>
 <body><main>
@@ -24,5 +24,16 @@
 <pre id="details" aria-live="polite"></pre>
 <button id="authorize" disabled>Authorize exact receipt with passkey</button>
 <button id="reconcile" disabled>Reconcile existing receipt</button>
-</section><section><h2>Production status</h2><button id="verify">Refresh production proof</button><pre id="status" role="status" aria-live="polite">Checking owner session…</pre></section>
-</main><script src="/sign-in.js" defer></script><script src="/release-owner.js" defer></script></body></html>
+</section>
+<section id="standing-policy-section"><h2>Standing release policy</h2>
+<p>Authorize routine eligible releases under a bounded standing policy ($0 cost cap, up to 100 releases, up to 31 days). Security-sensitive paths remain excluded and still require separate owner authorization.</p>
+<label for="sp-max-releases">Max releases (1–100)</label><input id="sp-max-releases" type="number" min="1" max="100" step="1" value="100">
+<label for="sp-days">Validity days (1–31)</label><input id="sp-days" type="number" min="1" max="31" step="1" value="31">
+<label class="check" for="sp-enabled"><input id="sp-enabled" type="checkbox" checked>Enable standing policy immediately ($0 cost cap)</label>
+<button id="sp-refresh">Refresh standing policy</button>
+<button id="sp-enroll" disabled>Enroll standing policy with passkey</button>
+<button id="sp-revoke" disabled>Revoke active policy</button>
+<pre id="sp-status" role="status" aria-live="polite">Checking standing policy…</pre>
+</section>
+<section><h2>Production status</h2><button id="verify">Refresh production proof</button><pre id="status" role="status" aria-live="polite">Checking owner session…</pre></section>
+</main><script src="/sign-in.js" defer></script><script src="/release-owner.js" defer></script><script src="/standing-policy.js" defer></script></body></html>

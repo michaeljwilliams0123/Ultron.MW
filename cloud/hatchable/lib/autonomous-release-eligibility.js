@@ -46,6 +46,24 @@ export async function evaluateAndAuthorizeAutonomousRelease({
   if (computedSha !== policyRow.policy_sha256) {
     return { ok: false, decision: 'denied', reason: 'policy-hash-mismatch' };
   }
+  if (mode === 'authorize' && policyJson.enabled !== true) {
+    return { ok: false, decision: 'denied', reason: 'signed-policy-not-enabled' };
+  }
+  if (Number(policyRow.stop_version) !== policyJson.stopVersion ||
+      policyRow.owner_credential_id !== policyJson.ownerCredentialId) {
+    return { ok: false, decision: 'denied', reason: 'policy-binding-mismatch' };
+  }
+  const current = await db.query(
+    `SELECT c.version AS stop_version, c.paused, k.credential_id
+       FROM brain_runtime_control c
+       JOIN brain_owner_passkeys k ON k.credential_id = $1 AND k.revoked_at IS NULL
+       WHERE c.id = 1`, [policyJson.ownerCredentialId],
+  );
+  const liveAuthority = current?.rows?.[0];
+  if (!liveAuthority || liveAuthority.credential_id !== policyJson.ownerCredentialId ||
+      liveAuthority.paused !== false || Number(liveAuthority.stop_version) !== policyJson.stopVersion) {
+    return { ok: false, decision: 'denied', reason: 'runtime-stop-or-owner-credential-denied' };
+  }
   const nb = Date.parse(policyRow.not_before), exp = Date.parse(policyRow.expires_at);
   if (!Number.isFinite(nb) || !Number.isFinite(exp) || now < nb || now >= exp) {
     return { ok: false, decision: 'denied', reason: 'policy-expired-or-not-active' };
@@ -148,6 +166,11 @@ export async function evaluateAndAuthorizeAutonomousRelease({
         AND stop_version = $4 AND enabled = TRUE AND revoked_at IS NULL
         AND not_before <= clock_timestamp() AND expires_at > clock_timestamp()
         AND releases_consumed < max_releases
+        AND EXISTS (SELECT 1 FROM brain_runtime_control c
+                    WHERE c.id = 1 AND c.version = $4 AND c.paused = FALSE FOR SHARE)
+        AND EXISTS (SELECT 1 FROM brain_owner_passkeys k
+                    WHERE k.credential_id = brain_standing_release_policies.owner_credential_id
+                      AND k.revoked_at IS NULL FOR SHARE)
       FOR UPDATE
     ), existing_claim AS (
       SELECT c.id, c.receipt_id, c.jti, c.target, c.source_sha, c.artifact_digest, c.deployment_version
