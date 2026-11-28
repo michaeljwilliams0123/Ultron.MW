@@ -37,3 +37,32 @@ test('reject unapproved assets and credential-shaped material',()=>{
   assert.throws(()=>validateAgentDocs({...docs,'llms.txt':docs['llms.txt']+'\n'+'gh'+'p_'+'A'.repeat(32)}),/private-material/);
   assert.throws(()=>validateAgentDocs({...docs,'llms.txt':'a'.repeat(16385)}),/invalid-document-size/);
 });
+
+test('public guide exposes canonical metadata and valid JSON-LD',()=>{
+  const html=docs['agent-guide.html'];
+  assert.match(html,/rel="canonical" href="https:\/\/ultron-mw-cloud\.hatchable\.site\/agent-guide\.html"/);
+  assert.match(html,/name="description" content="[^"]{50,}"/);
+  assert.match(html,/property="og:title"/);
+  assert.match(html,/property="og:description"/);
+  const json=JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
+  assert.equal(json['@type'],'WebPage');
+  assert.equal(json['@context'],'https://schema.org');
+  assert.equal(json.url,'https://ultron-mw-cloud.hatchable.site/agent-guide.html');
+  assert.equal(json.dateModified,'2026-11-28');
+});
+test('HTML and Markdown share public guide content and explicit alternate discovery',()=>{
+  const html=docs['agent-guide.html'],md=docs['agent-guide.md'];
+  assert.match(html,/rel="alternate" type="text\/markdown" href="\/agent-guide\.md"/);
+  assert.match(md,/^---\n/);
+  assert.match(md,/canonical: https:\/\/ultron-mw-cloud\.hatchable\.site\/agent-guide\.html/);
+  assert.match(md,/## Access boundaries/);
+  assert.match(md,/## Sitemap/);
+  for(const sentence of ['Ultron MW provides an owner-controlled interface for authorized automation.','Public documentation does not establish production acceptance or permit access to private operations.']){
+    assert.ok(html.includes(sentence));assert.ok(md.includes(sentence));
+  }
+  assert.match(md,/\[Documentation sitemap\]/);
+  assert.ok(docs['llms.txt'].includes('/agent-guide.md'));
+});
+test('schema vocabulary is not a general external-link exception',()=>{
+  assert.throws(()=>validateAgentDocs({...docs,'agent-guide.md':docs['agent-guide.md']+'\n[external](https://schema.org)'}));
+});
