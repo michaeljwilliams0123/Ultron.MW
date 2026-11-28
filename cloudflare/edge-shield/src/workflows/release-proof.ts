@@ -3,17 +3,23 @@ import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { Env, ReleaseProofParams } from "../lib";
 import { purgeCache } from "../proxy";
 import { readReleaseProofForWorkflow } from "../release-readback";
+import { bandwidthCommand } from '../bandwidth-client';
 import { shouldWakeAuthorization, dispatchReleaseAuthorization } from "../release-authorization";
 
 export class ReleaseProofWorkflow extends WorkflowEntrypoint<Env, ReleaseProofParams> {
   async run(event: WorkflowEvent<ReleaseProofParams>, step: WorkflowStep) {
     const p = event.payload;
     if (p.repo && p.repo !== this.env.GITHUB_REPO) return { status: "wrong-repository" };
+    const admission=await step.do('bandwidth-admission',{retries:{limit:0,delay:'1 second'},timeout:'30 seconds'},()=>bandwidthCommand(this.env,{kind:'admit'}));
+    if(!admission.allowed)return {status:'held',reason:admission.reason,bandwidth:admission};
     const observation = await step.do("canonical-release-readback", {
-      retries: { limit: 3, delay: "10 seconds", backoff: "exponential" },
+      retries: { limit: 0, delay: "10 seconds", backoff: "exponential" },
       timeout: "2 minutes",
     }, () => readReleaseProofForWorkflow({origin:this.env.HATCHABLE_CORE_ORIGIN,secret:this.env.ORIGIN_LOCK_SECRET}));
     // No retries or downstream actions for quota/authority denial; no cached proof.
+    if (observation.status === "held" && observation.httpStatus === 429) {
+      await step.do('persist-origin-quota-hold',()=>bandwidthCommand(this.env,{kind:'quota-hold',day:admission.day}));
+    }
     if (observation.status === "held") return observation;
     const proof = observation.proof;
     if (!proof.verified) {
