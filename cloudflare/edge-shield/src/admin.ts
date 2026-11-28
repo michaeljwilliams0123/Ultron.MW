@@ -2,6 +2,7 @@ import type { Env } from "./lib";
 import { json } from "./lib";
 import { applyOwnHeaders, authorizeAdmin, signStreamToken } from "./security";
 import { purgeCache } from "./proxy";
+import { bandwidthCommand } from './bandwidth-client';
 
 export async function handleAdmin(
   request: Request,
@@ -11,6 +12,15 @@ export async function handleAdmin(
   const auth = authorizeAdmin(request, env);
   if (!auth.ok) return applyOwnHeaders(json({ error: auth.reason }, auth.status));
   const route = new URL(request.url).pathname.replace("/__ultron/admin", "") || "/";
+  if(route==='/bandwidth' && (request.method==='GET'||request.method==='POST')){
+    try{
+      if(request.method==='GET')return applyOwnHeaders(json(await bandwidthCommand(env,{kind:'status'})));
+      const body=await request.json().catch(()=>null) as {day?:string;bytes?:number}|null;
+      if(typeof body?.day!=='string'||typeof body.bytes!=='number'||!Number.isSafeInteger(body.bytes)||body.bytes<0)return applyOwnHeaders(json({error:'provider_day_and_bytes_required'},400));
+      const result=await bandwidthCommand(env,{kind:'observe',day:body.day,bytes:body.bytes});
+      return applyOwnHeaders(json(result,result.accepted?200:400));
+    }catch{return applyOwnHeaders(json({error:'bandwidth_governor_unavailable'},503));}
+  }
   if (route === "/status" && request.method === "GET") {
     return applyOwnHeaders(
       json({
