@@ -40,6 +40,7 @@ export function buildAgentDocs() {
 }
 export function validateAgentDocs(docs) {
   if (Object.keys(docs).length !== allowed.size || Object.keys(docs).some(p => !allowed.has(p))) throw Error('unexpected-public-document');
+  const canonicalDocs = buildAgentDocs();
   for (const [path, body] of Object.entries(docs)) {
     if (typeof body !== 'string' || Buffer.byteLength(body) > 16384) throw Error('invalid-document-size');
     if (/-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|(?:https?:\/\/[^\s"'<>)]*\/api\/)|(?:href|src)=["']\/(?:api|mcp|__hatchable|__ultron)\//i.test(body)) throw Error('private-material');
@@ -49,6 +50,9 @@ export function validateAgentDocs(docs) {
       const parsed = new URL(match[0]);
       if (parsed.origin !== origin || parsed.search || parsed.hash || !allowed.has(parsed.pathname.slice(1))) throw Error('non-allowlisted-link');
     }
+    // Reject unreviewed bytes, including relative links, markup and plain text.
+    // Pattern checks above are diagnostics, not a substitute for curated source.
+    if (body !== canonicalDocs[path]) throw Error('unapproved-document-content');
   }
   return true;
 }
