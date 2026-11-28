@@ -1,0 +1,11 @@
+# Ultron MW
+
+> Public agent documentation for an owner-controlled automation interface. Documentation does not grant operational access.
+
+## Documentation
+- [Agent guide](https://ultron-mw-cloud.hatchable.site/agent-guide.html): Public overview and documentation boundaries.
+- [Agent guidance](https://ultron-mw-cloud.hatchable.site/AGENTS.md): Supported documentation use and authorization boundaries.
+- [Glossary](https://ultron-mw-cloud.hatchable.site/glossary.md): Definitions of common terms.
+
+## Optional
+- [Documentation sitemap](https://ultron-mw-cloud.hatchable.site/sitemap.md)
