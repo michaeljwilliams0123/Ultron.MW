@@ -169,8 +169,55 @@ test('every proposed Council action is role-admitted and abilities stay immutabl
   }
   assert.equal(memberAbilityAdmission('Unknown','issue.comment').allowed,false);
   assert.equal(memberAbilityAdmission('Sentinel','mahoraga.repo.inspect').mode,'planned-external');
+  assert.equal(memberAbilityAdmission('Builder','branch.update').allowed,true);
+  assert.equal(memberAbilityAdmission('Builder','pr.create').allowed,true);
+  assert.equal(memberAbilityAdmission('Generator','branch.update').allowed,true);
+  assert.equal(memberAbilityAdmission('Generator','pr.create').allowed,true);
+  assert.equal(memberAbilityAdmission('Steward','review.request-changes').allowed,true);
   assert.equal(memberAbilityAdmission('Builder','file.write').allowed,false,
-    'do not advertise an executor that is not implemented');
+    'unbounded file writes remain excluded');
+});
+
+test('Builder specialties update only its bounded branch and open a draft PR',async()=>{
+  const actor=await authenticateCouncilAppActor({role:'Builder',sourceSha:SHA,
+    installationToken:'x'.repeat(20),profile:'engineering-autonomy',expectedAppId:1,
+    githubProbe:async()=>({source:'github-installations-api',app_id:1,id:2,app_slug:'ultron-mw-builder',
+      repositories:['michaeljwilliams0123/Ultron.MW'],
+      permissions:{metadata:'read',contents:'write',issues:'write',pull_requests:'write',
+        checks:'read',actions:'read'}})});
+  const calls=[];
+  const fetchImpl=async(url,init={})=>{
+    const body=init.body?JSON.parse(init.body):undefined;
+    calls.push({url,method:init.method,body});
+    if(url.includes('/git/ref/heads/'))return{ok:true,status:200,json:async()=>({object:{sha:'1'.repeat(40)}})};
+    if(url.includes('/git/commits/')&&init.method==='GET')return{ok:true,status:200,json:async()=>({tree:{sha:'2'.repeat(40)}})};
+    if(url.endsWith('/git/blobs'))return{ok:true,status:201,json:async()=>({sha:'3'.repeat(40)})};
+    if(url.endsWith('/git/trees'))return{ok:true,status:201,json:async()=>({sha:'4'.repeat(40)})};
+    if(url.endsWith('/git/commits'))return{ok:true,status:201,json:async()=>({sha:'5'.repeat(40)})};
+    if(url.includes('/git/refs/heads/'))return{ok:true,status:200,json:async()=>({})};
+    if(url.endsWith('/pulls'))return{ok:true,status:201,json:async()=>({number:31,id:99,
+      user:{login:'ultron-mw-builder[bot]',type:'Bot'},
+      performed_via_github_app:{id:1,slug:'ultron-mw-builder'}})};
+    throw Error('unexpected '+init.method+' '+url);
+  };
+  const branch='ultron/council-builder-safe-fix';
+  const updated=await executeMemberAction(actor,'tok',{op:'branch.update',branch,
+    path:'src/safe-fix.mjs',content:'export const safe=true;\n',message:'Add safe fix'},
+    {number:1},{fetchImpl});
+  assert.equal(updated.status,'done');
+  const commitCall=calls.find(x=>x.url.endsWith('/git/commits')&&x.method==='POST');
+  assert.deepEqual(commitCall.body.parents,['1'.repeat(40)]);
+  assert.equal(calls.find(x=>x.url.endsWith('/git/trees')).body.tree[0].path,'src/safe-fix.mjs');
+  const pr=await executeMemberAction(actor,'tok',{op:'pr.create',branch,title:'Safe fix',why:'Bounded proposal'},
+    {number:1},{fetchImpl});
+  assert.equal(pr.status,'done');
+  const prCall=calls.find(x=>x.url.endsWith('/pulls'));
+  assert.equal(prCall.body.draft,true);
+  assert.equal(prCall.body.base,'main');
+  assert.equal(prCall.body.head,branch);
+  const denied=await executeMemberAction(actor,'tok',{op:'branch.update',branch:'main',
+    path:'.github/workflows/verify.yml',content:'bad'}, {number:1},{fetchImpl});
+  assert.equal(denied.status,'denied');
 });
 
 test('executeMemberAction mints a receipt only from a bot-authored GitHub response',async()=>{

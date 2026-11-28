@@ -44,11 +44,11 @@ const abilities=(internal,external=[])=>Object.freeze({
   internal:Object.freeze(internal),external:Object.freeze(external)
 });
 export const COUNCIL_ABILITIES=Object.freeze({
-  Builder:abilities(['branch.create','pr.comment','computer.browser','computer.desktop'],['mahoraga.task.prepare']),
+  Builder:abilities(['branch.create','branch.update','pr.create','pr.comment','computer.browser','computer.desktop'],['mahoraga.task.prepare']),
   Skeptic:abilities(['review.request-changes','review.comment','issue.comment'],['web.open']),
-  Steward:abilities(['issue.label','review.comment']),
+  Steward:abilities(['issue.label','review.comment','review.request-changes']),
   Predictor:abilities(['issue.comment','pr.comment'],['mahoraga.repo.inspect']),
-  Generator:abilities(['issue.create','branch.create','issue.comment'],['web.open']),
+  Generator:abilities(['issue.create','branch.create','branch.update','pr.create','issue.comment'],['web.open']),
   Sentinel:abilities(['actions.dispatch','issue.comment'],['mahoraga.repo.inspect']),
   Companion:abilities(['issue.comment'])
 });
@@ -272,8 +272,8 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
   if(!admission.allowed)
     return{op:action?.op,status:'denied',reason:admission.reason};
   const decision=decideCouncilAction(actor,{operation:action.op,baseSha:actor.sourceSha,
-    maxPaidCents:0,attempt:1,branch:action.branch,workflow:action.workflow,ref:action.ref,
-    prAuthor:target.prAuthor||'unknown',
+    maxPaidCents:0,attempt:1,branch:action.branch,path:action.path,
+    workflow:action.workflow,ref:action.ref,prAuthor:target.prAuthor||'unknown',
     externalIntentFingerprint:undefined,caseSha:undefined});
   if(!decision.allowed)return{op:action.op,status:'denied',reason:decision.reason};
   const call=api(token,fetchImpl),n=target.number,text=action.text||action.why;
@@ -301,11 +301,29 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
       await call('PATCH','/issues/'+n,{state:'closed'});break;
     case 'issue.create':
       await call('POST','/issues',{title:action.title||'Council follow-up',body:signed+text});break;
+    case 'pr.create':{
+      const title=String(action.title||'Council proposal').trim().slice(0,120);
+      if(!title)throw Error('council-pr-title-invalid');
+      const created=await call('POST','/pulls',{title,head:action.branch,base:'main',
+        body:signed+text+marker,draft:true});
+      effect={path:'/issues',data:{...created,id:created.number}};break;}
     case 'pr.merge':
       await call('PUT','/pulls/'+n+'/merge',{merge_method:'squash'});break;
     case 'branch.create':{
       const ref=await call('GET','/git/ref/heads/main');
       await call('POST','/git/refs',{ref:'refs/heads/'+action.branch,sha:ref.object.sha});break;}
+    case 'branch.update':{
+      const content=String(action.content??'');
+      if(!content||Buffer.byteLength(content)>65536)throw Error('council-file-content-invalid');
+      const ref=await call('GET','/git/ref/heads/'+action.branch);
+      const parent=await call('GET','/git/commits/'+ref.object.sha);
+      const blob=await call('POST','/git/blobs',{content,encoding:'utf-8'});
+      const tree=await call('POST','/git/trees',{base_tree:parent.tree.sha,
+        tree:[{path:action.path,mode:'100644',type:'blob',sha:blob.sha}]});
+      const commit=await call('POST','/git/commits',{
+        message:String(action.message||actor.role+' Council update').slice(0,120)+marker,
+        tree:tree.sha,parents:[ref.object.sha]});
+      await call('PATCH','/git/refs/heads/'+action.branch,{sha:commit.sha,force:false});break;}
     case 'branch.delete':
       await call('DELETE','/git/refs/heads/'+action.branch);break;
     case 'actions.dispatch':
