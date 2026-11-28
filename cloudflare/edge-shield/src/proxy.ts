@@ -5,44 +5,16 @@ import {
   reconcileBandwidth,
   reserveBandwidth,
 } from "./bandwidth-client";
-import type { BandwidthPathClass } from "./bandwidth-policy";
-import { UNKNOWN_LENGTH_ESTIMATE_BYTES } from "./bandwidth-policy";
+import {
+  classifyOriginPath,
+  isCacheableRequest,
+  MAX_CACHE_BUFFER_BYTES,
+  normalizeCacheUrl,
+  parseContentLength,
+  UNKNOWN_LENGTH_ESTIMATE_BYTES,
+} from "./bandwidth-policy";
 
-const CACHEABLE: RegExp[] = [
-  /^\/api\/brain\/status-public$/,
-  /^\/ultron-chat\.js$/,
-  /^\/ultron-chat\.css$/,
-  /^\/ultron-intent\.mjs$/,
-  /^\/favicon\.(ico|svg)$/,
-  /^\/assets\//,
-  /^\/static\//,
-];
-
-const CACHE_BUST_PARAMS = new Set(["_", "_t", "t", "ts", "cb", "cachebust", "fbclid"]);
-
-export function normalizeCacheUrl(rawUrl: string): string {
-  const u = new URL(rawUrl);
-  for (const key of [...u.searchParams.keys()]) {
-    if (CACHE_BUST_PARAMS.has(key) || key.startsWith("utm_")) {
-      u.searchParams.delete(key);
-    }
-  }
-  u.searchParams.sort();
-  return u.toString();
-}
-
-export function isCacheable(request: Request): boolean {
-  if (request.method !== "GET") return false;
-  if (
-    request.headers.has("Authorization") ||
-    request.headers.has("Cookie") ||
-    request.headers.has("X-Ultron-Admin-Token")
-  ) {
-    return false;
-  }
-  const { pathname } = new URL(request.url);
-  return CACHEABLE.some((re) => re.test(pathname));
-}
+export { isCacheableRequest as isCacheable, normalizeCacheUrl };
 
 function cacheableResponse(res: Response): boolean {
   if (!res.ok) return false;
@@ -52,27 +24,13 @@ function cacheableResponse(res: Response): boolean {
   return true;
 }
 
-export function classifyOriginPath(pathname: string): BandwidthPathClass {
-  if (
-    pathname === "/api/brain/deployment-release-authorize" ||
-    pathname === "/api/brain/release-passkey" ||
-    pathname === "/api/brain/owner-passkeys"
-  ) {
-    return "recovery";
-  }
-  if (pathname.startsWith("/api/brain/release-proof")) {
-    return "workflow";
-  }
-  return "discretionary";
-}
-
 interface BufferedOriginResponse {
   status: number;
   headers: [string, string][];
   body: ArrayBuffer;
 }
 
-const inFlightCacheable = new Map<string, Promise<BufferedOriginResponse>>();
+const inFlightCacheable = new Map<string, Promise<BufferedOriginResponse | null>>();
 
 export async function purgeCache(env: Env, paths: string[]) {
   const origin = new URL(env.HATCHABLE_CORE_ORIGIN);
@@ -83,6 +41,85 @@ export async function purgeCache(env: Env, paths: string[]) {
     results.push({ path: p, purged });
   }
   return results;
+}
+
+function attachStreamingReconcile(
+  res: Response,
+  env: Env,
+  ctx: ExecutionContext,
+  reservationId: string,
+  reservationDay: string | undefined,
+): Response {
+  const headerLen = parseContentLength(res.headers.get("Content-Length"));
+  if (headerLen !== null) {
+    ctx.waitUntil(
+      reconcileBandwidth(env, {
+        reservationId,
+        actualBytes: headerLen,
+        day: reservationDay,
+      }),
+    );
+    return res;
+  }
+  if (!res.body) {
+    ctx.waitUntil(
+      reconcileBandwidth(env, {
+        reservationId,
+        actualBytes: 0,
+        day: reservationDay,
+      }),
+    );
+    return res;
+  }
+
+  let streamedBytes = 0;
+  let settled = false;
+  const settle = (failed: boolean) => {
+    if (settled) return;
+    settled = true;
+    ctx.waitUntil(
+      reconcileBandwidth(env, {
+        reservationId,
+        actualBytes: streamedBytes,
+        day: reservationDay,
+        failed,
+      }),
+    );
+  };
+
+  const counter = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      streamedBytes += chunk.byteLength;
+      controller.enqueue(chunk);
+    },
+    flush() {
+      settle(false);
+    },
+  });
+
+  const countedBody = res.body.pipeThrough(counter);
+  // Monitor stream errors/cancellations without buffering in Worker memory.
+  const [clientStream, monitorStream] = countedBody.tee();
+  ctx.waitUntil(
+    (async () => {
+      const reader = monitorStream.getReader();
+      try {
+        while (true) {
+          const { done } = await reader.read();
+          if (done) break;
+        }
+        settle(false);
+      } catch {
+        settle(true);
+      }
+    })(),
+  );
+
+  return new Response(clientStream, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: new Headers(res.headers),
+  });
 }
 
 export async function proxyToOrigin(
@@ -99,7 +136,7 @@ export async function proxyToOrigin(
   const url = new URL(request.url);
   const origin = new URL(env.HATCHABLE_CORE_ORIGIN);
   const target = new URL(url.pathname + url.search, origin);
-  const cacheable = isCacheable(request);
+  const cacheable = isCacheableRequest(request);
   const normalizedTarget = cacheable ? normalizeCacheUrl(target.toString()) : target.toString();
   const cacheKey = new Request(normalizedTarget, { method: "GET" });
 
@@ -111,10 +148,12 @@ export async function proxyToOrigin(
     if (pending) {
       try {
         const shared = await pending;
-        return new Response(shared.body.slice(0), {
-          status: shared.status,
-          headers: new Headers([...shared.headers, ["X-Ultron-Cache", "COALESCED"]]),
-        });
+        if (shared) {
+          return new Response(shared.body.slice(0), {
+            status: shared.status,
+            headers: new Headers([...shared.headers, ["X-Ultron-Cache", "COALESCED"]]),
+          });
+        }
       } catch {
         return new Response(JSON.stringify({ error: "origin_unreachable" }), {
           status: 502,
@@ -130,10 +169,10 @@ export async function proxyToOrigin(
 
   if (env.RATE_LIMITER) {
     reservationId = `proxy-${crypto.randomUUID()}`;
-    const contentLength = Number(request.headers.get("Content-Length") ?? "0");
+    const reqLen = parseContentLength(request.headers.get("Content-Length"));
     const estimatedBytes =
-      Number.isSafeInteger(contentLength) && contentLength > 0
-        ? Math.min(contentLength + 65_536, 10_000_000)
+      reqLen !== null && reqLen > 0
+        ? Math.min(reqLen + 65_536, 10_000_000)
         : UNKNOWN_LENGTH_ESTIMATE_BYTES;
     const admission = await reserveBandwidth(env, {
       reservationId,
@@ -198,38 +237,8 @@ export async function proxyToOrigin(
       ctx.waitUntil(bandwidthCommand(env, { kind: "quota-hold", day: reservationDay }));
     }
 
-    const headerLen = Number(res.headers.get("Content-Length") ?? "");
     if (env.RATE_LIMITER && reservationId) {
-      if (Number.isSafeInteger(headerLen) && headerLen >= 0) {
-        ctx.waitUntil(
-          reconcileBandwidth(env, {
-            reservationId,
-            actualBytes: headerLen,
-            day: reservationDay,
-          }),
-        );
-      } else {
-        const clone = res.clone();
-        ctx.waitUntil(
-          clone
-            .arrayBuffer()
-            .then((buf) =>
-              reconcileBandwidth(env, {
-                reservationId: reservationId!,
-                actualBytes: buf.byteLength,
-                day: reservationDay,
-              }),
-            )
-            .catch(() =>
-              reconcileBandwidth(env, {
-                reservationId: reservationId!,
-                actualBytes: 0,
-                day: reservationDay,
-                failed: true,
-              }),
-            ),
-        );
-      }
+      res = attachStreamingReconcile(res, env, ctx, reservationId, reservationDay);
     }
 
     if (warning) {
@@ -239,29 +248,96 @@ export async function proxyToOrigin(
   };
 
   if (cacheable) {
-    const sharedPromise = (async (): Promise<BufferedOriginResponse> => {
-      const res = await doFetch();
-      const body = await res.arrayBuffer();
-      const respHeaders = [...res.headers.entries()] as [string, string][];
-      if (cacheableResponse(res)) {
-        const toCache = new Response(body.slice(0), {
-          status: res.status,
-          headers: new Headers(respHeaders),
-        });
-        toCache.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");
-        ctx.waitUntil(caches.default.put(cacheKey, toCache));
-      }
-      return { status: res.status, headers: respHeaders, body };
-    })();
-
+    let resolveCoalesce!: (v: BufferedOriginResponse | null) => void;
+    let rejectCoalesce!: (e: unknown) => void;
+    const sharedPromise = new Promise<BufferedOriginResponse | null>((resolve, reject) => {
+      resolveCoalesce = resolve;
+      rejectCoalesce = reject;
+    });
     inFlightCacheable.set(normalizedTarget, sharedPromise);
+
     try {
-      const shared = await sharedPromise;
-      return new Response(shared.body.slice(0), {
-        status: shared.status,
-        headers: new Headers([...shared.headers, ["X-Ultron-Cache", "MISS"]]),
+      const res = await doFetch();
+      const declaredLen = parseContentLength(res.headers.get("Content-Length"));
+      if (
+        !cacheableResponse(res) ||
+        (declaredLen !== null && declaredLen > MAX_CACHE_BUFFER_BYTES)
+      ) {
+        resolveCoalesce(null);
+        return withHeader(res, "X-Ultron-Cache", "BYPASS");
+      }
+
+      // Bounded read up to MAX_CACHE_BUFFER_BYTES; skip caching if chunked response exceeds cap.
+      const reader = res.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      let overflow = false;
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            total += value.byteLength;
+            chunks.push(value);
+            if (total > MAX_CACHE_BUFFER_BYTES) {
+              overflow = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (overflow) {
+        resolveCoalesce(null);
+        // Reassemble read prefix + remaining stream without buffering further.
+        const remainder = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const c of chunks) controller.enqueue(c);
+          },
+          async pull(controller) {
+            if (!reader) {
+              controller.close();
+              return;
+            }
+            const { done, value } = await reader.read();
+            if (done) controller.close();
+            else if (value) controller.enqueue(value);
+          },
+          cancel() {
+            return reader?.cancel();
+          },
+        });
+        return new Response(remainder, {
+          status: res.status,
+          headers: new Headers([...res.headers.entries(), ["X-Ultron-Cache", "BYPASS"]]),
+        });
+      }
+
+      const buf = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        buf.set(c, offset);
+        offset += c.byteLength;
+      }
+      const respHeaders = [...res.headers.entries()] as [string, string][];
+      const buffered: BufferedOriginResponse = {
+        status: res.status,
+        headers: respHeaders,
+        body: buf.buffer,
+      };
+      const toCache = new Response(buffered.body.slice(0), {
+        status: buffered.status,
+        headers: new Headers(buffered.headers),
       });
-    } catch {
+      toCache.headers.set("Cache-Control", "public, max-age=60, s-maxage=300");
+      ctx.waitUntil(caches.default.put(cacheKey, toCache));
+      resolveCoalesce(buffered);
+      return new Response(buffered.body.slice(0), {
+        status: buffered.status,
+        headers: new Headers([...buffered.headers, ["X-Ultron-Cache", "MISS"]]),
+      });
+    } catch (err) {
+      rejectCoalesce(err);
       return new Response(JSON.stringify({ error: "origin_unreachable" }), {
         status: 502,
         headers: { "Content-Type": "application/json" },

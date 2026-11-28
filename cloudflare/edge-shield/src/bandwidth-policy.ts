@@ -4,8 +4,10 @@ export const WARN_BYTES = 350_000_000;
 export const LIMIT_BYTES = 500_000_000;
 export const DEFAULT_RESERVATION_BYTES = 2_000_000;
 export const UNKNOWN_LENGTH_ESTIMATE_BYTES = 512_000;
+export const MAX_CACHE_BUFFER_BYTES = 1_048_576;
 const DAILY_CHECKS = 24;
-const RESERVATION_TTL_MS = 300_000;
+export const RESERVATION_TTL_MS = 15 * 60_000;
+const MAX_TRACKED_IDS = 200;
 
 export type BandwidthPathClass = 'discretionary' | 'workflow' | 'recovery';
 
@@ -25,6 +27,8 @@ export type BandwidthState = {
   lastAdmittedAt: number | null;
   quotaHold: boolean;
   reservations?: Record<string, BandwidthReservation>;
+  expiredIds?: string[];
+  settledIds?: string[];
 };
 
 export type BandwidthAction =
@@ -45,6 +49,11 @@ export type BandwidthAction =
       failed?: boolean;
     };
 
+function pushBounded(list: string[], id: string): string[] {
+  const next = list.includes(id) ? list : [...list, id];
+  return next.length > MAX_TRACKED_IDS ? next.slice(next.length - MAX_TRACKED_IDS) : next;
+}
+
 function recomputeEstimated(s: BandwidthState): number {
   const committed = s.committedBytes ?? s.estimatedBytes;
   const reserved = s.reservedBytes ?? 0;
@@ -55,12 +64,15 @@ function pruneExpiredReservations(s: BandwidthState, now: number) {
   const reservations = s.reservations;
   if (!reservations) return;
   let released = 0;
+  let expiredIds = s.expiredIds ?? [];
   for (const [id, entry] of Object.entries(reservations)) {
     if (!entry || now - entry.createdAt > RESERVATION_TTL_MS) {
       released += entry?.bytes ?? 0;
       delete reservations[id];
+      expiredIds = pushBounded(expiredIds, id);
     }
   }
+  s.expiredIds = expiredIds;
   if (released > 0) {
     s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - released);
     s.estimatedBytes = recomputeEstimated(s);
@@ -80,6 +92,8 @@ export function applyBandwidthAction(
           committedBytes: previous.committedBytes ?? previous.estimatedBytes,
           reservedBytes: previous.reservedBytes ?? 0,
           reservations: previous.reservations ? { ...previous.reservations } : {},
+          expiredIds: previous.expiredIds ? [...previous.expiredIds] : [],
+          settledIds: previous.settledIds ? [...previous.settledIds] : [],
         }
       : {
           day,
@@ -91,6 +105,8 @@ export function applyBandwidthAction(
           lastAdmittedAt: null,
           quotaHold: false,
           reservations: {},
+          expiredIds: [],
+          settledIds: [],
         };
 
   pruneExpiredReservations(s, now);
@@ -135,7 +151,10 @@ export function applyBandwidthAction(
     ) {
       accepted = false;
       reason = 'invalid-reservation-request';
-    } else if (s.reservations && s.reservations[action.reservationId]) {
+    } else if (
+      (s.reservations && s.reservations[action.reservationId]) ||
+      s.settledIds?.includes(action.reservationId)
+    ) {
       accepted = false;
       reason = 'duplicate-reservation';
     } else if (s.quotaHold) {
@@ -158,28 +177,48 @@ export function applyBandwidthAction(
       s.estimatedBytes = recomputeEstimated(s);
     }
   } else if (action.kind === 'reconcile') {
-    const existing = s.reservations?.[action.reservationId];
     if (
       !action.reservationId ||
       !Number.isSafeInteger(action.actualBytes) ||
-      action.actualBytes < 0 ||
-      !existing
+      action.actualBytes < 0
     ) {
       accepted = false;
       reason = 'unknown-or-invalid-reconciliation';
-    } else if (action.day && action.day !== day) {
-      delete s.reservations![action.reservationId];
-      s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - existing.bytes);
-      s.estimatedBytes = recomputeEstimated(s);
+    } else if (s.settledIds?.includes(action.reservationId)) {
       accepted = false;
-      reason = 'stale-day-reservation-released';
+      reason = 'already-reconciled';
     } else {
-      delete s.reservations![action.reservationId];
-      s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - existing.bytes);
-      s.committedBytes = (s.committedBytes ?? 0) + action.actualBytes;
-      s.estimatedBytes = recomputeEstimated(s);
-      allowed = true;
-      reason = action.failed ? 'reconciled-failed' : 'reconciled';
+      const existing = s.reservations?.[action.reservationId];
+      const wasExpired = s.expiredIds?.includes(action.reservationId) ?? false;
+      if (!existing && !wasExpired) {
+        accepted = false;
+        reason = 'unknown-or-invalid-reconciliation';
+      } else if (action.day && action.day !== day) {
+        if (existing) {
+          delete s.reservations![action.reservationId];
+          s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - existing.bytes);
+          s.estimatedBytes = recomputeEstimated(s);
+        }
+        s.expiredIds = (s.expiredIds ?? []).filter((id) => id !== action.reservationId);
+        s.settledIds = pushBounded(s.settledIds ?? [], action.reservationId);
+        accepted = false;
+        reason = 'stale-day-reservation-released';
+      } else if (existing) {
+        delete s.reservations![action.reservationId];
+        s.reservedBytes = Math.max(0, (s.reservedBytes ?? 0) - existing.bytes);
+        s.committedBytes = (s.committedBytes ?? 0) + action.actualBytes;
+        s.estimatedBytes = recomputeEstimated(s);
+        s.settledIds = pushBounded(s.settledIds ?? [], action.reservationId);
+        allowed = true;
+        reason = action.failed ? 'reconciled-failed' : 'reconciled';
+      } else {
+        s.expiredIds = (s.expiredIds ?? []).filter((id) => id !== action.reservationId);
+        s.committedBytes = (s.committedBytes ?? 0) + action.actualBytes;
+        s.estimatedBytes = recomputeEstimated(s);
+        s.settledIds = pushBounded(s.settledIds ?? [], action.reservationId);
+        allowed = true;
+        reason = 'late-reconciled';
+      }
     }
   } else if (action.kind === 'admit') {
     const pace =
@@ -234,6 +273,14 @@ export function applyBandwidthAction(
       ).toISOString(),
     },
   };
+}
+
+export function parseContentLength(headerVal: string | null): number | null {
+  if (headerVal === null) return null;
+  const trimmed = headerVal.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
 }
 
 const CACHEABLE_PATHS: RegExp[] = [

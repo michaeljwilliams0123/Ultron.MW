@@ -6,6 +6,8 @@ import {
   isCacheableRequest,
   LIMIT_BYTES,
   normalizeCacheUrl,
+  parseContentLength,
+  RESERVATION_TTL_MS,
   TARGET_BYTES,
   WARN_BYTES,
 } from '../cloudflare/edge-shield/src/bandwidth-policy.ts';
@@ -182,22 +184,78 @@ test('atomic reserve and reconcile prevents concurrent oversubscription and rele
   assert.equal(r2After.result.allowed, true);
 });
 
-test('failed or aborted request reconciliation releases full reserved bytes with zero committed', () => {
+test('partial or cancelled transfer charges streamed bytes and idempotent duplicate reconcile is rejected', () => {
   const r1 = applyBandwidthAction(
     null,
-    { kind: 'reserve', reservationId: 'abort-1', bytes: 512_000, pathClass: 'discretionary' },
+    { kind: 'reserve', reservationId: 'partial-1', bytes: 512_000, pathClass: 'discretionary' },
     DAY_MS,
   );
-  assert.equal(r1.result.reservedBytes, 512_000);
   const rec = applyBandwidthAction(
     r1.state,
-    { kind: 'reconcile', reservationId: 'abort-1', actualBytes: 0, day: '2026-11-27', failed: true },
+    { kind: 'reconcile', reservationId: 'partial-1', actualBytes: 128_000, day: '2026-11-27', failed: true },
     DAY_MS + 500,
   );
   assert.equal(rec.result.accepted, true);
   assert.equal(rec.result.reason, 'reconciled-failed');
   assert.equal(rec.result.reservedBytes, 0);
-  assert.equal(rec.result.estimatedBytes, 0);
+  assert.equal(rec.result.estimatedBytes, 128_000);
+
+  const dupRec = applyBandwidthAction(
+    rec.state,
+    { kind: 'reconcile', reservationId: 'partial-1', actualBytes: 128_000, day: '2026-11-27' },
+    DAY_MS + 600,
+  );
+  assert.equal(dupRec.result.accepted, false);
+  assert.equal(dupRec.result.reason, 'already-reconciled');
+  assert.equal(dupRec.result.estimatedBytes, 128_000);
+});
+
+test('late reconciliation after TTL expiry still commits actual bytes once and handles midnight rollover', () => {
+  const r1 = applyBandwidthAction(
+    null,
+    { kind: 'reserve', reservationId: 'long-1', bytes: 512_000, pathClass: 'discretionary' },
+    DAY_MS,
+  );
+  // After TTL expires, reservedBytes is released, but expiredId is tracked for late settlement
+  const statusAfterExpiry = applyBandwidthAction(
+    r1.state,
+    { kind: 'status' },
+    DAY_MS + RESERVATION_TTL_MS + 1000,
+  );
+  assert.equal(statusAfterExpiry.result.reservedBytes, 0);
+
+  const late = applyBandwidthAction(
+    statusAfterExpiry.state,
+    { kind: 'reconcile', reservationId: 'long-1', actualBytes: 250_000, day: '2026-11-27' },
+    DAY_MS + RESERVATION_TTL_MS + 2000,
+  );
+  assert.equal(late.result.accepted, true);
+  assert.equal(late.result.reason, 'late-reconciled');
+  assert.equal(late.result.estimatedBytes, 250_000);
+
+  // Midnight rollover: prior-day reservation cannot pollute the new UTC day
+  const beforeMidnight = applyBandwidthAction(
+    null,
+    { kind: 'reserve', reservationId: 'roll-1', bytes: 512_000, pathClass: 'discretionary' },
+    Date.parse('2026-11-27T23:59:50Z'),
+  );
+  const afterMidnight = applyBandwidthAction(
+    beforeMidnight.state,
+    { kind: 'reconcile', reservationId: 'roll-1', actualBytes: 400_000, day: '2026-11-27' },
+    Date.parse('2026-11-28T00:00:05Z'),
+  );
+  assert.equal(afterMidnight.result.day, '2026-11-28');
+  assert.equal(afterMidnight.result.estimatedBytes, 0);
+});
+
+test('parseContentLength distinguishes missing/invalid headers from explicit zero', () => {
+  assert.equal(parseContentLength(null), null);
+  assert.equal(parseContentLength(''), null);
+  assert.equal(parseContentLength('   '), null);
+  assert.equal(parseContentLength('abc'), null);
+  assert.equal(parseContentLength('-5'), null);
+  assert.equal(parseContentLength('0'), 0);
+  assert.equal(parseContentLength(' 4096 '), 4096);
 });
 
 test('recovery path can use bounded headroom below 500 MB while discretionary stops at 400 MB', () => {
