@@ -122,14 +122,16 @@ test('owner-admin secret, deployment and repository writes stay structured',asyn
     return{ok:true,status:204,json:async()=>({})};
   };
   assert.equal((await executeMemberAction(actor,'tok',{op:'secret.put',name:'DEPLOY_TOKEN',
-    encryptedValue:'A'.repeat(32),keyId:'123'},{number:1},{fetchImpl})).status,'done');
+    encryptedValue:'A'.repeat(32),keyId:'123'},{number:1},{fetchImpl})).reason,'secret-effect-verification-unavailable');
   assert.equal((await executeMemberAction(actor,'tok',{op:'deployment.create',ref:'main',
-    environment:'production'},{number:1},{fetchImpl})).status,'done');
+    environment:'production'},{number:1},{fetchImpl})).reason,'deployment-source-unverified');
+  assert.equal((await executeMemberAction(actor,'tok',{op:'deployment.create',ref:SHA,
+    environment:'production'},{number:1},{fetchImpl})).reason,'deployment-release-proof-unavailable');
+  assert.equal(calls.length,0,'unverified privileged actions must not reach GitHub');
   assert.equal((await executeMemberAction(actor,'tok',{op:'repo.settings.update',
     settings:{allow_auto_merge:true,visibility:'public'}},{number:1},{fetchImpl})).status,'done');
-  assert.deepEqual(calls[0].body,{encrypted_value:'A'.repeat(32),key_id:'123'});
-  assert.equal(calls[1].body.auto_merge,false);
-  assert.deepEqual(calls[2].body,{allow_auto_merge:true});
+  assert.equal(calls.length,1);
+  assert.deepEqual(calls[0].body,{allow_auto_merge:true});
   await assert.rejects(()=>executeMemberAction(actor,'tok',{op:'secret.put',name:'DEPLOY_TOKEN',
     encryptedValue:'plaintext',keyId:'123'},{number:1},{fetchImpl}),
     /council-secret-ciphertext-invalid/);

@@ -293,8 +293,27 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
       })};break;
     case 'review.request-changes':
       effect={path:'/pulls/'+n+'/reviews',data:await call('POST','/pulls/'+n+'/reviews',{event:'REQUEST_CHANGES',body:signed+text+marker})};break;
-    case 'review.approve':
-      effect={path:'/pulls/'+n+'/reviews',data:await call('POST','/pulls/'+n+'/reviews',{event:'APPROVE',body:signed+text+marker})};break;
+    case 'review.approve':{
+      // The caller's claimed PR author is not authoritative. Fetch the exact
+      // target with the same installation token before any approval write.
+      if(!Number.isSafeInteger(n)||n<1)return{op:action.op,status:'denied',reason:'review-target-unverified'};
+      let pull;
+      try{pull=await call('GET','/pulls/'+n);}catch{return{op:action.op,status:'denied',reason:'review-target-unverified'};}
+      const canonicalRepo=r=>r?.id===1424939667&&r?.full_name===REPO;
+      if(pull?.number!==n||pull.state!=='open'||pull.draft!==false||
+         pull.head?.sha!==actor.sourceSha||pull.base?.ref!=='main'||
+         !canonicalRepo(pull.head?.repo)||!canonicalRepo(pull.base?.repo)||
+         typeof pull.user?.login!=='string'||!pull.user.login.trim()||
+         !Number.isSafeInteger(pull.user.id)||pull.user.id<1||
+         !['User','Bot'].includes(pull.user.type))
+        return{op:action.op,status:'denied',reason:'review-target-unverified'};
+      const verified=decideCouncilAction(actor,{operation:action.op,baseSha:actor.sourceSha,
+        maxPaidCents:0,attempt:1,prAuthor:pull.user.login});
+      if(!verified.allowed)return{op:action.op,status:'denied',reason:verified.reason};
+      if(target.prAuthor&&target.prAuthor!==pull.user.login)
+        return{op:action.op,status:'denied',reason:'review-author-changed'};
+      effect={path:'/pulls/'+n+'/reviews',data:await call('POST','/pulls/'+n+'/reviews',{
+        event:'APPROVE',commit_id:actor.sourceSha,body:signed+text+marker})};break;}
     case 'issue.label':
       await call('POST','/issues/'+n+'/labels',{labels:action.labels||[]});break;
     case 'issue.assign':
@@ -310,7 +329,9 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
         body:signed+text+marker,draft:true});
       effect={path:'/issues',data:{...created,id:created.number}};break;}
     case 'pr.merge':
-      await call('PUT','/pulls/'+n+'/merge',{merge_method:'squash'});break;
+      // Merge requires the separate protected, exact-head owner release path.
+      // This generic executor has no durable exact-effect receipt for merges.
+      return{op:action.op,status:'denied',reason:'merge-exact-head-receipt-unavailable'};
     case 'branch.create':{
       const ref=await call('GET','/git/ref/heads/main');
       await call('POST','/git/refs',{ref:'refs/heads/'+action.branch,sha:ref.object.sha});break;}
@@ -334,16 +355,20 @@ export async function executeMemberAction(actor,token,action,target,{fetchImpl=f
       if(!/^[A-Z][A-Z0-9_]{0,99}$/i.test(name)||
          !/^[A-Za-z0-9+/=]{32,10000}$/.test(encrypted)||!/^\d+$/.test(keyId))
         throw Error('council-secret-ciphertext-invalid');
-      await call('PUT','/actions/secrets/'+name,{encrypted_value:encrypted,key_id:keyId});break;}
+      // Metadata cannot attest the actual stored ciphertext/value. Do not write
+      // through an executor that cannot verify the exact secret effect.
+      return{op:action.op,status:'denied',reason:'secret-effect-verification-unavailable'};}
     case 'secret.delete':{
       const name=String(action.name||'');
       if(!/^[A-Z][A-Z0-9_]{0,99}$/i.test(name))throw Error('council-secret-name-invalid');
-      await call('DELETE','/actions/secrets/'+name);break;}
+      return{op:action.op,status:'denied',reason:'secret-effect-verification-unavailable'};}
     case 'deployment.create':{
       const environment=String(action.environment||'').slice(0,100);
       if(!/^[A-Za-z0-9_.-]+$/.test(environment))throw Error('council-environment-invalid');
-      await call('POST','/deployments',{ref:action.ref,environment,
-        auto_merge:false,required_contexts:[],transient_environment:Boolean(action.transient)});break;}
+      if(action.ref!==actor.sourceSha)return{op:action.op,status:'denied',reason:'deployment-source-unverified'};
+      // An immutable SHA alone is not deployment authorization. Use the
+      // existing release pathway; never clear required deployment contexts.
+      return{op:action.op,status:'denied',reason:'deployment-release-proof-unavailable'};}
     case 'repo.settings.update':{
       const allowed=['allow_squash_merge','allow_merge_commit','allow_rebase_merge',
         'allow_auto_merge','delete_branch_on_merge','has_issues','has_projects','has_wiki'];
