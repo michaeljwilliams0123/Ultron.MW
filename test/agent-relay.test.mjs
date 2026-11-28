@@ -59,3 +59,12 @@ test('lease expiration during storage delay is rejected at the atomic update',as
  assert.equal(result.status,409);
  assert.equal(db.prepare('SELECT status FROM agent_relay_v2_events WHERE message_id=?').get(event.message_id).status,'CLAIMED');
 });
+test('SQLite rejects same-agent sender/recipient and invalid status at the schema boundary',()=>{
+ const {db}=setup();
+ const insert=db.prepare("INSERT INTO agent_relay_v2_events(message_id,sender,recipient,event_type,created_at) VALUES(?,?,?,?,?)");
+ assert.throws(()=>insert.run('self-001','ChatGPT','ChatGPT','canary',Date.now()),/CHECK constraint failed/);
+ assert.throws(()=>insert.run('self-002','Gemini','Gemini','canary',Date.now()),/CHECK constraint failed/);
+ insert.run('valid-001','ChatGPT','Gemini','canary',Date.now());
+ assert.throws(()=>db.prepare('UPDATE agent_relay_v2_events SET status=? WHERE message_id=?').run('INJECTED','valid-001'),/CHECK constraint failed/);
+ assert.equal(db.prepare('SELECT status FROM agent_relay_v2_events WHERE message_id=?').get('valid-001').status,'RECEIVED');
+});
