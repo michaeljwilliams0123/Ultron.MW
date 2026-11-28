@@ -74,7 +74,7 @@ const SECRET_LIKE = /(?:sk-[a-zA-Z0-9]{16,}|gh[opusr]_[A-Za-z0-9_]{20,}|glpat-[A
 const routine = (kind, value, prompt) => ({ kind, [kind === 'cron' ? 'schedule' : 'on']: value, prompt });
 const profile = (role, name, description, primaryLane, secondaryLanes, skills, routines) => ({
   id: 'ultron-' + role.toLowerCase(), role, name, description, primaryLane, secondaryLanes,
-  skills, routines, memoryNamespace: 'council/' + role.toLowerCase(),
+  skills: [...skills, 'matt-engineering'], routines, memoryNamespace: 'council/' + role.toLowerCase(),
   tools: role === 'Core' ? [] : [...COUNCIL_ABILITIES[role].internal, ...COUNCIL_ABILITIES[role].external],
 });
 

@@ -46,7 +46,9 @@ test('a profile can never widen a role beyond its admitted tools or claim owner-
 
 test('skills come only from integrity-verified Git hubs and map to members', async () => {
   const skills = await loadCouncilSkills(root);
-  assert.deepEqual(Object.keys(skills).sort(), ['continual-improvement', 'repo-review']);
+  assert.deepEqual(Object.keys(skills).sort(), ['continual-improvement', 'matt-engineering', 'repo-review']);
+  assert.deepEqual(skills['matt-engineering'].members, COUNCIL_ROSTER.map(m=>m.id));
+  assert.equal(COUNCIL_ROSTER[0].tools.length,0);
   assert.ok(skills['repo-review'].members.includes('ultron-builder'));
   assert.ok(skills['continual-improvement'].members.includes('ultron-predictor'));
   assert.match(skills['repo-review'].sha256, /^[a-f0-9]{64}$/);
