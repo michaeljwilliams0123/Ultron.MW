@@ -213,3 +213,53 @@ body.ultron-ui.u-council.ultron-chat-ready .ultron-composer-reopen{
  }
  body.ultron-ui.u-council.ultron-chat-ready .ultron-composer-reopen{margin-right:5px!important}
 }
+
+/* Conversation command surface: maintain existing controls, prioritize reading. */
+body.ultron-ui.u-council.ultron-chat-ready{
+ --u-paper:#f5f6f3;--u-ink:#162c29;--u-muted:#506660;--u-accent:#13685c;
+ --u-line:#dce4df;--u-side:#172d29;
+}
+body.ultron-ui.u-council.ultron-chat-ready .conversation-head{
+ padding-top:clamp(16px,3vh,32px)!important;
+}
+body.ultron-ui.u-council.ultron-chat-ready .conversation-head h2{
+ font-size:clamp(25px,3vw,34px)!important;letter-spacing:-.045em;
+}
+body.ultron-ui.u-council.ultron-chat-ready .conversation-head p:not(.overline){
+ color:var(--u-muted);font-size:13px;max-width:60ch;
+}
+body.ultron-ui.u-council.ultron-chat-ready .room-status{color:var(--u-muted)}
+body.ultron-ui.u-council.ultron-chat-ready .ultron-chat-toolbar{
+ border-bottom:1px solid var(--u-line);margin:0 12px; padding:8px 0 12px;
+}
+body.ultron-ui.u-council.ultron-chat-ready .ultron-chat-toolbar .ultron-chat-chip{
+ border-radius:8px!important;box-shadow:none!important;min-height:44px;
+}
+body.ultron-ui.u-council.ultron-chat-ready .ultron-chat-toolbar .ultron-chat-chip[aria-haspopup=dialog]{
+ background:#e5f1eb!important;color:#165c50!important;border-color:#bfd8cb!important;
+}
+body.ultron-ui.u-council.ultron-chat-ready .message .bubble{
+ border-color:transparent!important;box-shadow:none!important;background:transparent!important;
+}
+body.ultron-ui.u-council.ultron-chat-ready .message.owner .bubble{
+ background:#e4efe8!important;border-color:#d0e1d6!important;
+}
+body.ultron-ui.u-council.ultron-chat-ready .message .bubble p{font-size:14px!important;line-height:1.72!important}
+body.ultron-ui.u-council.ultron-chat-ready .composer{border-radius:14px!important;box-shadow:0 3px 14px #172d2910!important}
+body.ultron-ui.u-council .ultron-authority{max-width:680px;margin:0 auto;padding:clamp(8px,2vw,24px)}
+body.ultron-ui.u-council .ultron-authority-kicker{font:500 11px/1.5 'IBM Plex Mono',monospace;letter-spacing:.1em;color:#506660}
+body.ultron-ui.u-council .ultron-authority h3{font-size:clamp(24px,4vw,34px);line-height:1.2;margin:10px 0}
+body.ultron-ui.u-council .ultron-authority-intro{font-size:14px;line-height:1.7;color:#435b53}
+body.ultron-ui.u-council .ultron-authority-status{margin:22px 0;padding:12px 14px;border-left:3px solid #9a7133;background:#f6eedc;color:#654b22;font-size:13px}
+body.ultron-ui.u-council .ultron-authority-steps{margin:0}
+body.ultron-ui.u-council .ultron-authority-steps>div{display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,2fr);gap:16px;padding:16px 0;border-bottom:1px solid var(--u-line)}
+body.ultron-ui.u-council .ultron-authority-steps dt{font-weight:750;color:var(--u-ink)}
+body.ultron-ui.u-council .ultron-authority-steps dd{margin:0;color:#435b53;font-size:13px;line-height:1.6}
+body.ultron-ui.u-council .ultron-authority-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+body.ultron-ui.u-council .ultron-authority-links a{display:inline-flex;align-items:center;min-height:44px;padding:8px 12px;border:1px solid #bfd8cb;border-radius:8px;text-decoration:none;font-weight:650;font-size:12px;color:#165c50}
+body.ultron-ui.u-council .ultron-authority-links a:hover{background:#e5f1eb}
+@media(max-width:480px){
+ body.ultron-ui.u-council .ultron-authority-steps>div{grid-template-columns:1fr;gap:4px}
+ body.ultron-ui.u-council.ultron-chat-ready .conversation-head p:not(.overline){font-size:12px}
+ body.ultron-ui.u-council.ultron-chat-ready .message .bubble p{font-size:13px!important}
+}

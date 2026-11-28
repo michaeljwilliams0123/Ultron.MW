@@ -13,6 +13,19 @@ const open=d=>{if(!d.open)d.showModal();};
 const activity=modal('activity','Activity');
 const settings=modal('settings','Capabilities & settings');
 const action=modal('action','Ultron action');
+const authority=modal('browser-authority','Browser authority');
+const authorityView=el('section','ultron-authority');
+authorityView.append(el('p','ultron-authority-kicker','ULTRON / EXECUTION'),el('h3','','Your browser. Ultron?s execution.'),el('p','ultron-authority-intro','The intended browser execution authority is Ultron?s native host, not ChatGPT or GitHub Actions. This view does not establish a connection or grant access.'));
+const authorityStatus=el('p','ultron-authority-status','Independent browser execution: not verified in this view.');
+authorityStatus.setAttribute('role','status');authorityView.append(authorityStatus);
+const authoritySteps=el('dl','ultron-authority-steps');
+for(const [name,description] of [['Device & session','Requires independently verified device identity and authorized browser pairing.'],['Browser access','Use approved browser and site permissions. No session credentials are copied.'],['Execution & receipts','Ultron must dispatch the task and independently verify the result.'],['Release infrastructure','GitHub remains source and CI; it is not the browser execution authority.']]){
+ const item=el('div','');item.append(el('dt','',name),el('dd','',description));authoritySteps.append(item);
+}
+authorityView.append(authoritySteps);
+const authorityLinks=el('div','ultron-authority-links');
+for(const [title,href] of [['Review owner access','/passkey-owner.html'],['Manage provider connections','/connectors.html'],['View monitoring','/monitoring.html']]){const a=el('a','',title);a.href=href;authorityLinks.append(a);}
+authorityView.append(authorityLinks);authority.content.append(authorityView);
 const activePanel=document.querySelector('.activity-panel');
 if(activePanel)activity.content.append(activePanel);
 const links=el('div','ultron-settings-links');
@@ -28,7 +41,7 @@ if(issue)settings.content.append(issue);
 if(desk)settings.content.append(desk);
 const heading=$('room-title');if(heading)heading.textContent='Ultron';
 const intro=document.querySelector('.conversation-head p:not(.overline)');
-if(intro)intro.textContent='Ask, authorize, execute, verify. One conversation, all your capabilities.';
+if(intro)intro.textContent='Give Ultron an objective. Review authorization and verified execution here.';
 const overline=document.querySelector('.conversation-head .overline');if(overline)overline.textContent='YOUR OPERATIONAL ASSISTANT';
 const top=document.querySelector('.conversation-head');
 const bar=el('nav','ultron-chat-toolbar');bar.setAttribute('aria-label','Chat actions');
@@ -39,6 +52,8 @@ makeButton('Sign canary',()=>askPr('canary'));
 makeButton('Squash merge',()=>askPr('merge'));
 makeButton('Connect',()=>showAction({kind:'connection',provider:'github',requiresOwnerAuthorization:true}));
 makeButton('Release status',()=>showAction({kind:'release',requiresOwnerAuthorization:false}));
+const authorityButton=makeButton('Browser authority',()=>open(authority.dialog));
+authorityButton.setAttribute('aria-haspopup','dialog');authorityButton.setAttribute('aria-controls',authority.dialog.id);
 if(top)top.insertAdjacentElement('afterend',bar);
 const nav=el('nav','ultron-chat-tabs');nav.setAttribute('aria-label','Workspace sections');
 const navButton=(label,handler)=>{

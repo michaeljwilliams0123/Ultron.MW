@@ -2,17 +2,20 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { Env, ReleaseProofParams } from "../lib";
 import { purgeCache } from "../proxy";
-import { readCanonicalReleaseProof } from "../release-readback";
+import { readReleaseProofForWorkflow } from "../release-readback";
 import { shouldWakeAuthorization, dispatchReleaseAuthorization } from "../release-authorization";
 
 export class ReleaseProofWorkflow extends WorkflowEntrypoint<Env, ReleaseProofParams> {
   async run(event: WorkflowEvent<ReleaseProofParams>, step: WorkflowStep) {
     const p = event.payload;
     if (p.repo && p.repo !== this.env.GITHUB_REPO) return { status: "wrong-repository" };
-    const proof = await step.do("canonical-release-readback", {
+    const observation = await step.do("canonical-release-readback", {
       retries: { limit: 3, delay: "10 seconds", backoff: "exponential" },
       timeout: "2 minutes",
-    }, () => readCanonicalReleaseProof({origin:this.env.HATCHABLE_CORE_ORIGIN,secret:this.env.ORIGIN_LOCK_SECRET}));
+    }, () => readReleaseProofForWorkflow({origin:this.env.HATCHABLE_CORE_ORIGIN,secret:this.env.ORIGIN_LOCK_SECRET}));
+    // No retries or downstream actions for quota/authority denial; no cached proof.
+    if (observation.status === "held") return observation;
+    const proof = observation.proof;
     if (!proof.verified) {
       if (p.mode === "watch" && shouldWakeAuthorization(proof,p.sourceSha) && proof.commitSha) {
         const sourceSha=proof.commitSha;

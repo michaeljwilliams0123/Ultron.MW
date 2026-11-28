@@ -135,3 +135,56 @@ test('records nested caller-to-callee edges and propagated return taint', () => 
   assert.ok(result.ir.callGraph.some(edge => edge.caller === 'outer' && edge.callee === 'inner'));
   assert.ok(result.flows.some(flow => flow.sink === 'eval' && flow.sources.includes('req')));
 });
+
+test('models a literal-array pure callback and carries its result taint', () => {
+  assert.equal(scan('const values = [1,2].map(x => x+1);').status, 'no-known-flow');
+  const result = scan("import {exec} from 'node:child_process'; const values = [req.body.cmd].map(x => x); exec(values[0]);");
+  assert.equal(result.status, 'findings');
+  assert.ok(result.flows.some(flow => flow.sink === 'exec' && flow.sources.includes('req')));
+});
+
+test('unknown callback invocation stays unknown but its captured command flow is examined', () => {
+  assert.equal(scan('customInvoke(() => 1);').status, 'unknown');
+  const result = scan("import {exec} from 'node:child_process'; const command = req.body.cmd; customInvoke(() => exec(command));");
+  assert.equal(result.status, 'findings');
+  assert.ok(result.flows.some(flow => flow.sink === 'exec' && flow.sources.includes('req')));
+  assert.ok(result.unknowns.some(message => message.includes('Callback analysis incomplete')));
+});
+
+test('loop continue retains taint on the next iteration and does not clear labelled uncertainty', () => {
+  assert.equal(scan('for (const x of [1,2]) { if (x) continue; console.log(x); }').status, 'no-known-flow');
+  const result = scan("import {exec} from 'node:child_process'; let command='fixed'; for (const x of [1,2]) { exec(command); command=req.body.cmd; continue; }");
+  assert.equal(result.status, 'findings');
+  assert.ok(result.flows.some(flow => flow.sink === 'exec' && flow.sources.includes('req')));
+  assert.equal(scan('outer: for (const x of [1,2]) { continue outer; }').status, 'unknown');
+});
+
+test('unmodeled callback parameter and tainted loop item still reach command sinks', () => {
+  const callback = scan("import {exec} from 'node:child_process'; customInvoke(value => exec(value));");
+  assert.equal(callback.status, 'findings');
+  assert.ok(callback.flows.some(flow => flow.sources.includes('unknown-callback-input')));
+  const loop = scan("import {exec} from 'node:child_process'; for (const value of req.body.items) { exec(value); }");
+  assert.equal(loop.status, 'findings');
+  assert.ok(loop.flows.some(flow => flow.sources.includes('req')));
+  assert.equal(scan('external.map(x => x+1);').status,'unknown');
+});
+
+test('evaluation budget exhaustion returns uncertainty instead of throwing',()=>{
+ const source='function f(){'+'0;'.repeat(50)+'}'+'f();'.repeat(500);
+ const result=scan(source);
+ assert.equal(result.status,'unknown');
+ assert.ok(result.unknowns.some(message=>/budget exceeded/i.test(message)));
+ assert.equal(result.isSafe,false);
+});
+
+test('for-of iterable side effects happen before the first iteration, not every convergence pass',()=>{
+ const result=scan("import {exec} from 'node:child_process'; let command='fixed'; for(const value of (command='fixed',[1,2])) { exec(command); command=req.body.cmd; continue; }");
+ assert.equal(result.status,'findings');
+ assert.ok(result.flows.some(flow=>flow.sink==='exec'&&flow.sources.includes('req')));
+});
+
+test('do-while executes its body before a clearing test expression',()=>{
+ const result=scan("import {exec} from 'node:child_process'; let command=req.body.cmd; do { exec(command); continue; } while ((command='fixed',false));");
+ assert.equal(result.status,'findings');
+ assert.ok(result.flows.some(flow=>flow.sink==='exec'&&flow.sources.includes('req')));
+});
