@@ -1,0 +1,43 @@
+name: Antigravity isolated bootstrap canary
+on:
+  push:
+    branches: [canary/antigravity-bootstrap-20261128]
+    paths: ['.github/workflows/antigravity-bootstrap-canary.yml']
+permissions: {}
+concurrency:
+  group: antigravity-isolated-bootstrap-20261128
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    if: github.repository == 'michaeljwilliams0123/Ultron.MW' && github.actor_id == '308995719' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Verify pinned official Linux release without credentials or inference
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          export AGY_WORK="$work"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --max-time 120 --retry 1 \
+            'https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.18-6386224290725888/linux-x64/cli_linux_x64.tar.gz' \
+            --output "$work/agy.tar.gz"
+          printf '%s  %s\n' 'ef379ec869719112f696e8c7cfddf776618712e58fc38e53df80801d6528abb4677782c7c8778f9c09c9123fa44c2c32675d228c06f2a8f7a8f4214e75f5bb26' "$work/agy.tar.gz" | sha512sum --check
+          python3 - <<'PY'
+          import os, shutil, tarfile
+          from pathlib import Path
+          work = Path(os.environ["AGY_WORK"])
+          with tarfile.open(work / "agy.tar.gz", "r:gz") as archive:
+              members = [m for m in archive.getmembers() if m.isfile() and Path(m.name).name in {"agy", "cli_linux_x64"}]
+              if len(members) != 1:
+                  raise SystemExit("Expected exactly one regular CLI executable")
+              source = archive.extractfile(members[0])
+              with source, (work / "agy").open("wb") as target:
+                  shutil.copyfileobj(source, target)
+          (work / "agy").chmod(0o700)
+          PY
+          mkdir "$work/home"
+          version="$(timeout 30s env -i PATH=/usr/bin:/bin HOME="$work/home" "$work/agy" --version)"
+          test "$version" = '1.5.18'
+          printf 'CANARY_PASS: version=%s platform=linux-x64 sha512_verified=true credentials_supplied=false inference_invoked=false\n' "$version"
