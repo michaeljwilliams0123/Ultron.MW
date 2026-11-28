@@ -16,6 +16,23 @@ const discovery = ['ucp','oauth-authorization-server','api-catalog','http-messag
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const types = path => path.endsWith('.md') ? ['text/markdown'] : path.endsWith('.xml') ? ['application/xml','text/xml'] : path.endsWith('.html') ? ['text/html'] : ['text/plain'];
 
+// Bind the CLI to the repository containing this script, not an arbitrary cwd.
+export function assertCleanSource(expectedSha, root=fileURLToPath(new URL('../', import.meta.url))) {
+  const git = (...args) => execFileSync('git',['-C',root,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+  if (git('rev-parse','--is-inside-work-tree') !== 'true' || git('rev-parse','--show-prefix') !== '') throw Error('source-root-mismatch');
+  const sha = git('rev-parse','HEAD');
+  if (sha !== expectedSha) throw Error('source-mismatch');
+  if (git('status','--porcelain=v1','--untracked-files=all','--ignore-submodules=none')) throw Error('dirty-source');
+  return sha;
+}
+const evidenceHeaders = ['cache-control','x-robots-tag','vary','retry-after','x-content-type-options'];
+function selectEvidenceHeaders(headers) {
+  return Object.fromEntries(evidenceHeaders.flatMap(name => {
+    const value=headers.get(name);
+    return value===null?[]:[[name,value.slice(0,256)]];
+  }));
+}
+
 export function acceptancePlan() {
   const docs = {...buildAgentDocs(),'robots.txt':buildCrawlerPolicy()};
   return [
@@ -65,6 +82,7 @@ export async function runAgentAcceptance({target, budgetBytes, sourceSha, deploy
         signal:AbortSignal.timeout(8000),
       });
       check.status=response.status;
+      check.headers=selectEvidenceHeaders(response.headers);
       check.contentType=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
       if (response.status===429 || response.status>=500 || ([401,403].includes(response.status)&&item.kind!=='protected')) {
         await response.body?.cancel();
@@ -101,10 +119,10 @@ if (process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)
     const fields=['--target','--budget-bytes','--source-sha','--deployment'];
     if(argv.length!==8||new Set(argv.filter((_,i)=>i%2===0)).size!==4||argv.filter((_,i)=>i%2===0).some(k=>!fields.includes(k)))throw Error('required: --target origin|edge --budget-bytes N --source-sha SHA --deployment VERSION');
     const args=Object.fromEntries(fields.map(k=>[k,argv[argv.indexOf(k)+1]]));
-    const sha=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
-    if(sha!==args['--source-sha']||!/^\d+$/.test(args['--budget-bytes']))throw Error('source or budget mismatch');
+    if(!/^\d+$/.test(args['--budget-bytes']))throw Error('invalid-budget');
+    const sha=assertCleanSource(args['--source-sha']);
     const report=await runAgentAcceptance({target:args['--target'],budgetBytes:Number(args['--budget-bytes']),sourceSha:sha,deployment:args['--deployment']});
-    console.log(JSON.stringify(report,null,2));
+    console.log(JSON.stringify({...report,sourceCheckoutVerified:true},null,2));
     if(report.status!=='passed-http-contract')process.exitCode=1;
   } catch {console.error('Agent acceptance held: invalid source, target, deployment, or budget.');process.exitCode=1;}
 }

@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {execFileSync} from 'node:child_process';
 import {buildAgentDocs,buildCrawlerPolicy} from '../scripts/build-agent-docs.mjs';
-import {runAgentAcceptance,acceptancePlan} from '../scripts/agent-http-acceptance.mjs';
+import {runAgentAcceptance,acceptancePlan,assertCleanSource} from '../scripts/agent-http-acceptance.mjs';
 const docs={...buildAgentDocs(),'robots.txt':buildCrawlerPolicy()};
 const options={target:'edge',budgetBytes:1500000,sourceSha:'a'.repeat(40),deployment:'test-fixture'};
 function response(url,init){
@@ -53,4 +57,43 @@ test('exact bytes, unauthorized control and discovery headers are independently 
    }});
    assert.equal(r.status,'failed',scenario);
  }
+});
+
+test('source identity rejects wrong SHA, modified tracked files and untracked content',()=>{
+ const root=mkdtempSync(join(tmpdir(),'ultron-acceptance-checkout-'));
+ const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+ try{
+   git('init','-q');writeFileSync(join(root,'fixture.txt'),'original');
+   git('add','fixture.txt');git('-c','user.name=Test Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-qm','fixture');
+   const sha=git('rev-parse','HEAD');
+   assert.equal(assertCleanSource(sha,root),sha);
+   assert.throws(()=>assertCleanSource('0'.repeat(40),root),/source-mismatch/);
+   writeFileSync(join(root,'fixture.txt'),'changed');
+   assert.throws(()=>assertCleanSource(sha,root),/dirty-source/);
+   git('restore','fixture.txt');
+   writeFileSync(join(root,'untracked.txt'),'untracked');
+   assert.throws(()=>assertCleanSource(sha,root),/dirty-source/);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test('evidence retains bounded selected headers without response secrets',async()=>{
+ const r=await runAgentAcceptance({...options,fetcher:async(url,init)=>{
+   const res=response(url,init);
+   res.headers.set('vary','Accept');
+   res.headers.set('set-cookie','fixture=not-for-evidence');
+   res.headers.set('x-private','never-record');
+   if(new URL(url).pathname==='/llms.txt')res.headers.set('cache-control','public, max-age=60');
+   return res;
+ }});
+ assert.equal(r.status,'passed-http-contract');
+ assert.equal(r.checks[0].headers['cache-control'],'public, max-age=60');
+ assert.equal(r.checks[0].headers.vary,'Accept');
+ assert.equal(r.checks.find(c=>c.path.startsWith('/.well-known/')).headers['x-robots-tag'],'noindex');
+ assert.ok(!JSON.stringify(r).includes('not-for-evidence'));
+ assert.ok(!JSON.stringify(r).includes('never-record'));
+});
+test('429 evidence records retry-after without probing another path',async()=>{
+ let calls=0;
+ const r=await runAgentAcceptance({...options,fetcher:async()=>{calls++;return new Response(null,{status:429,headers:{'retry-after':'120'}});}});
+ assert.equal(r.reason,'remote-hold-429');assert.equal(calls,1);
+ assert.equal(r.checks[0].headers['retry-after'],'120');
 });

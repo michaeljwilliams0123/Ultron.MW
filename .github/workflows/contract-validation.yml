@@ -34,6 +34,6 @@ jobs:
       - name: Check Cloudflare Worker config and cron parity
         run: node scripts/check-cloudflare-parity.mjs
       - name: Verify curated agent documentation and crawler privacy
-        run: node --test test/agent-public-docs.test.mjs test/agent-crawler-policy.test.mjs test/agent-doc-allowlist.test.mjs test/agent-metadata-parity.test.mjs test/agent-http-acceptance.test.mjs
+        run: node --test test/agent-public-docs.test.mjs test/agent-crawler-policy.test.mjs test/agent-doc-allowlist.test.mjs test/agent-metadata-parity.test.mjs test/agent-http-acceptance.test.mjs test/cloudflare-discovery-policy.test.mjs test/cloudflare-discovery-worker-integration.test.mjs
       - name: Audit source for accidental credentials
         run: node scripts/audit-secret-isolation.mjs
