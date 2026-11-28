@@ -4,6 +4,7 @@ import { handleAdmin } from "./admin";
 import { handleGithubWebhook } from "./webhooks";
 import { handleQueue } from "./queue";
 import { proxyToOrigin } from "./proxy";
+import { unsupportedDiscoveryResponse } from "./discovery-policy";
 import {
   applyOwnHeaders,
   applyProxyHeaders,
@@ -22,6 +23,8 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
+    const discovery = unsupportedDiscoveryResponse(path, request.method);
+    if (discovery) return applyOwnHeaders(discovery);
     if (path === "/__ultron/health") {
       return applyOwnHeaders(
         json({
